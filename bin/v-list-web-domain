@@ -38,6 +38,12 @@ json_list() {
         "BACKEND": "'$BACKEND'",
         "PROXY": "'$PROXY'",
         "PROXY_EXT": "'$PROXY_EXT'",
+        "PROXY_MODE": "'$PROXY_MODE'",
+        "PROXY_TARGET": "'$PROXY_TARGET'",
+        "PROXY_PRESERVE_HOST": "'$PROXY_PRESERVE_HOST'",
+        "PROXY_PROFILE": "'$PROXY_PROFILE'",
+        "PROXY_TIMEOUT": "'$PROXY_TIMEOUT'",
+        "PROXY_HEADERS": "'$PROXY_HEADERS'",
         "DOCUMENT_ROOT": "'$HOMEDIR/$user/web/$domain/public_html'",
         "SUSPENDED": "'$SUSPENDED'",
         "TIME": "'$TIME'",
@@ -68,6 +74,14 @@ shell_list() {
     if [ ! -z "$PROXY_SYSTEM" ]; then
         echo "PROXY:          $PROXY"
         echo "PROXY EXT:      ${PROXY_EXT//,/ }"
+        if [ ! -z "$PROXY_TARGET" ]; then
+            echo "PROXY MODE:     $PROXY_MODE"
+            echo "PROXY TARGET:   $PROXY_TARGET"
+            echo "PROXY PROFILE:  $PROXY_PROFILE"
+            echo "PRESERVE HOST:  $PROXY_PRESERVE_HOST"
+            echo "PROXY TIMEOUT:  $PROXY_TIMEOUT"
+            echo "PROXY HEADERS:  $PROXY_HEADERS"
+        fi
     fi
     if [ ! -z "$STATS" ]; then
         echo "STATS:          $STATS"
@@ -90,17 +104,21 @@ plain_list() {
     echo -ne "$DOMAIN\t$IP\t$IP6\t$U_DISK\t$U_BANDWIDTH\t$TPL\t"
     echo -ne "$ALIAS\t$STATS\t$STATS_USER\t$SSL\t$SSL_HOME\t,$LETSENCRYPT"
     echo -ne "$FTP_USER\t$FTP_PATH\t$AUTH_USER\t$BACKEND\t$PROXY\t"
-    echo -e "$PROXY_EXT\t$SUSPENDED\t$TIME\t$DATE"
+    echo -ne "$PROXY_EXT\t$PROXY_MODE\t$PROXY_TARGET\t$PROXY_PRESERVE_HOST\t"
+    echo -e "$PROXY_PROFILE\t$PROXY_TIMEOUT\t$PROXY_HEADERS\t$SUSPENDED\t$TIME\t$DATE"
 }
 
 # CSV list function
 csv_list() {
     echo -n "DOMAIN,IP,IP6,U_DISK,U_BANDWIDTH,TPL,ALIAS,STATS,STATS_USER,SSL,"
     echo -n "SSL_HOME,LETSENCRYPT,FTP_USER,FTP_PATH,AUTH_USER,BACKEND,PROXY,PROXY_EXT,"
+    echo -n "PROXY_MODE,PROXY_TARGET,PROXY_PRESERVE_HOST,PROXY_PROFILE,PROXY_TIMEOUT,PROXY_HEADERS,"
     echo "SUSPENDED,TIME,DATE"
     echo -n "$DOMAIN,$IP,$IP6,$U_DISK,$U_BANDWIDTH,$TPL,\"$ALIAS\",$STATS"
     echo -n "\"$STATS_USER\",$SSL,$SSL_HOME,$LETSENCRYPT,\"$FTP_USER\",\"$FTP_PATH\","
-    echo -n "\"$AUTH_USER\",$BACKEND,$PROXY,\"$PROXY_EXT\",$SUSPENDED,$TIME,"
+    echo -n "\"$AUTH_USER\",$BACKEND,$PROXY,\"$PROXY_EXT\",$PROXY_MODE,"
+    echo -n "\"$PROXY_TARGET\",$PROXY_PRESERVE_HOST,$PROXY_PROFILE,$PROXY_TIMEOUT,"
+    echo -n "\"$PROXY_HEADERS\",$SUSPENDED,$TIME,"
     echo  "$DATE"
 }
 
@@ -120,6 +138,7 @@ is_object_valid 'web' 'DOMAIN' "$domain"
 #----------------------------------------------------------#
 
 # Parsing domain
+PROXY_MODE='' PROXY_TARGET='' PROXY_PRESERVE_HOST='' PROXY_PROFILE='' PROXY_TIMEOUT='' PROXY_HEADERS=''
 eval $(grep "DOMAIN='$domain'" $USER_DATA/web.conf)
 
 # Listing data

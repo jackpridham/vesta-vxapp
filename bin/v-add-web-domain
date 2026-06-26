@@ -1,6 +1,6 @@
 #!/bin/bash
 # info: add web domain
-# options: USER DOMAIN [IP] [ALIASES] [PROXY_EXTENSIONS] [RESTART]
+# options: USER DOMAIN [IP] [RESTART] [ALIASES] [PROXY_EXTENSIONS] [--proxy-target URL] [--proxy-mode MODE] [--proxy-profile PROFILE] [--proxy-preserve-host yes|no] [--proxy-timeout SECONDS] [--header HEADER]
 #
 # The function adds virtual host to a server. In cases when ip is
 # undefined in the script, "default" template will be used. The alias of
@@ -28,12 +28,14 @@ proxy_ext=$6
 source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
 source $VESTA/func/ip.sh
+source $VESTA/func/vx/proxy.sh
 source $VESTA/conf/vesta.conf
 
 # Additional argument formatting
 format_domain
 format_domain_idn
 format_aliases
+vx_proxy_parse_long_options "${@:7}"
 
 
 #----------------------------------------------------------#
@@ -41,7 +43,10 @@ format_aliases
 #----------------------------------------------------------#
 
 is_system_enabled "$WEB_SYSTEM" 'WEB_SYSTEM'
-check_args '2' "$#" 'USER DOMAIN [IP] [RESTART] [ALIASES] [PROXY_EXTENSIONS]'
+if [ -n "$VX_PROXY_OPTION_TARGET" ]; then
+    is_system_enabled "$PROXY_SYSTEM" 'PROXY_SYSTEM'
+fi
+check_args '2' "$#" 'USER DOMAIN [IP] [RESTART] [ALIASES] [PROXY_EXTENSIONS] [--proxy-target URL] [--proxy-mode MODE] [--proxy-profile PROFILE] [--proxy-preserve-host yes|no] [--proxy-timeout SECONDS] [--header HEADER]'
 is_format_valid 'user' 'domain' 'aliases' 'ip' 'proxy_ext'
 is_object_valid 'user' 'USER' "$user"
 is_object_unsuspended 'user' 'USER' "$user"
@@ -63,6 +68,11 @@ fi
 
 # Reading user values
 source $USER_DATA/user.conf
+if [ -n "$VX_PROXY_OPTION_TARGET" ]; then
+    vx_proxy_apply_option_globals
+    vx_proxy_validate
+    PROXY_TEMPLATE="$VX_PROXY_TEMPLATE"
+fi
 
 # Creating domain directories
 sudo -u $user mkdir -p $HOMEDIR/$user/web/$domain \
@@ -141,6 +151,9 @@ if [ ! -z "$PROXY_SYSTEM" ]; then
         PROXY_EXT="$PROXY_EXT,exe,pdf,ppt,txt,odt,ods,odp,odf,tar,wav,bmp"
         PROXY_EXT="$PROXY_EXT,rtf,js,mp3,avi,mpeg,flv,woff,woff2"
     fi
+    if [ -n "$PROXY_TARGET" ]; then
+        PROXY_TEMPLATE="$VX_PROXY_TEMPLATE"
+    fi
     add_web_config "$PROXY_SYSTEM" "$PROXY_TEMPLATE.tpl"
 fi
 
@@ -163,6 +176,9 @@ date=$(echo "$time_n_date" |cut -f 2 -d \ )
 echo "DOMAIN='$domain' IP='$ip' IP6='' ALIAS='$ALIAS' TPL='$WEB_TEMPLATE'\
  SSL='no' SSL_HOME='same' LETSENCRYPT='no' FTP_USER='' FTP_MD5=''\
  BACKEND='$BACKEND_TEMPLATE' PROXY='$PROXY_TEMPLATE' PROXY_EXT='$PROXY_EXT'\
+ PROXY_MODE='$PROXY_MODE' PROXY_TARGET='$PROXY_TARGET'\
+ PROXY_PRESERVE_HOST='$PROXY_PRESERVE_HOST' PROXY_PROFILE='$PROXY_PROFILE'\
+ PROXY_TIMEOUT='$PROXY_TIMEOUT' PROXY_HEADERS='$PROXY_HEADERS'\
  STATS='' STATS_USER='' STATS_CRYPT='' U_DISK='0' U_BANDWIDTH='0'\
  SUSPENDED='no' TIME='$time' DATE='$date'" >> $USER_DATA/web.conf
 

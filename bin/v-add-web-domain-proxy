@@ -22,6 +22,7 @@ restart="$5"
 source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
 source $VESTA/func/ip.sh
+source $VESTA/func/vx/proxy.sh
 source $VESTA/conf/vesta.conf
 
 
@@ -49,6 +50,9 @@ is_proxy_template_valid $template
 
 # Defining domain parameters
 get_domain_values 'web'
+if [ "$template" = "$VX_PROXY_TEMPLATE" ]; then
+    vx_proxy_validate
+fi
 prepare_web_domain_values
 local_ip=$(get_real_ip $IP)
 
@@ -69,6 +73,11 @@ fi
 # Update config
 update_object_value 'web' 'DOMAIN' "$domain" '$PROXY' "$template"
 update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_EXT' "$extentions"
+if [ "$template" = "$VX_PROXY_TEMPLATE" ]; then
+    vx_proxy_update_web_conf
+else
+    vx_proxy_clear_web_conf
+fi
 
 # Restarting web server
 $BIN/v-restart-proxy $restart

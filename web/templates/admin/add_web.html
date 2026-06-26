@@ -117,6 +117,79 @@
                                             <textarea data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false" size="20" class="vst-textinput" name="v_proxy_ext"><?php if (!empty($v_proxy_ext)) { echo htmlentities(trim($v_proxy_ext, "'"));} else { echo 'jpeg, jpg, png, gif, bmp, ico, svg, tif, tiff, css, js, ttf, otf, webp, txt, csv, rtf, doc, docx, xls, xlsx, ppt, pptx, odf, odp, ods, odt, pdf, psd, ai, eot, eps, ps, zip, tar, tgz, gz, rar, bz2, 7z, aac, m4a, mp3, mp4, ogg, wav, wma, 3gp, avi, flv, m4v, mkv, mov, mp4, mpeg, mpg, wmv, exe, iso, dmg, swf, woff, woff2'; }  ?></textarea>
                                         </td>
                                     </tr>
+                                    <tr>
+                                        <td class="vst-text input-label step-left">
+                                            <?php print __('Proxy Mode');?>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="step-left">
+                                            <select class="vst-list" name="v_proxy_mode">
+                                                <option value="proxy" <?php if ($v_proxy_mode == 'proxy') echo "selected";?>>proxy</option>
+                                                <option value="redirect" <?php if ($v_proxy_mode == 'redirect') echo "selected";?>>redirect 301</option>
+                                                <option value="redirect-temp" <?php if ($v_proxy_mode == 'redirect-temp') echo "selected";?>>redirect 302</option>
+                                            </select>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="vst-text input-label step-left">
+                                            <?php print __('Proxy Target URL');?>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="step-left">
+                                            <input type="text" size="20" class="vst-input" name="v_proxy_target" value="<?=htmlentities($v_proxy_target)?>" placeholder="http://127.0.0.1:3000">
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="vst-text input-label step-left">
+                                            <?php print __('Proxy Profile');?>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="step-left">
+                                            <select class="vst-list" name="v_proxy_profile">
+                                                <option value="standard" <?php if ($v_proxy_profile == 'standard') echo "selected";?>>standard</option>
+                                                <option value="websocket" <?php if ($v_proxy_profile == 'websocket') echo "selected";?>>websocket</option>
+                                                <option value="application" <?php if ($v_proxy_profile == 'application') echo "selected";?>>application</option>
+                                                <option value="streaming" <?php if ($v_proxy_profile == 'streaming') echo "selected";?>>streaming</option>
+                                                <option value="media" <?php if ($v_proxy_profile == 'media') echo "selected";?>>media</option>
+                                            </select>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="vst-text input-label step-left">
+                                            <?php print __('Preserve Host Header');?>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="step-left">
+                                            <select class="vst-list" name="v_proxy_preserve_host">
+                                                <option value="yes" <?php if ($v_proxy_preserve_host == 'yes') echo "selected";?>>yes</option>
+                                                <option value="no" <?php if ($v_proxy_preserve_host == 'no') echo "selected";?>>no</option>
+                                            </select>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="vst-text input-label step-left">
+                                            <?php print __('Proxy Timeout');?>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="step-left">
+                                            <input type="text" size="20" class="vst-input" name="v_proxy_timeout" value="<?=htmlentities($v_proxy_timeout)?>">
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="vst-text input-label step-left">
+                                            <?php print __('Proxy Headers');?> <span class="optional">(Name: Value)</span>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="step-left">
+                                            <textarea data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false" size="20" class="vst-textinput" name="v_proxy_headers"><?=htmlentities($v_proxy_headers)?></textarea>
+                                        </td>
+                                    </tr>
                                 </table>
                             </td>
                         </tr>

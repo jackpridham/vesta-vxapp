@@ -5,6 +5,7 @@ $TAB = 'WEB';
 
 // Main include
 include($_SERVER['DOCUMENT_ROOT']."/inc/main.php");
+include($_SERVER['DOCUMENT_ROOT']."/inc/vx_proxy_form.php");
 
 // Check POST request
 if (!empty($_POST['ok'])) {
@@ -83,6 +84,10 @@ if (!empty($_POST['ok'])) {
     $proxy_ext_arr = array_filter($proxy_ext_arr);
     $proxy_ext = implode(",",$proxy_ext_arr);
     $proxy_ext = escapeshellarg($proxy_ext);
+    $proxy_options = vx_proxy_long_flags_from_post();
+    if ($proxy_options !== '') {
+        $_POST['v_proxy'] = 'on';
+    }
 
     // Define other options
     $v_elog = $_POST['v_elog'];
@@ -103,6 +108,7 @@ if (!empty($_POST['ok'])) {
 
     // Set advanced option checkmark
     if (!empty($_POST['v_proxy'])) $v_adv = 'yes';
+    if ($proxy_options !== '') $v_adv = 'yes';
     if (!empty($_POST['v_ftp'])) $v_adv = 'yes';
     if ($_POST['v_proxy_ext'] != $v_proxy_ext) $v_adv = 'yes';
     if ((!empty($_POST['v_aliases'])) && ($_POST['v_aliases'] != 'www.'.$_POST['v_domain'])) $v_adv = 'yes';
@@ -118,7 +124,7 @@ if (!empty($_POST['ok'])) {
 
     // Add web domain
     if (empty($_SESSION['error_msg'])) {
-        exec (VESTA_CMD."v-add-web-domain ".$user." ".$v_domain." ".$v_ip." no ".$aliases." ".$proxy_ext, $output, $return_var);
+        exec (VESTA_CMD."v-add-web-domain ".$user." ".$v_domain." ".$v_ip." no ".$aliases." ".$proxy_ext.$proxy_options, $output, $return_var);
         check_return_code($return_var,$output);
         unset($output);
         $domain_added = empty($_SESSION['error_msg']);
@@ -343,12 +349,20 @@ if (!empty($_POST['ok'])) {
         unset($v_stats_user);
         unset($v_stats_password);
         unset($v_ftp);
+        unset($v_proxy_target);
+        unset($v_proxy_headers);
     }
 }
 
 // Define user variables
 $v_ftp_user_prepath = $panel[$user]['HOME'] . "/web";
 $v_ftp_email = $panel[$user]['CONTACT'];
+$v_proxy_mode = isset($_POST['v_proxy_mode']) ? $_POST['v_proxy_mode'] : 'proxy';
+$v_proxy_target = isset($_POST['v_proxy_target']) ? $_POST['v_proxy_target'] : '';
+$v_proxy_profile = isset($_POST['v_proxy_profile']) ? $_POST['v_proxy_profile'] : 'standard';
+$v_proxy_preserve_host = isset($_POST['v_proxy_preserve_host']) ? $_POST['v_proxy_preserve_host'] : 'yes';
+$v_proxy_timeout = isset($_POST['v_proxy_timeout']) ? $_POST['v_proxy_timeout'] : '60';
+$v_proxy_headers = isset($_POST['v_proxy_headers']) ? $_POST['v_proxy_headers'] : '';
 
 // List IP addresses
 exec (VESTA_CMD."v-list-user-ips ".$user." json", $output, $return_var);

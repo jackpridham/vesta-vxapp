@@ -2,6 +2,10 @@
 #                        WEB                               #
 #----------------------------------------------------------#
 
+if [ -f "$VESTA/func/vx/proxy.sh" ]; then
+    source "$VESTA/func/vx/proxy.sh"
+fi
+
 # Web template check
 is_web_template_valid() {
     if [ ! -z "$WEB_SYSTEM" ]; then
@@ -163,6 +167,10 @@ prepare_web_domain_values() {
         docroot="$VESTA/data/templates/web/suspend"
         sdocroot="$VESTA/data/templates/web/suspend"
     fi
+
+    if declare -F vx_proxy_prepare_template_values >/dev/null; then
+        vx_proxy_prepare_template_values
+    fi
 }
 
 # Add web config
@@ -175,34 +183,41 @@ add_web_config() {
     domain_idn=$domain
     format_domain_idn
 
-    cat $WEBTPL/$1/$WEB_BACKEND/$2 | \
-        sed -e "s|%ip%|$local_ip|g" \
-            -e "s|%domain%|$domain|g" \
-            -e "s|%domain_idn%|$domain_idn|g" \
-            -e "s|%alias%|${aliases//,/ }|g" \
-            -e "s|%alias_idn%|${aliases_idn//,/ }|g" \
-            -e "s|%alias_string%|$alias_string|g" \
-            -e "s|%email%|info@$domain|g" \
-            -e "s|%web_system%|$WEB_SYSTEM|g" \
-            -e "s|%web_port%|$WEB_PORT|g" \
-            -e "s|%web_ssl_port%|$WEB_SSL_PORT|g" \
-            -e "s|%backend_lsnr%|$backend_lsnr|g" \
-            -e "s|%rgroups%|$WEB_RGROUPS|g" \
-            -e "s|%proxy_system%|$PROXY_SYSTEM|g" \
-            -e "s|%proxy_port%|$PROXY_PORT|g" \
-            -e "s|%proxy_ssl_port%|$PROXY_SSL_PORT|g" \
-            -e "s/%proxy_extentions%/${PROXY_EXT//,/|}/g" \
-            -e "s|%user%|$user|g" \
-            -e "s|%group%|$user|g" \
-            -e "s|%home%|$HOMEDIR|g" \
-            -e "s|%docroot%|$docroot|g" \
-            -e "s|%sdocroot%|$sdocroot|g" \
-            -e "s|%ssl_crt%|$ssl_crt|g" \
-            -e "s|%ssl_key%|$ssl_key|g" \
-            -e "s|%ssl_pem%|$ssl_pem|g" \
-            -e "s|%ssl_ca_str%|$ssl_ca_str|g" \
-            -e "s|%ssl_ca%|$ssl_ca|g" \
-    > $conf
+    render_web_config_template() {
+        cat $WEBTPL/$1/$WEB_BACKEND/$2 | \
+            sed -e "s|%ip%|$local_ip|g" \
+                -e "s|%domain%|$domain|g" \
+                -e "s|%domain_idn%|$domain_idn|g" \
+                -e "s|%alias%|${aliases//,/ }|g" \
+                -e "s|%alias_idn%|${aliases_idn//,/ }|g" \
+                -e "s|%alias_string%|$alias_string|g" \
+                -e "s|%email%|info@$domain|g" \
+                -e "s|%web_system%|$WEB_SYSTEM|g" \
+                -e "s|%web_port%|$WEB_PORT|g" \
+                -e "s|%web_ssl_port%|$WEB_SSL_PORT|g" \
+                -e "s|%backend_lsnr%|$backend_lsnr|g" \
+                -e "s|%rgroups%|$WEB_RGROUPS|g" \
+                -e "s|%proxy_system%|$PROXY_SYSTEM|g" \
+                -e "s|%proxy_port%|$PROXY_PORT|g" \
+                -e "s|%proxy_ssl_port%|$PROXY_SSL_PORT|g" \
+                -e "s/%proxy_extentions%/${PROXY_EXT//,/|}/g" \
+                -e "s|%user%|$user|g" \
+                -e "s|%group%|$user|g" \
+                -e "s|%home%|$HOMEDIR|g" \
+                -e "s|%docroot%|$docroot|g" \
+                -e "s|%sdocroot%|$sdocroot|g" \
+                -e "s|%ssl_crt%|$ssl_crt|g" \
+                -e "s|%ssl_key%|$ssl_key|g" \
+                -e "s|%ssl_pem%|$ssl_pem|g" \
+                -e "s|%ssl_ca_str%|$ssl_ca_str|g" \
+                -e "s|%ssl_ca%|$ssl_ca|g"
+    }
+
+    if declare -F vx_proxy_apply_template_blocks >/dev/null; then
+        render_web_config_template "$1" "$2" | vx_proxy_apply_template_blocks > $conf
+    else
+        render_web_config_template "$1" "$2" > $conf
+    fi
 
     chown root:$user $conf
     chmod 640 $conf

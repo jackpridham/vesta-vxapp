@@ -18,6 +18,7 @@ restart=$3
 # Includes
 source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
+source $VESTA/func/vx/proxy.sh
 source $VESTA/conf/vesta.conf
 
 # Additional argument formatting
@@ -61,6 +62,7 @@ fi
 # Update config
 update_object_value 'web' 'DOMAIN' "$domain" '$PROXY' ''
 update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_EXT' ''
+vx_proxy_clear_web_conf
 
 # Restart proxy server
 $BIN/v-restart-proxy $restart

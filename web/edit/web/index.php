@@ -6,6 +6,7 @@ $TAB = 'WEB';
 
 // Main include
 include($_SERVER['DOCUMENT_ROOT']."/inc/main.php");
+include($_SERVER['DOCUMENT_ROOT']."/inc/vx_proxy_form.php");
 
 // Check domain argument
 if (empty($_GET['domain'])) {
@@ -57,6 +58,12 @@ $v_backend_template = $data[$v_domain]['BACKEND'];
 $v_proxy = $data[$v_domain]['PROXY'];
 $v_proxy_template = $data[$v_domain]['PROXY'];
 $v_proxy_ext = str_replace(',', ', ', $data[$v_domain]['PROXY_EXT']);
+$v_proxy_mode = empty($data[$v_domain]['PROXY_MODE']) ? 'proxy' : $data[$v_domain]['PROXY_MODE'];
+$v_proxy_target = $data[$v_domain]['PROXY_TARGET'];
+$v_proxy_profile = empty($data[$v_domain]['PROXY_PROFILE']) ? 'standard' : $data[$v_domain]['PROXY_PROFILE'];
+$v_proxy_preserve_host = empty($data[$v_domain]['PROXY_PRESERVE_HOST']) ? 'yes' : $data[$v_domain]['PROXY_PRESERVE_HOST'];
+$v_proxy_timeout = empty($data[$v_domain]['PROXY_TIMEOUT']) ? '60' : $data[$v_domain]['PROXY_TIMEOUT'];
+$v_proxy_headers = vx_proxy_headers_to_text($data[$v_domain]['PROXY_HEADERS']);
 $v_stats = $data[$v_domain]['STATS'];
 $v_stats_user = $data[$v_domain]['STATS_USER'];
 if (!empty($v_stats_user)) $v_stats_password = "";
@@ -107,6 +114,7 @@ unset($output);
 // Check POST request
 if (!empty($_POST['save'])) {
     $v_domain = escapeshellarg($_POST['v_domain']);
+    $native_proxy_target = vx_proxy_post_value('v_proxy_target');
 
     // Check token
     if ((!isset($_POST['token'])) || ($_SESSION['token'] != $_POST['token'])) {
@@ -236,7 +244,26 @@ if (!empty($_POST['save'])) {
     }
 
     // Change proxy template / Update extension list
-    if ((!empty($_SESSION['PROXY_SYSTEM'])) && (!empty($v_proxy)) && (!empty($_POST['v_proxy'])) && (empty($_SESSION['error_msg'])) ) {
+    if ((!empty($_SESSION['PROXY_SYSTEM'])) && (!empty($_POST['v_proxy'])) && ($native_proxy_target !== '') && (empty($_SESSION['error_msg']))) {
+        $proxy_args = vx_proxy_change_args_from_post();
+        exec (VESTA_CMD."v-change-web-domain-proxy-options ".$v_username." ".$v_domain." ".$proxy_args." no", $output, $return_var);
+        check_return_code($return_var,$output);
+        unset($output);
+        if (empty($_SESSION['error_msg'])) {
+            $v_proxy = 'vx-proxy';
+            $v_proxy_template = 'vx-proxy';
+            $v_proxy_mode = $_POST['v_proxy_mode'];
+            $v_proxy_target = $_POST['v_proxy_target'];
+            $v_proxy_profile = $_POST['v_proxy_profile'];
+            $v_proxy_preserve_host = $_POST['v_proxy_preserve_host'];
+            $v_proxy_timeout = $_POST['v_proxy_timeout'];
+            $v_proxy_headers = $_POST['v_proxy_headers'];
+            $restart_proxy = 'yes';
+        }
+    }
+
+    // Change proxy template / Update extension list
+    if ((!empty($_SESSION['PROXY_SYSTEM'])) && (!empty($v_proxy)) && (!empty($_POST['v_proxy'])) && ($native_proxy_target === '') && (empty($_SESSION['error_msg'])) ) {
         $ext = preg_replace("/\n/", " ", $_POST['v_proxy_ext']);
         $ext = preg_replace("/,/", " ", $ext);
         $ext = preg_replace('/\s+/', ' ',$ext);
@@ -254,7 +281,7 @@ if (!empty($_POST['save'])) {
     }
 
     // Add proxy support
-    if ((!empty($_SESSION['PROXY_SYSTEM'])) && (empty($v_proxy)) && (!empty($_POST['v_proxy'])) && (empty($_SESSION['error_msg']))) {
+    if ((!empty($_SESSION['PROXY_SYSTEM'])) && (empty($v_proxy)) && (!empty($_POST['v_proxy'])) && ($native_proxy_target === '') && (empty($_SESSION['error_msg']))) {
         $v_proxy_template = $_POST['v_proxy_template'];
         if (!empty($_POST['v_proxy_ext'])) {
             $ext = preg_replace("/\n/", " ", $_POST['v_proxy_ext']);
