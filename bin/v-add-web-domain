@@ -23,6 +23,15 @@ ip=$3
 restart=$4      # will be moved to the end soon
 aliases=$5
 proxy_ext=$6
+proxy_option_start=7
+
+# Some callers collapse an empty PROXY_EXTENSIONS argument, which shifts the
+# native proxy long flags into slot 6. Treat that as "no custom proxy
+# extensions" so the long-option parser still sees the expected arguments.
+if [[ "$proxy_ext" == --* ]]; then
+    proxy_ext=""
+    proxy_option_start=6
+fi
 
 # Includes
 source $VESTA/func/main.sh
@@ -35,7 +44,7 @@ source $VESTA/conf/vesta.conf
 format_domain
 format_domain_idn
 format_aliases
-vx_proxy_parse_long_options "${@:7}"
+vx_proxy_parse_long_options "${@:${proxy_option_start}}"
 
 
 #----------------------------------------------------------#
