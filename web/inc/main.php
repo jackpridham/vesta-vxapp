@@ -308,9 +308,13 @@ function humanize_usage_measure($usage) {
 
 
 function get_percentage($used,$total) {
-    if (!isset($total)) $total =  0;
-    if (!isset($used)) $used =  0;
-    if ( $total == 0 ) {
+    if (!is_numeric($total)) $total = 0;
+    if (!is_numeric($used)) $used = 0;
+
+    $total = (float)$total;
+    $used = (float)$used;
+
+    if ($total <= 0) {
         $percent = 0;
     } else {
         $percent = $used / $total;
