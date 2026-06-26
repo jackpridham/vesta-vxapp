@@ -69,6 +69,12 @@ fi
 # Add native proxy vhost
 PROXY="$VX_PROXY_TEMPLATE"
 [ -n "$PROXY_EXT" ] || PROXY_EXT="$default_extentions"
+saved_proxy_mode="$PROXY_MODE"
+saved_proxy_target="$PROXY_TARGET"
+saved_proxy_profile="$PROXY_PROFILE"
+saved_proxy_preserve_host="$PROXY_PRESERVE_HOST"
+saved_proxy_timeout="$PROXY_TIMEOUT"
+saved_proxy_headers="$PROXY_HEADERS"
 prepare_web_domain_values
 add_web_config "$PROXY_SYSTEM" "$PROXY.tpl"
 if [ "$SSL" = 'yes' ]; then
@@ -83,6 +89,12 @@ fi
 # Updating config
 update_object_value 'web' 'DOMAIN' "$domain" '$PROXY' "$PROXY"
 update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_EXT' "$PROXY_EXT"
+PROXY_MODE="$saved_proxy_mode"
+PROXY_TARGET="$saved_proxy_target"
+PROXY_PROFILE="$saved_proxy_profile"
+PROXY_PRESERVE_HOST="$saved_proxy_preserve_host"
+PROXY_TIMEOUT="$saved_proxy_timeout"
+PROXY_HEADERS="$saved_proxy_headers"
 vx_proxy_update_web_conf
 
 # Restarting proxy

@@ -179,13 +179,20 @@ vx_proxy_ensure_web_conf_keys() {
 }
 
 vx_proxy_update_web_conf() {
+    local proxy_mode_value="$PROXY_MODE"
+    local proxy_target_value="$PROXY_TARGET"
+    local proxy_preserve_host_value="$PROXY_PRESERVE_HOST"
+    local proxy_profile_value="$PROXY_PROFILE"
+    local proxy_timeout_value="$PROXY_TIMEOUT"
+    local proxy_headers_value="$PROXY_HEADERS"
+
     vx_proxy_ensure_web_conf_keys
-    update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_MODE' "$PROXY_MODE"
-    update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_TARGET' "$PROXY_TARGET"
-    update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_PRESERVE_HOST' "$PROXY_PRESERVE_HOST"
-    update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_PROFILE' "$PROXY_PROFILE"
-    update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_TIMEOUT' "$PROXY_TIMEOUT"
-    update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_HEADERS' "$PROXY_HEADERS"
+    update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_MODE' "$proxy_mode_value"
+    update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_TARGET' "$proxy_target_value"
+    update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_PRESERVE_HOST' "$proxy_preserve_host_value"
+    update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_PROFILE' "$proxy_profile_value"
+    update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_TIMEOUT' "$proxy_timeout_value"
+    update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_HEADERS' "$proxy_headers_value"
 }
 
 vx_proxy_clear_web_conf() {
