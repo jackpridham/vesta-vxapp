@@ -1,0 +1,164 @@
+    <div class="l-center">
+      <div class="l-sort clearfix noselect">
+        <a href="/list/docker/" class="l-sort__create-btn edit" title="<?=__('Docker')?>"><div id="add-icon"></div><div id="tooltip"><?=__('Docker')?></div></a>
+
+        <div class="l-sort-toolbar clearfix">
+          <table>
+            <tr>
+              <td class="step-right">
+                <a class="vst" href="/list/server/"><?=__('Server')?></a>
+              </td>
+              <td class="step-right">
+                <a class="vst" href="/list/docker/"><?=__('refresh')?></a>
+              </td>
+              <?php if (!$docker_available) { ?>
+              <td class="step-right">
+                <a class="vst" href="javascript:void(0)" onclick="more_button_click(0)"><?=__('Install Docker')?></a>
+              </td>
+              <?php } ?>
+            </tr>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <div class="l-separator"></div>
+
+    <script>
+      var dataset_values = [];
+    </script>
+
+    <?php if (!$docker_available) { ?>
+    <script>
+      dataset_values[0] = {
+        'url': '/ajax/docker/index.php',
+        'title': 'Docker'
+      };
+    </script>
+
+    <div class="l-center units">
+      <div class="l-unit">
+        <div class="l-unit__col l-unit__col--right">
+          <div class="l-unit__name separate"><?=__('Docker is not installed')?></div>
+          <div class="l-unit__stats">
+            <table>
+              <tr>
+                <td>
+                  <div class="l-unit__stat-cols clearfix">
+                    <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Install Docker from the panel to start managing containers.')?></div>
+                    <div class="l-unit__stat-col l-unit__stat-col--right">
+                      <a href="javascript:void(0)" onclick="more_button_click(0)"><b><?=__('Install Docker')?></b></a>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    <?php } else { ?>
+
+    <div class="l-center units">
+      <?php foreach ($data as $key => $container) {
+          ++$i;
+          $container_name = isset($container['Names']) ? $container['Names'] : '';
+          $container_state = isset($container['State']) ? $container['State'] : '';
+          $container_status = isset($container['Status']) ? $container['Status'] : '';
+          $container_image = isset($container['Image']) ? $container['Image'] : '';
+          $container_ports = isset($container['Ports']) ? $container['Ports'] : '';
+          $container_mounts = isset($container['Mounts']) ? $container['Mounts'] : '';
+          $container_id = isset($container['ID']) ? $container['ID'] : '';
+          $container_running_for = isset($container['RunningFor']) ? $container['RunningFor'] : '';
+          $action = ($container_state === 'running') ? 'stop' : 'start';
+          $status_class = ($container_state === 'running') ? '' : 'l-unit--suspended';
+          $short_id = substr($container_id, 0, 12);
+      ?>
+      <script>
+        dataset_values[<?=$i?>] = {
+          'url': '/ajax/docker/index.php',
+          'title': '<?=htmlspecialchars($container_name, ENT_QUOTES)?>',
+          'container_name': '<?=htmlspecialchars($container_name, ENT_QUOTES)?>',
+          'container_id': '<?=htmlspecialchars($container_id, ENT_QUOTES)?>',
+          'state': '<?=htmlspecialchars($container_state, ENT_QUOTES)?>'
+        };
+      </script>
+
+      <div class="l-unit <?=$status_class?>">
+        <div class="l-unit-toolbar clearfix">
+          <div class="l-unit-toolbar__col l-unit-toolbar__col--right noselect">
+            <div class="actions-panel clearfix">
+              <div class="actions-panel__col actions-panel__<?=$action?> shortcut-s" key-action="href">
+                <a href="/<?=$action?>/docker/?container=<?=urlencode($container_name)?>&token=<?=$_SESSION['token']?>"><?=__($action)?> <i></i></a>
+                <span class="shortcut">&nbsp;S</span>
+              </div>
+              <div class="actions-panel__col actions-panel__restart shortcut-r" key-action="href">
+                <a href="/restart/docker/?container=<?=urlencode($container_name)?>&token=<?=$_SESSION['token']?>"><?=__('restart')?> <i></i></a>
+                <span class="shortcut">&nbsp;R</span>
+              </div>
+              <div class="actions-panel__col actions-panel__logs" style="background-color: #cae1e5;">
+                <a href="javascript:void(0)" onclick="more_button_click(<?=$i?>)"><?=__('Docker')?> <i></i></a>
+                <span class="shortcut more">&nbsp;&#8629;</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="l-unit__col l-unit__col--left clearfix">
+          <div class="l-unit__date"><?=htmlspecialchars($container_running_for, ENT_QUOTES)?></div>
+          <div class="l-unit__suspended"><?=__('stopped')?></div>
+        </div>
+
+        <div class="l-unit__col l-unit__col--right">
+          <div class="l-unit__name small-2">
+            <?=htmlspecialchars($container_name, ENT_QUOTES)?>
+            <span><?=htmlspecialchars($container_image, ENT_QUOTES)?></span>
+          </div>
+
+          <div class="l-unit__stats">
+            <table>
+              <tr>
+                <td>
+                  <div class="l-unit__stat-cols clearfix">
+                    <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('State')?>:</div>
+                    <div class="l-unit__stat-col l-unit__stat-col--right"><b><?=htmlspecialchars($container_status, ENT_QUOTES)?></b></div>
+                  </div>
+                </td>
+                <td>
+                  <div class="l-unit__stat-cols clearfix">
+                    <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Container ID')?>:</div>
+                    <div class="l-unit__stat-col l-unit__stat-col--right"><b><?=htmlspecialchars($short_id, ENT_QUOTES)?></b></div>
+                  </div>
+                </td>
+                <td>
+                  <div class="l-unit__stat-cols clearfix last">
+                    <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Ports')?>:</div>
+                    <div class="l-unit__stat-col l-unit__stat-col--right"><b><?=htmlspecialchars($container_ports !== '' ? $container_ports : __('none'), ENT_QUOTES)?></b></div>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="3">
+                  <div class="l-unit__stat-cols clearfix">
+                    <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Mounts')?>:</div>
+                    <div class="l-unit__stat-col l-unit__stat-col--right"><b><?=htmlspecialchars($container_mounts !== '' ? $container_mounts : __('none'), ENT_QUOTES)?></b></div>
+                  </div>
+                </td>
+              </tr>
+            </table>
+          </div>
+        </div>
+      </div>
+      <?php } ?>
+    </div>
+    <?php } ?>
+
+    <div id="vstobjects">
+      <div class="l-separator"></div>
+      <div class="l-center">
+        <div class="l-unit-ft">
+          <div class="l-unit__col l-unit__col--left clearfix"></div>
+          <div class="data-count l-unit__col l-unit__col--right clearfix"><?=count($data)?> <?=__('containers')?></div>
+        </div>
+      </div>
+    </div>

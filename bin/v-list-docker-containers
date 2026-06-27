@@ -1,0 +1,79 @@
+#!/bin/bash
+# info: list docker containers
+# options: [FORMAT]
+#
+# The function lists docker containers available on the host.
+
+
+#----------------------------------------------------------#
+#                    Variable&Function                     #
+#----------------------------------------------------------#
+
+# Argument definition
+format=${1-shell}
+
+# Includes
+source $VESTA/func/main.sh
+source $VESTA/func/docker.sh
+if [ -f "$VESTA/conf/vesta.conf" ]; then
+    source $VESTA/conf/vesta.conf
+fi
+
+# JSON list function
+json_list() {
+    local index=1
+    local first='yes'
+    local line=''
+
+    echo '{'
+    while IFS= read -r line; do
+        [ -z "$line" ] && continue
+
+        if [ "$first" = 'no' ]; then
+            echo ','
+        fi
+
+        printf '    "%s": %s' "$index" "$line"
+        first='no'
+        index=$((index + 1))
+    done < <(docker ps -a --no-trunc --format '{{json .}}')
+
+    echo
+    echo '}'
+}
+
+# SHELL list function
+shell_list() {
+    docker ps -a --no-trunc --format 'NAME={{.Names}}\tSTATE={{.State}}\tSTATUS={{.Status}}\tIMAGE={{.Image}}\tPORTS={{.Ports}}'
+}
+
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+ensure_docker_engine_available
+
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+case "$format" in
+    json)
+        json_list
+        ;;
+    shell|plain)
+        shell_list
+        ;;
+    *)
+        check_result "$E_INVALID" "invalid format :: $format" "$E_INVALID"
+        ;;
+esac
+
+
+#----------------------------------------------------------#
+#                       Vesta                              #
+#----------------------------------------------------------#
+
+exit

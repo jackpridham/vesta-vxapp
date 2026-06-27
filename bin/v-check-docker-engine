@@ -1,0 +1,52 @@
+#!/bin/bash
+# info: check docker engine availability
+# options: [FORMAT]
+#
+# The function checks whether docker is available on the host.
+
+
+#----------------------------------------------------------#
+#                    Variable&Function                     #
+#----------------------------------------------------------#
+
+# Argument definition
+format=${1-shell}
+
+# Includes
+source $VESTA/func/main.sh
+source $VESTA/func/docker.sh
+if [ -f "$VESTA/conf/vesta.conf" ]; then
+    source $VESTA/conf/vesta.conf
+fi
+
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+if is_docker_engine_available; then
+    state='yes'
+else
+    state='no'
+fi
+
+case "$format" in
+    json)
+        echo '{'
+        echo '    "DOCKER_AVAILABLE": "'$state'"'
+        echo '}'
+        ;;
+    shell|plain)
+        echo "$state"
+        ;;
+    *)
+        check_result "$E_INVALID" "invalid format :: $format" "$E_INVALID"
+        ;;
+esac
+
+
+#----------------------------------------------------------#
+#                       Vesta                              #
+#----------------------------------------------------------#
+
+exit
