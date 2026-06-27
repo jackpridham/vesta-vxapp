@@ -1,7 +1,5 @@
 <?php
 
-require_once(dirname(__FILE__).'/vx_docker.php');
-
 function vx_proxy_post_value($name, $default = '')
 {
     return isset($_POST[$name]) ? trim($_POST[$name]) : $default;

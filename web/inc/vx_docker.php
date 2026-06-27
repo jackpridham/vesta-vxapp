@@ -21,24 +21,20 @@ function vx_docker_post_value($name, $default = '')
 
 function vx_docker_env_from_post()
 {
-    return vx_docker_textarea_to_stored_string(vx_docker_post_value('v_env'));
+    return vx_docker_textarea_to_stored_string(vx_docker_post_value('v_container_env'));
 }
 
 function vx_docker_mounts_from_post()
 {
-    return vx_docker_textarea_to_stored_string(vx_docker_post_value('v_mounts'));
+    return vx_docker_textarea_to_stored_string(vx_docker_post_value('v_container_mounts'));
 }
 
 function vx_docker_healthcheck_from_post()
 {
-    $container_port = vx_docker_post_value('v_container_port');
-    $type = strtolower(vx_docker_post_value('v_healthcheck_type', 'http'));
+    $container_port = vx_docker_container_port_from_post();
+    $type = vx_docker_normalize_healthcheck_type(vx_docker_post_value('v_healthcheck_type', 'http'));
     $target = vx_docker_post_value('v_healthcheck_target');
-    $interval = vx_docker_post_value('v_healthcheck_interval', '60');
-
-    if ($interval === '') {
-        $interval = '60';
-    }
+    $interval = vx_docker_normalize_integer_string(vx_docker_post_value('v_healthcheck_interval', '60'), '60', 15, 3600);
 
     if ($type === 'none' || $type === 'docker') {
         $target = '';
@@ -55,25 +51,20 @@ function vx_docker_healthcheck_from_post()
 
 function vx_docker_alert_thresholds_from_post()
 {
-    $alert_email = vx_docker_post_value('v_alert_email', 'yes');
-    if ($alert_email !== 'yes' && $alert_email !== 'no') {
-        $alert_email = vx_docker_boolean_post_value('v_alert_email') ? 'yes' : 'no';
-    }
+    $alert_email = vx_docker_normalize_yes_no(vx_docker_post_value('v_alert_email', 'yes'), 'yes');
 
     return array(
-        'CPU_ALERT_PCT' => vx_docker_post_value('v_cpu_alert_pct', '85') ?: '85',
-        'MEM_ALERT_MB' => vx_docker_post_value('v_mem_alert_mb', '1024') ?: '1024',
-        'NET_ALERT_MBPS' => vx_docker_post_value('v_net_alert_mbps', '50') ?: '50',
+        'CPU_ALERT_PCT' => vx_docker_normalize_integer_string(vx_docker_post_value('v_cpu_alert_pct', '85'), '85', 1, 1000),
+        'MEM_ALERT_MB' => vx_docker_normalize_integer_string(vx_docker_post_value('v_mem_alert_mb', '1024'), '1024', 1, 1048576),
+        'NET_ALERT_MBPS' => vx_docker_normalize_integer_string(vx_docker_post_value('v_net_alert_mbps', '50'), '50', 1, 100000),
         'ALERT_EMAIL' => $alert_email,
     );
 }
 
 function vx_docker_route_domain_options($account_user = null)
 {
-    global $user;
-
     if ($account_user === null || $account_user === '') {
-        $account_user = $user;
+        return array();
     }
 
     $options = array();
@@ -126,11 +117,11 @@ function vx_docker_spec_from_post()
         'COMMAND' => vx_docker_post_value('v_container_command'),
         'ENV' => vx_docker_env_from_post(),
         'MOUNTS' => vx_docker_mounts_from_post(),
-        'CONTAINER_PORT' => vx_docker_post_value('v_container_port'),
+        'CONTAINER_PORT' => vx_docker_container_port_from_post(),
         'DOMAIN' => vx_docker_post_value('v_route_domain'),
-        'ROUTE_PATH' => vx_docker_post_value('v_route_path'),
+        'ROUTE_PATH' => vx_docker_route_path_from_post(),
         'AUTO_START' => vx_docker_checkbox_to_yes_no('v_auto_start', 'yes'),
-        'RESTART_POLICY' => vx_docker_post_value('v_restart_policy', 'unless-stopped'),
+        'RESTART_POLICY' => vx_docker_normalize_restart_policy(vx_docker_post_value('v_restart_policy', 'unless-stopped')),
         'HEALTHCHECK_TYPE' => $healthcheck['HEALTHCHECK_TYPE'],
         'HEALTHCHECK_TARGET' => $healthcheck['HEALTHCHECK_TARGET'],
         'HEALTHCHECK_INTERVAL' => $healthcheck['HEALTHCHECK_INTERVAL'],
@@ -155,7 +146,7 @@ function vx_docker_build_spec_payload($spec)
     $payload = array();
 
     foreach ($spec as $key => $value) {
-        $payload[] = $key."='".vx_docker_escape_spec_value($value)."'";
+        $payload[] = $key.'="'.vx_docker_escape_spec_value($value).'"';
     }
 
     return implode("\n", $payload)."\n";
@@ -182,7 +173,11 @@ function vx_docker_textarea_to_stored_string($raw)
 
 function vx_docker_escape_spec_value($value)
 {
-    return str_replace("'", "\\'", (string) $value);
+    return str_replace(
+        array('\\', '"', '$', '`'),
+        array('\\\\', '\\"', '\\$', '\\`'),
+        (string) $value
+    );
 }
 
 function vx_docker_checkbox_to_yes_no($name, $default = 'no')
@@ -199,4 +194,75 @@ function vx_docker_boolean_post_value($name)
     $value = strtolower(vx_docker_post_value($name));
 
     return in_array($value, array('1', 'true', 'yes', 'on'), true);
+}
+
+function vx_docker_container_port_from_post()
+{
+    return vx_docker_normalize_integer_string(vx_docker_post_value('v_container_port'), '', 1, 65535);
+}
+
+function vx_docker_route_path_from_post()
+{
+    $path = vx_docker_post_value('v_route_path');
+    if ($path === '' || $path === '/') {
+        return '';
+    }
+
+    if (strpos($path, '/') !== 0) {
+        $path = '/'.$path;
+    }
+
+    $path = substr($path, 0, 128);
+    if (preg_match('/[\s?#]/', $path)) {
+        return '';
+    }
+
+    return $path;
+}
+
+function vx_docker_normalize_healthcheck_type($type)
+{
+    $type = strtolower(trim((string) $type));
+
+    if (!in_array($type, array('http', 'tcp', 'docker', 'none'), true)) {
+        return 'http';
+    }
+
+    return $type;
+}
+
+function vx_docker_normalize_restart_policy($policy)
+{
+    $policy = trim((string) $policy);
+
+    if (!in_array($policy, array('no', 'on-failure', 'always', 'unless-stopped'), true)) {
+        return 'unless-stopped';
+    }
+
+    return $policy;
+}
+
+function vx_docker_normalize_yes_no($value, $default)
+{
+    $value = strtolower(trim((string) $value));
+    if ($value !== 'yes' && $value !== 'no') {
+        return $default;
+    }
+
+    return $value;
+}
+
+function vx_docker_normalize_integer_string($value, $default, $min, $max)
+{
+    $value = trim((string) $value);
+    if ($value === '' || !preg_match('/^\d+$/', $value)) {
+        return $default;
+    }
+
+    $integer_value = (int) $value;
+    if ($integer_value < $min || $integer_value > $max) {
+        return $default;
+    }
+
+    return (string) $integer_value;
 }

@@ -449,10 +449,17 @@ vx_docker_spec_defaults() {
 
 vx_docker_load_spec() {
     local spec_file="$1"
+    local parse_double_quotes_var_backup="${PARSE_DOUBLE_QUOTES_VAR-}"
 
     [ -f "$spec_file" ] || check_result "$E_NOTEXIST" "docker spec file doesn't exist"
     vx_docker_reset_record_vars
+    PARSE_DOUBLE_QUOTES_VAR='yes'
     parse_object_kv_list_non_eval "$(cat "$spec_file")"
+    if [ -n "$parse_double_quotes_var_backup" ]; then
+        PARSE_DOUBLE_QUOTES_VAR="$parse_double_quotes_var_backup"
+    else
+        unset PARSE_DOUBLE_QUOTES_VAR
+    fi
     vx_docker_spec_defaults
     [ -n "$NAME" ] || check_result "$E_ARGS" "docker spec missing NAME"
     [ -n "$IMAGE" ] || check_result "$E_ARGS" "docker spec missing IMAGE"
