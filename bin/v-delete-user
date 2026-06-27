@@ -45,7 +45,7 @@ if [ -f "$USER_DATA/docker.conf" ]; then
         [ -n "$line" ] || continue
         vx_docker_parse_record "$line"
         if [ -n "$DOMAIN" ] && vx_docker_owner_domain_exists "$user" "$DOMAIN"; then
-            if vx_docker_domain_has_proxy_route "$user" "$DOMAIN"; then
+            if vx_docker_domain_matches_record_route "$user" "$NAME"; then
                 $BIN/v-delete-web-domain-proxy "$user" "$DOMAIN" no >/dev/null
                 check_result $? "docker route removal failed"
             fi

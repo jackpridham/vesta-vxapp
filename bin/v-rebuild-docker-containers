@@ -26,7 +26,7 @@ rebuild_scope() {
     while IFS= read -r line; do
         [ -n "$line" ] || continue
         vx_docker_parse_record "$line"
-        vx_docker_restore_runtime "$owner" "$NAME"
+        vx_docker_refresh_runtime_metadata "$owner" "$NAME"
     done < <(vx_docker_list_owner_records "$owner")
 }
 

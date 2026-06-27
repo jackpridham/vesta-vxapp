@@ -827,6 +827,7 @@ fi
 # Restoring docker metadata and managed bind data
 if [ "$docker" != 'no' ] && [ ! -z "$(tar -tf $BACKUP/$backup |grep '^./docker')" ]; then
     echo -e  "\n-- DOCKER --" |tee -a $tmpdir/restore.log
+    ensure_docker_engine_available
 
     tar xf $BACKUP/$backup -C $tmpdir ./docker
     if [ "$?" -ne 0 ]; then
@@ -877,8 +878,11 @@ if [ "$docker" != 'no' ] && [ ! -z "$(tar -tf $BACKUP/$backup |grep '^./docker')
         else
             echo -e "$(date "+%F %T") $docker_count docker containers" |tee -a $tmpdir/restore.log
         fi
-        $BIN/v-rebuild-docker-containers "$user"
-        check_result $? "docker container rebuild failed"
+        while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            vx_docker_parse_record "$line"
+            vx_docker_rehydrate_runtime "$user" "$NAME"
+        done < "$USER_DATA/docker.conf"
     fi
 fi
 

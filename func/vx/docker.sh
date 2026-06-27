@@ -181,7 +181,7 @@ vx_docker_owner_domain_exists() {
     grep -q "DOMAIN='$domain_name'" "$web_conf"
 }
 
-vx_docker_domain_has_proxy_route() {
+vx_docker_domain_proxy_target() {
     local owner="$1"
     local domain_name="$2"
     local web_conf line
@@ -190,7 +190,20 @@ vx_docker_domain_has_proxy_route() {
     [ -f "$web_conf" ] || return 1
     line="$(grep "DOMAIN='$domain_name'" "$web_conf" 2>/dev/null)"
     [ -n "$line" ] || return 1
-    [[ "$line" == *"PROXY_TARGET='http://127.0.0.1:"* ]] || [[ "$line" == *"PROXY='vx-proxy'"* ]]
+    parse_object_kv_list_non_eval "$line"
+    [ -n "$PROXY_TARGET" ] || return 1
+    echo "$PROXY_TARGET"
+}
+
+vx_docker_domain_matches_record_route() {
+    local owner="$1"
+    local name="$2"
+    local route_target
+
+    vx_docker_load_record "$owner" "$name" || return 1
+    [ -n "$DOMAIN" ] || return 1
+    route_target="$(vx_docker_domain_proxy_target "$owner" "$DOMAIN")" || return 1
+    [ "$route_target" = "http://127.0.0.1:${HOST_PORT}" ]
 }
 
 vx_docker_runtime_label_tuple() {
@@ -255,7 +268,7 @@ vx_docker_clear_route() {
     USER_DATA="$VESTA/data/users/$user"
     domain="$DOMAIN"
 
-    if vx_docker_owner_domain_exists "$user" "$domain" && vx_docker_domain_has_proxy_route "$user" "$domain"; then
+    if vx_docker_owner_domain_exists "$user" "$domain" && vx_docker_domain_matches_record_route "$user" "$name"; then
         "$BIN/v-delete-web-domain-proxy" "$user" "$domain" no >/dev/null
         check_result $? "docker proxy route removal failed"
     fi
@@ -639,7 +652,22 @@ vx_docker_owner_is_suspended() {
     grep -q "^SUSPENDED='yes'" "$user_conf"
 }
 
-vx_docker_restore_runtime() {
+vx_docker_refresh_runtime_metadata() {
+    local owner="$1"
+    local name="$2"
+
+    vx_docker_load_record "$owner" "$name" || check_result "$E_NOTEXIST" "docker container $name doesn't exist"
+    STATUS="$(vx_docker_runtime_state "$CTN_NAME")"
+    UPDATED="$(vx_docker_now)"
+    vx_docker_replace_record "$owner" "$NAME"
+
+    if [ -n "$DOMAIN" ] && vx_docker_owner_domain_exists "$owner" "$DOMAIN"; then
+        $BIN/v-sync-docker-container-route "$owner" "$NAME"
+        check_result $? "docker route sync failed"
+    fi
+}
+
+vx_docker_rehydrate_runtime() {
     local owner="$1"
     local name="$2"
     local mode='create'
