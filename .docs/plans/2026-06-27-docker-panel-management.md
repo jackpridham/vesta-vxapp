@@ -1334,7 +1334,7 @@ Expected:
 
 ---
 
-## Task 12: Add Regression Coverage And Docker-Specific Playwright UI Tests
+## Task 12 - COMPLETE: Add Regression Coverage And Docker-Specific Playwright UI Tests
 
 **Files:**
 - Create: `test/test_docker_user_actions.sh`
@@ -1348,7 +1348,7 @@ Expected:
 - Create: `tests/playwright/docker-modals.user.authenticated.spec.js`
 - Create: `tests/playwright/docker-dashboard.user.authenticated.spec.js`
 
-- [ ] **Step 1: Keep shell regression coverage for ownership, routing, and restore behavior**
+- [x] **Step 1: Keep shell regression coverage for ownership, routing, and restore behavior**
 
 Add shell tests that exercise:
 - user can create a container when `DOCKER_CONTAINERS > U_DOCKER_CONTAINERS`
@@ -1359,7 +1359,7 @@ Add shell tests that exercise:
 - `v-list-web-domain <user> <domain> json` and `v-list-docker-container <user> <name> json` agree on `PROXY_TARGET`
 - backup/restore returns `docker.conf`, alert data, bind-root data, and the route link
 
-- [ ] **Step 2: Add Playwright coverage for navigation and access control**
+- [x] **Step 2: Add Playwright coverage for navigation and access control**
 
 Create:
 
@@ -1380,7 +1380,7 @@ tests/playwright/docker-access-control.admin.authenticated.spec.js
 - admin sees owner-aware Docker rows
 - admin can filter or pivot by owner when multiple managed containers exist
 
-- [ ] **Step 3: Add Playwright coverage for empty state, create form, and lifecycle actions**
+- [x] **Step 3: Add Playwright coverage for empty state, create form, and lifecycle actions**
 
 Create:
 
@@ -1419,7 +1419,7 @@ v_net_alert_mbps
 v_alert_email
 ```
 
-- [ ] **Step 4: Add Playwright coverage for modals, charts, health, and alerts**
+- [x] **Step 4: Add Playwright coverage for modals, charts, health, and alerts**
 
 Create:
 
@@ -1449,7 +1449,7 @@ The dashboard suite must assert live cards for:
 - last health-check timestamp
 - alert count
 
-- [ ] **Step 5: Run both shell and Playwright validations**
+- [x] **Step 5: Run both shell and Playwright validations**
 
 Run:
 
@@ -1467,6 +1467,16 @@ If local Docker is unavailable, still run:
 - `npm run playwright:test -- --list`
 
 and document that full runtime Docker validation moved to the sydlocal closeout host.
+
+#### Closeout Report
+
+- Summary: Landed the Docker-specific shell regressions and Playwright coverage required by Task 12, then hardened the harness through repeated review loops so runtime-dependent assertions reject placeholder/empty states, same-host destructive fixtures require explicit opt-in and clean up reliably, admin/user modal flows validate owner-container routing, and secret-login/session bootstrap behavior stays reusable for authenticated projects.
+- Files changed: `test/test_actions.sh`, `test/test_docker_user_actions.sh`, `test/test_json_listing.sh`, `.env.playwright.example`, `playwright.config.js`, `tests/playwright/README.md`, `tests/playwright/helpers/panel-auth.js`, `tests/playwright/helpers/docker-runtime-fixtures.js`, `tests/playwright/docker-navigation.user.authenticated.spec.js`, `tests/playwright/docker-access-control.admin.authenticated.spec.js`, `tests/playwright/docker-empty-state.user.authenticated.spec.js`, `tests/playwright/docker-create-form.user.authenticated.spec.js`, `tests/playwright/docker-lifecycle.user.authenticated.spec.js`, `tests/playwright/docker-modals.user.authenticated.spec.js`, `tests/playwright/docker-dashboard.user.authenticated.spec.js`, `.docs/audits/2026-06-27-docker-panel-management-task12.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task12.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`
+- Tests run: `bash -n test/test_actions.sh test/test_docker_user_actions.sh test/test_json_listing.sh`; PASS. `node --check tests/playwright/helpers/panel-auth.js`; PASS. `node --check tests/playwright/docker-dashboard.user.authenticated.spec.js`; PASS. `node --check tests/playwright/docker-create-form.user.authenticated.spec.js`; PASS. `git diff --check`; PASS. `PLAYWRIGHT_ENV_FILE=.env.playwright.example npm run playwright:test -- --list`; PASS. `bash test/test_actions.sh`; SKIP (`/etc/profile.d/vesta.sh` is unavailable on this host). `bash test/test_json_listing.sh`; SKIP (`/etc/profile.d/vesta.sh` is unavailable on this host). `bash test/test_docker_user_actions.sh`; SKIP (`/etc/profile.d/vesta.sh` is unavailable on this host).
+- Commit SHA(s): `6bc8d7a9`, `822b339e`, `89d49abb`, `3b097240`, `5139fcc9`, `ef2a1fe7`, `e8f267cd`, `357850a5`, `a7797806`, `a3d5baa5`, `7ad3f383`, `3b873357`, `a1c444dc`, `fb89abab`, `ef43b2ed`, `a21c70d5`, `8e22fa92`, `6bbdc689`, `1951ce2b`, `2e0a6320`, `9e7837d8`
+- Spec review result: PASS after the final closeout follow-up. The last spec gap was documentation of the fallback validation path when the local Vesta runtime is unavailable; the Task 12 audit artifacts and README note resolved that requirement.
+- Code quality review result: APPROVED. The final re-review accepted the explicit local-runtime opt-in guard for destructive fixtures, the stronger dashboard data assertions, and the README/env clarifications around authenticated project gating and runtime-target safety.
+- Follow-ups or concerns: Full Docker-backed browser execution and deployed-runtime validation remain intentionally deferred to Task 13 on `sydlocal.jackpridham.com`, because this workspace host does not provide `/etc/profile.d/vesta.sh` or a same-host Vesta runtime.
 
 ---
 

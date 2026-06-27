@@ -17,11 +17,42 @@ async function waitForNonPlaceholder(page, selector, placeholderText, timeout = 
   await page.waitForFunction(
     ({ css, placeholder }) => {
       const node = document.querySelector(css);
-      return Boolean(node) && node.textContent.trim() !== placeholder;
+      if (!node) {
+        return false;
+      }
+
+      const text = node.textContent.trim();
+      return text !== '' && text !== placeholder;
     },
     { css: selector, placeholder: placeholderText },
     { timeout },
   );
+}
+
+async function waitForMetricValue(page, selector, placeholderText, valuePattern, timeout = 5_000) {
+  await waitForNonPlaceholder(page, selector, placeholderText, timeout);
+  await expect(page.locator(selector)).toHaveText(valuePattern);
+}
+
+async function waitForRenderedSeries(page, selector, timeout = 5_000) {
+  await expect(page.locator(selector)).toHaveCount(1);
+  await page.waitForFunction(
+    (css) => {
+      const node = document.querySelector(css);
+      if (!node) {
+        return false;
+      }
+
+      const pre = node.querySelector('pre');
+      return Boolean(pre) && pre.textContent.trim() !== '';
+    },
+    selector,
+    { timeout },
+  );
+
+  const text = await textContentTrim(page.locator(selector));
+  expect(text).not.toBe('');
+  expect(text).not.toMatch(/^No metrics available yet\.?$/i);
 }
 
 async function requireRealDockerList(page, preferredContainer = '') {
@@ -70,12 +101,12 @@ test('docker list dashboard renders cards, constrained health vocabulary, and al
     const badges = await badgeLocator.allTextContents();
     expect(badges.every((badge) => allowedHealthStates.has(badge.trim().toLowerCase()))).toBeTruthy();
 
-    await waitForNonPlaceholder(page, '#docker-card-cpu', 'No data');
-    await waitForNonPlaceholder(page, '#docker-card-mem', 'No data');
-    await waitForNonPlaceholder(page, '#docker-card-rx', 'No data');
-    await waitForNonPlaceholder(page, '#docker-card-tx', 'No data');
+    await waitForMetricValue(page, '#docker-card-cpu', 'No data', /\d/);
+    await waitForMetricValue(page, '#docker-card-mem', 'No data', /\d/);
+    await waitForMetricValue(page, '#docker-card-rx', 'No data', /\d/);
+    await waitForMetricValue(page, '#docker-card-tx', 'No data', /\d/);
     await expect(page.locator('#docker-card-health-status')).toHaveText(/healthy|starting|degraded|unhealthy|unknown/i);
-    await waitForNonPlaceholder(page, '#docker-card-health-updated', 'No data');
+    await waitForMetricValue(page, '#docker-card-health-updated', 'No data', /\d/);
     await expect(page.locator('#docker-card-alert-count')).toHaveText(/^\d+$/);
 
     const targetAlert = page.locator('#docker-alerts-panel article').filter({
@@ -100,11 +131,11 @@ test('docker edit page renders live metrics and chart containers after stats dat
   await page.goto(editHref);
 
   await expect(page.locator('#docker-live-metrics')).toBeVisible();
-  await waitForNonPlaceholder(page, '#docker-chart-cpu', 'No metrics available yet.');
-  await waitForNonPlaceholder(page, '#docker-chart-mem', 'No metrics available yet.');
-  await waitForNonPlaceholder(page, '#docker-chart-rx', 'No metrics available yet.');
-  await waitForNonPlaceholder(page, '#docker-chart-tx', 'No metrics available yet.');
-  await waitForNonPlaceholder(page, '#docker-detail-status', 'No data');
+  await waitForRenderedSeries(page, '#docker-chart-cpu');
+  await waitForRenderedSeries(page, '#docker-chart-mem');
+  await waitForRenderedSeries(page, '#docker-chart-rx');
+  await waitForRenderedSeries(page, '#docker-chart-tx');
+  await waitForMetricValue(page, '#docker-detail-status', 'No data', /^(running|restarting|created|exited|paused|dead|unknown)$/i);
   await expect(page.locator('#docker-detail-health-status')).toHaveText(/healthy|starting|degraded|unhealthy|unknown/i);
-  await waitForNonPlaceholder(page, '#docker-detail-health-updated', 'No data');
+  await waitForMetricValue(page, '#docker-detail-health-updated', 'No data', /\d/);
 });
