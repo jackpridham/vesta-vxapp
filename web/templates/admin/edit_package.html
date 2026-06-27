@@ -260,6 +260,17 @@
                             </tr>
                             <tr>
                                 <td class="vst-text input-label">
+                                    <?php print __('Docker');?> Containers
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    <input type="text" size="20" class="vst-input" name="v_docker_containers" value="<?=htmlentities(trim($v_docker_containers, "'"))?>">
+                                    <img id="unlim-docker-containers" class="unlim-trigger" src="/images/unlim.png" />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="vst-text input-label">
                                     <?php print __('Backups');?>
                                 </td>
                             </tr>

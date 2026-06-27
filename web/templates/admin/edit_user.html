@@ -100,6 +100,16 @@
                             </tr>
                             <tr>
                                 <td class="vst-text input-label">
+                                    <?php print __('Docker');?>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    <input type="text" size="20" class="vst-input" value="<?=(isset($data[$v_username]['U_DOCKER_CONTAINERS']) && $data[$v_username]['U_DOCKER_CONTAINERS'] !== '') ? $data[$v_username]['U_DOCKER_CONTAINERS'] : '0'?> / <?=(isset($data[$v_username]['DOCKER_CONTAINERS']) && $data[$v_username]['DOCKER_CONTAINERS'] !== '') ? $data[$v_username]['DOCKER_CONTAINERS'] : '0'?>" disabled>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="vst-text input-label">
                                     <?php print __('Language');?>
                                 </td>
                             </tr>

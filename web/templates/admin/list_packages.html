@@ -239,6 +239,12 @@ sort-star="<?if($_SESSION['favourites']['PACKAGE'][$key] == 1) echo '1'; else ec
                   </div>
                 </td>
                 <td>
+                  <div class="l-unit__stat-cols clearfix last">
+                    <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Docker')?>:</div>
+                    <div class="l-unit__stat-col l-unit__stat-col--right">
+                      <b><?=(isset($data[$key]['DOCKER_CONTAINERS']) && $data[$key]['DOCKER_CONTAINERS'] !== '') ? $data[$key]['DOCKER_CONTAINERS'] : '0'?></b>
+                    </div>
+                  </div>
                 </td>
               </tr>
 

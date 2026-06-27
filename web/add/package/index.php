@@ -40,6 +40,7 @@ if (!empty($_POST['ok'])) {
     if (!isset($_POST['v_mail_accounts'])) $errors[] = __('mail accounts');
     if (!isset($_POST['v_databases'])) $errors[] = __('databases');
     if (!isset($_POST['v_cron_jobs'])) $errors[] = __('cron jobs');
+    if (!isset($_POST['v_docker_containers'])) $errors[] = __('Docker');
     if (!isset($_POST['v_backups'])) $errors[] = __('backups');
     if (!isset($_POST['v_disk_quota'])) $errors[] = __('quota');
     if (!isset($_POST['v_bandwidth'])) $errors[] = __('bandwidth');
@@ -71,6 +72,7 @@ if (!empty($_POST['ok'])) {
     $v_mail_accounts = escapeshellarg($_POST['v_mail_accounts']);
     $v_databases = escapeshellarg($_POST['v_databases']);
     $v_cron_jobs = escapeshellarg($_POST['v_cron_jobs']);
+    $v_docker_containers = escapeshellarg($_POST['v_docker_containers']);
     $v_backups = escapeshellarg($_POST['v_backups']);
     $v_disk_quota = escapeshellarg($_POST['v_disk_quota']);
     $v_bandwidth = escapeshellarg($_POST['v_bandwidth']);
@@ -119,6 +121,7 @@ if (!empty($_POST['ok'])) {
         $pkg .= "MAIL_ACCOUNTS=".$v_mail_accounts."\n";
         $pkg .= "DATABASES=".$v_databases."\n";
         $pkg .= "CRON_JOBS=".$v_cron_jobs."\n";
+        $pkg .= "DOCKER_CONTAINERS=".$v_docker_containers."\n";
         $pkg .= "DISK_QUOTA=".$v_disk_quota."\n";
         $pkg .= "BANDWIDTH=".$v_bandwidth."\n";
         $pkg .= "NS=".$v_ns."\n";
@@ -195,6 +198,7 @@ if (empty($v_mail_domains)) $v_mail_domains = "'1'";
 if (empty($v_mail_accounts)) $v_mail_accounts = "'1'";
 if (empty($v_databases)) $v_databases = "'1'";
 if (empty($v_cron_jobs)) $v_cron_jobs = "'1'";
+if (empty($v_docker_containers) && $v_docker_containers !== "'0'") $v_docker_containers = "'0'";
 if (empty($v_backups)) $v_backups = "'1'";
 if (empty($v_disk_quota)) $v_disk_quota = "'1000'";
 if (empty($v_bandwidth)) $v_bandwidth = "'1000'";
