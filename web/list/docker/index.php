@@ -9,8 +9,13 @@ include($_SERVER['DOCUMENT_ROOT']."/inc/vx_docker.php");
 $docker_state = vx_docker_get_engine_state();
 $docker_available = vx_docker_is_engine_available($docker_state);
 $docker_daemon_available = vx_docker_is_daemon_available($docker_state);
-$docker_owner = vx_docker_is_admin_actor() ? vx_docker_resolve_owner_from_request('') : $user;
 $docker_owner_filter_options = vx_docker_is_admin_actor() ? vx_docker_list_users() : array();
+$docker_owner = vx_docker_is_admin_actor() ? vx_docker_resolve_owner_from_request('') : $user;
+if (vx_docker_is_admin_actor() && $docker_owner !== '' && !vx_docker_user_exists($docker_owner, $docker_owner_filter_options)) {
+    $_SESSION['error_msg'] = __('Docker owner scope does not exist.');
+    header('Location: /list/docker/');
+    exit;
+}
 $docker_user_panel = ($docker_owner !== '') ? vx_docker_get_user_panel($docker_owner) : array();
 $docker_quota = ($docker_owner !== '') ? vx_docker_get_quota_state($docker_owner, $docker_user_panel) : array(
     'limit' => null,

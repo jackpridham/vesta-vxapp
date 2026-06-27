@@ -11,7 +11,14 @@ if (empty($_GET['container'])) {
     exit;
 }
 
+$docker_owner_users = vx_docker_is_admin_actor() ? vx_docker_list_users() : array();
 $docker_form_owner = vx_docker_resolve_owner_from_request($user);
+$docker_owner_requested = vx_docker_is_admin_actor() && isset($_REQUEST['user']) && !is_array($_REQUEST['user']);
+if ($docker_owner_requested && !vx_docker_user_exists($docker_form_owner, $docker_owner_users)) {
+    $_SESSION['error_msg'] = __('Docker owner scope does not exist.');
+    header('Location: /list/docker/');
+    exit;
+}
 $docker_container_name = trim((string) $_GET['container']);
 $docker_details_container = vx_docker_get_container($docker_form_owner, $docker_container_name);
 
@@ -22,7 +29,6 @@ if (empty($docker_details_container)) {
 }
 
 $docker_route_domains = vx_docker_route_domain_options($docker_form_owner);
-$docker_owner_users = vx_docker_is_admin_actor() ? vx_docker_list_users() : array();
 $docker_form_values = vx_docker_form_defaults($docker_details_container);
 $docker_page_mode = 'edit';
 $docker_state = vx_docker_get_engine_state();

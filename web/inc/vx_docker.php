@@ -458,6 +458,20 @@ function vx_docker_resolve_owner_from_request($default_owner = '', $allow_admin_
     return $default_owner;
 }
 
+function vx_docker_user_exists($owner, $users = null)
+{
+    $owner = trim((string) $owner);
+    if ($owner === '') {
+        return false;
+    }
+
+    if (!is_array($users) || empty($users)) {
+        $users = vx_docker_list_users();
+    }
+
+    return isset($users[$owner]) && is_array($users[$owner]);
+}
+
 function vx_docker_assert_actor_can_access_owner($owner, $acting_user = null)
 {
     if ($acting_user === null || $acting_user === '') {
