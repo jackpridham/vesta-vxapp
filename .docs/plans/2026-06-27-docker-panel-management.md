@@ -525,7 +525,7 @@ php -l web/edit/package/index.php
 
 ---
 
-## Task 4: Wire Docker Into User Lifecycle, Suspend/Unsuspend, Backup, Restore, And Delete
+## Task 4: Wire Docker Into User Lifecycle, Suspend/Unsuspend, Backup, Restore, And Delete - COMPLETE
 
 **Files:**
 - Modify: `bin/v-suspend-user`
@@ -538,7 +538,7 @@ php -l web/edit/package/index.php
 - Modify: `bin/v-rebuild-user`
 - Modify: `func/rebuild.sh`
 
-- [ ] **Step 1: Stop and resume user-owned containers with account state**
+- [x] **Step 1: Stop and resume user-owned containers with account state**
 
 Extend suspend/unsuspend:
 
@@ -552,7 +552,7 @@ Rules:
 - unsuspend: start only containers where `AUTO_START='yes'`
 - do not allow a suspended user to create, start, or edit containers
 
-- [ ] **Step 2: Remove owned containers before deleting a user**
+- [x] **Step 2: Remove owned containers before deleting a user**
 
 Extend `bin/v-delete-user` so it:
 1. iterates `data/users/$user/docker.conf`
@@ -563,7 +563,7 @@ Extend `bin/v-delete-user` so it:
 
 This must happen before `$HOMEDIR/$user` and `$USER_DATA` are deleted.
 
-- [ ] **Step 3: Back up metadata plus managed bind data**
+- [x] **Step 3: Back up metadata plus managed bind data**
 
 Extend `bin/v-backup-user` and `bin/v-list-user-backups` to include a Docker section that covers:
 - `vesta/docker.conf`
@@ -572,7 +572,7 @@ Extend `bin/v-backup-user` and `bin/v-list-user-backups` to include a Docker sec
 
 Only managed bind roots under `$HOMEDIR/$user/docker` should be supported. Do not design the feature around arbitrary host bind paths, because those cannot be backed up or safely cleaned up.
 
-- [ ] **Step 4: Restore Docker metadata and then rehydrate runtime**
+- [x] **Step 4: Restore Docker metadata and then rehydrate runtime**
 
 Extend `bin/v-restore-user` and `bin/v-schedule-user-restore` so restore selectors include Docker metadata/data and the runtime rehydration pass:
 1. restore `vesta/docker.conf`
@@ -588,7 +588,12 @@ bin/v-restore-user jack jack.2026-06-27_14-00-00.tar yes yes yes yes yes yes no
 bin/v-rebuild-docker-containers jack
 ```
 
-- [ ] **Step 5: Reapply routes during generic user rebuild**
+Landed contract note:
+- legacy nine-argument `v-restore-user` calls keep argument 9 as `NOTIFY` and default Docker restore to `yes`
+- explicit Docker selection uses the extended form where argument 9 is `DOCKER` and argument 10 is `NOTIFY`
+- queued restore uses the extended form automatically
+
+- [x] **Step 5: Reapply routes during generic user rebuild**
 
 Append a Docker rebuild hook to `bin/v-rebuild-user` and any required helper initialization in `func/rebuild.sh`:
 
@@ -598,7 +603,7 @@ $BIN/v-rebuild-docker-containers "$user"
 
 That keeps container route state aligned whenever the user’s web config is rebuilt.
 
-- [ ] **Step 6: Validate syntax**
+- [x] **Step 6: Validate syntax**
 
 Run:
 
@@ -606,6 +611,16 @@ Run:
 bash -n bin/v-suspend-user bin/v-unsuspend-user bin/v-delete-user \
   bin/v-backup-user bin/v-restore-user bin/v-rebuild-user
 ```
+
+#### Closeout Report
+
+- Summary: Wired managed Docker containers into user suspend, unsuspend, delete, backup, restore, and rebuild flows; added Docker backup visibility; and split generic rebuild route refresh from restore-time runtime rehydration so the final implementation stayed within the Task 4 seam after review.
+- Files changed: `bin/v-suspend-user`, `bin/v-unsuspend-user`, `bin/v-delete-user`, `bin/v-backup-user`, `bin/v-list-user-backups`, `bin/v-list-user-backup`, `bin/v-restore-user`, `bin/v-schedule-user-restore`, `bin/v-rebuild-user`, `bin/v-rebuild-docker-containers`, `bin/v-start-docker-container`, `bin/v-restart-docker-container`, `func/rebuild.sh`, `func/vx/docker.sh`, `.docs/audits/2026-06-27-docker-panel-management-task4.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task4.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`
+- Tests run: `bash -n bin/v-suspend-user bin/v-unsuspend-user bin/v-delete-user bin/v-backup-user bin/v-restore-user bin/v-rebuild-user`; PASS. `bash -n bin/v-list-user-backup bin/v-list-user-backups bin/v-schedule-user-restore bin/v-start-docker-container bin/v-restart-docker-container bin/v-rebuild-docker-containers func/rebuild.sh func/vx/docker.sh`; PASS. `git diff --check`; PASS.
+- Commit SHA(s): `a8c78581`, `f327cefa`, `f35e8608`, `5c2a4d42`, `8e35fa65`
+- Spec review result: PASS after resolving the restore-selector contract ambiguity by preserving legacy nine-argument calls and keeping the explicit Docker selector on the extended restore form.
+- Code quality review result: PASS after tightening generic rebuild back to route alignment, narrowing route cleanup to exact proxy-target matches, adding daemon-availability preflight before destructive restore cleanup, and preserving health metadata on non-restore rebuilds.
+- Follow-ups or concerns: Live Docker integration flows were not exercised in this environment, so runtime recreation and route rehydration were validated by code review and shell checks rather than container execution.
 
 ---
 
