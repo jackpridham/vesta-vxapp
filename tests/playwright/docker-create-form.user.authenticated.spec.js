@@ -98,6 +98,8 @@ test('successful create redirects back to the docker list', async ({ page }) => 
     /\/list\/docker\/?$/.test(page.url()),
     `Create did not redirect back to /list/docker/. Form errors: ${errorText || '[none]'}`,
   ).toBeTruthy();
+  await expect(page.locator(`#docker-list-cards article[data-name="${name}"]`)).toHaveCount(1);
+  await expect(page.locator(`#docker-list-cards article[data-name="${name}"]`).first()).toBeVisible();
 
   await cleanupContainer(page, name);
 });

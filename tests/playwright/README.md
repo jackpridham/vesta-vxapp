@@ -23,6 +23,10 @@ Supported variables:
 - `PLAYWRIGHT_LOGIN_SECRET`: optional secret-login gate token from `web/inc/login_url.php`
 - `PLAYWRIGHT_ADMIN_USER` / `PLAYWRIGHT_ADMIN_PASSWORD`: enables admin-authenticated project
 - `PLAYWRIGHT_DOCKER_USER` / `PLAYWRIGHT_DOCKER_PASSWORD`: enables real non-admin-authenticated project
+- `PLAYWRIGHT_DOCKER_EMPTY_USER` / `PLAYWRIGHT_DOCKER_EMPTY_PASSWORD`: optional seeded user that should render `/list/docker/` in the empty state
+- `PLAYWRIGHT_DOCKER_QUOTA_USER` / `PLAYWRIGHT_DOCKER_QUOTA_PASSWORD`: optional seeded user that should render `/list/docker/` in the quota-reached state
+- `PLAYWRIGHT_DOCKER_OWNER_FILTER_USER`: optional preferred owner value for admin owner-filter coverage when multiple seeded owners exist
+- `PLAYWRIGHT_DOCKER_LIFECYCLE_CONTAINER`: optional seeded container name for real start/stop/restart coverage
 
 ## Authentication Model
 

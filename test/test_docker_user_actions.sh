@@ -180,12 +180,12 @@ restore_marker_path="/home/${user_one}/docker/${container_one}/data/restore-mark
 write_spec "$spec_one" "$container_one" "$domain_one" 'yes'
 write_spec "$spec_two" "$container_two" "$domain_two" 'yes'
 
-expect_ok "DOCKER: Engine availability check" "$V_BIN/v-check-docker-engine json | $V_TEST/json.sh >/dev/null"
-
 if ! "$V_BIN/v-check-docker-engine" >/dev/null 2>&1; then
     echo "SKIP: Docker engine is unavailable on this host."
     exit 0
 fi
+
+expect_ok "DOCKER: Engine availability check" "$V_BIN/v-check-docker-engine json | $V_TEST/json.sh >/dev/null"
 
 cp "$VESTA/data/packages/default.pkg" "$tmpdir/${package_name}.pkg"
 if grep -q "^DOCKER_CONTAINERS=" "$tmpdir/${package_name}.pkg"; then

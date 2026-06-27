@@ -1,42 +1,30 @@
 const { test, expect } = require('@playwright/test');
+const { loginWithPassword, getOptionalEnv } = require('./helpers/panel-auth');
 
-async function forcePrimaryState(page, state) {
-  await page.evaluate((nextState) => {
-    const stateMap = {
-      empty: '#docker-empty-state',
-      quota: '#docker-quota-reached-state',
-      list: '#docker-list-state',
-      unavailable: '#docker-unavailable-state',
-    };
-    const selectors = Object.values(stateMap).concat(['#docker-health-dashboard', '#docker-alerts-panel']);
+async function loginForSeededState(page, userEnv, passwordEnv) {
+  const username = getOptionalEnv(userEnv);
+  const password = getOptionalEnv(passwordEnv);
 
-    selectors.forEach((selector) => {
-      const node = document.querySelector(selector);
-      if (!node) {
-        return;
-      }
+  test.skip(!username || !password, `This state test requires ${userEnv} and ${passwordEnv}.`);
+  await loginWithPassword(page, { username, password });
+}
 
-      const shouldShow = selector === stateMap[nextState]
-        || (nextState === 'list' && (selector === '#docker-health-dashboard' || selector === '#docker-alerts-panel'));
-      node.style.display = shouldShow ? '' : 'none';
-    });
-  }, state);
+async function assertPrimaryState(page, selector) {
+  await page.goto('/list/docker/');
+  await expect(page.locator(selector)).toBeVisible();
+  await expect(page.locator('#docker-list-state')).toBeHidden();
 }
 
 test('empty owned-container state renders docker-empty-state', async ({ page }) => {
-  await page.goto('/list/docker/');
-
-  await forcePrimaryState(page, 'empty');
+  await loginForSeededState(page, 'PLAYWRIGHT_DOCKER_EMPTY_USER', 'PLAYWRIGHT_DOCKER_EMPTY_PASSWORD');
+  await assertPrimaryState(page, '#docker-empty-state');
   await expect(page.locator('#docker-empty-state')).toBeVisible();
-  await expect(page.locator('#docker-list-state')).toBeHidden();
   await expect(page.locator('#docker-quota-reached-state')).toBeHidden();
 });
 
 test('quota exhausted users render docker-quota-reached-state', async ({ page }) => {
-  await page.goto('/list/docker/');
-
-  await forcePrimaryState(page, 'quota');
+  await loginForSeededState(page, 'PLAYWRIGHT_DOCKER_QUOTA_USER', 'PLAYWRIGHT_DOCKER_QUOTA_PASSWORD');
+  await assertPrimaryState(page, '#docker-quota-reached-state');
   await expect(page.locator('#docker-quota-reached-state')).toBeVisible();
   await expect(page.locator('#docker-empty-state')).toBeHidden();
-  await expect(page.locator('#docker-list-state')).toBeHidden();
 });
