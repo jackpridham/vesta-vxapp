@@ -1783,7 +1783,7 @@ git add .gitignore package.json package-lock.json \
 git commit -m "test: add playwright coverage for docker panel flows"
 ```
 
-- [ ] **Step 4: Commit contracts, docs, and plan artifacts**
+- [x] **Step 4: Commit contracts, docs, and plan artifacts**
 
 ```bash
 git add .docs/contracts .docs/user-guides .docs/validation \
@@ -1791,7 +1791,7 @@ git add .docs/contracts .docs/user-guides .docs/validation \
 git commit -m "docs: finalize docker ownership implementation plan"
 ```
 
-- [ ] **Step 5: Commit the sydlocal README update in the `vortex-scripts` repo**
+- [x] **Step 5: Commit the sydlocal README update in the `vortex-scripts` repo**
 
 After the validation run updates:
 
