@@ -391,6 +391,7 @@ vx_docker_validate_route_path() {
     if [[ ! "$ROUTE_PATH" =~ ^/ ]] || [[ "$ROUTE_PATH" =~ [[:space:]#\?] ]]; then
         check_result "$E_INVALID" "invalid docker route path :: $ROUTE_PATH"
     fi
+    check_result "$E_INVALID" "docker route path routing is not available yet"
 }
 
 vx_docker_validate_auto_start() {
@@ -436,12 +437,24 @@ vx_docker_validate_healthcheck() {
     esac
 
     is_int_format_valid "$HEALTHCHECK_INTERVAL" 'healthcheck interval'
+    if [ "$HEALTHCHECK_INTERVAL" -lt 15 ] || [ "$HEALTHCHECK_INTERVAL" -gt 3600 ]; then
+        check_result "$E_INVALID" "invalid docker healthcheck interval :: $HEALTHCHECK_INTERVAL"
+    fi
 }
 
 vx_docker_validate_alert_thresholds() {
     is_int_format_valid "$CPU_ALERT_PCT" 'cpu alert pct'
     is_int_format_valid "$MEM_ALERT_MB" 'mem alert mb'
     is_int_format_valid "$NET_ALERT_MBPS" 'net alert mbps'
+    if [ "$CPU_ALERT_PCT" -lt 1 ] || [ "$CPU_ALERT_PCT" -gt 1000 ]; then
+        check_result "$E_INVALID" "invalid docker cpu alert pct :: $CPU_ALERT_PCT"
+    fi
+    if [ "$MEM_ALERT_MB" -lt 1 ] || [ "$MEM_ALERT_MB" -gt 1048576 ]; then
+        check_result "$E_INVALID" "invalid docker mem alert mb :: $MEM_ALERT_MB"
+    fi
+    if [ "$NET_ALERT_MBPS" -lt 1 ] || [ "$NET_ALERT_MBPS" -gt 100000 ]; then
+        check_result "$E_INVALID" "invalid docker net alert mbps :: $NET_ALERT_MBPS"
+    fi
     case "$ALERT_EMAIL" in
         yes|no) ;;
         *) check_result "$E_INVALID" "invalid docker alert email :: $ALERT_EMAIL" ;;

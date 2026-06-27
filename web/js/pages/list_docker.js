@@ -33,6 +33,8 @@
         $('#docker-empty-state').toggle(config.primaryState === 'empty');
         $('#docker-quota-reached-state').toggle(config.primaryState === 'quota');
         $('#docker-list-state').toggle(config.primaryState === 'list');
+        $('#docker-health-dashboard').toggle(config.primaryState === 'list');
+        $('#docker-alerts-panel').toggle(config.primaryState === 'list');
     }
 
     function updateSummary(metrics, healthSummaries, alerts) {

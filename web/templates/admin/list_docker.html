@@ -268,7 +268,7 @@
       </div>
     </div>
 
-    <div id="docker-health-dashboard" class="l-center units" style="margin-top: 18px;">
+    <div id="docker-health-dashboard" class="l-center units" style="margin-top: 18px; <?php if ($docker_primary_state !== 'list') echo 'display:none;'; ?>">
       <div class="l-unit">
         <div class="l-unit__col l-unit__col--right">
           <div class="l-unit__name separate"><?=__('Docker health dashboard')?></div>
@@ -293,7 +293,7 @@
       </div>
     </div>
 
-    <div id="docker-alerts-panel" class="l-center units" style="margin-top: 18px;">
+    <div id="docker-alerts-panel" class="l-center units" style="margin-top: 18px; <?php if ($docker_primary_state !== 'list') echo 'display:none;'; ?>">
       <div class="l-unit">
         <div class="l-unit__col l-unit__col--right">
           <div class="l-unit__name separate"><?=__('Docker alerts')?></div>
