@@ -624,14 +624,14 @@ bash -n bin/v-suspend-user bin/v-unsuspend-user bin/v-delete-user \
 
 ---
 
-## Task 5: Add Shared PHP Helpers For Docker Forms And Ownership-Safe Shell Calls
+## Task 5: Add Shared PHP Helpers For Docker Forms And Ownership-Safe Shell Calls - COMPLETE
 
 **Files:**
 - Create: `web/inc/vx_docker.php`
 - Modify: `web/inc/vx_proxy_form.php`
 - Modify: `web/inc/i18n/en.php`
 
-- [ ] **Step 1: Centralize Docker form parsing**
+- [x] **Step 1: Centralize Docker form parsing**
 
 Create `web/inc/vx_docker.php` with helpers that mirror the existing proxy helper style:
 - normalize container name
@@ -651,11 +651,11 @@ vx_docker_alert_thresholds_from_post();
 vx_docker_write_spec_file($tmpdir, $spec);
 ```
 
-- [ ] **Step 2: Keep proxy helpers unchanged except for Docker-specific reuse**
+- [x] **Step 2: Keep proxy helpers unchanged except for Docker-specific reuse**
 
 Do not duplicate proxy parsing. Where the Docker forms need to show the eventual proxy target, call the existing proxy helpers and the Docker helper side-by-side.
 
-- [ ] **Step 3: Add explicit strings for owned-container UX**
+- [x] **Step 3: Add explicit strings for owned-container UX**
 
 Add UI strings for:
 - `Docker containers`
@@ -678,7 +678,7 @@ Add UI strings for:
 - `Only domains owned by this user can be routed to this container`
 - `Only managed bind roots under /home/<user>/docker are allowed`
 
-- [ ] **Step 4: Validate syntax**
+- [x] **Step 4: Validate syntax**
 
 Run:
 
@@ -686,6 +686,16 @@ Run:
 php -l web/inc/vx_docker.php
 php -l web/inc/vx_proxy_form.php
 ```
+
+#### Closeout Report
+
+- Summary: Added the shared Docker PHP helper seam for upcoming CRUD pages, kept proxy helpers reusable, extended the English language pack with the required owned-container strings, and tightened the Docker temp spec contract so PHP-written helper payloads round-trip safely into the Bash-side Docker loader.
+- Files changed: `web/inc/vx_docker.php`, `web/inc/vx_proxy_form.php`, `web/inc/i18n/en.php`, `func/vx/docker.sh`, `.docs/audits/2026-06-27-docker-panel-management-task5.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task5.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`
+- Tests run: `php -l web/inc/vx_docker.php`; BLOCKED (`php: command not found`). `php -l web/inc/vx_proxy_form.php`; BLOCKED (`php: command not found`). `php -l web/inc/i18n/en.php`; BLOCKED (`php: command not found`). `bash -n func/vx/docker.sh`; PASS.
+- Commit SHA(s): `950db930`, `a7490589`, `d2b24e69`, `ed6b9cff`
+- Spec review result: PASS after preserving route-domain metadata for later role-aware Docker forms while keeping the helper scope inside the Task 5 seam.
+- Code quality review result: PASS after aligning POST-field names with the later Docker form contract, removing the backwards proxy-to-Docker include, tightening helper normalization, and replacing the generic parser toggle with a Docker-specific temp spec parser.
+- Follow-ups or concerns: PHP syntax validation still needs to be rerun in an environment with a `php` binary; the helper runtime behavior itself is otherwise validated by review and Bash syntax checks.
 
 ---
 
