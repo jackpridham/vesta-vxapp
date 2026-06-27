@@ -16,6 +16,7 @@ V_BIN="$VESTA/bin"
 V_TEST="$VESTA/test"
 TMP_ROOT="${TMPDIR:-/tmp}"
 DOCKER_TEST_IMAGE="${DOCKER_TEST_IMAGE:-busybox:latest}"
+FAILED=0
 
 random() {
     local matrix='0123456789'
@@ -37,6 +38,7 @@ echo_result() {
     echo -n '['
 
     if [ "$2" -ne 0 ]; then
+        FAILED=1
         echo -n 'FAILED'
         echo -n ']'
         echo -ne '\r\n'
@@ -314,4 +316,4 @@ else
     echo_result "DOCKER: Restore re-establishes the routed PROXY_TARGET" 1 "$tmpfile" "restored PROXY_TARGET comparison"
 fi
 
-exit 0
+exit "$FAILED"

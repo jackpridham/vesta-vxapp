@@ -69,7 +69,7 @@ test('docker logs and inspect modals open and Escape closes the active modal', a
 
 test('docker remove modal supports cancel and confirm flows', async ({ page }) => {
   const removableContainer = getOptionalEnv('PLAYWRIGHT_DOCKER_REMOVE_CONTAINER');
-  test.skip(!removableContainer, 'Remove-confirm coverage requires PLAYWRIGHT_DOCKER_REMOVE_CONTAINER to target a disposable seeded container.');
+  test.skip(!removableContainer, 'Remove-confirm coverage requires PLAYWRIGHT_DOCKER_REMOVE_CONTAINER to target a disposable seeded container that is reseeded between runs.');
 
   await openDockerActions(page, removableContainer);
   await page.getByRole('button', { name: /Remove Docker Container/i }).click();

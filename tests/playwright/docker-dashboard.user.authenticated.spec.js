@@ -3,9 +3,7 @@ const { getOptionalEnv } = require('./helpers/panel-auth');
 
 const allowedHealthStates = new Set(['healthy', 'starting', 'degraded', 'unhealthy', 'unknown']);
 
-async function requireRealDockerList(page) {
-  const preferredContainer = getOptionalEnv('PLAYWRIGHT_DOCKER_DASHBOARD_CONTAINER');
-
+async function requireRealDockerList(page, preferredContainer = '') {
   await page.goto('/list/docker/');
 
   test.skip(await page.locator('#docker-unavailable-state').isVisible().catch(() => false), 'Docker engine is unavailable for dashboard coverage.');
@@ -33,7 +31,9 @@ async function requireRealDockerList(page) {
 }
 
 test('docker list dashboard renders cards, constrained health vocabulary, and alert acknowledgement updates state', async ({ page }) => {
-  await requireRealDockerList(page);
+  const alertContainer = getOptionalEnv('PLAYWRIGHT_DOCKER_ALERT_CONTAINER');
+  test.skip(!alertContainer, 'Dashboard alert-acknowledge coverage requires PLAYWRIGHT_DOCKER_ALERT_CONTAINER to target a disposable seeded container with an open alert.');
+  await requireRealDockerList(page, alertContainer);
 
   await expect(page.locator('#docker-health-dashboard')).toBeVisible();
   await expect(page.locator('#docker-alerts-panel')).toBeVisible();
@@ -57,7 +57,8 @@ test('docker list dashboard renders cards, constrained health vocabulary, and al
 });
 
 test('docker edit page renders live metrics and chart containers after stats data returns', async ({ page }) => {
-  const { editHref } = await requireRealDockerList(page);
+  const preferredContainer = getOptionalEnv('PLAYWRIGHT_DOCKER_DASHBOARD_CONTAINER');
+  const { editHref } = await requireRealDockerList(page, preferredContainer);
   await page.goto(editHref);
 
   await expect(page.locator('#docker-live-metrics')).toBeVisible();

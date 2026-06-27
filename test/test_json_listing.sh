@@ -16,6 +16,7 @@ V_BIN="$VESTA/bin"
 V_TEST="$VESTA/test"
 TMP_ROOT="${TMPDIR:-/tmp}"
 DOCKER_TEST_IMAGE="${DOCKER_TEST_IMAGE:-busybox:latest}"
+FAILED=0
 
 random() {
     local matrix='0123456789'
@@ -144,20 +145,20 @@ fi
 
 IFS=$'\n'
 for cmd in $commands; do
-    set -- $cmd
-    script=$1
-    shift
-    "$V_BIN/$script" "$@" | $V_TEST/json.sh >/dev/null 2>/dev/null
+    IFS=' ' read -r -a cmd_parts <<< "$cmd"
+    script="${cmd_parts[0]}"
+    "$V_BIN/$script" "${cmd_parts[@]:1}" | $V_TEST/json.sh >/dev/null 2>/dev/null
     retval="$?"
     echo -en  "$cmd"
     echo -en '\033[60G'
     echo -n '['
 
     if [ "$retval" -ne 0 ]; then
+        FAILED=1
         echo -n 'FAILED'
         echo -n ']'
         echo -ne '\r\n'
-        "$V_BIN/$script" "$@" | $V_TEST/json.sh
+        "$V_BIN/$script" "${cmd_parts[@]:1}" | $V_TEST/json.sh
     else
         echo -n '  OK  '
         echo -n ']'
@@ -166,4 +167,4 @@ for cmd in $commands; do
 
 done
 
-exit
+exit "$FAILED"

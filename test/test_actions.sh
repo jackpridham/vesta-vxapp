@@ -15,6 +15,7 @@ fi
 
 V_BIN="$VESTA/bin"
 V_TEST="$VESTA/test"
+FAILED=0
 
 # Define functions
 random() {
@@ -33,6 +34,7 @@ echo_result() {
     echo -n '['
 
     if [ "$2" -ne 0 ]; then
+        FAILED=1
         echo -n 'FAILED'
         echo -n ']'
         echo -ne '\r\n'
@@ -354,3 +356,5 @@ if [ -f "$V_TEST/test_docker_user_actions.sh" ]; then
     $cmd > $tmpfile 2>> $tmpfile
     echo_result "DOCKER: Running dedicated ownership/quota/backup regressions" "$?" "$tmpfile" "$cmd"
 fi
+
+exit "$FAILED"

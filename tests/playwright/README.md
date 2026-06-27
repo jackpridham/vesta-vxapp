@@ -29,8 +29,9 @@ Supported variables:
 - `PLAYWRIGHT_DOCKER_LIFECYCLE_CONTAINER`: optional seeded container name for real start/stop/restart coverage
 - `PLAYWRIGHT_DOCKER_TEST_IMAGE`: optional image override for the create-form regression; defaults to `busybox:latest`
 - `PLAYWRIGHT_DOCKER_MODAL_CONTAINER`: optional seeded visible container name for real logs/inspect modal coverage
-- `PLAYWRIGHT_DOCKER_REMOVE_CONTAINER`: optional disposable seeded container name for real remove-confirm coverage
-- `PLAYWRIGHT_DOCKER_DASHBOARD_CONTAINER`: optional seeded visible container name for real dashboard/edit coverage
+- `PLAYWRIGHT_DOCKER_REMOVE_CONTAINER`: optional disposable seeded container name for real remove-confirm coverage; reseed it between runs because the test confirms deletion
+- `PLAYWRIGHT_DOCKER_ALERT_CONTAINER`: optional disposable seeded visible container name with an open alert for real dashboard acknowledge coverage; reseed the alert between runs because the test acknowledges it
+- `PLAYWRIGHT_DOCKER_DASHBOARD_CONTAINER`: optional seeded visible container name for real dashboard/edit metrics coverage
 
 ## Authentication Model
 

@@ -1,6 +1,8 @@
 const { test, expect } = require('@playwright/test');
 
 async function visiblePrimaryState(page) {
+  // Quota has dedicated coverage in docker-empty-state; this smoke test tracks the
+  // narrower list-page contract called out in Task 12.
   const selectors = ['#docker-unavailable-state', '#docker-empty-state', '#docker-list-state'];
 
   for (const selector of selectors) {
