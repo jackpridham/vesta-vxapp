@@ -944,7 +944,7 @@ Any rebuild/recovery path must read `data/users/<user>/docker.conf`, then call `
 
 ---
 
-## Task 9: Add Metrics, Health, And Alert Pipelines
+## Task 9 - COMPLETE: Add Metrics, Health, And Alert Pipelines
 
 **Files:**
 - Modify: `func/vx/docker.sh`
@@ -957,7 +957,7 @@ Any rebuild/recovery path must read `data/users/<user>/docker.conf`, then call `
 - Create: `bin/v-list-docker-container-alerts`
 - Create: `bin/v-acknowledge-docker-container-alert`
 
-- [ ] **Step 1: Add per-container RRD sampling for live charts**
+- [x] **Step 1: Add per-container RRD sampling for live charts**
 
 Create `bin/v-update-sys-rrd-docker` and have `bin/v-update-sys-rrd` call it with the same period loop used for existing system graphs.
 
@@ -976,7 +976,7 @@ The command must:
 - update `$RRD/docker/<user>_<name>.rrd`
 - render chart PNGs beside the RRD using the repo’s existing graph pattern
 
-- [ ] **Step 2: Add stats list commands for the web UI**
+- [x] **Step 2: Add stats list commands for the web UI**
 
 Create:
 
@@ -993,7 +993,7 @@ Admin access should reuse the same owner-qualified command and only bypass the o
 bin/v-list-docker-container-stats jack app 5m json
 ```
 
-- [ ] **Step 3: Add health-check sampling and persisted state**
+- [x] **Step 3: Add health-check sampling and persisted state**
 
 Create:
 
@@ -1014,7 +1014,7 @@ HEALTH_STATUS='healthy'
 LAST_HEALTH_AT='2026-06-27 14:00:00'
 ```
 
-- [ ] **Step 4: Add alert generation and notification fan-out**
+- [x] **Step 4: Add alert generation and notification fan-out**
 
 Create:
 
@@ -1042,14 +1042,14 @@ bin/v-acknowledge-docker-container-alert jack 1
 
 which sets `ACK='yes'` on the persisted Docker alert record without deleting the underlying history.
 
-- [ ] **Step 5: Rebuild the monitoring files during user rebuild**
+- [x] **Step 5: Rebuild the monitoring files during user rebuild**
 
 Extend `func/rebuild.sh` to ensure:
 - `data/users/<user>/docker-alerts.conf` exists with correct permissions
 - `$RRD/docker/` exists
 - the Docker monitoring rebuild pass can regenerate charts after restore/rebuild
 
-- [ ] **Step 6: Validate syntax**
+- [x] **Step 6: Validate syntax**
 
 Run:
 
@@ -1059,6 +1059,16 @@ bash -n func/vx/docker.sh func/rebuild.sh bin/v-update-sys-rrd \
   bin/v-update-docker-container-health bin/v-list-docker-container-health \
   bin/v-list-docker-container-alerts bin/v-acknowledge-docker-container-alert
 ```
+
+#### Closeout Report
+
+- Summary: Added the per-container Docker monitoring pipeline under the existing RRD update flow, introduced owner-qualified stats/health/alerts commands plus persisted alert acknowledgement, and wired the web health/stats adapters onto the new command layer while tightening follow-up fixes around rebuild gating, alert write locking, and `HEALTHCHECK_INTERVAL` enforcement.
+- Files changed: `func/vx/docker.sh`, `func/rebuild.sh`, `bin/v-rebuild-user`, `bin/v-update-sys-rrd`, `bin/v-update-sys-rrd-docker`, `bin/v-list-docker-container-stats`, `bin/v-update-docker-container-health`, `bin/v-list-docker-container-health`, `bin/v-list-docker-container-alerts`, `bin/v-acknowledge-docker-container-alert`, `web/inc/vx_docker.php`, `web/ajax/docker/actions/health.php`, `.docs/audits/2026-06-27-docker-panel-management-task9.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task9.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`
+- Tests run: `bash -n func/vx/docker.sh func/rebuild.sh bin/v-rebuild-user bin/v-update-sys-rrd bin/v-update-sys-rrd-docker bin/v-list-docker-container-stats bin/v-update-docker-container-health bin/v-list-docker-container-health bin/v-list-docker-container-alerts bin/v-acknowledge-docker-container-alert`; PASS. `php -l web/inc/vx_docker.php`; BLOCKED (`php: command not found`). `php -l web/ajax/docker/actions/health.php`; BLOCKED (`php: command not found`). Environment checks: `docker`; present. `rrdtool`; missing. `curl`; present. `nc`; present.
+- Commit SHA(s): `222202a7`
+- Spec review result: PASS after confirming the Task 9 seams cover per-container RRD sampling, contract-accurate stats JSON, persisted health state, file-backed alerts, and rebuild-time regeneration hooks.
+- Code quality review result: APPROVED after follow-up fixes for rebuild gating based on active metadata, shared alert-write locking across shell and PHP, `HEALTHCHECK_INTERVAL` enforcement, and the PHP acknowledge-path lockfile regression.
+- Follow-ups or concerns: PHP syntax validation still needs to be rerun in an environment with `php`. End-to-end runtime execution of the new RRD graph pipeline still needs a host with `rrdtool` installed.
 
 ---
 
