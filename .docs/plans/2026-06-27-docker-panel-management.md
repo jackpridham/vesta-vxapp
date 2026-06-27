@@ -1054,14 +1054,176 @@ If any state is not explicitly documented and mapped to exact template markup, u
 
 ---
 
-## Task 11: Add Regression Coverage And Operator Validation Steps
+## Task 11: Install Playwright For Panel UI Validation
+
+**Files:**
+- Create: `package.json`
+- Create: `package-lock.json`
+- Modify: `.gitignore`
+- Create: `.env.playwright.example`
+- Create: `playwright.config.js`
+- Create: `tests/playwright/README.md`
+- Create: `tests/playwright/helpers/panel-auth.js`
+- Create: `tests/playwright/auth.setup.js`
+- Create: `tests/playwright/login-page.anonymous.spec.js`
+- Create: `tests/playwright/panel-shell.admin.authenticated.spec.js`
+- Create: `tests/playwright/panel-shell.user.authenticated.spec.js`
+
+- [ ] **Step 1: Add repo-local Playwright tooling instead of reusing unrelated nested packages**
+
+Create a root-level `package.json` dedicated to panel UI validation and install only the required dependencies:
+
+```bash
+npm init -y
+npm install -D @playwright/test dotenv
+npx playwright install chromium
+```
+
+`package.json` must expose at least these exact scripts:
+
+```json
+{
+  "scripts": {
+    "playwright:install": "npx playwright install chromium",
+    "playwright:test": "npx playwright test",
+    "playwright:test:headed": "npx playwright test --headed",
+    "playwright:test:ui": "npx playwright test --ui",
+    "playwright:report": "npx playwright show-report"
+  }
+}
+```
+
+Update `.gitignore` so browser artifacts and local auth state do not dirty the repo:
+
+```text
+node_modules/
+playwright-report/
+test-results/
+playwright/.auth/
+.env.playwright
+.env.playwright.local
+```
+
+- [ ] **Step 2: Define the project matrix and environment contract up front**
+
+Create `.env.playwright.example` with these exact variables:
+
+```bash
+PLAYWRIGHT_BASE_URL=https://192.168.100.100:8083
+PLAYWRIGHT_LOGIN_SECRET=
+PLAYWRIGHT_ADMIN_USER=admin
+PLAYWRIGHT_ADMIN_PASSWORD=
+PLAYWRIGHT_DOCKER_USER=dockere2e
+PLAYWRIGHT_DOCKER_PASSWORD=ChangeMe-123!
+```
+
+Create `playwright.config.js` with four project classes:
+- `setup`
+- `chromium-anonymous`
+- `chromium-admin-authenticated`
+- `chromium-docker-user-authenticated`
+
+Rules:
+- anonymous tests always run
+- authenticated projects are enabled only when the matching credentials are present
+- all projects must use `ignoreHTTPSErrors: true`
+- the default base URL must be `https://192.168.100.100:8083`
+- the admin project must load `playwright/.auth/admin.json`
+- the real non-admin project must load `playwright/.auth/docker-user.json`
+
+- [ ] **Step 3: Encode authentication so Docker UI tests are not blocked by panel security layers**
+
+Create `tests/playwright/helpers/panel-auth.js` and `tests/playwright/auth.setup.js`.
+
+The helper must:
+- load `PLAYWRIGHT_ENV_FILE` or `.env.playwright`
+- handle the optional secret-login gate by visiting `/?<secret>` before `/login/`
+- perform a real browser login and wait for the panel shell URL
+- expose role-based credential lookups for `admin` and `dockerUser`
+- persist auth state under `playwright/.auth/`
+
+Use concrete helper functions:
+
+```js
+getPanelCredentials('admin');
+getPanelCredentials('dockerUser');
+hasPanelCredentials('admin');
+hasPanelCredentials('dockerUser');
+loginWithPassword(page, credentials);
+openPanelLogin(page);
+getAuthStatePath('admin');
+getAuthStatePath('dockerUser');
+```
+
+The setup spec must create storage state for every configured role in one run so future Docker specs can target either:
+
+```js
+setup('create authenticated storage states for configured panel roles', async ({ browser, baseURL }) => {
+  // login admin when configured
+  // login dockerUser when configured
+  // write playwright/.auth/admin.json and playwright/.auth/docker-user.json
+});
+```
+
+- [ ] **Step 4: Add smoke tests that prove the harness can reach the panel before Docker work begins**
+
+Create these smoke specs:
+
+```text
+tests/playwright/login-page.anonymous.spec.js
+tests/playwright/panel-shell.admin.authenticated.spec.js
+tests/playwright/panel-shell.user.authenticated.spec.js
+```
+
+Minimum assertions:
+- anonymous login page renders `form[action="/login/"]`
+- anonymous login page renders `input[name="token"]`
+- admin shell renders `.l-header`, `#token`, and `.l-profile__logout`
+- real non-admin shell renders `.l-header`, `#token`, and `.l-profile__logout`
+
+The user shell smoke must use a normal user page such as `/list/web/`, not an admin-only path.
+
+- [ ] **Step 5: Document how to run the harness and verify setup**
+
+Create `tests/playwright/README.md` with:
+- environment-file instructions
+- the optional secret-login explanation
+- the project matrix
+- the command to install Linux shared-library deps if required:
+
+```bash
+npx playwright install-deps chromium
+```
+
+Then verify the harness loads:
+
+```bash
+npm run playwright:test -- --list
+PLAYWRIGHT_ENV_FILE=.env.playwright.example npm run playwright:test -- --list
+```
+
+Expected:
+- the anonymous project is listed even with no local secrets
+- the docker-user project is listed when the example env file is supplied
+- no spec execution starts during the `--list` validation pass
+
+---
+
+## Task 12: Add Regression Coverage And Docker-Specific Playwright UI Tests
 
 **Files:**
 - Create: `test/test_docker_user_actions.sh`
 - Modify: `test/test_json_listing.sh`
 - Modify: `test/test_actions.sh`
+- Create: `tests/playwright/docker-navigation.user.authenticated.spec.js`
+- Create: `tests/playwright/docker-access-control.admin.authenticated.spec.js`
+- Create: `tests/playwright/docker-empty-state.user.authenticated.spec.js`
+- Create: `tests/playwright/docker-create-form.user.authenticated.spec.js`
+- Create: `tests/playwright/docker-lifecycle.user.authenticated.spec.js`
+- Create: `tests/playwright/docker-modals.user.authenticated.spec.js`
+- Create: `tests/playwright/docker-dashboard.user.authenticated.spec.js`
 
-- [ ] **Step 1: Cover ownership and quota behavior**
+- [ ] **Step 1: Keep shell regression coverage for ownership, routing, and restore behavior**
 
 Add shell tests that exercise:
 - user can create a container when `DOCKER_CONTAINERS > U_DOCKER_CONTAINERS`
@@ -1069,25 +1231,100 @@ Add shell tests that exercise:
 - user cannot start/stop/delete another user’s container
 - admin can inspect and manage another user’s container
 - user can acknowledge an open Docker alert without acknowledging another user’s alert
+- `v-list-web-domain <user> <domain> json` and `v-list-docker-container <user> <name> json` agree on `PROXY_TARGET`
+- backup/restore returns `docker.conf`, alert data, bind-root data, and the route link
 
-- [ ] **Step 2: Cover route wiring**
+- [ ] **Step 2: Add Playwright coverage for navigation and access control**
 
-Add a smoke test that:
-1. creates a user-owned web domain
-2. creates a user-owned container bound to that domain
-3. verifies `v-list-web-domain <user> <domain> json` contains the expected `PROXY_TARGET`
-4. verifies `v-list-docker-container <user> <name> json` returns the same derived target
-5. verifies `v-list-docker-container-stats <user> <name> 5m json` returns the chart contract keys
+Create:
 
-- [ ] **Step 3: Cover backup/restore metadata**
+```text
+tests/playwright/docker-navigation.user.authenticated.spec.js
+tests/playwright/docker-access-control.admin.authenticated.spec.js
+```
 
-Add a test pass that:
-- creates a managed container with bind data under `$HOMEDIR/$user/docker/<name>`
-- runs backup
-- restores into a clean user state
-- verifies `docker.conf`, the bind-root data, and the proxy target all return
+`docker-navigation.user.authenticated.spec.js` must assert:
+- the user side-panel tile links to `/list/docker/` when `DOCKER_CONTAINERS != 0`
+- `/list/docker/` renders one of:
+  - `#docker-unavailable-state`
+  - `#docker-empty-state`
+  - `#docker-list-state`
 
-- [ ] **Step 4: Run the repo validations**
+`docker-access-control.admin.authenticated.spec.js` must assert:
+- admin `Server` navigation still links to the Docker page
+- admin sees owner-aware Docker rows
+- admin can filter or pivot by owner when multiple managed containers exist
+
+- [ ] **Step 3: Add Playwright coverage for empty state, create form, and lifecycle actions**
+
+Create:
+
+```text
+tests/playwright/docker-empty-state.user.authenticated.spec.js
+tests/playwright/docker-create-form.user.authenticated.spec.js
+tests/playwright/docker-lifecycle.user.authenticated.spec.js
+```
+
+Required assertions:
+- empty owned-container state renders `#docker-empty-state`
+- quota-exhausted users render `#docker-quota-reached-state`
+- the add form renders all contracted field names from `.docs/contracts/docker-ui-states.md`
+- form validation errors render inside `#docker-form-errors`
+- successful create redirects back to `/list/docker/`
+- start/stop/restart flows update the row state and action labels without exposing admin-only engine controls
+
+Use the exact contracted POST field names during form submission:
+
+```text
+v_container_name
+v_container_image
+v_container_command
+v_container_env
+v_container_mounts
+v_container_port
+v_route_domain
+v_auto_start
+v_restart_policy
+v_healthcheck_type
+v_healthcheck_target
+v_healthcheck_interval
+v_cpu_alert_pct
+v_mem_alert_mb
+v_net_alert_mbps
+v_alert_email
+```
+
+- [ ] **Step 4: Add Playwright coverage for modals, charts, health, and alerts**
+
+Create:
+
+```text
+tests/playwright/docker-modals.user.authenticated.spec.js
+tests/playwright/docker-dashboard.user.authenticated.spec.js
+```
+
+`docker-modals.user.authenticated.spec.js` must cover:
+- logs modal opens for an owned container
+- inspect modal opens for an owned container
+- remove modal supports cancel and confirm flows
+- pressing `Escape` closes the active modal
+
+`docker-dashboard.user.authenticated.spec.js` must cover:
+- list page renders `#docker-health-dashboard`
+- list page renders `#docker-alerts-panel`
+- edit page renders `#docker-live-metrics`
+- chart containers render after the stats endpoint returns data
+- health badge vocabulary is constrained to `healthy|starting|degraded|unhealthy|unknown`
+- alert acknowledge action removes or updates the open alert state
+
+The dashboard suite must assert live cards for:
+- CPU
+- RAM
+- RX/TX network
+- last health-check timestamp
+- alert count
+
+- [ ] **Step 5: Run both shell and Playwright validations**
 
 Run:
 
@@ -1095,13 +1332,20 @@ Run:
 bash test/test_actions.sh
 bash test/test_json_listing.sh
 bash test/test_docker_user_actions.sh
+npm run playwright:test -- --project=chromium-anonymous
+PLAYWRIGHT_ENV_FILE=.env.playwright.local npm run playwright:test -- --project=chromium-docker-user-authenticated
+PLAYWRIGHT_ENV_FILE=.env.playwright.local PLAYWRIGHT_ADMIN_PASSWORD='...' npm run playwright:test -- --project=chromium-admin-authenticated
 ```
 
-If the local environment does not have Docker available, still run the syntax checks and document that the runtime Docker tests require a host with the Docker engine installed.
+If local Docker is unavailable, still run:
+- shell syntax checks
+- `npm run playwright:test -- --list`
+
+and document that full runtime Docker validation moved to the sydlocal closeout host.
 
 ---
 
-## Task 12: Validate And Close Out Against sydlocal.jackpridham.com
+## Task 13: Validate And Close Out Against sydlocal.jackpridham.com
 
 **Files:**
 - Create: `.docs/validation/sydlocal-docker-e2e-closeout.md`
@@ -1206,7 +1450,7 @@ Expected:
 - remote Bash and PHP syntax checks pass
 - nginx and Apache config tests pass
 
-- [ ] **Step 3: Prepare repeatable scratch data for non-admin E2E**
+- [ ] **Step 3: Prepare repeatable scratch data and Playwright auth inputs**
 
 Run:
 
@@ -1244,73 +1488,55 @@ ip="$($VESTA/bin/v-list-user-ips "$scratch_user" plain | awk 'NR==1 {print $1}')
 test -n "$ip"
 /usr/local/vesta/bin/v-add-web-domain "$scratch_user" "$scratch_domain" "$ip" no none no
 EOF
+
+login_secret="$(ssh "$TARGET_SSH" "sudo php -r 'if (file_exists(\"/usr/local/vesta/web/inc/login_url.php\")) { include \"/usr/local/vesta/web/inc/login_url.php\"; echo \$login_url; }' 2>/dev/null" || true)"
+
+cat > .env.playwright.local <<EOF_ENV
+PLAYWRIGHT_BASE_URL=https://192.168.100.100:8083
+PLAYWRIGHT_LOGIN_SECRET=${login_secret}
+PLAYWRIGHT_ADMIN_USER=admin
+PLAYWRIGHT_ADMIN_PASSWORD=
+PLAYWRIGHT_DOCKER_USER=dockere2e
+PLAYWRIGHT_DOCKER_PASSWORD=ChangeMe-123!
+EOF_ENV
 ```
 
 Expected:
 - scratch package exists with `DOCKER_CONTAINERS='2'`
 - scratch user exists
 - scratch domain exists and belongs to the scratch user
+- `.env.playwright.local` exists for the sydlocal target
+- `PLAYWRIGHT_LOGIN_SECRET` is populated only when the panel uses secret-login gating
 
-- [ ] **Step 4: Run authenticated panel E2E against the sydlocal installation**
+- [ ] **Step 4: Run Playwright UI validation against the sydlocal installation**
 
-Use the default panel port from the sydlocal README unless the live host has been intentionally reconfigured:
+Use the repo-local harness against the live panel URL:
 
 ```bash
-export PANEL_BASE="https://192.168.100.100:8083"
-tmpdir="$(mktemp -d)"
-
-curl -ksS -c "$tmpdir/cookies.txt" "$PANEL_BASE/login/" -o "$tmpdir/login.html"
-token="$(grep -o 'name=\"token\" value=\"[^\"]*' "$tmpdir/login.html" | sed 's/.*value=\"//')"
-test -n "$token"
-
-curl -ksS -L -b "$tmpdir/cookies.txt" -c "$tmpdir/cookies.txt" \
-  -d "token=$token" \
-  -d "user=dockere2e" \
-  -d "password=ChangeMe-123!" \
-  "$PANEL_BASE/login/" -o "$tmpdir/after-login.html"
-
-grep -q '/list/user/' "$tmpdir/after-login.html" || true
-
-curl -ksS -b "$tmpdir/cookies.txt" "$PANEL_BASE/add/docker/" -o "$tmpdir/add-docker.html"
-grep -q 'name="v_container_name"' "$tmpdir/add-docker.html"
-grep -q 'name="v_container_image"' "$tmpdir/add-docker.html"
-grep -q 'name="v_route_domain"' "$tmpdir/add-docker.html"
-grep -q 'name="v_healthcheck_type"' "$tmpdir/add-docker.html"
-grep -q 'name="v_cpu_alert_pct"' "$tmpdir/add-docker.html"
-
-add_token="$(grep -o 'name=\"token\" value=\"[^\"]*' "$tmpdir/add-docker.html" | sed 's/.*value=\"//')"
-curl -ksS -L -b "$tmpdir/cookies.txt" -c "$tmpdir/cookies.txt" \
-  -d "token=$add_token" \
-  -d "ok=1" \
-  -d "v_container_name=app" \
-  -d "v_container_image=nginx:alpine" \
-  -d "v_container_command=" \
-  -d "v_container_env=PORT=80" \
-  -d "v_container_mounts=data:/usr/share/nginx/html" \
-  -d "v_container_port=80" \
-  -d "v_route_domain=docker-e2e.local" \
-  -d "v_auto_start=yes" \
-  -d "v_restart_policy=unless-stopped" \
-  -d "v_healthcheck_type=http" \
-  -d "v_healthcheck_target=/" \
-  -d "v_healthcheck_interval=60" \
-  -d "v_cpu_alert_pct=85" \
-  -d "v_mem_alert_mb=256" \
-  -d "v_net_alert_mbps=25" \
-  -d "v_alert_email=yes" \
-  "$PANEL_BASE/add/docker/" -o "$tmpdir/add-result.html"
-
-curl -ksS -b "$tmpdir/cookies.txt" "$PANEL_BASE/list/docker/" -o "$tmpdir/list-docker.html"
-grep -q 'docker-health-dashboard' "$tmpdir/list-docker.html"
-grep -q 'docker-alerts-panel' "$tmpdir/list-docker.html"
-grep -q 'app' "$tmpdir/list-docker.html"
+PLAYWRIGHT_ENV_FILE=.env.playwright.local npm run playwright:test -- --project=chromium-anonymous
+PLAYWRIGHT_ENV_FILE=.env.playwright.local npm run playwright:test -- --project=chromium-docker-user-authenticated
 ```
 
-Expected:
-- non-admin login succeeds
-- add page renders the contracted field names
-- add form submission creates the container
-- list page renders the health and alerts containers for the created app
+Then run the admin-only suite when the real panel admin password is available:
+
+```bash
+PLAYWRIGHT_ENV_FILE=.env.playwright.local \
+PLAYWRIGHT_ADMIN_PASSWORD='<existing-admin-password>' \
+npm run playwright:test -- --project=chromium-admin-authenticated
+```
+
+The sydlocal Playwright pass must validate at least:
+- login page CSRF token surface
+- user shell authentication
+- `/list/docker/` empty state or list state
+- add-form field contract and validation state
+- successful user-owned container creation
+- start/stop/restart transitions
+- logs/inspect/remove modals
+- live dashboard containers for metrics, health, and alerts
+- admin Docker navigation and multi-owner view
+
+If admin credentials are intentionally withheld during an implementation pass, still execute the anonymous and real non-admin suites and record the admin suite as pending operator-secret confirmation rather than treating the entire plan as blocked.
 
 - [ ] **Step 5: Validate backend routing, metrics, health, and alerts on sydlocal**
 
@@ -1349,8 +1575,10 @@ Create `.docs/validation/sydlocal-docker-e2e-closeout.md` and record:
 - deployed commit
 - panel URL used
 - scratch package/user/domain/container names
+- Playwright env file used
 - exact commands run
-- pass/fail results for overlay validation, panel E2E, routing, metrics, health, alerts, and cleanup
+- pass/fail results for overlay validation, Playwright anonymous coverage, Playwright non-admin coverage, Playwright admin coverage, routing, metrics, health, alerts, and cleanup
+- location of the generated HTML Playwright report when any browser suite was executed
 - any deviations from the plan
 
 Then update `/home/jackpridham/Work/vortex-scripts/Servers/pve01.jackpridham.com/sydlocal.jackpridham.com/README.md` with:
@@ -1373,7 +1601,7 @@ EOF
 
 ---
 
-## Task 13: Commit In Merge-Friendly Slices
+## Task 14: Commit In Merge-Friendly Slices
 
 - [ ] **Step 1: Commit the backend ownership model**
 
@@ -1401,16 +1629,24 @@ git add web/inc/vx_docker.php web/inc/vx_proxy_form.php web/inc/i18n/en.php \
 git commit -m "feat: add docker container UI and monitoring dashboards"
 ```
 
-- [ ] **Step 3: Commit tests and plan artifacts**
+- [ ] **Step 3: Commit Playwright harness and UI validation coverage**
 
 ```bash
-git add test/test_docker_user_actions.sh test/test_json_listing.sh test/test_actions.sh \
-  .docs/contracts .docs/user-guides .docs/validation \
+git add .gitignore package.json package-lock.json \
+  .env.playwright.example playwright.config.js tests/playwright \
+  test/test_docker_user_actions.sh test/test_json_listing.sh test/test_actions.sh
+git commit -m "test: add playwright coverage for docker panel flows"
+```
+
+- [ ] **Step 4: Commit contracts, docs, and plan artifacts**
+
+```bash
+git add .docs/contracts .docs/user-guides .docs/validation \
   .docs/plans/2026-06-27-docker-panel-management.md
 git commit -m "docs: finalize docker ownership implementation plan"
 ```
 
-- [ ] **Step 4: Commit the sydlocal README update in the `vortex-scripts` repo**
+- [ ] **Step 5: Commit the sydlocal README update in the `vortex-scripts` repo**
 
 After the validation run updates:
 

@@ -1,0 +1,33 @@
+{
+  "name": "vesta-vxapp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Playwright harness and repo-local tooling for vesta-vxapp UI validation.",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "playwright:install": "npx playwright install chromium",
+    "playwright:test": "npx playwright test",
+    "playwright:test:headed": "npx playwright test --headed",
+    "playwright:test:ui": "npx playwright test --ui",
+    "playwright:report": "npx playwright show-report",
+    "test": "npm run playwright:test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jackpridham/vesta-vxapp.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/jackpridham/vesta-vxapp/issues"
+  },
+  "homepage": "https://github.com/jackpridham/vesta-vxapp#readme",
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "dotenv": "^17.4.2"
+  }
+}
