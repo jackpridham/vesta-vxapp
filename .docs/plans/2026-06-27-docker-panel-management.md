@@ -399,7 +399,7 @@ bash -n bin/v-add-docker-container bin/v-change-docker-container \
 
 ---
 
-## Task 3: Extend User, Package, Counter, And Stats Persistence
+## Task 3: Extend User, Package, Counter, And Stats Persistence - COMPLETE
 
 **Files:**
 - Modify: `bin/v-add-user`
@@ -430,7 +430,7 @@ bash -n bin/v-add-docker-container bin/v-change-docker-container \
 - Modify: `example-of-linux-root-folder/usr/local/vesta/data/users/admin/user.conf`
 - Modify: `example-of-linux-root-folder/usr/local/vesta/data/users/test/user.conf`
 
-- [ ] **Step 1: Add a package limit and a user counter**
+- [x] **Step 1: Add a package limit and a user counter**
 
 Add:
 - `DOCKER_CONTAINERS` to package `.pkg` files and package forms
@@ -451,7 +451,7 @@ Mirror the new keys into:
 
 so the forked repo stays internally consistent with the live-host layout described in `AGENTS.md`.
 
-- [ ] **Step 2: Make package changes quota-aware**
+- [x] **Step 2: Make package changes quota-aware**
 
 Update `bin/v-change-user-package`, `bin/v-list-user-package`, `bin/v-update-user-package`, and any limit helpers in `func/main.sh` to recognize the Docker key and reject package downgrades that would leave:
 
@@ -461,7 +461,7 @@ U_DOCKER_CONTAINERS > DOCKER_CONTAINERS
 
 unless the existing `FORCE=yes` path is used.
 
-- [ ] **Step 3: Add Docker counters to user listing and monthly stats**
+- [x] **Step 3: Add Docker counters to user listing and monthly stats**
 
 Update:
 - `bin/v-list-user`
@@ -487,7 +487,7 @@ s="$s U_DOCKER_CONTAINERS='$U_DOCKER_CONTAINERS'"
 
 Because public container traffic is required to flow through an owned web domain that uses `vx-proxy`, do not add a separate Docker bandwidth collector in this phase. Document that proxied container traffic continues to count through the existing web-domain bandwidth path, and that direct public host-port publishing is not part of the supported user feature.
 
-- [ ] **Step 4: Expose Docker limits in package and user admin pages**
+- [x] **Step 4: Expose Docker limits in package and user admin pages**
 
 Add a `Docker containers` field to:
 - package create/edit pages
@@ -500,7 +500,7 @@ The field name should stay consistent with the CLI key:
 $_POST['v_docker_containers']
 ```
 
-- [ ] **Step 5: Validate syntax**
+- [x] **Step 5: Validate syntax**
 
 Run:
 
@@ -512,6 +512,16 @@ bash -n bin/v-add-user bin/v-change-user-package \
 php -l web/add/package/index.php
 php -l web/edit/package/index.php
 ```
+
+#### Closeout Report
+
+- Summary: Added Docker container quota persistence to package and user records, enforced quota-aware package changes, surfaced Docker counters in CLI stats and listings, and exposed the new Docker quota field across the admin package and user quota pages.
+- Files changed: `bin/v-add-user`, `bin/v-change-user-package`, `bin/v-list-user-package`, `bin/v-update-user-package`, `bin/v-list-user`, `bin/v-list-users`, `bin/v-update-user-counters`, `bin/v-update-user-stats`, `func/main.sh`, `web/add/package/index.php`, `web/edit/package/index.php`, `web/templates/admin/add_package.html`, `web/templates/admin/edit_package.html`, `web/templates/admin/list_packages.html`, `web/templates/admin/list_user.html`, `web/templates/admin/edit_user.html`, `install/debian/9/packages/default.pkg`, `install/debian/9/packages/gainsboro.pkg`, `install/debian/9/packages/palegreen.pkg`, `install/debian/9/packages/slategrey.pkg`, `install/debian/10/packages/default.pkg`, `install/debian/11/packages/default.pkg`, `install/debian/12/packages/default.pkg`, `install/debian/13/packages/default.pkg`, `example-of-linux-root-folder/usr/local/vesta/data/packages/default.pkg`, `example-of-linux-root-folder/usr/local/vesta/data/users/admin/user.conf`, `example-of-linux-root-folder/usr/local/vesta/data/users/test/user.conf`, `.docs/audits/2026-06-27-docker-panel-management-task3.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task3.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`
+- Tests run: `bash -n bin/v-add-user bin/v-change-user-package bin/v-list-user bin/v-list-users bin/v-update-user-counters bin/v-update-user-stats bin/v-list-user-package bin/v-update-user-package func/main.sh`; PASS. `php -l web/add/package/index.php`; BLOCKED (`php: command not found`). `php -l web/edit/package/index.php`; BLOCKED (`php: command not found`).
+- Commit SHA(s): `dcbfd322`, `27111680`
+- Spec review result: PASS. The Docker quota key and usage counter now flow through package data, user records, counters, stats, installer payloads, fixtures, and the required admin surfaces.
+- Code quality review result: PASS. The implementation stayed merge-friendly by extending existing package/user persistence seams and preserved the planned bandwidth model where proxied container traffic continues to count through the existing web-domain path.
+- Follow-ups or concerns: Re-run `php -l web/add/package/index.php` and `php -l web/edit/package/index.php` in an environment that has PHP installed to close the remaining syntax-validation evidence gap.
 
 ---
 
