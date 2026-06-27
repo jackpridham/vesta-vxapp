@@ -24,6 +24,8 @@ json_list() {
             echo ","
         fi
         source $VESTA/data/users/$USER/user.conf
+        DOCKER_CONTAINERS=${DOCKER_CONTAINERS-0}
+        U_DOCKER_CONTAINERS=${U_DOCKER_CONTAINERS-0}
         echo -n '    "'$USER'": {
         "FNAME": "'$FNAME'",
         "LNAME": "'$LNAME'",
@@ -40,6 +42,7 @@ json_list() {
         "MAIL_ACCOUNTS": "'$MAIL_ACCOUNTS'",
         "DATABASES": "'$DATABASES'",
         "CRON_JOBS": "'$CRON_JOBS'",
+        "DOCKER_CONTAINERS": "'$DOCKER_CONTAINERS'",
         "DISK_QUOTA": "'$DISK_QUOTA'",
         "BANDWIDTH": "'$BANDWIDTH'",
         "NS": "'$NS'",
@@ -73,6 +76,7 @@ json_list() {
         "U_MAIL_DKIM": "'$U_MAIL_DKIM'",
         "U_MAIL_ACCOUNTS": "'$U_MAIL_ACCOUNTS'",
         "U_DATABASES": "'$U_DATABASES'",
+        "U_DOCKER_CONTAINERS": "'$U_DOCKER_CONTAINERS'",
         "U_CRON_JOBS": "'$U_CRON_JOBS'",
         "U_BACKUPS": "'$U_BACKUPS'",
         "LANGUAGE": "'$LANGUAGE'",
@@ -86,15 +90,17 @@ json_list() {
 
 # SHELL list function
 shell_list() {
-    echo "USER   PKG   WEB   DNS   MAIL   DB   DISK   BW   SPND   DATE"
-    echo "----   ---   ---   ---   ---    --   ----   --   ----   ----"
+    echo "USER   PKG   WEB   DNS   MAIL   DB   DOCKER   DISK   BW   SPND   DATE"
+    echo "----   ---   ---   ---   ----   --   ------   ----   --   ----   ----"
     while read USER; do
         if [ ! -f "$VESTA/data/users/$USER/user.conf" ]; then
             continue;
         fi
         source $VESTA/data/users/$USER/user.conf
+        DOCKER_CONTAINERS=${DOCKER_CONTAINERS-0}
+        U_DOCKER_CONTAINERS=${U_DOCKER_CONTAINERS-0}
         echo -n "$USER $PACKAGE $U_WEB_DOMAINS $U_DNS_DOMAINS $U_MAIL_DOMAINS"
-        echo " $U_DATABASES $U_DISK $U_BANDWIDTH $SUSPENDED $DATE"
+        echo " $U_DATABASES $U_DOCKER_CONTAINERS $U_DISK $U_BANDWIDTH $SUSPENDED $DATE"
     done < <(grep '@' /etc/passwd |cut -f1 -d:)
 }
 
@@ -105,11 +111,13 @@ plain_list() {
             continue;
         fi
         source $VESTA/data/users/$USER/user.conf
+        DOCKER_CONTAINERS=${DOCKER_CONTAINERS-0}
+        U_DOCKER_CONTAINERS=${U_DOCKER_CONTAINERS-0}
         echo -ne "$USER\t$FNAME\t$LNAME\t$PACKAGE\t$WEB_TEMPLATE\t"
         echo -ne "$BACKEND_TEMPLATE\t$PROXY_TEMPLATE\t$DNS_TEMPLATE\t"
         echo -ne "$WEB_DOMAINS\t$WEB_ALIASES\t$DNS_DOMAINS\t$DNS_RECORDS\t"
         echo -ne "$MAIL_DOMAINS\t$MAIL_ACCOUNTS\t$DATABASES\t$CRON_JOBS\t"
-        echo -ne "$DISK_QUOTA\t$BANDWIDTH\t$NS\t$SHELL\t$BACKUPS\t"
+        echo -ne "$DOCKER_CONTAINERS\t$DISK_QUOTA\t$BANDWIDTH\t$NS\t$SHELL\t$BACKUPS\t"
         echo -ne "$CONTACT\t$CRON_REPORTS\t$RKEY\t$SUSPENDED\t"
         echo -ne "$SUSPENDED_USERS\t$SUSPENDED_WEB\t$SUSPENDED_DNS\t"
         echo -ne "$SUSPENDED_MAIL\t$SUSPENDED_DB\t$SUSPENDED_CRON\t"
@@ -118,7 +126,7 @@ plain_list() {
         echo -ne "$U_WEB_DOMAINS\t$U_WEB_SSL\t$U_WEB_ALIASES\t"
         echo -ne "$U_DNS_DOMAINS\t$U_DNS_RECORDS\t$U_MAIL_DOMAINS\t"
         echo -ne "$U_MAIL_DKIM\t$U_MAIL_ACCOUNTS\t$U_DATABASES\t"
-        echo -e "$U_CRON_JOBS\t$U_BACKUPS\t$LANGUAGE\t$TIME\t$DATE\t"
+        echo -e "$U_DOCKER_CONTAINERS\t$U_CRON_JOBS\t$U_BACKUPS\t$LANGUAGE\t$TIME\t$DATE\t"
     done < <(grep '@' /etc/passwd |cut -f1 -d:)
 }
 
@@ -127,24 +135,26 @@ csv_list() {
     echo -n "USER,FNAME,LNAME,PACKAGE,WEB_TEMPLATE,BACKEND_TEMPLATE,"
     echo -n "PROXY_TEMPLATE,DNS_TEMPLATE,WEB_DOMAINS,WEB_ALIASES,"
     echo -n "DNS_DOMAINS,DNS_RECORDS,MAIL_DOMAINS,MAIL_ACCOUNTS,"
-    echo -n "DATABASES,CRON_JOBS,DISK_QUOTA,BANDWIDTH,NS,HOME,SHELL,"
+    echo -n "DATABASES,CRON_JOBS,DOCKER_CONTAINERS,DISK_QUOTA,BANDWIDTH,NS,HOME,SHELL,"
     echo -n "BACKUPS,CONTACT,CRON_REPORTS,RKEY,SUSPENDED,SUSPENDED_USERS,"
     echo -n "SUSPENDED_WEB,SUSPENDED_DNS,SUSPENDED_MAIL,SUSPENDED_DB,"
     echo -n "SUSPENDED_CRON,IP_AVAIL,IP_OWNED,U_USERS,U_DISK,U_DISK_DIRS,"
     echo -n "U_DISK_WEB,U_DISK_MAIL,U_DISK_DB,U_BANDWIDTH,U_WEB_DOMAINS,"
     echo -n "U_WEB_SSL,U_WEB_ALIASES,U_DNS_DOMAINS,U_DNS_RECORDS,"
-    echo -n "U_MAIL_DOMAINS,U_MAIL_DKIM,U_MAIL_ACCOUNTS,U_DATABASES"
-    echo "U_CRON_JOBS,U_BACKUPS,LANGUAGE,TIME,DATE"
+    echo -n "U_MAIL_DOMAINS,U_MAIL_DKIM,U_MAIL_ACCOUNTS,U_DATABASES,"
+    echo "U_DOCKER_CONTAINERS,U_CRON_JOBS,U_BACKUPS,LANGUAGE,TIME,DATE"
     while read USER; do
         if [ ! -f "$VESTA/data/users/$USER/user.conf" ]; then
             continue;
         fi
         source $VESTA/data/users/$USER/user.conf
+        DOCKER_CONTAINERS=${DOCKER_CONTAINERS-0}
+        U_DOCKER_CONTAINERS=${U_DOCKER_CONTAINERS-0}
         echo -n "$USER,\"$FNAME\",\"$LNAME\",$PACKAGE,$WEB_TEMPLATE,"
         echo -n "$BACKEND_TEMPLATE,$PROXY_TEMPLATE,$DNS_TEMPLATE,"
         echo -n "$WEB_DOMAINS,$WEB_ALIASES,$DNS_DOMAINS,$DNS_RECORDS,"
         echo -n "$MAIL_DOMAINS,$MAIL_ACCOUNTS,$DATABASES,$CRON_JOBS,"
-        echo -n "$DISK_QUOTA,$BANDWIDTH,\"$NS\",$HOME,$SHELL,$BACKUPS,"
+        echo -n "$DOCKER_CONTAINERS,$DISK_QUOTA,$BANDWIDTH,\"$NS\",$HOME,$SHELL,$BACKUPS,"
         echo -n "$CONTACT,$CRON_REPORTS,\"$RKEY\",$SUSPENDED,"
         echo -n "$SUSPENDED_USERS,$SUSPENDED_WEB,$SUSPENDED_DNS,"
         echo -n "$SUSPENDED_MAIL,$SUSPENDED_DB,$SUSPENDED_CRON,$IP_AVAIL,"
@@ -152,7 +162,7 @@ csv_list() {
         echo -n "$U_DISK_MAIL,$U_DISK_DB,$U_BANDWIDTH,$U_WEB_DOMAINS,"
         echo -n "$U_WEB_SSL,$U_WEB_ALIASES,$U_DNS_DOMAINS,$U_DNS_RECORDS,"
         echo -n "$U_MAIL_DOMAINS,$U_MAIL_DKIM,$U_MAIL_ACCOUNTS,$U_DATABASES,"
-        echo "$U_CRON_JOBS,$U_BACKUPS,$LANGUAGE,$TIME,$DATE"
+        echo "$U_DOCKER_CONTAINERS,$U_CRON_JOBS,$U_BACKUPS,$LANGUAGE,$TIME,$DATE"
     done < <(grep '@' /etc/passwd |cut -f1 -d:)
 }
 

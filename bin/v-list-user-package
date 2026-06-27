@@ -32,6 +32,7 @@ json_list() {
         "MAIL_ACCOUNTS": "'$MAIL_ACCOUNTS'",
         "DATABASES": "'$DATABASES'",
         "CRON_JOBS": "'$CRON_JOBS'",
+        "DOCKER_CONTAINERS": "'$DOCKER_CONTAINERS'",
         "DISK_QUOTA": "'$DISK_QUOTA'",
         "BANDWIDTH": "'$BANDWIDTH'",
         "NS": "'$NS'",
@@ -57,6 +58,7 @@ shell_list() {
     echo "MAIL ACCOUNTS:  $MAIL_ACCOUNTS"
     echo "DATABASES:      $DATABASES"
     echo "CRON JOBS:      $CRON_JOBS"
+    echo "DOCKER:         $DOCKER_CONTAINERS"
     echo "DISK QUOTA:     $DISK_QUOTA"
     echo "BANDWIDTH:      $BANDWIDTH"
     echo "NS:             $NS"
@@ -71,7 +73,7 @@ plain_list() {
     echo -ne "$PACKAGE\t$WEB_TEMPLATE\t$PROXY_TEMPLATE\t$DNS_TEMPLATE\t"
     echo -ne "$WEB_DOMAINS\t$WEB_ALIASES\t$DNS_DOMAINS\t$DNS_RECORDS\t"
     echo -ne "$MAIL_DOMAINS\t$MAIL_ACCOUNTS\t$DATABASES\t$CRON_JOBS\t"
-    echo -e "$DISK_QUOTA\t$BANDWIDTH\t$NS\t$SHELL\t$BACKUPS\t$TIME\t$DATE"
+    echo -e "$DOCKER_CONTAINERS\t$DISK_QUOTA\t$BANDWIDTH\t$NS\t$SHELL\t$BACKUPS\t$TIME\t$DATE"
 }
 
 # CSV list function
@@ -79,11 +81,11 @@ csv_list() {
     echo -n "PACKAGE,WEB_TEMPLATE,PROXY_TEMPLATE,DNS_TEMPLATE,"
     echo -n "WEB_DOMAINS,WEB_ALIASES,DNS_DOMAINS,DNS_RECORDS,"
     echo -n "MAIL_DOMAINS,MAIL_ACCOUNTS,DATABASES,CRON_JOBS,"
-    echo "DISK_QUOTA,BANDWIDTH,NS,SHELL,BACKUPS,TIME,DATE"
+    echo "DOCKER_CONTAINERS,DISK_QUOTA,BANDWIDTH,NS,SHELL,BACKUPS,TIME,DATE"
     echo -n "$PACKAGE,$WEB_TEMPLATE,$PROXY_TEMPLATE,$DNS_TEMPLATE,"
     echo -n "$WEB_DOMAINS,$WEB_ALIASES,$DNS_DOMAINS,$DNS_RECORDS,"
     echo -n "$MAIL_DOMAINS,$MAIL_ACCOUNTS,$DATABASES,$CRON_JOBS,"
-    echo "$DISK_QUOTA,$BANDWIDTH,\"$NS\",$SHELL,$BACKUPS,$TIME,$DATE"
+    echo "$DOCKER_CONTAINERS,$DISK_QUOTA,$BANDWIDTH,\"$NS\",$SHELL,$BACKUPS,$TIME,$DATE"
 }
 
 
@@ -103,6 +105,7 @@ is_package_valid
 
 # Parsing package
 source $VESTA/data/packages/$PACKAGE.pkg
+DOCKER_CONTAINERS=${DOCKER_CONTAINERS-0}
 
 # Listing data
 case $format in

@@ -33,6 +33,8 @@ is_package_avalable() {
     DNS_DOMAINS='0'
     DISK_QUOTA='0'
     BANDWIDTH='0'
+    DOCKER_CONTAINERS='0'
+    U_DOCKER_CONTAINERS=${U_DOCKER_CONTAINERS-0}
 
     pkg_data=$(cat $VESTA/data/packages/$package.pkg |grep -v TIME |\
         grep -v DATE)
@@ -74,6 +76,11 @@ is_package_avalable() {
             check_result $E_LIMIT "Package doesn't cover BANDWIDTH usage"
         fi
     fi
+    if [ "$DOCKER_CONTAINERS" != 'unlimited' ]; then
+        if [ "$DOCKER_CONTAINERS" -lt "$U_DOCKER_CONTAINERS" ]; then
+            check_result $E_LIMIT "Package doesn't cover DOCKER usage"
+        fi
+    fi
 
     is_web_template_valid $WEB_TEMPLATE
     is_dns_template_valid $DNS_TEMPLATE
@@ -83,6 +90,8 @@ is_package_avalable() {
 change_user_package() {
     parse_object_kv_list_non_eval $(cat $USER_DATA/user.conf)
     parse_object_kv_list_non_eval $(cat $VESTA/data/packages/$package.pkg |egrep -v "TIME|DATE")
+    DOCKER_CONTAINERS=${DOCKER_CONTAINERS-0}
+    U_DOCKER_CONTAINERS=${U_DOCKER_CONTAINERS-0}
     echo "FNAME='$FNAME'
 LNAME='$LNAME'
 PACKAGE='$package'
@@ -97,6 +106,7 @@ MAIL_DOMAINS='$MAIL_DOMAINS'
 MAIL_ACCOUNTS='$MAIL_ACCOUNTS'
 DATABASES='$DATABASES'
 CRON_JOBS='$CRON_JOBS'
+DOCKER_CONTAINERS='$DOCKER_CONTAINERS'
 DISK_QUOTA='$DISK_QUOTA'
 BANDWIDTH='$BANDWIDTH'
 NS='$NS'
@@ -132,6 +142,7 @@ U_MAIL_DKIM='$U_MAIL_DKIM'
 U_MAIL_ACCOUNTS='$U_MAIL_ACCOUNTS'
 U_DATABASES='$U_DATABASES'
 U_CRON_JOBS='$U_CRON_JOBS'
+U_DOCKER_CONTAINERS='$U_DOCKER_CONTAINERS'
 U_BACKUPS='$U_BACKUPS'
 LANGUAGE='$LANGUAGE'
 NOTIFICATIONS='$NOTIFICATIONS'

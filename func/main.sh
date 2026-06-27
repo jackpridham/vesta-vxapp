@@ -143,9 +143,19 @@ is_package_full() {
         MAIL_ACCOUNTS) used=$(wc -l $USER_DATA/mail/$domain.conf);;
         DATABASES) used=$(wc -l $USER_DATA/db.conf);;
         CRON_JOBS) used=$(wc -l $USER_DATA/cron.conf);;
+        DOCKER_CONTAINERS)
+            if [ -f "$USER_DATA/docker.conf" ]; then
+                used=$(wc -l < "$USER_DATA/docker.conf")
+            else
+                used=0
+            fi
+        ;;
     esac
     used=$(echo "$used"| cut -f 1 -d \ )
     limit=$(grep "^$1=" $USER_DATA/user.conf |cut -f 2 -d \')
+    if [ "$1" = 'DOCKER_CONTAINERS' ] && [ -z "$limit" ]; then
+        limit=0
+    fi
     if [ "$limit" != 'unlimited' ] && [[ "$used" -ge "$limit" ]]; then
         check_result $E_LIMIT "$1 limit is reached :: upgrade user package"
     fi
