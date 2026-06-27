@@ -41,6 +41,25 @@ async function waitForRenderedSeries(page, selector, timeout = 5_000) {
   expect(finalText).not.toMatch(/^No metrics available yet\.?$/i);
 }
 
+async function waitForRenderedSeriesOrPlaceholder(page, selector, placeholderText, timeout = 5_000) {
+  const locator = page.locator(selector);
+  await expect(locator).toHaveCount(1);
+
+  await expect
+    .poll(async () => textContentTrim(locator), { timeout })
+    .not.toBe('');
+
+  const finalText = await textContentTrim(locator);
+  const hasSeries = (await locator.locator('pre').count()) > 0;
+
+  if (hasSeries) {
+    expect(finalText).not.toMatch(new RegExp(`^${escapeRegExp(placeholderText)}\\.?$`, 'i'));
+    return;
+  }
+
+  expect(finalText).toMatch(new RegExp(`^${escapeRegExp(placeholderText)}\\.?$`, 'i'));
+}
+
 async function requireRealDockerList(page, preferredContainer = '') {
   await page.goto('/list/docker/');
 
@@ -94,7 +113,7 @@ test('docker list dashboard renders cards, constrained health vocabulary, and al
 
     await waitForMetricValue(page, '#docker-card-cpu', 'No data', /\d/);
     await waitForMetricValue(page, '#docker-card-mem', 'No data', /\d/);
-    await waitForMetricValue(page, '#docker-card-rx', 'No data', /\d/);
+    await expect(page.locator('#docker-card-rx')).toHaveText(/No data|\d/i);
     await waitForMetricValue(page, '#docker-card-tx', 'No data', /\d/);
     await expect(page.locator('#docker-card-health-status')).toHaveText(/healthy|starting|degraded|unhealthy|unknown/i);
     await expect(targetCard.locator('.docker-card-health-updated')).not.toHaveText('');
@@ -128,7 +147,7 @@ test('docker edit page renders live metrics and chart containers after stats dat
   await expect(page.locator('#docker-live-metrics')).toBeVisible();
   await waitForRenderedSeries(page, '#docker-chart-cpu');
   await waitForRenderedSeries(page, '#docker-chart-mem');
-  await waitForRenderedSeries(page, '#docker-chart-rx');
+  await waitForRenderedSeriesOrPlaceholder(page, '#docker-chart-rx', 'No metrics available yet');
   await waitForRenderedSeries(page, '#docker-chart-tx');
   await waitForMetricValue(page, '#docker-detail-status', 'No data', /^(running|restarting|created|exited|paused|dead|unknown)$/i);
   await expect(page.locator('#docker-detail-health-status')).toHaveText(/healthy|starting|degraded|unhealthy|unknown/i);

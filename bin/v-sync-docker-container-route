@@ -41,7 +41,7 @@ if ! vx_docker_owner_domain_exists "$user" "$DOMAIN"; then
 fi
 
 VX_DOCKER_SYNC_ROUTE='yes' $BIN/v-change-web-domain-proxy-options "$user" "$DOMAIN" \
-    'proxy' "http://127.0.0.1:${HOST_PORT}" 'application' 'yes' '60' '' no >/dev/null
+    'proxy' "http://127.0.0.1:${HOST_PORT}" 'application' 'yes' '60' '' yes >/dev/null
 check_result $? "docker proxy route sync failed"
 
 
