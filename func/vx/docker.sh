@@ -631,6 +631,60 @@ vx_docker_remove_runtime_if_present() {
     fi
 }
 
+vx_docker_owner_is_suspended() {
+    local owner="$1"
+    local user_conf="$VESTA/data/users/$owner/user.conf"
+
+    [ -f "$user_conf" ] || return 1
+    grep -q "^SUSPENDED='yes'" "$user_conf"
+}
+
+vx_docker_restore_runtime() {
+    local owner="$1"
+    local name="$2"
+    local mode='create'
+
+    vx_docker_load_record "$owner" "$name" || check_result "$E_NOTEXIST" "docker container $name doesn't exist"
+    vx_docker_ensure_bind_root "$owner" "$NAME"
+
+    if docker container inspect "$CTN_NAME" >/dev/null 2>&1; then
+        vx_docker_assert_runtime_labels_match "$owner" "$NAME" "$CTN_NAME"
+    else
+        case "$STATUS" in
+            running|restarting)
+                mode='run'
+                ;;
+            created|exited|paused|dead)
+                mode='create'
+                ;;
+            *)
+                if [ "$AUTO_START" = 'yes' ]; then
+                    mode='run'
+                fi
+                ;;
+        esac
+
+        if vx_docker_owner_is_suspended "$owner"; then
+            mode='create'
+        fi
+
+        vx_docker_create_runtime "$owner" "$mode"
+        check_result $? "docker container recreate failed"
+        vx_docker_assert_runtime_labels_match "$owner" "$NAME" "$CTN_NAME"
+    fi
+
+    STATUS="$(vx_docker_runtime_state "$CTN_NAME")"
+    HEALTH_STATUS='unknown'
+    LAST_HEALTH_AT=''
+    UPDATED="$(vx_docker_now)"
+    vx_docker_replace_record "$owner" "$NAME"
+
+    if [ -n "$DOMAIN" ] && vx_docker_owner_domain_exists "$owner" "$DOMAIN"; then
+        $BIN/v-sync-docker-container-route "$owner" "$NAME"
+        check_result $? "docker route sync failed"
+    fi
+}
+
 vx_docker_runtime_state() {
     local ctn_name="$1"
 

@@ -44,6 +44,11 @@ fi
 # Rebuild user
 rebuild_user_conf
 
+if [ -f "$USER_DATA/docker.conf" ] || [ -f "$USER_DATA/docker-alerts.conf" ] || [ -d "$HOMEDIR/$user/docker" ]; then
+    $BIN/v-rebuild-docker-containers "$user"
+    check_result $? "docker container rebuild failed"
+fi
+
 
 #----------------------------------------------------------#
 #                       Vesta                              #

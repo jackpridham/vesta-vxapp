@@ -15,6 +15,7 @@ restart=$2
 
 # Includes
 source $VESTA/func/main.sh
+source $VESTA/func/docker.sh
 source $VESTA/conf/vesta.conf
 
 
@@ -66,6 +67,32 @@ fi
 # Suspending cron jobs
 if [ ! -z "$CRON_SYSTEM" ] && [ "$CRON_SYSTEM" != 'no' ]; then
     $BIN/v-suspend-cron-jobs $user $restart
+fi
+
+# Suspending docker containers
+if is_docker_engine_available && [ -f "$USER_DATA/docker.conf" ]; then
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        vx_docker_parse_record "$line"
+        if docker container inspect "$CTN_NAME" >/dev/null 2>&1; then
+            vx_docker_assert_runtime_labels_match "$user" "$NAME" "$CTN_NAME"
+            runtime_status="$(vx_docker_runtime_state "$CTN_NAME")"
+            case "$runtime_status" in
+                running|restarting|paused)
+                    docker stop "$CTN_NAME" >/dev/null
+                    check_result $? "docker stop failed"
+                    STATUS='exited'
+                    ;;
+                *)
+                    STATUS="$runtime_status"
+                    ;;
+            esac
+        else
+            STATUS='unknown'
+        fi
+        UPDATED="$(vx_docker_now)"
+        vx_docker_replace_record "$user" "$NAME"
+    done < <(vx_docker_list_owner_records "$user")
 fi
 
 

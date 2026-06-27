@@ -15,6 +15,7 @@ restart=$2
 
 # Includes
 source $VESTA/func/main.sh
+source $VESTA/func/docker.sh
 source $VESTA/conf/vesta.conf
 
 
@@ -67,14 +68,30 @@ if [ ! -z "$CRON_SYSTEM" ] && [ "$CRON_SYSTEM" != 'no' ]; then
     $BIN/v-unsuspend-cron-jobs $user $restart
 fi
 
+# Changing suspend value
+update_user_value "$user" '$SUSPENDED' 'no'
+decrease_user_value 'admin' '$SUSPENDED_USERS'
+
+# Unsuspending docker containers
+if is_docker_engine_available && [ -f "$USER_DATA/docker.conf" ]; then
+    $BIN/v-rebuild-docker-containers "$user"
+    check_result $? "docker container rebuild failed"
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        vx_docker_parse_record "$line"
+        [ "$AUTO_START" = 'yes' ] || continue
+        runtime_status="$(vx_docker_runtime_state "$CTN_NAME")"
+        if [ "$runtime_status" != 'running' ]; then
+            $BIN/v-start-docker-container "$user" "$NAME" >/dev/null
+            check_result $? "docker start failed"
+        fi
+    done < <(vx_docker_list_owner_records "$user")
+fi
+
 
 #----------------------------------------------------------#
 #                       Vesta                              #
 #----------------------------------------------------------#
-
-# Changing suspend value
-update_user_value "$user" '$SUSPENDED' 'no'
-decrease_user_value 'admin' '$SUSPENDED_USERS'
 
 # Restarting system services
 $BIN/v-restart-web $restart

@@ -20,6 +20,7 @@ notify=${2-no}
 source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
 source $VESTA/func/db.sh
+source $VESTA/func/docker.sh
 source $VESTA/conf/vesta.conf
 
 if [ ! -z "$NOW" ]; then
@@ -122,6 +123,32 @@ grep "^$user:" /etc/passwd > $tmpdir/pam/passwd
 grep "^$user:" /etc/shadow > $tmpdir/pam/shadow
 grep "^$user:" /etc/group > $tmpdir/pam/group
 echo
+
+# Docker metadata and managed bind data
+docker_list='no'
+if [ -e "$USER_DATA/docker.conf" ] || [ -e "$USER_DATA/docker-alerts.conf" ] || [ -d "$HOMEDIR/$user/docker" ]; then
+    echo -e "\n-- DOCKER --" |tee -a $BACKUP/$user.log
+    mkdir -p $tmpdir/docker/vesta
+
+    if [ -e "$USER_DATA/docker.conf" ]; then
+        echo -e "$(date "+%F %T") docker.conf" |tee -a $BACKUP/$user.log
+        cp -r $USER_DATA/docker.conf $tmpdir/docker/vesta/
+        docker_list='yes'
+    fi
+
+    if [ -e "$USER_DATA/docker-alerts.conf" ]; then
+        echo -e "$(date "+%F %T") docker-alerts.conf" |tee -a $BACKUP/$user.log
+        cp -r $USER_DATA/docker-alerts.conf $tmpdir/docker/vesta/
+        docker_list='yes'
+    fi
+
+    if [ -d "$HOMEDIR/$user/docker" ]; then
+        echo -e "$(date "+%F %T") docker/" |tee -a $BACKUP/$user.log
+        mkdir -p $tmpdir/docker/home
+        cp -a $HOMEDIR/$user/docker $tmpdir/docker/home/
+        docker_list='yes'
+    fi
+fi
 
 # Parsing excludes
 if [ -e "$USER_DATA/backup-excludes.conf" ]; then
@@ -523,7 +550,7 @@ if [ "$USER" != '*' ]; then
     set -f
     i=0
 
-    for udir in $(ls -a |egrep -v "^conf$|^web$|^dns$|^tmp$|^mail$|^\.\.$|^\.$"); do
+    for udir in $(ls -a |egrep -v "^conf$|^web$|^dns$|^tmp$|^mail$|^docker$|^\.\.$|^\.$"); do
         exclusion=$(echo "$USER" |tr ',' '\n' |grep "^$udir$")
         if [ -z "$exclusion" ]; then
             ((i ++))
@@ -999,6 +1026,7 @@ backup_str="$backup_str MAIL='${mail_list// /,}'"
 backup_str="$backup_str DB='${db_list// /,}'"
 backup_str="$backup_str CRON='$cron_list'"
 backup_str="$backup_str UDIR='${udir_list// /,}'"
+backup_str="$backup_str DOCKER='$docker_list'"
 backup_str="$backup_str RUNTIME='$run_time' TIME='$time' DATE='$date'"
 echo "$backup_str" >> $USER_DATA/backup.conf
 

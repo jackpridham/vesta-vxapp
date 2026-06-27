@@ -18,7 +18,7 @@ format=${3-shell}
 # Includes
 source $VESTA/func/main.sh
 
-fields="\$BACKUP \$TYPE \$SIZE \$WEB \$DNS \$DB \$MAIL \$CRON \$UDIR"
+fields="\$BACKUP \$TYPE \$SIZE \$WEB \$DNS \$DB \$MAIL \$CRON \$UDIR \$DOCKER"
 fields="$fields \$RUNTIME \$TIME \$DATE"
 
 # JSON list function
@@ -33,6 +33,7 @@ json_list() {
         "DB": "'$DB'",
         "CRON": "'$CRON'",
         "UDIR": "'$UDIR'",
+        "DOCKER": "'$DOCKER'",
         "RUNTIME": "'$RUNTIME'",
         "TIME": "'$TIME'",
         "DATE": "'$DATE'"
@@ -52,6 +53,7 @@ shell_list() {
     echo "DB:             ${DB//,/ }"
     echo "CRON:           $CRON"
     echo "UDIR:           ${UDIR//,/ }"
+    echo "DOCKER:         $DOCKER"
     echo "TIME:           $TIME"
     echo "DATE:           $DATE"
 }
@@ -59,14 +61,14 @@ shell_list() {
 # PLAIN list function
 plain_list() {
     echo -ne "$BACKUP\t$TYPE\t$SIZE\t$WEB\t$DNS\t$MAIL\t$DB\t$CRON\t"
-    echo -e "$UDIR\t$RUNTIME\t$TIME\t$DATE"
+    echo -e "$UDIR\t$DOCKER\t$RUNTIME\t$TIME\t$DATE"
 }
 
 # CSV list function
 csv_list() {
-    echo "BACKUP,TYPE,SIZE,WEB,DNS,MAIL,DB,CRON,UDIR,RUNTIME,TIME,DATE"
+    echo "BACKUP,TYPE,SIZE,WEB,DNS,MAIL,DB,CRON,UDIR,DOCKER,RUNTIME,TIME,DATE"
     echo -n "$BACKUP,$TYPE,$SIZE,\"$WEB\",\"$DNS\",\"$MAIL\",\"$DB\","
-    echo "\"$CRON\",\"$UDIR\",$RUNTIME,$TIME,$DATE"
+    echo "\"$CRON\",\"$UDIR\",$DOCKER,$RUNTIME,$TIME,$DATE"
 }
 
 
@@ -86,6 +88,7 @@ is_object_valid 'backup' 'BACKUP' "$backup"
 
 # Parsing backup config
 eval $(grep "BACKUP='$backup'" $USER_DATA/backup.conf)
+DOCKER="${DOCKER-no}"
 
 # Listing data
 case $format in

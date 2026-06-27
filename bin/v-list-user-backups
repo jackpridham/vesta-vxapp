@@ -24,6 +24,7 @@ json_list() {
     echo "{"
     while read -r str; do
         eval $str
+        DOCKER="${DOCKER-no}"
         echo -n '    "'$BACKUP'": {
         "TYPE": "'$TYPE'",
         "SIZE": "'$SIZE'",
@@ -33,6 +34,7 @@ json_list() {
         "DB": "'$DB'",
         "CRON": "'$CRON'",
         "UDIR": "'$UDIR'",
+        "DOCKER": "'$DOCKER'",
         "RUNTIME": "'$RUNTIME'",
         "TIME": "'$TIME'",
         "DATE": "'$DATE'"
@@ -50,11 +52,12 @@ json_list() {
 # SHELL list function
 shell_list() {
     IFS=$'\n'
-    echo "BACKUP   TYPE   SIZE  TIME  DATE"
-    echo "------   ----   ---   ----  ----"
+    echo "BACKUP   TYPE   SIZE  DOCKER  TIME  DATE"
+    echo "------   ----   ---   ------  ----  ----"
     while read str; do
         eval $str
-        echo "$BACKUP $TYPE $SIZE $RUNTIME $DATE"
+        DOCKER="${DOCKER-no}"
+        echo "$BACKUP $TYPE $SIZE $DOCKER $RUNTIME $DATE"
     done < <(cat $USER_DATA/backup.conf)
 }
 
@@ -63,19 +66,21 @@ plain_list() {
     IFS=$'\n'
     while read str; do
         eval $str
+        DOCKER="${DOCKER-no}"
         echo -ne "$BACKUP\t$TYPE\t$SIZE\t$WEB\t$DNS\t$MAIL\t$CRON\t$UDIR\t"
-        echo -e "$RUNTIME\t$TIME\t$DATE"
+        echo -e "$DOCKER\t$RUNTIME\t$TIME\t$DATE"
     done < <(cat $USER_DATA/backup.conf)
 }
 
 # CSV list function
 csv_list() {
     IFS=$'\n'
-    echo "BACKUP,TYPE,SIZE,WEB,DNS,MAIL,CRON,UDIR,RUNTIME,TIME,DATE"
+    echo "BACKUP,TYPE,SIZE,WEB,DNS,MAIL,CRON,UDIR,DOCKER,RUNTIME,TIME,DATE"
     while read str; do
         eval $str
+        DOCKER="${DOCKER-no}"
         echo -n "$BACKUP,$TYPE,$SIZE,\"$WEB\",\"$DNS\",\"$MAIL\",\"$CRON\","
-        echo "\"$UDIR\",$RUNTIME,$TIME,$DATE"
+        echo "\"$UDIR\",$DOCKER,$RUNTIME,$TIME,$DATE"
     done < <(cat $USER_DATA/backup.conf)
 }
 

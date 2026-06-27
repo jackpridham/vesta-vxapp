@@ -1,6 +1,6 @@
 #!/bin/bash
 # info: restore user
-# options: USER BACKUP [WEB] [DNS] [MAIL] [DB] [CRON] [UDIR] [NOTIFY]
+# options: USER BACKUP [WEB] [DNS] [MAIL] [DB] [CRON] [UDIR] [DOCKER] [NOTIFY]
 #
 # The function for resotring user from backup.
 
@@ -21,7 +21,13 @@ mail=$5
 db=$6
 cron=$7
 udir=$8
-notify=${9-no}
+if [ "$#" -ge 10 ]; then
+    docker=$9
+    notify=${10-no}
+else
+    docker='yes'
+    notify=${9-no}
+fi
 
 # Define backup dir
 if [ -z "$BACKUP" ]; then
@@ -38,6 +44,7 @@ source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
 source $VESTA/func/ip.sh
 source $VESTA/func/db.sh
+source $VESTA/func/docker.sh
 source $VESTA/func/rebuild.sh
 source $VESTA/conf/vesta.conf
 
@@ -181,7 +188,7 @@ google_download() {
 #                    Verifications                         #
 #----------------------------------------------------------#
 
-args_usage='USER BACKUP [WEB] [DNS] [MAIL] [DB] [CRON] [UDIR] [NOTIFY]'
+args_usage='USER BACKUP [WEB] [DNS] [MAIL] [DB] [CRON] [UDIR] [DOCKER] [NOTIFY]'
 check_args '2' "$#" "$args_usage"
 is_format_valid 'user' 'backup'
 is_backup_available "$user" "$backup"
@@ -811,6 +818,64 @@ if [ "$udir" != 'no' ]; then
                     -exec chown -h $user:$user {} \;
             fi
         done
+    fi
+fi
+
+# Restoring docker metadata and managed bind data
+if [ "$docker" != 'no' ] && [ ! -z "$(tar -tf $BACKUP/$backup |grep '^./docker')" ]; then
+    echo -e  "\n-- DOCKER --" |tee -a $tmpdir/restore.log
+
+    tar xf $BACKUP/$backup -C $tmpdir ./docker
+    if [ "$?" -ne 0 ]; then
+        rm -rf $tmpdir
+        error="Can't unpack docker container"
+        echo "$error" |$SENDMAIL -s "$subj" $email $notify
+        sed -i "/ $user /d" $VESTA/data/queue/backup.pipe
+        check_result "$E_PARSING" "$error"
+    fi
+
+    if [ -f "$USER_DATA/docker.conf" ]; then
+        while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            vx_docker_parse_record "$line"
+            if [ -n "$DOMAIN" ] && vx_docker_owner_domain_exists "$user" "$DOMAIN"; then
+                vx_docker_clear_route "$user" "$NAME"
+            fi
+            if docker container inspect "$CTN_NAME" >/dev/null 2>&1; then
+                vx_docker_assert_runtime_labels_match "$user" "$NAME" "$CTN_NAME"
+                vx_docker_remove_runtime_if_present "$CTN_NAME"
+                check_result $? "docker delete failed"
+            fi
+        done < "$USER_DATA/docker.conf"
+    fi
+
+    rm -f "$USER_DATA/docker.conf" "$USER_DATA/docker-alerts.conf"
+    rm -rf "$HOMEDIR/$user/docker"
+
+    if [ -f "$tmpdir/docker/vesta/docker.conf" ]; then
+        cp -f "$tmpdir/docker/vesta/docker.conf" "$USER_DATA/"
+        chmod 660 "$USER_DATA/docker.conf"
+    fi
+
+    if [ -f "$tmpdir/docker/vesta/docker-alerts.conf" ]; then
+        cp -f "$tmpdir/docker/vesta/docker-alerts.conf" "$USER_DATA/"
+        chmod 660 "$USER_DATA/docker-alerts.conf"
+    fi
+
+    if [ -d "$tmpdir/docker/home/docker" ]; then
+        cp -a "$tmpdir/docker/home/docker" "$HOMEDIR/$user/"
+        chown -R "$user:$user" "$HOMEDIR/$user/docker"
+    fi
+
+    if [ -f "$USER_DATA/docker.conf" ]; then
+        docker_count=$(grep -c "^NAME='" "$USER_DATA/docker.conf" 2>/dev/null)
+        if [ "$docker_count" -eq 1 ]; then
+            echo -e "$(date "+%F %T") $docker_count docker container" |tee -a $tmpdir/restore.log
+        else
+            echo -e "$(date "+%F %T") $docker_count docker containers" |tee -a $tmpdir/restore.log
+        fi
+        $BIN/v-rebuild-docker-containers "$user"
+        check_result $? "docker container rebuild failed"
     fi
 fi
 

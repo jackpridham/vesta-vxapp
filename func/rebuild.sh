@@ -13,6 +13,12 @@ rebuild_user_conf() {
     chmod 660 $USER_DATA/history.log
     touch $USER_DATA/stats.log
     chmod 660 $USER_DATA/stats.log
+    if [ -f "$USER_DATA/docker.conf" ]; then
+        chmod 660 $USER_DATA/docker.conf
+    fi
+    if [ -f "$USER_DATA/docker-alerts.conf" ]; then
+        chmod 660 $USER_DATA/docker-alerts.conf
+    fi
 
     # Run template trigger
     if [ -x "$VESTA/data/packages/$PACKAGE.sh" ]; then
@@ -53,6 +59,11 @@ rebuild_user_conf() {
     chmod a+x $HOMEDIR/$user/conf
     chown --no-dereference $user:$user $HOMEDIR/$user
     chown root:root $HOMEDIR/$user/conf
+    if [ -d "$HOMEDIR/$user/docker" ] || [ -f "$USER_DATA/docker.conf" ] || [ -f "$USER_DATA/docker-alerts.conf" ]; then
+        mkdir -p $HOMEDIR/$user/docker
+        chmod 750 $HOMEDIR/$user/docker
+        chown --no-dereference $user:$user $HOMEDIR/$user/docker
+    fi
 
     # Update disk pipe
     sed -i "/ $user$/d" $VESTA/data/queue/disk.pipe

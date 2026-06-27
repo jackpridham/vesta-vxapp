@@ -26,13 +26,7 @@ rebuild_scope() {
     while IFS= read -r line; do
         [ -n "$line" ] || continue
         vx_docker_parse_record "$line"
-        STATUS="$(vx_docker_runtime_state "$CTN_NAME")"
-        UPDATED="$(vx_docker_now)"
-        vx_docker_replace_record "$owner" "$NAME"
-        if [ -n "$DOMAIN" ] && vx_docker_owner_domain_exists "$owner" "$DOMAIN"; then
-            $BIN/v-sync-docker-container-route "$owner" "$NAME"
-            check_result $? "docker route sync failed"
-        fi
+        vx_docker_restore_runtime "$owner" "$NAME"
     done < <(vx_docker_list_owner_records "$owner")
 }
 

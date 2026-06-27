@@ -18,6 +18,7 @@ restart=$2
 source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
 source $VESTA/func/db.sh
+source $VESTA/func/docker.sh
 source $VESTA/func/ip.sh
 source $VESTA/conf/vesta.conf
 
@@ -37,6 +38,28 @@ fi
 #----------------------------------------------------------#
 #                       Action                             #
 #----------------------------------------------------------#
+
+# Deleting docker containers and managed data
+if [ -f "$USER_DATA/docker.conf" ]; then
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        vx_docker_parse_record "$line"
+        if [ -n "$DOMAIN" ] && vx_docker_owner_domain_exists "$user" "$DOMAIN"; then
+            if vx_docker_domain_has_proxy_route "$user" "$DOMAIN"; then
+                $BIN/v-delete-web-domain-proxy "$user" "$DOMAIN" no >/dev/null
+                check_result $? "docker route removal failed"
+            fi
+        fi
+        if is_docker_engine_available && docker container inspect "$CTN_NAME" >/dev/null 2>&1; then
+            vx_docker_assert_runtime_labels_match "$user" "$NAME" "$CTN_NAME"
+            vx_docker_remove_runtime_if_present "$CTN_NAME"
+            check_result $? "docker delete failed"
+        fi
+        vx_docker_remove_bind_root "$user" "$NAME"
+    done < "$USER_DATA/docker.conf"
+fi
+rm -rf "$HOMEDIR/$user/docker"
+rm -f "$USER_DATA/docker.conf" "$USER_DATA/docker-alerts.conf"
 
 # Deleting web domains
 if [ ! -z "$WEB_SYSTEM" ] && [ "$WEB_SYSTEM" != 'no' ]; then
