@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
-const { getOptionalEnv } = require('./helpers/panel-auth');
+const { getOptionalEnv, getPanelCredentials } = require('./helpers/panel-auth');
+const { deleteContainer, hasLocalVestaRuntime, isLocalPanelTarget } = require('./helpers/docker-runtime-fixtures');
 
 const contractedFields = [
   'v_container_name',
@@ -103,7 +104,11 @@ test('successful create redirects back to the docker list', async ({ page }) => 
     await expect(page.locator(`#docker-list-cards article[data-name="${name}"]`)).toHaveCount(1);
     await expect(page.locator(`#docker-list-cards article[data-name="${name}"]`).first()).toBeVisible();
   } finally {
-    await page.goto('/list/docker/');
-    await cleanupContainer(page, name);
+    if (hasLocalVestaRuntime() && isLocalPanelTarget()) {
+      deleteContainer(getPanelCredentials('dockerUser').username, name);
+    } else {
+      await page.goto('/list/docker/');
+      await cleanupContainer(page, name);
+    }
   }
 });

@@ -14,19 +14,14 @@ async function textContentTrim(locator) {
 
 async function waitForNonPlaceholder(page, selector, placeholderText, timeout = 5_000) {
   await expect(page.locator(selector)).toHaveCount(1);
-  try {
-    await page.waitForFunction(
-      ({ css, placeholder }) => {
-        const node = document.querySelector(css);
-        return Boolean(node) && node.textContent.trim() !== placeholder;
-      },
-      { css: selector, placeholder: placeholderText },
-      { timeout },
-    );
-    return true;
-  } catch {
-    return false;
-  }
+  await page.waitForFunction(
+    ({ css, placeholder }) => {
+      const node = document.querySelector(css);
+      return Boolean(node) && node.textContent.trim() !== placeholder;
+    },
+    { css: selector, placeholder: placeholderText },
+    { timeout },
+  );
 }
 
 async function requireRealDockerList(page, preferredContainer = '') {
@@ -69,15 +64,18 @@ test('docker list dashboard renders cards, constrained health vocabulary, and al
     await expect(page.locator('#docker-health-dashboard')).toBeVisible();
     await expect(page.locator('#docker-alerts-panel')).toBeVisible();
 
-    const badges = await page.locator('.docker-card-health-badge').allTextContents();
+    const badgeLocator = page.locator('.docker-card-health-badge');
+    const badgeCount = await badgeLocator.count();
+    expect(badgeCount).toBeGreaterThan(0);
+    const badges = await badgeLocator.allTextContents();
     expect(badges.every((badge) => allowedHealthStates.has(badge.trim().toLowerCase()))).toBeTruthy();
 
-    test.skip(!(await waitForNonPlaceholder(page, '#docker-card-cpu', 'No data')), 'Dashboard summary coverage requires seeded CPU metric data.');
-    test.skip(!(await waitForNonPlaceholder(page, '#docker-card-mem', 'No data')), 'Dashboard summary coverage requires seeded memory metric data.');
-    test.skip(!(await waitForNonPlaceholder(page, '#docker-card-rx', 'No data')), 'Dashboard summary coverage requires seeded RX metric data.');
-    test.skip(!(await waitForNonPlaceholder(page, '#docker-card-tx', 'No data')), 'Dashboard summary coverage requires seeded TX metric data.');
+    await waitForNonPlaceholder(page, '#docker-card-cpu', 'No data');
+    await waitForNonPlaceholder(page, '#docker-card-mem', 'No data');
+    await waitForNonPlaceholder(page, '#docker-card-rx', 'No data');
+    await waitForNonPlaceholder(page, '#docker-card-tx', 'No data');
     await expect(page.locator('#docker-card-health-status')).toHaveText(/healthy|starting|degraded|unhealthy|unknown/i);
-    test.skip(!(await waitForNonPlaceholder(page, '#docker-card-health-updated', 'No data')), 'Dashboard summary coverage requires seeded health-check data.');
+    await waitForNonPlaceholder(page, '#docker-card-health-updated', 'No data');
     await expect(page.locator('#docker-card-alert-count')).toHaveText(/^\d+$/);
 
     const targetAlert = page.locator('#docker-alerts-panel article').filter({
@@ -102,11 +100,11 @@ test('docker edit page renders live metrics and chart containers after stats dat
   await page.goto(editHref);
 
   await expect(page.locator('#docker-live-metrics')).toBeVisible();
-  test.skip(!(await waitForNonPlaceholder(page, '#docker-chart-cpu', 'No metrics available yet.')), 'Dashboard detail coverage requires seeded CPU stats history.');
-  test.skip(!(await waitForNonPlaceholder(page, '#docker-chart-mem', 'No metrics available yet.')), 'Dashboard detail coverage requires seeded memory stats history.');
-  test.skip(!(await waitForNonPlaceholder(page, '#docker-chart-rx', 'No metrics available yet.')), 'Dashboard detail coverage requires seeded RX stats history.');
-  test.skip(!(await waitForNonPlaceholder(page, '#docker-chart-tx', 'No metrics available yet.')), 'Dashboard detail coverage requires seeded TX stats history.');
-  test.skip(!(await waitForNonPlaceholder(page, '#docker-detail-status', 'No data')), 'Dashboard detail coverage requires seeded status data.');
+  await waitForNonPlaceholder(page, '#docker-chart-cpu', 'No metrics available yet.');
+  await waitForNonPlaceholder(page, '#docker-chart-mem', 'No metrics available yet.');
+  await waitForNonPlaceholder(page, '#docker-chart-rx', 'No metrics available yet.');
+  await waitForNonPlaceholder(page, '#docker-chart-tx', 'No metrics available yet.');
+  await waitForNonPlaceholder(page, '#docker-detail-status', 'No data');
   await expect(page.locator('#docker-detail-health-status')).toHaveText(/healthy|starting|degraded|unhealthy|unknown/i);
-  test.skip(!(await waitForNonPlaceholder(page, '#docker-detail-health-updated', 'No data')), 'Dashboard detail coverage requires seeded health-check data.');
+  await waitForNonPlaceholder(page, '#docker-detail-health-updated', 'No data');
 });
