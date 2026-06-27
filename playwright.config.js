@@ -64,6 +64,7 @@ if (hasDockerUserCredentials) {
 module.exports = defineConfig({
   testDir: path.join(__dirname, 'tests', 'playwright'),
   timeout: 60_000,
+  workers: 1,
   expect: {
     timeout: 10_000,
   },

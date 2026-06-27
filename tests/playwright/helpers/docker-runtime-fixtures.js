@@ -92,16 +92,26 @@ function deleteContainer(owner, containerName) {
 
 function withSeededAlert(owner, containerName) {
   const alertsPath = path.join(getVestaRoot(), 'data', 'users', owner, 'docker-alerts.conf');
-  const original = fs.existsSync(alertsPath) ? fs.readFileSync(alertsPath, 'utf8') : null;
-  fs.writeFileSync(alertsPath, `AID='900001' NAME='${containerName}' OWNER='${owner}' LEVEL='warning' TYPE='health' STATUS='open' TITLE='Playwright alert' MESSAGE='Seeded alert for Playwright coverage' STARTED='2026-06-27 14:01:00' LAST_SEEN='2026-06-27 14:03:00' ACK='no'\n`);
+  const seededLine = `AID='9${Date.now()}' NAME='${containerName}' OWNER='${owner}' LEVEL='warning' TYPE='health' STATUS='open' TITLE='Playwright alert' MESSAGE='Seeded alert for Playwright coverage' STARTED='2026-06-27 14:01:00' LAST_SEEN='2026-06-27 14:03:00' ACK='no'`;
+  const existing = fs.existsSync(alertsPath) ? fs.readFileSync(alertsPath, 'utf8').trimEnd() : '';
+  const nextContent = existing ? `${existing}\n${seededLine}\n` : `${seededLine}\n`;
+  fs.writeFileSync(alertsPath, nextContent);
 
   return () => {
-    if (original === null) {
-      fs.rmSync(alertsPath, { force: true });
+    if (!fs.existsSync(alertsPath)) {
       return;
     }
 
-    fs.writeFileSync(alertsPath, original);
+    const filtered = fs.readFileSync(alertsPath, 'utf8')
+      .split('\n')
+      .filter((line) => line && line !== seededLine)
+      .join('\n');
+
+    if (filtered) {
+      fs.writeFileSync(alertsPath, `${filtered}\n`);
+    } else {
+      fs.rmSync(alertsPath, { force: true });
+    }
   };
 }
 
