@@ -448,12 +448,7 @@ function vx_docker_is_admin_actor()
 
 function vx_docker_resolve_owner_from_request($default_owner = '', $allow_admin_override = true)
 {
-    $actor = vx_docker_current_actor();
-    if ($default_owner === '') {
-        $default_owner = $actor;
-    }
-
-    if ($allow_admin_override && vx_docker_is_admin_actor() && !empty($_REQUEST['user']) && !is_array($_REQUEST['user'])) {
+    if ($allow_admin_override && vx_docker_is_admin_actor() && isset($_REQUEST['user']) && !is_array($_REQUEST['user'])) {
         return trim((string) $_REQUEST['user']);
     }
 

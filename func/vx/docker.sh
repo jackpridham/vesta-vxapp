@@ -796,7 +796,7 @@ vx_docker_runtime_state() {
 }
 
 is_docker_engine_available() {
-    command -v docker >/dev/null 2>&1
+    command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1
 }
 
 ensure_docker_engine_available() {
