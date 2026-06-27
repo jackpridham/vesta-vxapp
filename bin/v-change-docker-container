@@ -1,0 +1,99 @@
+#!/bin/bash
+# info: change docker container
+# options: USER NAME SPEC
+#
+# The function updates a managed docker container from a spec file.
+
+
+#----------------------------------------------------------#
+#                    Variable&Function                     #
+#----------------------------------------------------------#
+
+# Argument definition
+user=$1
+name=$2
+spec_file=$3
+
+# Includes
+source $VESTA/func/main.sh
+source $VESTA/func/docker.sh
+if [ -f "$VESTA/conf/vesta.conf" ]; then
+    source $VESTA/conf/vesta.conf
+fi
+
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+check_args '3' "$#" 'USER NAME SPEC'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+ensure_docker_engine_available
+vx_docker_load_record "$user" "$name" || check_result "$E_NOTEXIST" "docker container $name doesn't exist"
+OLD_CTN_NAME="$CTN_NAME"
+OLD_HOST_PORT="$HOST_PORT"
+OLD_DOMAIN="$DOMAIN"
+OLD_CREATED="$CREATED"
+vx_docker_load_spec "$spec_file"
+[ "$NAME" = "$name" ] || check_result "$E_INVALID" "docker spec NAME must match $name"
+vx_docker_package_allows_container "$user" 1
+if [ -n "$DOMAIN" ] && ! vx_docker_owner_domain_exists "$user" "$DOMAIN"; then
+    check_result "$E_FORBIDEN" "web domain $DOMAIN is not owned by $user"
+fi
+
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+OWNER="$user"
+CTN_NAME="$OLD_CTN_NAME"
+HOST_PORT="$OLD_HOST_PORT"
+CREATED="$OLD_CREATED"
+vx_docker_ensure_bind_root "$user" "$NAME"
+vx_docker_derive_proxy_fields
+vx_docker_derive_persisted_health_target
+
+if [ -n "$OLD_DOMAIN" ] && [ "$OLD_DOMAIN" != "$DOMAIN" ]; then
+    if vx_docker_domain_has_proxy_route "$user" "$OLD_DOMAIN"; then
+        $BIN/v-delete-web-domain-proxy "$user" "$OLD_DOMAIN" no >/dev/null
+        check_result $? "docker route removal failed"
+    fi
+fi
+
+if docker container inspect "$CTN_NAME" >/dev/null 2>&1; then
+    vx_docker_assert_runtime_labels_match "$user" "$name" "$CTN_NAME"
+fi
+vx_docker_remove_runtime_if_present "$CTN_NAME"
+if [ "$AUTO_START" = 'yes' ]; then
+    vx_docker_create_runtime "$user" 'run'
+    check_result $? "docker container update failed"
+    STATUS='running'
+else
+    vx_docker_create_runtime "$user" 'create'
+    check_result $? "docker container update failed"
+    STATUS='created'
+fi
+
+vx_docker_assert_runtime_labels_match "$user" "$NAME" "$CTN_NAME"
+HEALTH_STATUS='unknown'
+LAST_HEALTH_AT=''
+UPDATED="$(vx_docker_now)"
+vx_docker_replace_record "$user" "$name"
+
+if [ -n "$DOMAIN" ]; then
+    $BIN/v-sync-docker-container-route "$user" "$NAME"
+    check_result $? "docker route sync failed"
+fi
+
+
+#----------------------------------------------------------#
+#                       Vesta                              #
+#----------------------------------------------------------#
+
+log_history "changed docker container $NAME"
+log_event "$OK" "$ARGUMENTS"
+
+exit

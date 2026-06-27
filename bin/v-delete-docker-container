@@ -1,8 +1,8 @@
 #!/bin/bash
 # info: delete docker container
-# options: CONTAINER
+# options: USER NAME
 #
-# The function removes a docker container.
+# The function removes a managed docker container.
 
 
 #----------------------------------------------------------#
@@ -10,7 +10,8 @@
 #----------------------------------------------------------#
 
 # Argument definition
-container_name=$1
+user=$1
+name=$2
 
 # Includes
 source $VESTA/func/main.sh
@@ -24,21 +25,38 @@ fi
 #                    Verifications                         #
 #----------------------------------------------------------#
 
-check_args '1' "$#" 'CONTAINER'
+check_args '2' "$#" 'USER NAME'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
 ensure_docker_engine_available
-ensure_docker_container_name_provided "$container_name"
-ensure_docker_container_exists "$container_name"
+vx_docker_load_record "$user" "$name" || check_result "$E_NOTEXIST" "docker container $name doesn't exist"
+if docker container inspect "$CTN_NAME" >/dev/null 2>&1; then
+    vx_docker_assert_runtime_labels_match "$user" "$name" "$CTN_NAME"
+fi
 
 
 #----------------------------------------------------------#
 #                       Action                             #
 #----------------------------------------------------------#
 
-docker rm -f "$container_name"
+if [ -n "$DOMAIN" ]; then
+    if vx_docker_domain_has_proxy_route "$user" "$DOMAIN"; then
+        $BIN/v-delete-web-domain-proxy "$user" "$DOMAIN" no >/dev/null
+        check_result $? "docker route removal failed"
+    fi
+fi
+vx_docker_remove_runtime_if_present "$CTN_NAME"
+check_result $? "docker delete failed"
+vx_docker_remove_bind_root "$user" "$name"
+vx_docker_delete_record "$user" "$name"
+vx_docker_adjust_user_counter "$user" decrease
 
 
 #----------------------------------------------------------#
 #                       Vesta                              #
 #----------------------------------------------------------#
 
-exit $?
+log_history "deleted docker container $name"
+log_event "$OK" "$ARGUMENTS"
+
+exit

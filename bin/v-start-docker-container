@@ -1,8 +1,8 @@
 #!/bin/bash
 # info: start docker container
-# options: CONTAINER
+# options: USER NAME
 #
-# The function starts a docker container.
+# The function starts a managed docker container.
 
 
 #----------------------------------------------------------#
@@ -10,7 +10,8 @@
 #----------------------------------------------------------#
 
 # Argument definition
-container_name=$1
+user=$1
+name=$2
 
 # Includes
 source $VESTA/func/main.sh
@@ -24,21 +25,34 @@ fi
 #                    Verifications                         #
 #----------------------------------------------------------#
 
-check_args '1' "$#" 'CONTAINER'
+check_args '2' "$#" 'USER NAME'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
 ensure_docker_engine_available
-ensure_docker_container_name_provided "$container_name"
-ensure_docker_container_exists "$container_name"
+vx_docker_load_record "$user" "$name" || check_result "$E_NOTEXIST" "docker container $name doesn't exist"
+vx_docker_assert_runtime_labels_match "$user" "$name" "$CTN_NAME"
 
 
 #----------------------------------------------------------#
 #                       Action                             #
 #----------------------------------------------------------#
 
-docker start "$container_name"
+docker start "$CTN_NAME" >/dev/null
+check_result $? "docker start failed"
+STATUS='running'
+UPDATED="$(vx_docker_now)"
+vx_docker_replace_record "$user" "$name"
+if [ -n "$DOMAIN" ]; then
+    $BIN/v-sync-docker-container-route "$user" "$name"
+    check_result $? "docker route sync failed"
+fi
 
 
 #----------------------------------------------------------#
 #                       Vesta                              #
 #----------------------------------------------------------#
 
-exit $?
+log_history "started docker container $name"
+log_event "$OK" "$ARGUMENTS"
+
+exit

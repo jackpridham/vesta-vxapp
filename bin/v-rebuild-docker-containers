@@ -1,8 +1,8 @@
 #!/bin/bash
-# info: restart docker container
-# options: USER NAME
+# info: rebuild docker containers
+# options: USER
 #
-# The function restarts a managed docker container.
+# The function re-applies managed docker container metadata for one user or all users.
 
 
 #----------------------------------------------------------#
@@ -11,7 +11,6 @@
 
 # Argument definition
 user=$1
-name=$2
 
 # Includes
 source $VESTA/func/main.sh
@@ -20,31 +19,45 @@ if [ -f "$VESTA/conf/vesta.conf" ]; then
     source $VESTA/conf/vesta.conf
 fi
 
+rebuild_scope() {
+    local owner="$1"
+    local line
+
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        vx_docker_parse_record "$line"
+        STATUS="$(vx_docker_runtime_state "$CTN_NAME")"
+        UPDATED="$(vx_docker_now)"
+        vx_docker_replace_record "$owner" "$NAME"
+        if [ -n "$DOMAIN" ] && vx_docker_owner_domain_exists "$owner" "$DOMAIN"; then
+            $BIN/v-sync-docker-container-route "$owner" "$NAME"
+            check_result $? "docker route sync failed"
+        fi
+    done < <(vx_docker_list_owner_records "$owner")
+}
+
 
 #----------------------------------------------------------#
 #                    Verifications                         #
 #----------------------------------------------------------#
 
-check_args '2' "$#" 'USER NAME'
+check_args '1' "$#" 'USER'
 is_format_valid 'user'
 is_object_valid 'user' 'USER' "$user"
 ensure_docker_engine_available
-vx_docker_load_record "$user" "$name" || check_result "$E_NOTEXIST" "docker container $name doesn't exist"
-vx_docker_assert_runtime_labels_match "$user" "$name" "$CTN_NAME"
 
 
 #----------------------------------------------------------#
 #                       Action                             #
 #----------------------------------------------------------#
 
-docker restart "$CTN_NAME" >/dev/null
-check_result $? "docker restart failed"
-STATUS='running'
-UPDATED="$(vx_docker_now)"
-vx_docker_replace_record "$user" "$name"
-if [ -n "$DOMAIN" ]; then
-    $BIN/v-sync-docker-container-route "$user" "$name"
-    check_result $? "docker route sync failed"
+if [ "$user" = 'admin' ]; then
+    for owner_dir in "$VESTA"/data/users/*; do
+        [ -d "$owner_dir" ] || continue
+        rebuild_scope "$(basename "$owner_dir")"
+    done
+else
+    rebuild_scope "$user"
 fi
 
 
@@ -52,7 +65,7 @@ fi
 #                       Vesta                              #
 #----------------------------------------------------------#
 
-log_history "restarted docker container $name"
+log_history "rebuilt docker containers for $user"
 log_event "$OK" "$ARGUMENTS"
 
 exit

@@ -1,8 +1,8 @@
 #!/bin/bash
-# info: inspect docker container
+# info: sync docker container route
 # options: USER NAME
 #
-# The function inspects a managed docker container.
+# The function applies the linked web-domain proxy target for a managed docker container.
 
 
 #----------------------------------------------------------#
@@ -28,20 +28,28 @@ fi
 check_args '2' "$#" 'USER NAME'
 is_format_valid 'user'
 is_object_valid 'user' 'USER' "$user"
-ensure_docker_engine_available
 vx_docker_load_record "$user" "$name" || check_result "$E_NOTEXIST" "docker container $name doesn't exist"
-vx_docker_assert_runtime_labels_match "$user" "$name" "$CTN_NAME"
 
 
 #----------------------------------------------------------#
 #                       Action                             #
 #----------------------------------------------------------#
 
-docker inspect "$CTN_NAME"
+[ -n "$DOMAIN" ] || exit 0
+if ! vx_docker_owner_domain_exists "$user" "$DOMAIN"; then
+    check_result "$E_NOTEXIST" "web domain $DOMAIN doesn't exist"
+fi
+
+$BIN/v-change-web-domain-proxy-options "$user" "$DOMAIN" \
+    'proxy' "http://127.0.0.1:${HOST_PORT}" 'application' 'yes' '60' '' no >/dev/null
+check_result $? "docker proxy route sync failed"
 
 
 #----------------------------------------------------------#
 #                       Vesta                              #
 #----------------------------------------------------------#
 
-exit $?
+log_history "synced docker container route for $name"
+log_event "$OK" "$ARGUMENTS"
+
+exit

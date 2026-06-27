@@ -278,7 +278,7 @@ bash -n func/vx/docker.sh func/docker.sh \
 
 ---
 
-## Task 2: Add User-Owned Provisioning, Update, And Lifecycle Commands
+## Task 2: Add User-Owned Provisioning, Update, And Lifecycle Commands - COMPLETE
 
 **Files:**
 - Create: `bin/v-add-docker-container`
@@ -292,7 +292,7 @@ bash -n func/vx/docker.sh func/docker.sh \
 - Create: `bin/v-rebuild-docker-containers`
 - Create: `bin/v-sync-docker-container-route`
 
-- [ ] **Step 1: Use spec-file based create/change commands**
+- [x] **Step 1: Use spec-file based create/change commands**
 
 Follow the repo pattern already used by package forms: write a temporary spec file from PHP, then hand it to Bash.
 
@@ -335,7 +335,7 @@ Create/update flow must:
 7. persist the metadata record in `data/users/$user/docker.conf`
 8. if `DOMAIN` is set, call `bin/v-sync-docker-container-route`
 
-- [ ] **Step 2: Make every lifecycle command enforce ownership**
+- [x] **Step 2: Make every lifecycle command enforce ownership**
 
 Update the existing lifecycle/readback commands to require `USER NAME` rather than only container name:
 
@@ -354,7 +354,7 @@ Behavior requirements:
 - delete must also remove proxy routing for `DOMAIN`, free the allocated port, and remove the metadata record
 - delete must not delete arbitrary host paths; it may remove `$HOMEDIR/$user/docker/$NAME` only when the container is Vortex-managed
 
-- [ ] **Step 3: Add rebuild and route-sync commands**
+- [x] **Step 3: Add rebuild and route-sync commands**
 
 Create:
 
@@ -375,7 +375,7 @@ using the existing `func/vx/proxy.sh` path rather than inventing a new nginx ren
 
 `bin/v-rebuild-docker-containers` must iterate metadata records, confirm container runtime state, and reapply domain proxy targets when the linked web domain still exists.
 
-- [ ] **Step 4: Validate command syntax**
+- [x] **Step 4: Validate command syntax**
 
 Run:
 
@@ -386,6 +386,16 @@ bash -n bin/v-add-docker-container bin/v-change-docker-container \
   bin/v-list-docker-container-logs bin/v-list-docker-container-inspect \
   bin/v-rebuild-docker-containers bin/v-sync-docker-container-route
 ```
+
+#### Closeout Report
+
+- Summary: Added spec-file based Docker create/change commands, converted lifecycle and readback commands to `USER NAME` ownership-safe access, and added route-sync plus rebuild commands on top of the Task 1 metadata helper seam.
+- Files changed: `func/vx/docker.sh`, `bin/v-add-docker-container`, `bin/v-change-docker-container`, `bin/v-start-docker-container`, `bin/v-stop-docker-container`, `bin/v-restart-docker-container`, `bin/v-delete-docker-container`, `bin/v-list-docker-container-logs`, `bin/v-list-docker-container-inspect`, `bin/v-sync-docker-container-route`, `bin/v-rebuild-docker-containers`, `.docs/audits/2026-06-27-docker-panel-management-task2.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task2.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`
+- Tests run: `bash -n func/vx/docker.sh bin/v-add-docker-container bin/v-change-docker-container bin/v-start-docker-container bin/v-stop-docker-container bin/v-restart-docker-container bin/v-delete-docker-container bin/v-list-docker-container-logs bin/v-list-docker-container-inspect bin/v-rebuild-docker-containers bin/v-sync-docker-container-route`; PASS
+- Commit SHA(s): None yet
+- Spec review result: PASS after fixing two review findings: package-capacity enforcement on change and guaranteed proxy-route removal on delete/domain-switch paths.
+- Code quality review result: PASS. The implementation reused the Vortex Docker helper and existing proxy commands instead of introducing a second routing or persistence layer.
+- Follow-ups or concerns: None
 
 ---
 

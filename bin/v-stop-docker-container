@@ -1,8 +1,8 @@
 #!/bin/bash
 # info: stop docker container
-# options: CONTAINER
+# options: USER NAME
 #
-# The function stops a docker container.
+# The function stops a managed docker container.
 
 
 #----------------------------------------------------------#
@@ -10,7 +10,8 @@
 #----------------------------------------------------------#
 
 # Argument definition
-container_name=$1
+user=$1
+name=$2
 
 # Includes
 source $VESTA/func/main.sh
@@ -24,21 +25,30 @@ fi
 #                    Verifications                         #
 #----------------------------------------------------------#
 
-check_args '1' "$#" 'CONTAINER'
+check_args '2' "$#" 'USER NAME'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
 ensure_docker_engine_available
-ensure_docker_container_name_provided "$container_name"
-ensure_docker_container_exists "$container_name"
+vx_docker_load_record "$user" "$name" || check_result "$E_NOTEXIST" "docker container $name doesn't exist"
+vx_docker_assert_runtime_labels_match "$user" "$name" "$CTN_NAME"
 
 
 #----------------------------------------------------------#
 #                       Action                             #
 #----------------------------------------------------------#
 
-docker stop "$container_name"
+docker stop "$CTN_NAME" >/dev/null
+check_result $? "docker stop failed"
+STATUS='exited'
+UPDATED="$(vx_docker_now)"
+vx_docker_replace_record "$user" "$name"
 
 
 #----------------------------------------------------------#
 #                       Vesta                              #
 #----------------------------------------------------------#
 
-exit $?
+log_history "stopped docker container $name"
+log_event "$OK" "$ARGUMENTS"
+
+exit

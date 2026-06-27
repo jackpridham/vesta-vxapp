@@ -1,0 +1,83 @@
+#!/bin/bash
+# info: add docker container
+# options: USER SPEC
+#
+# The function provisions a managed docker container from a spec file.
+
+
+#----------------------------------------------------------#
+#                    Variable&Function                     #
+#----------------------------------------------------------#
+
+# Argument definition
+user=$1
+spec_file=$2
+
+# Includes
+source $VESTA/func/main.sh
+source $VESTA/func/docker.sh
+if [ -f "$VESTA/conf/vesta.conf" ]; then
+    source $VESTA/conf/vesta.conf
+fi
+
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+check_args '2' "$#" 'USER SPEC'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+ensure_docker_engine_available
+vx_docker_load_spec "$spec_file"
+[ -z "$(vx_docker_record_line_by_name "$user" "$NAME")" ] || check_result "$E_EXISTS" "docker container $NAME already exists"
+vx_docker_package_allows_container "$user"
+if [ -n "$DOMAIN" ] && ! vx_docker_owner_domain_exists "$user" "$DOMAIN"; then
+    check_result "$E_FORBIDEN" "web domain $DOMAIN is not owned by $user"
+fi
+
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+HOST_PORT="$(vx_docker_allocate_host_port)"
+CTN_NAME="$(vx_docker_managed_name "$user" "$NAME")"
+OWNER="$user"
+vx_docker_ensure_bind_root "$user" "$NAME"
+vx_docker_derive_proxy_fields
+vx_docker_derive_persisted_health_target
+
+if [ "$AUTO_START" = 'yes' ]; then
+    vx_docker_create_runtime "$user" 'run'
+    check_result $? "docker container create failed"
+    STATUS='running'
+else
+    vx_docker_create_runtime "$user" 'create'
+    check_result $? "docker container create failed"
+    STATUS='created'
+fi
+
+vx_docker_assert_runtime_labels_match "$user" "$NAME" "$CTN_NAME"
+HEALTH_STATUS='unknown'
+LAST_HEALTH_AT=''
+CREATED="$(vx_docker_now)"
+UPDATED="$CREATED"
+vx_docker_insert_record "$user"
+vx_docker_adjust_user_counter "$user" increase
+
+if [ -n "$DOMAIN" ]; then
+    $BIN/v-sync-docker-container-route "$user" "$NAME"
+    check_result $? "docker route sync failed"
+fi
+
+
+#----------------------------------------------------------#
+#                       Vesta                              #
+#----------------------------------------------------------#
+
+log_history "added docker container $NAME"
+log_event "$OK" "$ARGUMENTS"
+
+exit

@@ -1,8 +1,8 @@
 #!/bin/bash
 # info: list docker container logs
-# options: CONTAINER [TAIL]
+# options: USER NAME [TAIL]
 #
-# The function lists docker container logs.
+# The function lists logs for a managed docker container.
 
 
 #----------------------------------------------------------#
@@ -10,8 +10,9 @@
 #----------------------------------------------------------#
 
 # Argument definition
-container_name=$1
-tail_lines=${2-200}
+user=$1
+name=$2
+tail_lines=${3-200}
 
 # Includes
 source $VESTA/func/main.sh
@@ -25,17 +26,20 @@ fi
 #                    Verifications                         #
 #----------------------------------------------------------#
 
-check_args '1' "$#" 'CONTAINER [TAIL]'
+check_args '2' "$#" 'USER NAME [TAIL]'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_int_format_valid "$tail_lines" 'tail'
 ensure_docker_engine_available
-ensure_docker_container_name_provided "$container_name"
-ensure_docker_container_exists "$container_name"
+vx_docker_load_record "$user" "$name" || check_result "$E_NOTEXIST" "docker container $name doesn't exist"
+vx_docker_assert_runtime_labels_match "$user" "$name" "$CTN_NAME"
 
 
 #----------------------------------------------------------#
 #                       Action                             #
 #----------------------------------------------------------#
 
-docker logs --tail "$tail_lines" "$container_name" 2>&1
+docker logs --tail "$tail_lines" "$CTN_NAME" 2>&1
 
 
 #----------------------------------------------------------#
