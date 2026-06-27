@@ -894,7 +894,7 @@ Because `render_page()` loads `web/templates/user/$page.html` for non-admin user
 
 ---
 
-## Task 8: Reuse Existing vx-proxy Web-Domain Routing Instead Of Inventing New Nginx State
+## Task 8 - COMPLETE: Reuse Existing vx-proxy Web-Domain Routing Instead Of Inventing New Nginx State
 
 **Files:**
 - Modify: `func/vx/proxy.sh`
@@ -903,7 +903,7 @@ Because `render_page()` loads `web/templates/user/$page.html` for non-admin user
 - Modify: `web/add/web/index.php`
 - Modify: `web/edit/web/index.php`
 
-- [ ] **Step 1: Treat Docker routes as a producer of existing `PROXY_TARGET` values**
+- [x] **Step 1: Treat Docker routes as a producer of existing `PROXY_TARGET` values**
 
 Do not add a second routing system. The Docker feature must only write:
 - `PROXY_MODE`
@@ -915,7 +915,7 @@ Do not add a second routing system. The Docker feature must only write:
 
 to the existing web-domain record, then rely on `func/vx/proxy.sh` and `vx-proxy.tpl` to render nginx.
 
-- [ ] **Step 2: Add minimal guardrails to the current web-domain flows**
+- [x] **Step 2: Add minimal guardrails to the current web-domain flows**
 
 When a domain is already linked to a managed Docker container:
 - the Docker page should be the place that owns the target
@@ -928,9 +928,19 @@ DOMAIN='app.example.com'
 PROXY_TARGET='http://127.0.0.1:21001'
 ```
 
-- [ ] **Step 3: Rebuild route state from Docker metadata, not generated nginx files**
+- [x] **Step 3: Rebuild route state from Docker metadata, not generated nginx files**
 
 Any rebuild/recovery path must read `data/users/<user>/docker.conf`, then call `bin/v-sync-docker-container-route`. Never parse rendered nginx files as the source of truth.
+
+#### Closeout Report
+
+- Summary: Kept Docker route persistence on the existing web-domain `PROXY_*` fields and `vx-proxy` renderer, then added active-link guardrails so Docker-owned proxy edits are refused atomically from the web-domain edit flow with an explicit message while the Docker sync command can still repair drift from metadata.
+- Files changed: `web/inc/vx_docker.php`, `web/edit/web/index.php`, `web/templates/admin/edit_web.html`, `web/templates/user/edit_web.html`, `web/inc/i18n/en.php`, `func/vx/docker.sh`, `bin/v-change-web-domain-proxy-options`, `bin/v-sync-docker-container-route`, `.docs/audits/2026-06-27-docker-panel-management-task8.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task8.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`
+- Tests run: `bash -n func/vx/docker.sh bin/v-change-web-domain-proxy-options bin/v-sync-docker-container-route`; PASS. `php -l web/inc/vx_docker.php`; BLOCKED (`php: command not found`). `php -l web/edit/web/index.php`; BLOCKED (`php: command not found`). `php -l web/templates/admin/edit_web.html`; BLOCKED (`php: command not found`). `php -l web/templates/user/edit_web.html`; BLOCKED (`php: command not found`). `php -l web/inc/i18n/en.php`; BLOCKED (`php: command not found`).
+- Commit SHA(s): `49a1af17`
+- Spec review result: PASS after moving the refusal guard ahead of all mutations, using Docker metadata as the sync contract, and limiting the lock to active live Docker-owned routes.
+- Code quality review result: APPROVED after distinguishing stale metadata from active links and allowing `bin/v-sync-docker-container-route` to repair live route drift without weakening the manual-edit guard.
+- Follow-ups or concerns: PHP syntax validation still needs to be rerun in an environment with a `php` binary.
 
 ---
 
