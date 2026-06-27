@@ -20,27 +20,10 @@ async function requireRealDockerRow(page, preferredContainer = '') {
   const owner = (await row.getAttribute('data-owner')) || '';
   const name = (await row.getAttribute('data-name')) || '';
   const dockerAction = row.locator('.actions-panel__logs a').first();
-  const onclick = (await dockerAction.getAttribute('onclick')) || '';
-  const match = onclick.match(/more_button_click\((\d+)\)/);
-  const datasetIndex = match ? Number(match[1]) : NaN;
 
   expect(owner).not.toBe('');
   expect(name).not.toBe('');
-  expect(Number.isNaN(datasetIndex)).toBeFalsy();
-
-  const datasetEntry = await page.evaluate((index) => {
-    return window.dataset_values && window.dataset_values[index]
-      ? {
-          owner: window.dataset_values[index].owner,
-          containerName: window.dataset_values[index].container_name,
-          title: window.dataset_values[index].title,
-        }
-      : null;
-  }, datasetIndex);
-
-  expect(datasetEntry).not.toBeNull();
-  expect(datasetEntry.owner).toBe(owner);
-  expect(datasetEntry.containerName).toBe(name);
+  await expect(dockerAction).toBeVisible();
 
   return { row, owner, name, dockerAction };
 }

@@ -31,8 +31,8 @@ function isLocalPanelTarget() {
     }).trim().split('\n');
     for (const entry of resolvedHosts) {
       const ip = entry.trim().split(/\s+/)[0];
-      if (ip) {
-        localHosts.add(ip);
+      if (ip && localHosts.has(ip)) {
+        return true;
       }
     }
   } catch {

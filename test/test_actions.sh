@@ -16,6 +16,8 @@ fi
 V_BIN="$VESTA/bin"
 V_TEST="$VESTA/test"
 FAILED=0
+ip_123_added='no'
+ip_125_added='no'
 
 # Define functions
 random() {
@@ -73,11 +75,13 @@ cleanup() {
         v_delete_user "$user" yes >/dev/null 2>&1 || true
     fi
 
-    for ip_cleanup in 198.18.0.123 198.18.0.125; do
-        if v_list_sys_ips plain 2>/dev/null | awk '{print $1}' | grep -qx "$ip_cleanup"; then
-            v_delete_sys_ip "$ip_cleanup" >/dev/null 2>&1 || true
-        fi
-    done
+    if [ "$ip_123_added" = 'yes' ] && v_list_sys_ips plain 2>/dev/null | awk '{print $1}' | grep -qx '198.18.0.123'; then
+        v_delete_sys_ip 198.18.0.123 >/dev/null 2>&1 || true
+    fi
+
+    if [ "$ip_125_added" = 'yes' ] && v_list_sys_ips plain 2>/dev/null | awk '{print $1}' | grep -qx '198.18.0.125'; then
+        v_delete_sys_ip 198.18.0.125 >/dev/null 2>&1 || true
+    fi
 
     if [ -n "${domain:-}" ]; then
         rm -f "/tmp/${domain}.crt" "/tmp/${domain}.key"
@@ -184,7 +188,9 @@ fi
 # Add ip address
 cmd="v_add_sys_ip 198.18.0.123 255.255.255.255 $interface $user"
 $cmd > $tmpfile 2>> $tmpfile
-echo_result "IP: Adding ip 198.18.0.123" "$?" "$tmpfile" "$cmd"
+rc="$?"
+[ "$rc" -eq 0 ] && ip_123_added='yes'
+echo_result "IP: Adding ip 198.18.0.123" "$rc" "$tmpfile" "$cmd"
 
 # Add duplicate ip
 $cmd > $tmpfile 2>> $tmpfile
@@ -203,7 +209,9 @@ echo_result "IP: Deleting ip 198.18.0.123" "$?" "$tmpfile" "$cmd"
 # Add ip address
 cmd="v_add_sys_ip 198.18.0.125 255.255.255.255 $interface $user"
 $cmd > $tmpfile 2>> $tmpfile
-echo_result "IP: Adding ip 198.18.0.125" "$?" "$tmpfile" "$cmd"
+rc="$?"
+[ "$rc" -eq 0 ] && ip_125_added='yes'
+echo_result "IP: Adding ip 198.18.0.125" "$rc" "$tmpfile" "$cmd"
 
 
 #----------------------------------------------------------#
