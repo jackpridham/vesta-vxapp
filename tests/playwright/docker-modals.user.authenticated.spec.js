@@ -74,9 +74,13 @@ test('docker remove modal supports cancel and confirm flows', async ({ page }) =
   const owner = getPanelCredentials('dockerUser').username;
   const image = getOptionalEnv('PLAYWRIGHT_DOCKER_TEST_IMAGE', 'busybox:latest');
   const removableContainer = `pw-remove-${Date.now().toString(36)}`;
-  createDisposableContainer(owner, removableContainer, image);
 
   try {
+    await page.goto('/list/docker/');
+    test.skip(await page.locator('#docker-unavailable-state').isVisible().catch(() => false), 'Remove-confirm coverage requires a host with Docker available.');
+    test.skip(await page.locator('#docker-quota-reached-state').isVisible().catch(() => false), 'Remove-confirm coverage requires quota headroom for a disposable container.');
+
+    createDisposableContainer(owner, removableContainer, image);
     await openDockerActions(page, removableContainer);
     await page.getByRole('button', { name: /Remove Docker Container/i }).click();
     await expect(page.locator('#floating-center-div-content')).toContainText(/remove Docker container/i);

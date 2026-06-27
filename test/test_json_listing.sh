@@ -101,6 +101,7 @@ v_list_web_templates_nginx admin json'
 
 docker_owner=''
 docker_name=''
+docker_commands_added='no'
 for docker_conf in "$VESTA"/data/users/*/docker.conf; do
     [ -s "$docker_conf" ] || continue
     docker_owner=$(basename "$(dirname "$docker_conf")")
@@ -137,6 +138,7 @@ if [ -z "$docker_owner" ] || [ -z "$docker_name" ]; then
 fi
 
 if [ -n "$docker_owner" ] && [ -n "$docker_name" ]; then
+    docker_commands_added='yes'
     commands="$commands
 v_list_docker_containers $docker_owner json
 v_list_docker_container $docker_owner $docker_name json
@@ -168,5 +170,9 @@ for cmd in $commands; do
     echo -ne '\r\n'
 
 done
+
+if [ "$docker_commands_added" != 'yes' ]; then
+    echo "SKIP: Docker JSON listing coverage was not exercised because no container fixture was available."
+fi
 
 exit "$FAILED"

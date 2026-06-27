@@ -81,10 +81,13 @@ function createDisposableContainer(owner, containerName, image) {
 
 function deleteContainer(owner, containerName) {
   try {
-    runVestaCommand('v-delete-docker-container', [owner, containerName]);
+    runVestaCommand('v-list-docker-container', [owner, containerName, 'json']);
   } catch (error) {
-    // The UI path may already have removed the disposable container.
+    return false;
   }
+
+  runVestaCommand('v-delete-docker-container', [owner, containerName]);
+  return true;
 }
 
 function withSeededAlert(owner, containerName) {
