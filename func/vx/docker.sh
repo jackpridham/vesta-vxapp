@@ -732,6 +732,10 @@ ensure_docker_engine_available() {
         echo "Error: Docker is not installed"
         exit "$E_DISABLED"
     fi
+    if ! docker info >/dev/null 2>&1; then
+        echo "Error: Docker daemon is not available"
+        exit "$E_DISABLED"
+    fi
 }
 
 ensure_docker_container_name_provided() {
