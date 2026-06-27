@@ -48,11 +48,12 @@ test('docker add form renders contracted field names and validation errors insid
   await form.locator('[name="v_container_port"]').fill('');
   await page.getByRole('button', { name: /^Add$/i }).click();
 
+  await expect(page).toHaveURL(/\/add\/docker\/?$/);
   await expect(page.locator('#docker-form-errors')).toContainText(/\S+/);
 });
 
 test('successful create redirects back to the docker list', async ({ page }) => {
-  const image = getOptionalEnv('PLAYWRIGHT_DOCKER_TEST_IMAGE', 'busybox:latest');
+  const image = getOptionalEnv('PLAYWRIGHT_DOCKER_TEST_IMAGE', 'busybox:1.36.1');
   const name = `pw-${Date.now().toString(36)}`;
 
   try {

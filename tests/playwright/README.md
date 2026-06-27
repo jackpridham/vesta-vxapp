@@ -28,7 +28,7 @@ Supported variables:
 - `PLAYWRIGHT_DOCKER_QUOTA_USER` / `PLAYWRIGHT_DOCKER_QUOTA_PASSWORD`: optional seeded user that should render `/list/docker/` in the quota-reached state
 - `PLAYWRIGHT_DOCKER_OWNER_FILTER_USER`: optional preferred owner value for admin owner-filter coverage when multiple seeded owners exist
 - `PLAYWRIGHT_DOCKER_LIFECYCLE_CONTAINER`: optional seeded container name for real start/stop/restart coverage
-- `PLAYWRIGHT_DOCKER_TEST_IMAGE`: optional image override for the create-form regression; defaults to `busybox:latest`
+- `PLAYWRIGHT_DOCKER_TEST_IMAGE`: optional image override for the create-form regression; defaults to `busybox:1.36.1`
 - `PLAYWRIGHT_DOCKER_MODAL_CONTAINER`: optional seeded visible container name for real logs/inspect modal coverage
 - `PLAYWRIGHT_DOCKER_DASHBOARD_CONTAINER`: optional seeded visible container name for real dashboard/edit metrics coverage
 

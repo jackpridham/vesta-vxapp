@@ -15,7 +15,7 @@ fi
 V_BIN="$VESTA/bin"
 V_TEST="$VESTA/test"
 TMP_ROOT="${TMPDIR:-/tmp}"
-DOCKER_TEST_IMAGE="${DOCKER_TEST_IMAGE:-busybox:latest}"
+DOCKER_TEST_IMAGE="${DOCKER_TEST_IMAGE:-busybox:1.36.1}"
 FAILED=0
 
 random() {

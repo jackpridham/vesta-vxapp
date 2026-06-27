@@ -50,7 +50,7 @@ function createDockerSpec(containerName, image) {
   const specDir = fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-docker-'));
   const specPath = path.join(specDir, `${containerName}.spec`);
   fs.writeFileSync(specPath, `NAME='${containerName}'
-IMAGE='${image}'
+IMAGE='${image || 'busybox:1.36.1'}'
 COMMAND='sleep 3600'
 ENV='MODE=playwright'
 MOUNTS='data:/data'

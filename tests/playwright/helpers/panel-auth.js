@@ -1,5 +1,6 @@
 const path = require('path');
 const fs = require('fs');
+const repoRoot = path.resolve(__dirname, '..', '..', '..');
 
 require('dotenv').config({
   path: process.env.PLAYWRIGHT_ENV_FILE || path.resolve(process.cwd(), '.env.playwright'),
@@ -52,7 +53,7 @@ function getPanelCredentials(role = 'admin') {
 }
 
 function getAuthStatePath(role = 'admin') {
-  const authDir = path.resolve(process.cwd(), 'playwright', '.auth');
+  const authDir = path.join(repoRoot, 'playwright', '.auth');
   const filename = role === 'dockerUser' ? 'docker-user.json' : 'admin.json';
   return path.join(authDir, filename);
 }
@@ -104,7 +105,7 @@ async function switchLookUser(page, username) {
 }
 
 function ensureAuthStateDir() {
-  const authDir = path.resolve(process.cwd(), 'playwright', '.auth');
+  const authDir = path.join(repoRoot, 'playwright', '.auth');
   fs.mkdirSync(authDir, { recursive: true });
   return authDir;
 }

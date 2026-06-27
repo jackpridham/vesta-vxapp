@@ -73,10 +73,10 @@ test('docker list dashboard renders cards, constrained health vocabulary, and al
     }).filter({
       hasText: /Ack:\s*no/i,
     }).first();
-    test.skip((await targetAlert.count()) === 0, `Dashboard acknowledge coverage requires an open unacknowledged alert for ${owner}/${name}.`);
+    await expect(targetAlert).toHaveCount(1);
 
     const acknowledgeButton = targetAlert.locator('#docker-alert-acknowledge');
-    test.skip((await acknowledgeButton.isVisible().catch(() => false)) === false, 'Dashboard alert-acknowledge coverage requires a seeded open Docker alert.');
+    await expect(acknowledgeButton).toBeVisible();
     await acknowledgeButton.click();
     await expect(targetAlert).toContainText(/Ack:\s*yes/i);
   } finally {

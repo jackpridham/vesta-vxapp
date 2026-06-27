@@ -72,7 +72,7 @@ test('docker remove modal supports cancel and confirm flows', async ({ page }) =
   test.skip(!hasLocalVestaRuntime(), 'Remove-confirm coverage requires local Vesta runtime access for disposable container setup.');
 
   const owner = getPanelCredentials('dockerUser').username;
-  const image = getOptionalEnv('PLAYWRIGHT_DOCKER_TEST_IMAGE', 'busybox:latest');
+  const image = getOptionalEnv('PLAYWRIGHT_DOCKER_TEST_IMAGE', 'busybox:1.36.1');
   const removableContainer = `pw-remove-${Date.now().toString(36)}`;
 
   try {
@@ -81,6 +81,8 @@ test('docker remove modal supports cancel and confirm flows', async ({ page }) =
     test.skip(await page.locator('#docker-quota-reached-state').isVisible().catch(() => false), 'Remove-confirm coverage requires quota headroom for a disposable container.');
 
     createDisposableContainer(owner, removableContainer, image);
+    await page.goto('/list/docker/');
+    await expect(page.locator(`#docker-list-cards article[data-name="${removableContainer}"]`)).toHaveCount(1);
     await openDockerActions(page, removableContainer);
     await page.getByRole('button', { name: /Remove Docker Container/i }).click();
     await expect(page.locator('#floating-center-div-content')).toContainText(/remove Docker container/i);
