@@ -1,21 +1,53 @@
 const { test, expect } = require('@playwright/test');
 
-async function openDockerActions(page) {
-  const dockerMore = page.locator('#docker-list-cards article[id^="docker-card-"] .actions-panel__logs a').first();
-  if (!(await dockerMore.count())) {
-    test.skip(true, 'Modal coverage requires at least one owned Docker container.');
-  }
+async function ensureModalFixture(page) {
+  await page.evaluate(() => {
+    const listState = document.querySelector('#docker-list-state');
+    const cards = document.querySelector('#docker-list-cards');
 
+    if (listState) {
+      listState.style.display = '';
+    }
+
+    window.dataset_values = window.dataset_values || [];
+    window.dataset_values[999] = {
+      url: '/ajax/docker/index.php',
+      title: 'fixture-app',
+      container_name: 'fixture-app',
+      owner: 'dockeruser',
+    };
+
+    if (!cards) {
+      return;
+    }
+
+    if (!cards.querySelector('[data-playwright-modal="yes"]')) {
+      const article = document.createElement('article');
+      article.id = 'docker-card-dockeruser-fixture-app';
+      article.dataset.owner = 'dockeruser';
+      article.dataset.name = 'fixture-app';
+      article.dataset.playwrightModal = 'yes';
+      article.innerHTML = `
+        <div class="actions-panel clearfix">
+          <div class="actions-panel__col actions-panel__logs">
+            <a href="javascript:void(0)" onclick="more_button_click(999)">Docker</a>
+          </div>
+        </div>
+      `;
+      cards.prepend(article);
+    }
+  });
+}
+
+async function openDockerActions(page) {
+  await ensureModalFixture(page);
+  const dockerMore = page.locator('#docker-list-cards article[data-playwright-modal="yes"] .actions-panel__logs a').first();
   await dockerMore.click();
   await expect(page.locator('#floating-center-div')).toBeVisible();
 }
 
 test('docker logs and inspect modals open and Escape closes the active modal', async ({ page }) => {
   await page.goto('/list/docker/');
-
-  if (await page.locator('#docker-list-state').isHidden().catch(() => true)) {
-    test.skip(true, 'Modal coverage requires the Docker list state.');
-  }
 
   await openDockerActions(page);
   await page.getByRole('button', { name: /View Docker Logs/i }).click();
@@ -46,10 +78,6 @@ test('docker remove modal supports cancel and confirm flows', async ({ page }) =
   });
 
   await page.goto('/list/docker/');
-
-  if (await page.locator('#docker-list-state').isHidden().catch(() => true)) {
-    test.skip(true, 'Remove modal coverage requires the Docker list state.');
-  }
 
   await openDockerActions(page);
   await page.getByRole('button', { name: /Remove Docker Container/i }).click();

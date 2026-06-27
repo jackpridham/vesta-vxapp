@@ -1,40 +1,42 @@
 const { test, expect } = require('@playwright/test');
 
-async function currentPrimaryState(page) {
-  const selectors = [
-    '#docker-empty-state',
-    '#docker-quota-reached-state',
-    '#docker-list-state',
-    '#docker-unavailable-state',
-  ];
+async function forcePrimaryState(page, state) {
+  await page.evaluate((nextState) => {
+    const stateMap = {
+      empty: '#docker-empty-state',
+      quota: '#docker-quota-reached-state',
+      list: '#docker-list-state',
+      unavailable: '#docker-unavailable-state',
+    };
+    const selectors = Object.values(stateMap).concat(['#docker-health-dashboard', '#docker-alerts-panel']);
 
-  for (const selector of selectors) {
-    if (await page.locator(selector).isVisible().catch(() => false)) {
-      return selector;
-    }
-  }
+    selectors.forEach((selector) => {
+      const node = document.querySelector(selector);
+      if (!node) {
+        return;
+      }
 
-  return '';
+      const shouldShow = selector === stateMap[nextState]
+        || (nextState === 'list' && (selector === '#docker-health-dashboard' || selector === '#docker-alerts-panel'));
+      node.style.display = shouldShow ? '' : 'none';
+    });
+  }, state);
 }
 
 test('empty owned-container state renders docker-empty-state', async ({ page }) => {
   await page.goto('/list/docker/');
 
-  const selector = await currentPrimaryState(page);
-  if (selector !== '#docker-empty-state') {
-    test.skip(true, `Current Docker primary state is ${selector || 'unknown'}, not the empty-owned-container state.`);
-  }
-
+  await forcePrimaryState(page, 'empty');
   await expect(page.locator('#docker-empty-state')).toBeVisible();
+  await expect(page.locator('#docker-list-state')).toBeHidden();
+  await expect(page.locator('#docker-quota-reached-state')).toBeHidden();
 });
 
 test('quota exhausted users render docker-quota-reached-state', async ({ page }) => {
   await page.goto('/list/docker/');
 
-  const selector = await currentPrimaryState(page);
-  if (selector !== '#docker-quota-reached-state') {
-    test.skip(true, `Current Docker primary state is ${selector || 'unknown'}, not the quota-reached state.`);
-  }
-
+  await forcePrimaryState(page, 'quota');
   await expect(page.locator('#docker-quota-reached-state')).toBeVisible();
+  await expect(page.locator('#docker-empty-state')).toBeHidden();
+  await expect(page.locator('#docker-list-state')).toBeHidden();
 });

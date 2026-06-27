@@ -93,12 +93,11 @@ test('successful create redirects back to the docker list', async ({ page }) => 
   await page.getByRole('button', { name: /^Add$/i }).click();
   await page.waitForLoadState('networkidle');
 
-  if (!/\/list\/docker\/?$/.test(page.url())) {
-    const errorText = (await page.locator('#docker-form-errors').textContent()) || 'Create did not redirect.';
-    test.skip(true, `Create flow requires a pullable test image and live Docker runtime: ${errorText.trim()}`);
-  }
-
-  await expect(page).toHaveURL(/\/list\/docker\/?$/);
+  const errorText = ((await page.locator('#docker-form-errors').textContent()) || '').trim();
+  expect(
+    /\/list\/docker\/?$/.test(page.url()),
+    `Create did not redirect back to /list/docker/. Form errors: ${errorText || '[none]'}`,
+  ).toBeTruthy();
 
   await cleanupContainer(page, name);
 });
