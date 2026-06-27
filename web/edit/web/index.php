@@ -7,6 +7,7 @@ $TAB = 'WEB';
 // Main include
 include($_SERVER['DOCUMENT_ROOT']."/inc/main.php");
 include($_SERVER['DOCUMENT_ROOT']."/inc/vx_proxy_form.php");
+include($_SERVER['DOCUMENT_ROOT']."/inc/vx_docker.php");
 
 // Check domain argument
 if (empty($_GET['domain'])) {
@@ -82,6 +83,20 @@ if ( $v_suspended == 'yes' ) {
 }
 $v_time = $data[$v_domain]['TIME'];
 $v_date = $data[$v_domain]['DATE'];
+$docker_route_owner = (($_SESSION['user'] === 'admin') && (!empty($_GET['user'])))
+    ? trim((string) $_GET['user'])
+    : trim((string) $_SESSION['user']);
+$v_docker_route_container = vx_docker_find_domain_route($docker_route_owner, $v_domain);
+if (!vx_docker_route_matches_domain_record($v_docker_route_container, $data[$v_domain])) {
+    $v_docker_route_container = array();
+}
+$v_proxy_lock_notice = '';
+if (!empty($v_docker_route_container['NAME'])) {
+    $v_proxy_lock_notice = __(
+        'This proxy target is managed by Docker container "%s". Change or remove the route from the Docker page instead.',
+        $v_docker_route_container['NAME']
+    );
+}
 
 // List ip addresses
 exec (VESTA_CMD."v-list-user-ips ".$user." json", $output, $return_var);
@@ -121,6 +136,28 @@ if (!empty($_POST['save'])) {
     if ((!isset($_POST['token'])) || ($_SESSION['token'] != $_POST['token'])) {
         header('location: /login/');
         exit();
+    }
+
+    if (!empty($v_docker_route_container['NAME']) && (empty($_SESSION['error_msg']))) {
+        $requested_proxy_enabled = !empty($_POST['v_proxy']);
+        $requested_proxy_mode = vx_proxy_post_value('v_proxy_mode', 'proxy');
+        $requested_proxy_profile = vx_proxy_post_value('v_proxy_profile', 'standard');
+        $requested_proxy_preserve_host = vx_proxy_post_value('v_proxy_preserve_host', 'yes');
+        $requested_proxy_timeout = vx_proxy_post_value('v_proxy_timeout', '60');
+        $requested_proxy_headers = vx_proxy_headers_from_post();
+        $linked_proxy_target = isset($v_docker_route_container['PROXY_TARGET']) ? trim((string) $v_docker_route_container['PROXY_TARGET']) : '';
+        $linked_proxy_matches_post = $requested_proxy_enabled
+            && ($native_proxy_target !== '')
+            && ($requested_proxy_mode === 'proxy')
+            && ($requested_proxy_profile === 'application')
+            && ($requested_proxy_preserve_host === 'yes')
+            && ($requested_proxy_timeout === '60')
+            && ($requested_proxy_headers === '')
+            && ($linked_proxy_target !== '')
+            && ($native_proxy_target === $linked_proxy_target);
+        if (!$linked_proxy_matches_post) {
+            $_SESSION['error_msg'] = $v_proxy_lock_notice;
+        }
     }
 
     // Change web domain IP

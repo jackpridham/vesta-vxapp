@@ -111,6 +111,7 @@ $LANG['en'] = array(
     'Bind mounts must use name:/absolute/path.' => 'Bind mounts must use name:/absolute/path.',
     'Docker route path routing is not available yet.' => 'Docker route path routing is not available yet.',
     'Docker daemon is unavailable. Runtime actions may fail until the service returns, but managed metadata is still shown below.' => 'Docker daemon is unavailable. Runtime actions may fail until the service returns, but managed metadata is still shown below.',
+    'This proxy target is managed by Docker container "%s". Change or remove the route from the Docker page instead.' => 'This proxy target is managed by Docker container "%s". Change or remove the route from the Docker page instead.',
     'Select an owner scope to add a Docker container.' => 'Select an owner scope to add a Docker container.',
     'Docker owner scope does not exist.' => 'Docker owner scope does not exist.',
     'containers' => 'containers',

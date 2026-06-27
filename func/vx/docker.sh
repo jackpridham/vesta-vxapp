@@ -207,6 +207,74 @@ vx_docker_domain_proxy_target() {
     echo "$PROXY_TARGET"
 }
 
+vx_docker_domain_route_name() {
+    local owner="$1"
+    local domain_name="$2"
+    local conf line
+
+    conf="$(vx_docker_metadata_path "$owner")"
+    [ -n "$domain_name" ] || return 1
+    [ -f "$conf" ] || return 1
+    line="$(grep " DOMAIN='$domain_name'" "$conf" 2>/dev/null | head -n 1)"
+    [ -n "$line" ] || return 1
+    echo "$line" | sed -n "s/.* NAME='\([^']*\)'.*/\1/p"
+}
+
+vx_docker_domain_route_target() {
+    local owner="$1"
+    local domain_name="$2"
+    local conf line
+
+    conf="$(vx_docker_metadata_path "$owner")"
+    [ -n "$domain_name" ] || return 1
+    [ -f "$conf" ] || return 1
+    line="$(grep " DOMAIN='$domain_name'" "$conf" 2>/dev/null | head -n 1)"
+    [ -n "$line" ] || return 1
+    echo "$line" | sed -n "s/.* PROXY_TARGET='\([^']*\)'.*/\1/p"
+}
+
+vx_docker_domain_route_matches_proxy_options() {
+    local owner="$1"
+    local domain_name="$2"
+    local mode="$3"
+    local target="$4"
+    local profile="$5"
+    local preserve_host="$6"
+    local timeout="$7"
+    local headers="$8"
+    local route_target
+
+    route_target="$(vx_docker_domain_route_target "$owner" "$domain_name")" || return 1
+    [ "$mode" = 'proxy' ] || return 1
+    [ "$target" = "$route_target" ] || return 1
+    [ "$profile" = 'application' ] || return 1
+    [ "$preserve_host" = 'yes' ] || return 1
+    [ "$timeout" = '60' ] || return 1
+    [ -z "$headers" ] || return 1
+}
+
+vx_docker_domain_route_is_active() {
+    local owner="$1"
+    local domain_name="$2"
+    local live_target metadata_target web_conf line
+
+    metadata_target="$(vx_docker_domain_route_target "$owner" "$domain_name")" || return 1
+    live_target="$(vx_docker_domain_proxy_target "$owner" "$domain_name")" || return 1
+    [ "$live_target" = "$metadata_target" ] || return 1
+
+    web_conf="$VESTA/data/users/$owner/web.conf"
+    [ -f "$web_conf" ] || return 1
+    line="$(grep "DOMAIN='$domain_name'" "$web_conf" 2>/dev/null)"
+    [ -n "$line" ] || return 1
+    parse_object_kv_list_non_eval "$line"
+    [ "$PROXY" = "$VX_PROXY_TEMPLATE" ] || return 1
+    [ "${PROXY_MODE:-proxy}" = 'proxy' ] || return 1
+    [ "${PROXY_PROFILE:-standard}" = 'application' ] || return 1
+    [ "${PROXY_PRESERVE_HOST:-yes}" = 'yes' ] || return 1
+    [ "${PROXY_TIMEOUT:-60}" = '60' ] || return 1
+    [ -z "$PROXY_HEADERS" ] || return 1
+}
+
 vx_docker_domain_matches_record_route() {
     local owner="$1"
     local name="$2"

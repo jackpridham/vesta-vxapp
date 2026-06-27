@@ -197,6 +197,9 @@
                                         <tr>
                                             <td>
                                                 <input type="text" size="20" class="vst-input" name="v_proxy_target" value="<?=htmlentities($v_proxy_target)?>" placeholder="http://127.0.0.1:3000">
+                                                <?php if (!empty($v_proxy_lock_notice)) { ?>
+                                                <div class="vst-text" style="padding-top: 6px; color: #555;"><?=htmlentities($v_proxy_lock_notice)?></div>
+                                                <?php } ?>
                                             </td>
                                         </tr>
                                         <tr>

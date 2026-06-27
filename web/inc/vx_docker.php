@@ -130,6 +130,64 @@ function vx_docker_route_domain_is_owned($account_user, $domain_name)
     return false;
 }
 
+function vx_docker_find_domain_route($account_user, $domain_name)
+{
+    if ($account_user === null || $account_user === '' || $domain_name === '') {
+        return array();
+    }
+
+    foreach (vx_docker_list_containers($account_user) as $container_name => $container_data) {
+        if (!is_array($container_data)) {
+            continue;
+        }
+
+        $container_domain = isset($container_data['DOMAIN']) ? trim((string) $container_data['DOMAIN']) : '';
+        if ($container_domain !== $domain_name) {
+            continue;
+        }
+
+        if (empty($container_data['NAME']) && is_string($container_name)) {
+            $container_data['NAME'] = $container_name;
+        }
+
+        if (empty($container_data['OWNER'])) {
+            $container_data['OWNER'] = $account_user;
+        }
+
+        return $container_data;
+    }
+
+    return array();
+}
+
+function vx_docker_route_matches_domain_record($container, $domain_data)
+{
+    if (!is_array($container) || !is_array($domain_data)) {
+        return false;
+    }
+
+    $linked_target = isset($container['PROXY_TARGET']) ? trim((string) $container['PROXY_TARGET']) : '';
+    if ($linked_target === '') {
+        return false;
+    }
+
+    $proxy_template = isset($domain_data['PROXY']) ? trim((string) $domain_data['PROXY']) : '';
+    $proxy_mode = empty($domain_data['PROXY_MODE']) ? 'proxy' : trim((string) $domain_data['PROXY_MODE']);
+    $proxy_target = isset($domain_data['PROXY_TARGET']) ? trim((string) $domain_data['PROXY_TARGET']) : '';
+    $proxy_profile = empty($domain_data['PROXY_PROFILE']) ? 'standard' : trim((string) $domain_data['PROXY_PROFILE']);
+    $proxy_preserve_host = empty($domain_data['PROXY_PRESERVE_HOST']) ? 'yes' : trim((string) $domain_data['PROXY_PRESERVE_HOST']);
+    $proxy_timeout = empty($domain_data['PROXY_TIMEOUT']) ? '60' : trim((string) $domain_data['PROXY_TIMEOUT']);
+    $proxy_headers = isset($domain_data['PROXY_HEADERS']) ? trim((string) $domain_data['PROXY_HEADERS']) : '';
+
+    return $proxy_template === 'vx-proxy'
+        && $proxy_mode === 'proxy'
+        && $proxy_target === $linked_target
+        && $proxy_profile === 'application'
+        && $proxy_preserve_host === 'yes'
+        && $proxy_timeout === '60'
+        && $proxy_headers === '';
+}
+
 function vx_docker_spec_from_post()
 {
     $healthcheck = vx_docker_healthcheck_from_post();
