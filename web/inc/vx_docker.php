@@ -91,9 +91,24 @@ function vx_docker_route_domain_options($account_user = null)
 
     ksort($domains);
     foreach ($domains as $domain => $domain_data) {
+        if (!is_array($domain_data)) {
+            $domain_data = array();
+        }
+
         $options[] = array(
             'value' => $domain,
             'label' => $domain,
+            'domain' => $domain,
+            'owner' => $account_user,
+            'suspended' => empty($domain_data['SUSPENDED']) ? 'no' : $domain_data['SUSPENDED'],
+            'proxy' => empty($domain_data['PROXY']) ? '' : $domain_data['PROXY'],
+            'proxy_mode' => empty($domain_data['PROXY_MODE']) ? '' : $domain_data['PROXY_MODE'],
+            'proxy_target' => empty($domain_data['PROXY_TARGET']) ? '' : $domain_data['PROXY_TARGET'],
+            'ssl' => empty($domain_data['SSL']) ? 'no' : $domain_data['SSL'],
+            'letsencrypt' => empty($domain_data['LETSENCRYPT']) ? 'no' : $domain_data['LETSENCRYPT'],
+            'backend' => empty($domain_data['BACKEND']) ? '' : $domain_data['BACKEND'],
+            'ip' => empty($domain_data['IP']) ? '' : $domain_data['IP'],
+            'data' => $domain_data,
         );
     }
 
