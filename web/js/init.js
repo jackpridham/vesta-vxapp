@@ -102,7 +102,7 @@ $(document).ready(function(){
             
             // SORTING
 
-            $('#vstobjects input, #vstobjects select, #vstobjects textarea').change(function(){VE.tmp.form_changed=1});
+            $('#vstobjects input, #vstobjects select, #vstobjects textarea, #docker-create-form input, #docker-create-form select, #docker-create-form textarea, #docker-edit-form input, #docker-edit-form select, #docker-edit-form textarea').change(function(){VE.tmp.form_changed=1});
 
             $('.sort-order span').click(function(){
               $('.context-menu.sort-order').toggle();
@@ -163,7 +163,7 @@ $(document).ready(function(){
               // Shortcuts
 
               shortcut.add("Ctrl+Enter", function(){
-                $('form#vstobjects').submit();
+                $('form#vstobjects, form#docker-create-form, form#docker-edit-form').first().submit();
               }, {
                   'type':             'keydown',
                   'propagate':        false,
@@ -173,12 +173,12 @@ $(document).ready(function(){
               );
 
               shortcut.add("Ctrl+Backspace", function(){
-                if(VE.tmp.form_changed && $('form#vstobjects .button.cancel')[0]){
-                  VE.helpers.createConfirmationDialog($('.confirmation-text-redirect'), '', $('form#vstobjects input.cancel').attr('onclick').replace("location.href='", "").replace("'",""));
-                } else if($('form#vstobjects .button.cancel')[0]){
-                  location.href=$('form#vstobjects input.cancel').attr('onclick').replace("location.href='", "").replace("'","");
-                } else if($('#vstobjects a.button.cancel')[0]){
-                  location.href=$('#vstobjects a.button.cancel').attr('href');
+                if(VE.tmp.form_changed && $('form#vstobjects .button.cancel, form#docker-create-form .button.cancel, form#docker-edit-form .button.cancel')[0]){
+                  VE.helpers.createConfirmationDialog($('.confirmation-text-redirect'), '', $('form#vstobjects input.cancel, form#docker-create-form input.cancel, form#docker-edit-form input.cancel').first().attr('onclick').replace("location.href='", "").replace("'",""));
+                } else if($('form#vstobjects .button.cancel, form#docker-create-form .button.cancel, form#docker-edit-form .button.cancel')[0]){
+                  location.href=$('form#vstobjects input.cancel, form#docker-create-form input.cancel, form#docker-edit-form input.cancel').first().attr('onclick').replace("location.href='", "").replace("'","");
+                } else if($('#vstobjects a.button.cancel, #docker-create-form a.button.cancel, #docker-edit-form a.button.cancel')[0]){
+                  location.href=$('#vstobjects a.button.cancel, #docker-create-form a.button.cancel, #docker-edit-form a.button.cancel').first().attr('href');
                 }
               }, {
                   'type':             'keydown',
@@ -535,7 +535,7 @@ $(document).ready(function(){
 
               // focusing on the first input at form
               if( location.href.indexOf('lead=') == -1 && !$('.ui-dialog').is(':visible') ){
-                $('#vstobjects .vst-input:not([disabled]), #vstobjects .vst-list:not([disabled])').first().focus();
+                $('#vstobjects .vst-input:not([disabled]), #vstobjects .vst-list:not([disabled]), #docker-create-form .vst-input:not([disabled]), #docker-create-form .vst-list:not([disabled]), #docker-edit-form .vst-input:not([disabled]), #docker-edit-form .vst-list:not([disabled])').first().focus();
               }
 
               $('.l-profile__notifications').click(function(){
@@ -598,4 +598,3 @@ $(document).ready(function(){
                 $('.l-unit.selected').find('.ch-toggle').prop('checked', true);
             });
     });
-

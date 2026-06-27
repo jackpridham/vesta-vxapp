@@ -2077,7 +2077,7 @@ body.mobile .l-icon-to-top, body.mobile .l-icon-shortcuts {
   margin-top: -1px;
 }
 */
-#vstobjects .l-center {
+#vstobjects .l-center, #docker-create-form .l-center, #docker-edit-form .l-center {
     padding-top: 20px;
     padding-bottom: 30px;
     font-size: 12px;
@@ -2823,10 +2823,10 @@ div.l-content.collapsed .l-sort {
     height: 260px;
 }
 
-form#vstobjects {
+form#vstobjects, form#docker-create-form, form#docker-edit-form {
     padding-top: 280px;
 }
-form#vstobjects.suspended {
+form#vstobjects.suspended, form#docker-edit-form.suspended {
     background-color: #EAEAEA;
     padding-bottom: 30px;
 }
@@ -3838,7 +3838,7 @@ b, strong {
 .l-content .l-center .l-unit-ft .data {
   margin: 0 0 50px 0;
 }
-.l-content .l-center #vstobjects {
+.l-content .l-center #vstobjects, .l-content .l-center #docker-create-form, .l-content .l-center #docker-edit-form {
   padding: 0 0 0 15px;
   overflow: hidden;
   margin: 0px 20px 20px 20px;
@@ -3849,7 +3849,7 @@ b, strong {
   color: #98a6ac;
   font-size: 14px;
 }
-.l-content .l-center #vstobjects .data-date {
+.l-content .l-center #vstobjects .data-date, .l-content .l-center #docker-edit-form .data-date {
   color: #98A6AC;
   letter-spacing: unset;
   display: inline-block;
@@ -3891,7 +3891,7 @@ b, strong {
 .l-content > .l-center:first-child {
   margin-left: 0;
 }
-.l-content #vstobjects > .l-center {
+.l-content #vstobjects > .l-center, .l-content #docker-create-form > .l-center, .l-content #docker-edit-form > .l-center {
   margin-left: 200px;
   margin-right: 240px;
   padding-top: 0;

@@ -203,41 +203,47 @@
     </script>
     <?php } ?>
 
-    <div id="docker-unavailable-state" class="l-unit l-unit--error" <?php if ($docker_primary_state !== 'unavailable') echo 'style="display:none;"'; ?>>
-      <div class="l-unit__col l-unit__col--right">
-        <div class="l-unit__name separate"><?=__('Docker is not installed')?></div>
-        <div class="l-unit__stats">
-          <table>
-            <tr>
-              <td><?=__('Install Docker from the panel to start managing containers.')?></td>
-            </tr>
-          </table>
+    <div class="l-center units" <?php if ($docker_primary_state !== 'unavailable') echo 'style="display:none;"'; ?>>
+      <div id="docker-unavailable-state" class="l-unit l-unit--error">
+        <div class="l-unit__col l-unit__col--right">
+          <div class="l-unit__name separate"><?=__('Docker is not installed')?></div>
+          <div class="l-unit__stats">
+            <table>
+              <tr>
+                <td><?=__('Install Docker from the panel to start managing containers.')?></td>
+              </tr>
+            </table>
+          </div>
         </div>
       </div>
     </div>
 
-    <div id="docker-empty-state" class="l-unit" <?php if ($docker_primary_state !== 'empty') echo 'style="display:none;"'; ?>>
-      <div class="l-unit__col l-unit__col--right">
-        <div class="l-unit__name separate"><?=__('No Docker containers are managed in this scope yet.')?></div>
-        <div class="l-unit__stats">
-          <table>
-            <tr>
-              <td><?=__('Create a managed container to start routing and monitoring it from the panel.')?></td>
-            </tr>
-          </table>
+    <div class="l-center units" <?php if ($docker_primary_state !== 'empty') echo 'style="display:none;"'; ?>>
+      <div id="docker-empty-state" class="l-unit">
+        <div class="l-unit__col l-unit__col--right">
+          <div class="l-unit__name separate"><?=__('No Docker containers are managed in this scope yet.')?></div>
+          <div class="l-unit__stats">
+            <table>
+              <tr>
+                <td><?=__('Create a managed container to start routing and monitoring it from the panel.')?></td>
+              </tr>
+            </table>
+          </div>
         </div>
       </div>
     </div>
 
-    <div id="docker-quota-reached-state" class="l-unit l-unit--suspended" <?php if ($docker_primary_state !== 'quota') echo 'style="display:none;"'; ?>>
-      <div class="l-unit__col l-unit__col--right">
-        <div class="l-unit__name separate"><?=__('Docker container quota is reached')?></div>
-        <div class="l-unit__stats">
-          <table>
-            <tr>
-              <td><?=__('This account is already using its allowed number of managed Docker containers.')?></td>
-            </tr>
-          </table>
+    <div class="l-center units" <?php if ($docker_primary_state !== 'quota') echo 'style="display:none;"'; ?>>
+      <div id="docker-quota-reached-state" class="l-unit l-unit--suspended">
+        <div class="l-unit__col l-unit__col--right">
+          <div class="l-unit__name separate"><?=__('Docker container quota is reached')?></div>
+          <div class="l-unit__stats">
+            <table>
+              <tr>
+                <td><?=__('This account is already using its allowed number of managed Docker containers.')?></td>
+              </tr>
+            </table>
+          </div>
         </div>
       </div>
     </div>
