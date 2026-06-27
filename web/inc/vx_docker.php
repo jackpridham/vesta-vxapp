@@ -354,8 +354,11 @@ function vx_docker_collect_form_errors($owner)
     }
 
     $raw_route_path = vx_docker_raw_post_value('v_route_path');
-    if ($raw_route_path !== '' && $raw_route_path !== '/' && vx_docker_route_path_from_post() === '') {
+    $normalized_route_path = vx_docker_route_path_from_post();
+    if ($raw_route_path !== '' && $raw_route_path !== '/' && $normalized_route_path === '') {
         $errors[] = __('Route path must start with / and may not contain spaces, ? or #.');
+    } elseif ($normalized_route_path !== '') {
+        $errors[] = __('Docker route path routing is not available yet.');
     }
 
     $raw_restart_policy = vx_docker_raw_post_value('v_restart_policy', 'unless-stopped');
@@ -502,6 +505,15 @@ function vx_docker_is_engine_available($docker_state = null)
     }
 
     return !empty($docker_state['DOCKER_AVAILABLE']) && $docker_state['DOCKER_AVAILABLE'] === 'yes';
+}
+
+function vx_docker_is_daemon_available($docker_state = null)
+{
+    if (!is_array($docker_state)) {
+        $docker_state = vx_docker_get_engine_state();
+    }
+
+    return !empty($docker_state['DOCKER_DAEMON_AVAILABLE']) && $docker_state['DOCKER_DAEMON_AVAILABLE'] === 'yes';
 }
 
 function vx_docker_list_containers($scope_owner)

@@ -109,6 +109,8 @@ $LANG['en'] = array(
     'Network alert threshold must be between 1 and 100000 Mbps.' => 'Network alert threshold must be between 1 and 100000 Mbps.',
     'Environment variables must use KEY=value with uppercase letters, numbers, and underscores in the key.' => 'Environment variables must use KEY=value with uppercase letters, numbers, and underscores in the key.',
     'Bind mounts must use name:/absolute/path.' => 'Bind mounts must use name:/absolute/path.',
+    'Docker route path routing is not available yet.' => 'Docker route path routing is not available yet.',
+    'Docker daemon is unavailable. Runtime actions may fail until the service returns, but managed metadata is still shown below.' => 'Docker daemon is unavailable. Runtime actions may fail until the service returns, but managed metadata is still shown below.',
     'containers' => 'containers',
     'Add one more FTP Account' => 'Add one more FTP Account',
     'Overall Statistics'  => 'Overall Statistics',

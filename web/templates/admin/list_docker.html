@@ -65,6 +65,7 @@
         ownerScope: '<?=htmlspecialchars($docker_owner, ENT_QUOTES)?>',
         currentUser: '<?=htmlspecialchars($user, ENT_QUOTES)?>',
         dockerAvailable: <?=$docker_available ? 'true' : 'false'?>,
+        dockerDaemonAvailable: <?=$docker_daemon_available ? 'true' : 'false'?>,
         quotaReached: <?=!empty($docker_quota['reached']) ? 'true' : 'false'?>,
         primaryState: '<?=htmlspecialchars($docker_primary_state, ENT_QUOTES)?>',
         statsUrl: '/ajax/docker/actions/stats.php',
@@ -132,6 +133,9 @@
 
     <div id="docker-list-state" <?php if ($docker_primary_state !== 'list') echo 'style="display:none;"'; ?>>
       <div class="l-center">
+        <?php if ($docker_available && !$docker_daemon_available) { ?>
+        <div class="notice notice-warning" style="margin-bottom: 12px;"><?=__('Docker daemon is unavailable. Runtime actions may fail until the service returns, but managed metadata is still shown below.')?></div>
+        <?php } ?>
         <div id="docker-owner-filter">
           <?php if ($_SESSION['user'] === 'admin') { ?>
           <span class="vst-text"><b><?=__('Owner scope')?>:</b> <?=htmlspecialchars($docker_owner !== '' ? $docker_owner : __('All Users'), ENT_QUOTES)?></span>

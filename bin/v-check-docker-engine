@@ -24,16 +24,23 @@ fi
 #                       Action                             #
 #----------------------------------------------------------#
 
-if is_docker_engine_available; then
+if command -v docker >/dev/null 2>&1; then
     state='yes'
 else
     state='no'
+fi
+
+if [ "$state" = 'yes' ] && docker info >/dev/null 2>&1; then
+    daemon_state='yes'
+else
+    daemon_state='no'
 fi
 
 case "$format" in
     json)
         echo '{'
         echo '    "DOCKER_AVAILABLE": "'$state'"'
+        echo '    ,"DOCKER_DAEMON_AVAILABLE": "'$daemon_state'"'
         echo '}'
         ;;
     shell|plain)
