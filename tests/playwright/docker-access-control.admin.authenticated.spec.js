@@ -11,18 +11,22 @@ test('admin server navigation still exposes the docker page', async ({ page }) =
 test('admin docker list shows owner-aware rows and can pivot by owner when multiple owners exist', async ({ page }) => {
   await page.goto('/list/docker/');
 
-  await expect(page.locator('#docker-owner-filter')).toContainText(/Owner scope/i);
+  test.skip(await page.locator('#docker-unavailable-state').isVisible().catch(() => false), 'Admin owner-filter coverage requires Docker to be available.');
+  test.skip(await page.locator('#docker-empty-state').isVisible().catch(() => false), 'Admin owner-filter coverage requires seeded Docker containers for multiple owners.');
+  test.skip(await page.locator('#docker-quota-reached-state').isVisible().catch(() => false), 'Admin owner-filter coverage requires a visible multi-owner Docker list state.');
 
-  const firstCard = page.locator('#docker-list-cards article[id^="docker-card-"]').first();
-  await expect(firstCard).toBeVisible();
-  await expect(firstCard).toHaveAttribute('data-owner', /.+/);
-  await expect(firstCard).toContainText(/Owner/i);
+  await expect(page.locator('#docker-owner-filter')).toContainText(/Owner scope/i);
 
   const ownerSelect = page.locator('form[action="/list/docker/"] select[name="user"]');
   const optionValues = await ownerSelect.locator('option').evaluateAll((options) =>
     options.map((option) => option.value).filter((value) => value)
   );
   test.skip(optionValues.length < 2, 'Admin owner-filter coverage requires seeded Docker containers for at least two owners.');
+
+  const firstCard = page.locator('#docker-list-cards article[id^="docker-card-"]').first();
+  await expect(firstCard).toBeVisible();
+  await expect(firstCard).toHaveAttribute('data-owner', /.+/);
+  await expect(firstCard).toContainText(/Owner/i);
 
   const preferredOwner = getOptionalEnv('PLAYWRIGHT_DOCKER_OWNER_FILTER_USER');
   const pivotOwner = optionValues.includes(preferredOwner) ? preferredOwner : optionValues[0];

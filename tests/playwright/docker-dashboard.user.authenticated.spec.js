@@ -20,109 +20,32 @@ function mockMetric(owner, name) {
   };
 }
 
-async function ensureDashboardListFixture(page) {
-  await page.evaluate(() => {
-    const hide = ['#docker-unavailable-state', '#docker-empty-state', '#docker-quota-reached-state'];
-    const show = ['#docker-list-state', '#docker-health-dashboard', '#docker-alerts-panel'];
+async function requireRealDockerList(page) {
+  await page.goto('/list/docker/');
 
-    hide.forEach((selector) => {
-      const node = document.querySelector(selector);
-      if (node) {
-        node.style.display = 'none';
-      }
-    });
+  test.skip(await page.locator('#docker-unavailable-state').isVisible().catch(() => false), 'Docker engine is unavailable for dashboard coverage.');
+  test.skip(await page.locator('#docker-empty-state').isVisible().catch(() => false), 'Dashboard coverage requires a seeded Docker container.');
+  test.skip(await page.locator('#docker-quota-reached-state').isVisible().catch(() => false), 'Dashboard coverage requires at least one visible Docker container.');
 
-    show.forEach((selector) => {
-      const node = document.querySelector(selector);
-      if (node) {
-        node.style.display = '';
-      }
-    });
+  const card = page.locator('#docker-list-cards article[id^="docker-card-"]').first();
+  test.skip((await card.count()) === 0, 'Dashboard coverage requires at least one visible Docker container.');
+  await expect(card).toBeVisible();
 
-    const cards = document.querySelector('#docker-list-cards');
-    if (!cards) {
-      return;
-    }
+  const owner = (await card.getAttribute('data-owner')) || '';
+  const name = (await card.getAttribute('data-name')) || '';
+  const editLink = card.locator('a[href*="/edit/docker/?container="]').first();
+  const editHref = (await editLink.getAttribute('href')) || '';
 
-    if (!cards.querySelector('[data-playwright-dashboard="yes"]')) {
-      const article = document.createElement('article');
-      article.id = 'docker-card-dockeruser-panel-app';
-      article.className = 'l-unit';
-      article.dataset.owner = 'dockeruser';
-      article.dataset.name = 'panel-app';
-      article.dataset.playwrightDashboard = 'yes';
-      article.innerHTML = `
-        <div class="actions-panel clearfix">
-          <div class="actions-panel__col actions-panel__edit"><a href="/edit/docker/?container=panel-app">edit</a></div>
-        </div>
-        <div class="l-unit__stats">
-          <b class="docker-card-status">running</b>
-          <b class="docker-card-health-badge">healthy</b>
-          <b class="docker-card-health-updated">2026-06-27 14:03:00</b>
-          <b class="docker-card-alert-count">0</b>
-          <b class="docker-card-latest-cpu">No data</b>
-          <b class="docker-card-latest-mem">No data</b>
-          <span class="docker-card-latest-rx">No data</span>
-          <span class="docker-card-latest-tx">No data</span>
-        </div>
-      `;
-      cards.prepend(article);
-    }
+  expect(owner).not.toBe('');
+  expect(name).not.toBe('');
+  expect(editHref).not.toBe('');
 
-    window.DOCKER_LIST = window.DOCKER_LIST || {};
-    window.DOCKER_LIST.token = window.DOCKER_LIST.token || 'test-token';
-    window.DOCKER_LIST.dockerAvailable = true;
-    window.DOCKER_LIST.primaryState = 'list';
-    window.DOCKER_LIST.ownerScope = window.DOCKER_LIST.ownerScope || 'dockeruser';
-    window.DOCKER_LIST.containers = [
-      {
-        owner: 'dockeruser',
-        name: 'panel-app',
-        healthStatus: 'healthy',
-        lastHealthAt: '2026-06-27 14:03:00',
-      },
-    ];
-  });
-}
-
-async function buildEditFixture(page) {
-  await page.setContent(`
-    <html>
-      <body>
-        <section id="docker-live-metrics">
-          <div id="docker-chart-cpu">No metrics available yet.</div>
-          <div id="docker-chart-mem">No metrics available yet.</div>
-          <div id="docker-chart-rx">No metrics available yet.</div>
-          <div id="docker-chart-tx">No metrics available yet.</div>
-          <div id="docker-detail-status">No data</div>
-          <div id="docker-detail-health-status">No data</div>
-          <div id="docker-detail-health-updated">No data</div>
-        </section>
-        <section id="docker-alerts-panel">
-          <div class="docker-alerts-list"></div>
-          <button id="docker-alert-acknowledge" style="display:none;">Acknowledge alert</button>
-        </section>
-        <script>
-          window.DOCKER_EDIT = {
-            token: 'test-token',
-            owner: 'dockeruser',
-            name: 'panel-app',
-            statsUrl: '/ajax/docker/actions/stats.php',
-            healthUrl: '/ajax/docker/actions/health.php',
-            alertsUrl: '/ajax/docker/actions/alerts.php',
-            acknowledgeUrl: '/ajax/docker/actions/acknowledge_alert.php',
-            pollIntervalMs: 30000
-          };
-        </script>
-      </body>
-    </html>
-  `);
-  await page.addScriptTag({ path: 'web/js/jquery-1.7.2.min.js' });
-  await page.addScriptTag({ path: 'web/js/pages/edit_docker.js' });
+  return { card, owner, name, editHref };
 }
 
 test('docker list dashboard renders cards, constrained health vocabulary, and alert acknowledgement updates state', async ({ page }) => {
   let acknowledged = false;
+  let selectedContainer = null;
 
   await page.route('**/ajax/docker/actions/stats.php', async (route) => {
     const params = new URLSearchParams(route.request().postData() || '');
@@ -143,8 +66,8 @@ test('docker list dashboard renders cards, constrained health vocabulary, and al
           ALERTS: [
             {
               AID: '1',
-              OWNER: owner,
-              NAME: 'panel-app',
+              OWNER: selectedContainer ? selectedContainer.owner : owner,
+              NAME: selectedContainer ? selectedContainer.name : 'seeded-app',
               LEVEL: 'warning',
               TYPE: 'health',
               STATUS: 'open',
@@ -174,8 +97,7 @@ test('docker list dashboard renders cards, constrained health vocabulary, and al
     });
   });
 
-  await page.goto('/list/docker/');
-  await ensureDashboardListFixture(page);
+  selectedContainer = await requireRealDockerList(page);
 
   await expect(page.locator('#docker-health-dashboard')).toBeVisible();
   await expect(page.locator('#docker-alerts-panel')).toBeVisible();
@@ -233,7 +155,8 @@ test('docker edit page renders live metrics and chart containers after stats dat
     });
   });
 
-  await buildEditFixture(page);
+  const { editHref } = await requireRealDockerList(page);
+  await page.goto(editHref);
 
   await expect(page.locator('#docker-live-metrics')).toBeVisible();
   await expect(page.locator('#docker-chart-cpu pre')).toContainText(/2026-06-27T14:00:00Z/);

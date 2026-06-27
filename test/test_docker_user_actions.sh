@@ -1,17 +1,21 @@
 #!/bin/bash
 
+if [ ! -f /etc/profile.d/vesta.sh ]; then
+    echo "SKIP: /etc/profile.d/vesta.sh is unavailable on this host."
+    exit 0
+fi
+
 source /etc/profile.d/vesta.sh
+
+if [ -z "$VESTA" ] || [ ! -d "$VESTA/bin" ]; then
+    echo "SKIP: Vesta runtime is unavailable on this host."
+    exit 0
+fi
 
 V_BIN="$VESTA/bin"
 V_TEST="$VESTA/test"
 TMP_ROOT="${TMPDIR:-/tmp}"
 DOCKER_TEST_IMAGE="${DOCKER_TEST_IMAGE:-busybox:latest}"
-RUN_DOCKER_USER_ACTIONS_TESTS="${RUN_DOCKER_USER_ACTIONS_TESTS:-no}"
-
-if [ "$RUN_DOCKER_USER_ACTIONS_TESTS" != 'yes' ]; then
-    echo "SKIP: set RUN_DOCKER_USER_ACTIONS_TESTS=yes to execute Docker user-action regressions."
-    exit 0
-fi
 
 random() {
     local matrix='0123456789'
@@ -209,13 +213,15 @@ expect_code "DOCKER: User create blocked when package limit is exhausted" 11 "$V
 
 expect_ok "DOCKER: Second user creates owned container" "$V_BIN/v-add-docker-container $user_two $spec_two"
 
-expect_code "DOCKER: User cannot start another user's container" 3 "$V_BIN/v-start-docker-container $user_one $container_two"
-expect_code "DOCKER: User cannot stop another user's container" 3 "$V_BIN/v-stop-docker-container $user_one $container_two"
-expect_code "DOCKER: User cannot delete another user's container" 3 "$V_BIN/v-delete-docker-container $user_one $container_two"
+expect_code "DOCKER: Wrong owner lookup fails for foreign container record" 3 "$V_BIN/v-list-docker-container $user_one $container_two json"
+expect_code "DOCKER: Wrong owner inspect fails for foreign container record" 3 "$V_BIN/v-list-docker-container-inspect $user_one $container_two >/dev/null"
+expect_code "DOCKER: Wrong owner start fails for foreign container record" 3 "$V_BIN/v-start-docker-container $user_one $container_two"
+expect_code "DOCKER: Wrong owner stop fails for foreign container record" 3 "$V_BIN/v-stop-docker-container $user_one $container_two"
+expect_code "DOCKER: Wrong owner delete fails for foreign container record" 3 "$V_BIN/v-delete-docker-container $user_one $container_two"
 
-expect_ok "DOCKER: Admin can inspect another user's container" "$V_BIN/v-list-docker-container-inspect $user_two $container_two >/dev/null"
-expect_ok "DOCKER: Admin can stop another user's container" "$V_BIN/v-stop-docker-container $user_two $container_two"
-expect_ok "DOCKER: Admin can start another user's container" "$V_BIN/v-start-docker-container $user_two $container_two"
+expect_ok "DOCKER: Rightful owner can inspect owned container" "$V_BIN/v-list-docker-container-inspect $user_two $container_two >/dev/null"
+expect_ok "DOCKER: Rightful owner can stop owned container" "$V_BIN/v-stop-docker-container $user_two $container_two"
+expect_ok "DOCKER: Rightful owner can start owned container" "$V_BIN/v-start-docker-container $user_two $container_two"
 
 cat >"$VESTA/data/users/$user_one/docker-alerts.conf" <<EOF
 AID='1' NAME='$container_one' OWNER='$user_one' LEVEL='warning' TYPE='health' STATUS='open' TITLE='Owner alert' MESSAGE='Owner alert message' STARTED='2026-06-27 14:01:00' LAST_SEEN='2026-06-27 14:03:00' ACK='no'
