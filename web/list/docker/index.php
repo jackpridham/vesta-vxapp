@@ -19,10 +19,22 @@ $docker_quota = ($docker_owner !== '') ? vx_docker_get_quota_state($docker_owner
 );
 
 $data = array();
+$docker_grouped_data = array();
 if ($docker_available) {
     $data = vx_docker_list_containers(vx_docker_is_admin_actor() ? 'admin' : $user);
     if (vx_docker_is_admin_actor() && $docker_owner !== '') {
         $data = vx_docker_filter_containers_by_owner($data, $docker_owner);
+    }
+
+    if (vx_docker_is_admin_actor() && $docker_owner === '') {
+        foreach ($data as $docker_key => $container) {
+            $docker_container_owner = isset($container['OWNER']) && $container['OWNER'] !== '' ? $container['OWNER'] : __('Unknown');
+            if (!isset($docker_grouped_data[$docker_container_owner])) {
+                $docker_grouped_data[$docker_container_owner] = array();
+            }
+
+            $docker_grouped_data[$docker_container_owner][$docker_key] = $container;
+        }
     }
 }
 

@@ -14,6 +14,122 @@
   } elseif (!$docker_has_containers) {
       $docker_primary_state = 'empty';
   }
+
+  $docker_show_owner_groups = ($_SESSION['user'] === 'admin' && $docker_owner === '' && !empty($docker_grouped_data));
+  $docker_render_card = function ($docker_key, $container) use (&$i) {
+      ++$i;
+      $docker_card_owner = isset($container['OWNER']) ? $container['OWNER'] : '';
+      $docker_card_name = isset($container['NAME']) ? $container['NAME'] : $docker_key;
+      $docker_card_id = 'docker-card-'.$docker_card_owner.'-'.$docker_card_name;
+      $docker_card_status = isset($container['STATUS']) ? $container['STATUS'] : '';
+      $docker_health_status = isset($container['HEALTH_STATUS']) && $container['HEALTH_STATUS'] !== '' ? $container['HEALTH_STATUS'] : 'unknown';
+      $docker_query_owner = ($_SESSION['user'] === 'admin') ? '&user='.urlencode($docker_card_owner) : '';
+      $docker_action = ($docker_card_status === 'running') ? 'stop' : 'start';
+?>
+          <script>
+            dataset_values[<?=$i?>] = {
+              url: '/ajax/docker/index.php',
+              title: '<?=htmlspecialchars($docker_card_name, ENT_QUOTES)?>',
+              container_name: '<?=htmlspecialchars($docker_card_name, ENT_QUOTES)?>',
+              owner: '<?=htmlspecialchars($docker_card_owner, ENT_QUOTES)?>'
+            };
+            window.DOCKER_LIST.containers.push({
+              owner: '<?=htmlspecialchars($docker_card_owner, ENT_QUOTES)?>',
+              name: '<?=htmlspecialchars($docker_card_name, ENT_QUOTES)?>',
+              healthStatus: '<?=htmlspecialchars($docker_health_status, ENT_QUOTES)?>',
+              lastHealthAt: '<?=htmlspecialchars(isset($container['LAST_HEALTH_AT']) ? $container['LAST_HEALTH_AT'] : '', ENT_QUOTES)?>'
+            });
+          </script>
+          <article id="<?=htmlspecialchars($docker_card_id, ENT_QUOTES)?>" class="l-unit <?php if ($docker_card_status !== 'running') echo 'l-unit--suspended'; ?>" data-owner="<?=htmlspecialchars($docker_card_owner, ENT_QUOTES)?>" data-name="<?=htmlspecialchars($docker_card_name, ENT_QUOTES)?>">
+            <div class="l-unit-toolbar clearfix">
+              <div class="l-unit-toolbar__col l-unit-toolbar__col--right noselect">
+                <div class="actions-panel clearfix">
+                  <div class="actions-panel__col actions-panel__edit shortcut-enter" key-action="href"><a href="/edit/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>"><?=__('edit')?> <i></i></a><span class="shortcut enter">&nbsp;&#8629;</span></div>
+                  <div class="actions-panel__col actions-panel__<?=$docker_action?> shortcut-s" key-action="href"><a href="/<?=$docker_action?>/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>&token=<?=$_SESSION['token']?>"><?=__($docker_action)?> <i></i></a><span class="shortcut">&nbsp;S</span></div>
+                  <div class="actions-panel__col actions-panel__restart shortcut-r" key-action="href"><a href="/restart/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>&token=<?=$_SESSION['token']?>"><?=__('restart')?> <i></i></a><span class="shortcut">&nbsp;R</span></div>
+                  <div class="actions-panel__col actions-panel__delete shortcut-delete" key-action="href"><a href="/delete/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>&token=<?=$_SESSION['token']?>"><?=__('delete')?> <i></i></a><span class="shortcut delete">&nbsp;Del</span></div>
+                  <div class="actions-panel__col actions-panel__logs" style="background-color: #cae1e5;"><a href="javascript:void(0)" onclick="more_button_click(<?=$i?>)"><?=__('Docker')?> <i></i></a><span class="shortcut more">&nbsp;&#8629;</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="l-unit__col l-unit__col--left clearfix">
+              <div class="l-unit__date"><?=htmlspecialchars(isset($container['UPDATED']) ? $container['UPDATED'] : '', ENT_QUOTES)?></div>
+              <div class="l-unit__suspended"><?=__('stopped')?></div>
+            </div>
+            <div class="l-unit__col l-unit__col--right">
+              <div class="l-unit__name small-2">
+                <?=htmlspecialchars($docker_card_name, ENT_QUOTES)?>
+                <span><?=htmlspecialchars(isset($container['IMAGE']) ? $container['IMAGE'] : '', ENT_QUOTES)?></span>
+              </div>
+              <div class="l-unit__stats">
+                <table>
+                  <tr>
+                    <td>
+                      <div class="l-unit__stat-cols clearfix">
+                        <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Owner')?>:</div>
+                        <div class="l-unit__stat-col l-unit__stat-col--right"><b><?=htmlspecialchars($docker_card_owner, ENT_QUOTES)?></b></div>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="l-unit__stat-cols clearfix">
+                        <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Status')?>:</div>
+                        <div class="l-unit__stat-col l-unit__stat-col--right"><b class="docker-card-status"><?=htmlspecialchars($docker_card_status, ENT_QUOTES)?></b></div>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="l-unit__stat-cols clearfix last">
+                        <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Route')?>:</div>
+                        <div class="l-unit__stat-col l-unit__stat-col--right"><b><?=htmlspecialchars(isset($container['DOMAIN']) && $container['DOMAIN'] !== '' ? $container['DOMAIN'] : __('none'), ENT_QUOTES)?></b></div>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <div class="l-unit__stat-cols clearfix">
+                        <div class="l-unit__stat-col l-unit__stat-col--left">CPU:</div>
+                        <div class="l-unit__stat-col l-unit__stat-col--right"><b class="docker-card-latest-cpu"><?=__('No data')?></b></div>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="l-unit__stat-cols clearfix">
+                        <div class="l-unit__stat-col l-unit__stat-col--left">Memory:</div>
+                        <div class="l-unit__stat-col l-unit__stat-col--right"><b class="docker-card-latest-mem"><?=__('No data')?></b></div>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="l-unit__stat-cols clearfix last">
+                        <div class="l-unit__stat-col l-unit__stat-col--left">RX / TX:</div>
+                        <div class="l-unit__stat-col l-unit__stat-col--right"><b><span class="docker-card-latest-rx"><?=__('No data')?></span> / <span class="docker-card-latest-tx"><?=__('No data')?></span></b></div>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td>
+                      <div class="l-unit__stat-cols clearfix">
+                        <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Health')?>:</div>
+                        <div class="l-unit__stat-col l-unit__stat-col--right"><b class="docker-card-health-badge"><?=htmlspecialchars($docker_health_status, ENT_QUOTES)?></b></div>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="l-unit__stat-cols clearfix">
+                        <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Alerts')?>:</div>
+                        <div class="l-unit__stat-col l-unit__stat-col--right"><b class="docker-card-alert-count">0</b></div>
+                      </div>
+                    </td>
+                    <td>
+                      <div class="l-unit__stat-cols clearfix last">
+                        <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Last health check')?>:</div>
+                        <div class="l-unit__stat-col l-unit__stat-col--right"><b class="docker-card-health-updated"><?=htmlspecialchars(isset($container['LAST_HEALTH_AT']) && $container['LAST_HEALTH_AT'] !== '' ? $container['LAST_HEALTH_AT'] : __('No data'), ENT_QUOTES)?></b></div>
+                      </div>
+                    </td>
+                  </tr>
+                </table>
+              </div>
+            </div>
+          </article>
+<?php
+  };
 ?>
     <div class="l-center">
       <div class="l-sort clearfix noselect">
@@ -151,118 +267,30 @@
 
       <div class="l-center units">
         <div id="docker-list-cards">
-          <?php foreach ($data as $docker_key => $container) {
-              ++$i;
-              $docker_card_owner = isset($container['OWNER']) ? $container['OWNER'] : '';
-              $docker_card_name = isset($container['NAME']) ? $container['NAME'] : $docker_key;
-              $docker_card_id = 'docker-card-'.$docker_card_owner.'-'.$docker_card_name;
-              $docker_card_status = isset($container['STATUS']) ? $container['STATUS'] : '';
-              $docker_health_status = isset($container['HEALTH_STATUS']) && $container['HEALTH_STATUS'] !== '' ? $container['HEALTH_STATUS'] : 'unknown';
-              $docker_query_owner = ($_SESSION['user'] === 'admin') ? '&user='.urlencode($docker_card_owner) : '';
-              $docker_action = ($docker_card_status === 'running') ? 'stop' : 'start';
-          ?>
-          <script>
-            dataset_values[<?=$i?>] = {
-              url: '/ajax/docker/index.php',
-              title: '<?=htmlspecialchars($docker_card_name, ENT_QUOTES)?>',
-              container_name: '<?=htmlspecialchars($docker_card_name, ENT_QUOTES)?>',
-              owner: '<?=htmlspecialchars($docker_card_owner, ENT_QUOTES)?>'
-            };
-            window.DOCKER_LIST.containers.push({
-              owner: '<?=htmlspecialchars($docker_card_owner, ENT_QUOTES)?>',
-              name: '<?=htmlspecialchars($docker_card_name, ENT_QUOTES)?>',
-              healthStatus: '<?=htmlspecialchars($docker_health_status, ENT_QUOTES)?>',
-              lastHealthAt: '<?=htmlspecialchars(isset($container['LAST_HEALTH_AT']) ? $container['LAST_HEALTH_AT'] : '', ENT_QUOTES)?>'
-            });
-          </script>
-          <article id="<?=htmlspecialchars($docker_card_id, ENT_QUOTES)?>" class="l-unit <?php if ($docker_card_status !== 'running') echo 'l-unit--suspended'; ?>" data-owner="<?=htmlspecialchars($docker_card_owner, ENT_QUOTES)?>" data-name="<?=htmlspecialchars($docker_card_name, ENT_QUOTES)?>">
-            <div class="l-unit-toolbar clearfix">
-              <div class="l-unit-toolbar__col l-unit-toolbar__col--right noselect">
-                <div class="actions-panel clearfix">
-                  <div class="actions-panel__col actions-panel__edit shortcut-enter" key-action="href"><a href="/edit/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>"><?=__('edit')?> <i></i></a><span class="shortcut enter">&nbsp;&#8629;</span></div>
-                  <div class="actions-panel__col actions-panel__<?=$docker_action?> shortcut-s" key-action="href"><a href="/<?=$docker_action?>/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>&token=<?=$_SESSION['token']?>"><?=__($docker_action)?> <i></i></a><span class="shortcut">&nbsp;S</span></div>
-                  <div class="actions-panel__col actions-panel__restart shortcut-r" key-action="href"><a href="/restart/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>&token=<?=$_SESSION['token']?>"><?=__('restart')?> <i></i></a><span class="shortcut">&nbsp;R</span></div>
-                  <div class="actions-panel__col actions-panel__delete shortcut-delete" key-action="href"><a href="/delete/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>&token=<?=$_SESSION['token']?>"><?=__('delete')?> <i></i></a><span class="shortcut delete">&nbsp;Del</span></div>
-                  <div class="actions-panel__col actions-panel__logs" style="background-color: #cae1e5;"><a href="javascript:void(0)" onclick="more_button_click(<?=$i?>)"><?=__('Docker')?> <i></i></a><span class="shortcut more">&nbsp;&#8629;</span></div>
+          <?php if ($docker_show_owner_groups) { ?>
+            <?php foreach ($docker_grouped_data as $docker_group_owner => $docker_group_containers) { ?>
+            <section class="docker-owner-group" data-owner="<?=htmlspecialchars($docker_group_owner, ENT_QUOTES)?>">
+              <div class="l-unit" style="margin-bottom: 12px;">
+                <div class="l-unit__col l-unit__col--right">
+                  <div class="l-unit__name separate"><?=htmlspecialchars($docker_group_owner, ENT_QUOTES)?></div>
+                  <div class="l-unit__stats">
+                    <table>
+                      <tr>
+                        <td><?=count($docker_group_containers)?> <?=__('containers')?></td>
+                      </tr>
+                    </table>
+                  </div>
                 </div>
               </div>
-            </div>
-
-            <div class="l-unit__col l-unit__col--left clearfix">
-              <div class="l-unit__date"><?=htmlspecialchars(isset($container['UPDATED']) ? $container['UPDATED'] : '', ENT_QUOTES)?></div>
-              <div class="l-unit__suspended"><?=__('stopped')?></div>
-            </div>
-            <div class="l-unit__col l-unit__col--right">
-              <div class="l-unit__name small-2">
-                <?=htmlspecialchars($docker_card_name, ENT_QUOTES)?>
-                <span><?=htmlspecialchars(isset($container['IMAGE']) ? $container['IMAGE'] : '', ENT_QUOTES)?></span>
-              </div>
-              <div class="l-unit__stats">
-                <table>
-                  <tr>
-                    <td>
-                      <div class="l-unit__stat-cols clearfix">
-                        <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Owner')?>:</div>
-                        <div class="l-unit__stat-col l-unit__stat-col--right"><b><?=htmlspecialchars($docker_card_owner, ENT_QUOTES)?></b></div>
-                      </div>
-                    </td>
-                    <td>
-                      <div class="l-unit__stat-cols clearfix">
-                        <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Status')?>:</div>
-                        <div class="l-unit__stat-col l-unit__stat-col--right"><b class="docker-card-status"><?=htmlspecialchars($docker_card_status, ENT_QUOTES)?></b></div>
-                      </div>
-                    </td>
-                    <td>
-                      <div class="l-unit__stat-cols clearfix last">
-                        <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Route')?>:</div>
-                        <div class="l-unit__stat-col l-unit__stat-col--right"><b><?=htmlspecialchars(isset($container['DOMAIN']) && $container['DOMAIN'] !== '' ? $container['DOMAIN'] : __('none'), ENT_QUOTES)?></b></div>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>
-                      <div class="l-unit__stat-cols clearfix">
-                        <div class="l-unit__stat-col l-unit__stat-col--left">CPU:</div>
-                        <div class="l-unit__stat-col l-unit__stat-col--right"><b class="docker-card-latest-cpu"><?=__('No data')?></b></div>
-                      </div>
-                    </td>
-                    <td>
-                      <div class="l-unit__stat-cols clearfix">
-                        <div class="l-unit__stat-col l-unit__stat-col--left">Memory:</div>
-                        <div class="l-unit__stat-col l-unit__stat-col--right"><b class="docker-card-latest-mem"><?=__('No data')?></b></div>
-                      </div>
-                    </td>
-                    <td>
-                      <div class="l-unit__stat-cols clearfix last">
-                        <div class="l-unit__stat-col l-unit__stat-col--left">RX / TX:</div>
-                        <div class="l-unit__stat-col l-unit__stat-col--right"><b><span class="docker-card-latest-rx"><?=__('No data')?></span> / <span class="docker-card-latest-tx"><?=__('No data')?></span></b></div>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>
-                      <div class="l-unit__stat-cols clearfix">
-                        <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Health')?>:</div>
-                        <div class="l-unit__stat-col l-unit__stat-col--right"><b class="docker-card-health-badge"><?=htmlspecialchars($docker_health_status, ENT_QUOTES)?></b></div>
-                      </div>
-                    </td>
-                    <td>
-                      <div class="l-unit__stat-cols clearfix">
-                        <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Alerts')?>:</div>
-                        <div class="l-unit__stat-col l-unit__stat-col--right"><b class="docker-card-alert-count">0</b></div>
-                      </div>
-                    </td>
-                    <td>
-                      <div class="l-unit__stat-cols clearfix last">
-                        <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Last health check')?>:</div>
-                        <div class="l-unit__stat-col l-unit__stat-col--right"><b class="docker-card-health-updated"><?=htmlspecialchars(isset($container['LAST_HEALTH_AT']) && $container['LAST_HEALTH_AT'] !== '' ? $container['LAST_HEALTH_AT'] : __('No data'), ENT_QUOTES)?></b></div>
-                      </div>
-                    </td>
-                  </tr>
-                </table>
-              </div>
-            </div>
-          </article>
+              <?php foreach ($docker_group_containers as $docker_key => $container) { ?>
+                <?php $docker_render_card($docker_key, $container); ?>
+              <?php } ?>
+            </section>
+            <?php } ?>
+          <?php } else { ?>
+            <?php foreach ($data as $docker_key => $container) { ?>
+              <?php $docker_render_card($docker_key, $container); ?>
+            <?php } ?>
           <?php } ?>
         </div>
       </div>
