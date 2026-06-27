@@ -53,11 +53,10 @@ fi
 
 IFS=$'\n'
 for cmd in $commands; do
-    script=$(echo $cmd |cut -f 1 -d ' ')
-    arg1=$(echo $cmd |cut -f 2 -d ' ')
-    arg2=$(echo $cmd |cut -f 3 -d ' ')
-    arg3=$(echo $cmd |cut -f 4 -d ' ')
-    $V_BIN/$script $arg1 $arg2 $arg3 | $V_TEST/json.sh >/dev/null 2>/dev/null
+    set -- $cmd
+    script=$1
+    shift
+    "$V_BIN/$script" "$@" | $V_TEST/json.sh >/dev/null 2>/dev/null
     retval="$?"
     echo -en  "$cmd"
     echo -en '\033[60G'
@@ -67,7 +66,7 @@ for cmd in $commands; do
         echo -n 'FAILED'
         echo -n ']'
         echo -ne '\r\n'
-        $V_BIN/$script $arg1 $arg2 $arg3 | $V_TEST/json.sh
+        "$V_BIN/$script" "$@" | $V_TEST/json.sh
     else
         echo -n '  OK  '
         echo -n ']'
