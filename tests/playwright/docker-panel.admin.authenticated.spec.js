@@ -15,7 +15,11 @@ test('admin docker list renders all-users scope safely and groups owners when co
   }
 
   const cardCount = await page.locator('#docker-list-cards article.l-unit').count();
-  if (cardCount === 0) {
+  const managedCountText = await page.locator('#docker-list-toolbar').textContent();
+  const managedCountMatch = managedCountText ? managedCountText.match(/(\d+)/) : null;
+  const managedCount = managedCountMatch ? Number.parseInt(managedCountMatch[1], 10) : 0;
+
+  if (managedCount === 0 || cardCount === 0) {
     await expect(page.locator('#docker-list-toolbar')).toBeVisible();
     return;
   }

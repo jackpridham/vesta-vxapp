@@ -5,6 +5,7 @@
       $docker_query = '?user='.urlencode($docker_owner);
   }
   $docker_add_href = '/add/docker/'.$docker_query;
+  $docker_can_add_from_scope = !($_SESSION['user'] === 'admin' && $docker_owner === '');
   $docker_has_containers = !empty($data);
   $docker_primary_state = 'list';
   if (!$docker_available) {
@@ -133,7 +134,7 @@
 ?>
     <div class="l-center">
       <div class="l-sort clearfix noselect">
-        <?php if ($docker_available && empty($docker_quota['reached'])) { ?>
+        <?php if ($docker_available && empty($docker_quota['reached']) && $docker_can_add_from_scope) { ?>
         <a href="<?=$docker_add_href?>" class="l-sort__create-btn" title="<?=__('Add Docker Container')?>"><div id="add-icon"></div><div id="tooltip"><?=__('Add Docker Container')?></div></a>
         <?php } else { ?>
         <a href="/list/docker/<?=$docker_query?>" class="l-sort__create-btn edit" title="<?=__('Docker')?>"><div id="add-icon"></div><div id="tooltip"><?=__('Docker')?></div></a>
@@ -259,6 +260,9 @@
         </div>
         <div id="docker-list-toolbar" style="margin: 14px 0;">
           <span class="vst-text"><b><?=__('Managed Docker containers')?>:</b> <?=count($data)?></span>
+          <?php if ($_SESSION['user'] === 'admin' && $docker_owner === '') { ?>
+          <span class="vst-text" style="margin-left: 12px;"><?=__('Select an owner scope to add a Docker container.')?></span>
+          <?php } ?>
           <?php if (!empty($docker_quota['reached'])) { ?>
           <span class="vst-error" style="margin-left: 12px;"><?=__('Quota reached for this owner scope.')?></span>
           <?php } ?>
