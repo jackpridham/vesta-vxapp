@@ -30,7 +30,21 @@ async function requireRealDockerRow(page, preferredContainer = '') {
 
 async function openDockerActions(page, preferredContainer = '') {
   const rowData = await requireRealDockerRow(page, preferredContainer);
-  await rowData.dockerAction.click();
+  const [request] = await Promise.all([
+    page.waitForRequest((candidate) => {
+      if (!candidate.url().includes('/ajax/docker/index.php')) {
+        return false;
+      }
+
+      const params = new URLSearchParams(candidate.postData() || '');
+      return params.get('dataset[owner]') === rowData.owner
+        && params.get('dataset[container_name]') === rowData.name;
+    }),
+    rowData.dockerAction.click(),
+  ]);
+  const requestParams = new URLSearchParams(request.postData() || '');
+  expect(requestParams.get('dataset[owner]')).toBe(rowData.owner);
+  expect(requestParams.get('dataset[container_name]')).toBe(rowData.name);
   await expect(page.locator('#floating-center-div')).toBeVisible();
   return rowData;
 }

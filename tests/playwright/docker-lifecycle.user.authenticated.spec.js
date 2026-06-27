@@ -42,20 +42,20 @@ test('start stop restart flows update row state and action labels without admin-
     if (initialStatus !== 'running') {
       await clickAction(page, card, '^start');
       await expect(targetCard(page, targetContainerName).locator('.docker-card-status')).toHaveText(/running/i);
-      await expect(card.getByRole('link', { name: /^stop/i })).toBeVisible();
+      await expect(targetCard(page, targetContainerName).getByRole('link', { name: /^stop/i })).toBeVisible();
     }
 
     await clickAction(page, card, '^stop');
     await expect(targetCard(page, targetContainerName).locator('.docker-card-status')).toHaveText(/exited/i);
-    await expect(card.getByRole('link', { name: /^start/i })).toBeVisible();
+    await expect(targetCard(page, targetContainerName).getByRole('link', { name: /^start/i })).toBeVisible();
 
     await clickAction(page, card, '^start');
     await expect(targetCard(page, targetContainerName).locator('.docker-card-status')).toHaveText(/running/i);
-    await expect(card.getByRole('link', { name: /^stop/i })).toBeVisible();
+    await expect(targetCard(page, targetContainerName).getByRole('link', { name: /^stop/i })).toBeVisible();
 
     await clickAction(page, card, '^restart');
     await expect(targetCard(page, targetContainerName).locator('.docker-card-status')).toHaveText(/running/i);
-    await expect(card.getByRole('link', { name: /^stop/i })).toBeVisible();
+    await expect(targetCard(page, targetContainerName).getByRole('link', { name: /^stop/i })).toBeVisible();
   } finally {
     const restoredCard = targetCard(page, targetContainerName);
     const finalStatus = await cardStatus(restoredCard);

@@ -22,6 +22,7 @@ test('admin docker list shows owner-aware rows and can pivot by owner when multi
     options.map((option) => option.value).filter((value) => value)
   );
   test.skip(optionValues.length < 2, 'Admin owner-filter coverage requires seeded Docker containers for at least two owners.');
+  const currentOwner = await ownerSelect.inputValue();
 
   const firstCard = page.locator('#docker-list-cards article[id^="docker-card-"]').first();
   await expect(firstCard).toBeVisible();
@@ -29,7 +30,10 @@ test('admin docker list shows owner-aware rows and can pivot by owner when multi
   await expect(firstCard).toContainText(/Owner/i);
 
   const preferredOwner = getOptionalEnv('PLAYWRIGHT_DOCKER_OWNER_FILTER_USER');
-  const pivotOwner = optionValues.includes(preferredOwner) ? preferredOwner : optionValues[0];
+  const pivotOwner = optionValues.find((value) => value === preferredOwner && value !== currentOwner)
+    || optionValues.find((value) => value !== currentOwner)
+    || '';
+  test.skip(!pivotOwner, 'Admin owner-filter coverage requires a second owner distinct from the current scope.');
 
   await ownerSelect.selectOption(pivotOwner);
   await expect(page).toHaveURL(new RegExp(`/list/docker/\\?user=${encodeURIComponent(pivotOwner)}`));
