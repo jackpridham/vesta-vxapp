@@ -106,7 +106,7 @@ async function loginAsRole(page, role = 'admin') {
 
 async function readSessionToken(page) {
   const tokenLocator = page.locator('#token');
-  await tokenLocator.waitFor();
+  await tokenLocator.waitFor({ state: 'attached' });
   return tokenLocator.getAttribute('token');
 }
 

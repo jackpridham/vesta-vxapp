@@ -499,12 +499,24 @@ function vx_docker_is_valid_http_healthcheck_target($target)
 
 function vx_docker_current_actor()
 {
+    global $myvesta_logged_user, $user;
+
+    if (isset($myvesta_logged_user) && $myvesta_logged_user !== '') {
+        return $myvesta_logged_user;
+    }
+
+    if (isset($user) && $user !== '') {
+        return $user;
+    }
+
     return isset($_SESSION['user']) ? $_SESSION['user'] : '';
 }
 
 function vx_docker_is_admin_actor()
 {
-    return vx_docker_current_actor() === 'admin';
+    global $myvesta_admin_look;
+
+    return vx_docker_current_actor() === 'admin' && empty($myvesta_admin_look);
 }
 
 function vx_docker_resolve_owner_from_request($default_owner = '', $allow_admin_override = true)

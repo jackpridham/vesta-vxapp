@@ -1,11 +1,11 @@
 <?php
   $docker_manage_user = $docker_owner !== '' ? $docker_owner : 'admin';
   $docker_query = '';
-  if ($_SESSION['user'] === 'admin' && $docker_owner !== '') {
+  if ($docker_actor_is_admin && $docker_owner !== '') {
       $docker_query = '?user='.urlencode($docker_owner);
   }
   $docker_add_href = '/add/docker/'.$docker_query;
-  $docker_can_add_from_scope = !($_SESSION['user'] === 'admin' && $docker_owner === '');
+  $docker_can_add_from_scope = !($docker_actor_is_admin && $docker_owner === '');
   $docker_has_containers = !empty($data);
   $docker_primary_state = 'list';
   if (!$docker_available) {
@@ -16,15 +16,15 @@
       $docker_primary_state = 'empty';
   }
 
-  $docker_show_owner_groups = ($_SESSION['user'] === 'admin' && $docker_owner === '' && !empty($docker_grouped_data));
-  $docker_render_card = function ($docker_key, $container) use (&$i) {
+  $docker_show_owner_groups = ($docker_actor_is_admin && $docker_owner === '' && !empty($docker_grouped_data));
+  $docker_render_card = function ($docker_key, $container) use (&$i, $docker_actor_is_admin) {
       ++$i;
       $docker_card_owner = isset($container['OWNER']) ? $container['OWNER'] : '';
       $docker_card_name = isset($container['NAME']) ? $container['NAME'] : $docker_key;
       $docker_card_id = 'docker-card-'.$docker_card_owner.'-'.$docker_card_name;
       $docker_card_status = isset($container['STATUS']) ? $container['STATUS'] : '';
       $docker_health_status = isset($container['HEALTH_STATUS']) && $container['HEALTH_STATUS'] !== '' ? $container['HEALTH_STATUS'] : 'unknown';
-      $docker_query_owner = ($_SESSION['user'] === 'admin') ? '&user='.urlencode($docker_card_owner) : '';
+      $docker_query_owner = $docker_actor_is_admin ? '&user='.urlencode($docker_card_owner) : '';
       $docker_action = ($docker_card_status === 'running') ? 'stop' : 'start';
 ?>
           <script>
@@ -149,12 +149,12 @@
               <td class="step-right">
                 <a class="vst" href="/list/docker/<?=$docker_query?>"><?=__('refresh')?></a>
               </td>
-              <?php if ($_SESSION['user'] === 'admin' && !$docker_available) { ?>
+              <?php if ($docker_actor_is_admin && !$docker_available) { ?>
               <td class="step-right">
                 <a class="vst" href="javascript:void(0)" onclick="more_button_click(0)"><?=__('Install Docker')?></a>
               </td>
               <?php } ?>
-              <?php if ($_SESSION['user'] === 'admin' && !empty($docker_owner_filter_options)) { ?>
+              <?php if ($docker_actor_is_admin && !empty($docker_owner_filter_options)) { ?>
               <td class="step-right">
                 <form method="get" action="/list/docker/" style="display:inline;">
                   <select name="user" class="vst-list" style="min-width: 160px;" onchange="this.form.submit()">
@@ -178,7 +178,7 @@
       var dataset_values = [];
       window.DOCKER_LIST = {
         token: '<?=htmlspecialchars($_SESSION['token'], ENT_QUOTES)?>',
-        actorIsAdmin: <?=$_SESSION['user'] === 'admin' ? 'true' : 'false'?>,
+        actorIsAdmin: <?=$docker_actor_is_admin ? 'true' : 'false'?>,
         ownerScope: '<?=htmlspecialchars($docker_owner, ENT_QUOTES)?>',
         currentUser: '<?=htmlspecialchars($user, ENT_QUOTES)?>',
         dockerAvailable: <?=$docker_available ? 'true' : 'false'?>,
@@ -194,7 +194,7 @@
       };
     </script>
 
-    <?php if ($_SESSION['user'] === 'admin' && !$docker_available) { ?>
+    <?php if ($docker_actor_is_admin && !$docker_available) { ?>
     <script>
       dataset_values[0] = {
         url: '/ajax/docker/index.php',
@@ -254,13 +254,13 @@
         <div class="notice notice-warning" style="margin-bottom: 12px;"><?=__('Docker daemon is unavailable. Runtime actions may fail until the service returns, but managed metadata is still shown below.')?></div>
         <?php } ?>
         <div id="docker-owner-filter">
-          <?php if ($_SESSION['user'] === 'admin') { ?>
+          <?php if ($docker_actor_is_admin) { ?>
           <span class="vst-text"><b><?=__('Owner scope')?>:</b> <?=htmlspecialchars($docker_owner !== '' ? $docker_owner : __('All Users'), ENT_QUOTES)?></span>
           <?php } ?>
         </div>
         <div id="docker-list-toolbar" style="margin: 14px 0;">
           <span class="vst-text"><b><?=__('Managed Docker containers')?>:</b> <?=count($data)?></span>
-          <?php if ($_SESSION['user'] === 'admin' && $docker_owner === '') { ?>
+          <?php if ($docker_actor_is_admin && $docker_owner === '') { ?>
           <span class="vst-text" style="margin-left: 12px;"><?=__('Select an owner scope to add a Docker container.')?></span>
           <?php } ?>
           <?php if (!empty($docker_quota['reached'])) { ?>
