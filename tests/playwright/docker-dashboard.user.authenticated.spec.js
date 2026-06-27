@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { getOptionalEnv } = require('./helpers/panel-auth');
+const { getOptionalEnv, loginAsRole } = require('./helpers/panel-auth');
 const { hasLocalVestaRuntime, isLocalPanelTarget, withSeededAlert } = require('./helpers/docker-runtime-fixtures');
 
 const allowedHealthStates = new Set(['healthy', 'starting', 'degraded', 'unhealthy', 'unknown']);
@@ -13,20 +13,14 @@ async function textContentTrim(locator) {
 }
 
 async function waitForNonPlaceholder(page, selector, placeholderText, timeout = 5_000) {
-  await expect(page.locator(selector)).toHaveCount(1);
-  await page.waitForFunction(
-    ({ css, placeholder }) => {
-      const node = document.querySelector(css);
-      if (!node) {
-        return false;
-      }
-
-      const text = node.textContent.trim();
-      return text !== '' && text !== placeholder;
-    },
-    { css: selector, placeholder: placeholderText },
-    { timeout },
-  );
+  const locator = page.locator(selector);
+  await expect(locator).toHaveCount(1);
+  await expect
+    .poll(async () => textContentTrim(locator), { timeout })
+    .not.toBe('');
+  await expect
+    .poll(async () => textContentTrim(locator), { timeout })
+    .not.toBe(placeholderText);
 }
 
 async function waitForMetricValue(page, selector, placeholderText, valuePattern, timeout = 5_000) {
@@ -35,24 +29,16 @@ async function waitForMetricValue(page, selector, placeholderText, valuePattern,
 }
 
 async function waitForRenderedSeries(page, selector, timeout = 5_000) {
-  await expect(page.locator(selector)).toHaveCount(1);
-  await page.waitForFunction(
-    (css) => {
-      const node = document.querySelector(css);
-      if (!node) {
-        return false;
-      }
-
-      const pre = node.querySelector('pre');
-      return Boolean(pre) && pre.textContent.trim() !== '';
-    },
-    selector,
-    { timeout },
-  );
-
-  const text = await textContentTrim(page.locator(selector));
-  expect(text).not.toBe('');
-  expect(text).not.toMatch(/^No metrics available yet\.?$/i);
+  const locator = page.locator(selector);
+  await expect(locator).toHaveCount(1);
+  await expect
+    .poll(async () => locator.locator('pre').count(), { timeout })
+    .toBeGreaterThan(0);
+  const text = await expect
+    .poll(async () => textContentTrim(locator), { timeout })
+    .not.toBe('');
+  const finalText = await textContentTrim(locator);
+  expect(finalText).not.toMatch(/^No metrics available yet\.?$/i);
 }
 
 async function requireRealDockerList(page, preferredContainer = '') {
@@ -85,6 +71,7 @@ async function requireRealDockerList(page, preferredContainer = '') {
 test('docker list dashboard renders cards, constrained health vocabulary, and alert acknowledgement updates state', async ({ page }) => {
   test.skip(!hasLocalVestaRuntime(), 'Dashboard alert coverage requires local Vesta runtime access for deterministic alert setup.');
   test.skip(!isLocalPanelTarget(), 'Dashboard alert coverage requires PLAYWRIGHT_BASE_URL to target the same host as the local Vesta runtime.');
+  await loginAsRole(page, 'dockerUser');
   const preferredContainer = getOptionalEnv('PLAYWRIGHT_DOCKER_DASHBOARD_CONTAINER');
   const { owner, name } = await requireRealDockerList(page, preferredContainer);
   const seededAlert = withSeededAlert(owner, name);
@@ -126,6 +113,7 @@ test('docker list dashboard renders cards, constrained health vocabulary, and al
 });
 
 test('docker edit page renders live metrics and chart containers after stats data returns', async ({ page }) => {
+  await loginAsRole(page, 'dockerUser');
   const preferredContainer = getOptionalEnv('PLAYWRIGHT_DOCKER_DASHBOARD_CONTAINER');
   const { editHref } = await requireRealDockerList(page, preferredContainer);
   await page.goto(editHref);

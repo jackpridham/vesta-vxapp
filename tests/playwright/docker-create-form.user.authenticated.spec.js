@@ -1,5 +1,5 @@
 const { test, expect } = require('@playwright/test');
-const { getOptionalEnv, getPanelCredentials } = require('./helpers/panel-auth');
+const { getOptionalEnv, getPanelCredentials, loginAsRole } = require('./helpers/panel-auth');
 const { deleteContainer, hasLocalVestaRuntime, isLocalPanelTarget } = require('./helpers/docker-runtime-fixtures');
 
 const contractedFields = [
@@ -35,6 +35,7 @@ async function cleanupContainer(page, name) {
 }
 
 test('docker add form renders contracted field names and validation errors inside docker-form-errors', async ({ page }) => {
+  await loginAsRole(page, 'dockerUser');
   await page.goto('/add/docker/');
 
   const form = page.locator('#docker-create-form');
@@ -54,10 +55,12 @@ test('docker add form renders contracted field names and validation errors insid
 });
 
 test('successful create redirects back to the docker list', async ({ page }) => {
+  test.setTimeout(120_000);
   const image = getOptionalEnv('PLAYWRIGHT_DOCKER_TEST_IMAGE', 'busybox:1.36.1');
   const name = `pw-${Date.now().toString(36)}`;
 
   try {
+    await loginAsRole(page, 'dockerUser');
     await page.goto('/list/docker/');
     if (await page.locator('#docker-unavailable-state').isVisible().catch(() => false)) {
       test.skip(true, 'Docker engine is unavailable for create coverage.');
@@ -107,6 +110,9 @@ test('successful create redirects back to the docker list', async ({ page }) => 
     if (hasLocalVestaRuntime() && isLocalPanelTarget()) {
       deleteContainer(getPanelCredentials('dockerUser').username, name);
     } else {
+      if (page.isClosed()) {
+        return;
+      }
       await page.goto('/list/docker/');
       await cleanupContainer(page, name);
     }

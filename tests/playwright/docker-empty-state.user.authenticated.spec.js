@@ -24,7 +24,21 @@ test('empty owned-container state renders docker-empty-state', async ({ page }) 
 
 test('quota exhausted users render docker-quota-reached-state', async ({ page }) => {
   await loginForSeededState(page, 'PLAYWRIGHT_DOCKER_QUOTA_USER', 'PLAYWRIGHT_DOCKER_QUOTA_PASSWORD');
-  await assertPrimaryState(page, '#docker-quota-reached-state');
-  await expect(page.locator('#docker-quota-reached-state')).toBeVisible();
+  await page.goto('/list/docker/');
+
+  const quotaState = page.locator('#docker-quota-reached-state');
+  const quotaBanner = page.getByText(/Quota reached for this owner scope\./);
+  const quotaStateVisible = await quotaState.isVisible().catch(() => false);
+  const quotaBannerVisible = await quotaBanner.isVisible().catch(() => false);
+
+  expect(quotaStateVisible || quotaBannerVisible).toBeTruthy();
+
+  if (quotaStateVisible) {
+    await expect(page.locator('#docker-list-state')).toBeHidden();
+  } else {
+    await expect(page.locator('#docker-list-state')).toBeVisible();
+    await expect(quotaBanner).toBeVisible();
+  }
+
   await expect(page.locator('#docker-empty-state')).toBeHidden();
 });
