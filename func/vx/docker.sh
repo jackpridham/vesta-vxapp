@@ -412,7 +412,7 @@ vx_docker_validate_healthcheck() {
         docker)
             ;;
         http)
-            if ! [[ "$HEALTHCHECK_TARGET" =~ ^https?:// ]]; then
+            if ! [[ "$HEALTHCHECK_TARGET" =~ ^https?://[^[:space:]]+$ ]]; then
                 check_result "$E_INVALID" "invalid docker healthcheck target :: $HEALTHCHECK_TARGET"
             fi
             ;;

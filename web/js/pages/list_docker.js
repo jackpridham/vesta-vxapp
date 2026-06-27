@@ -41,6 +41,9 @@
         var rxTotal = 0;
         var txTotal = 0;
         var cpuCount = 0;
+        var memCount = 0;
+        var rxCount = 0;
+        var txCount = 0;
         var healthLabel = 'No data';
         var healthUpdated = 'No data';
 
@@ -55,12 +58,15 @@
             }
             if (metric.LATEST.MEM_MB !== null) {
                 memTotal += metric.LATEST.MEM_MB;
+                memCount += 1;
             }
             if (metric.LATEST.RX_MBPS !== null) {
                 rxTotal += metric.LATEST.RX_MBPS;
+                rxCount += 1;
             }
             if (metric.LATEST.TX_MBPS !== null) {
                 txTotal += metric.LATEST.TX_MBPS;
+                txCount += 1;
             }
         });
 
@@ -70,9 +76,9 @@
         }
 
         $('#docker-card-cpu').text(cpuCount ? formatMetric(cpuTotal.toFixed(1), '%') : 'No data');
-        $('#docker-card-mem').text(metrics.length ? formatMetric(memTotal.toFixed(1), ' MB') : 'No data');
-        $('#docker-card-rx').text(metrics.length ? formatMetric(rxTotal.toFixed(2), ' MB/s') : 'No data');
-        $('#docker-card-tx').text(metrics.length ? formatMetric(txTotal.toFixed(2), ' MB/s') : 'No data');
+        $('#docker-card-mem').text(memCount ? formatMetric(memTotal.toFixed(1), ' MB') : 'No data');
+        $('#docker-card-rx').text(rxCount ? formatMetric(rxTotal.toFixed(2), ' MB/s') : 'No data');
+        $('#docker-card-tx').text(txCount ? formatMetric(txTotal.toFixed(2), ' MB/s') : 'No data');
         $('#docker-card-health-status').text(healthLabel);
         $('#docker-card-health-updated').text(healthUpdated);
         $('#docker-card-alert-count').text(alerts.length);
@@ -102,10 +108,28 @@
                 'data-aid': alert.AID
             });
 
-            article.append('<p><b>' + alert.TITLE + '</b> (' + alert.LEVEL + ')</p>');
-            article.append('<p>' + alert.MESSAGE + '</p>');
-            article.append('<p>Container: <b>' + alert.NAME + '</b> / Owner: <b>' + alert.OWNER + '</b></p>');
-            article.append('<p>Status: <b>' + alert.STATUS + '</b> / Ack: <b>' + alert.ACK + '</b> / Last seen: <b>' + alert.LAST_SEEN + '</b></p>');
+            article.append(
+                $('<p/>')
+                    .append($('<b/>').text(alert.TITLE || ''))
+                    .append(document.createTextNode(' (' + (alert.LEVEL || '') + ')'))
+            );
+            article.append($('<p/>').text(alert.MESSAGE || ''));
+            article.append(
+                $('<p/>')
+                    .append(document.createTextNode('Container: '))
+                    .append($('<b/>').text(alert.NAME || ''))
+                    .append(document.createTextNode(' / Owner: '))
+                    .append($('<b/>').text(alert.OWNER || ''))
+            );
+            article.append(
+                $('<p/>')
+                    .append(document.createTextNode('Status: '))
+                    .append($('<b/>').text(alert.STATUS || ''))
+                    .append(document.createTextNode(' / Ack: '))
+                    .append($('<b/>').text(alert.ACK || ''))
+                    .append(document.createTextNode(' / Last seen: '))
+                    .append($('<b/>').text(alert.LAST_SEEN || ''))
+            );
 
             if (alert.STATUS === 'open' && alert.ACK === 'no' && activeAlert === null) {
                 activeAlert = alert;

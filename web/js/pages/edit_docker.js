@@ -31,7 +31,12 @@
         $.each(series, function(_, point) {
             lines.push(point.TS + '  ' + point.VALUE + suffix);
         });
-        node.html('<pre style="white-space: pre-wrap;">' + lines.join("\n") + '</pre>');
+
+        node.empty().append(
+            $('<pre/>', {
+                style: 'white-space: pre-wrap;'
+            }).text(lines.join("\n"))
+        );
     }
 
     function refreshMetrics() {
@@ -85,9 +90,21 @@
                 'data-aid': alert.AID
             });
 
-            article.append('<p><b>' + alert.TITLE + '</b> (' + alert.LEVEL + ')</p>');
-            article.append('<p>' + alert.MESSAGE + '</p>');
-            article.append('<p>Status: <b>' + alert.STATUS + '</b> / Ack: <b>' + alert.ACK + '</b> / Last seen: <b>' + alert.LAST_SEEN + '</b></p>');
+            article.append(
+                $('<p/>')
+                    .append($('<b/>').text(alert.TITLE || ''))
+                    .append(document.createTextNode(' (' + (alert.LEVEL || '') + ')'))
+            );
+            article.append($('<p/>').text(alert.MESSAGE || ''));
+            article.append(
+                $('<p/>')
+                    .append(document.createTextNode('Status: '))
+                    .append($('<b/>').text(alert.STATUS || ''))
+                    .append(document.createTextNode(' / Ack: '))
+                    .append($('<b/>').text(alert.ACK || ''))
+                    .append(document.createTextNode(' / Last seen: '))
+                    .append($('<b/>').text(alert.LAST_SEEN || ''))
+            );
 
             if (alert.STATUS === 'open' && alert.ACK === 'no' && activeAlert === null) {
                 activeAlert = alert;

@@ -351,7 +351,7 @@ function vx_docker_collect_form_errors($owner)
     }
 
     $raw_healthcheck_target = vx_docker_raw_post_value('v_healthcheck_target');
-    if ($healthcheck_type === 'http' && $raw_healthcheck_target !== '' && !preg_match('/^https?:\/\//', $raw_healthcheck_target)) {
+    if ($healthcheck_type === 'http' && $raw_healthcheck_target !== '' && !vx_docker_is_valid_http_healthcheck_target($raw_healthcheck_target)) {
         $errors[] = __('Health check target must be a full http:// or https:// URL.');
     }
 
@@ -376,6 +376,17 @@ function vx_docker_collect_form_errors($owner)
     }
 
     return array_values(array_unique($errors));
+}
+
+function vx_docker_is_valid_http_healthcheck_target($target)
+{
+    $target = trim((string) $target);
+    if ($target === '' || filter_var($target, FILTER_VALIDATE_URL) === false) {
+        return false;
+    }
+
+    $scheme = parse_url($target, PHP_URL_SCHEME);
+    return in_array($scheme, array('http', 'https'), true);
 }
 
 function vx_docker_current_actor()
@@ -680,13 +691,30 @@ function vx_docker_acknowledge_alert_record($owner, $aid)
         return false;
     }
 
-    $lines = file($path, FILE_IGNORE_NEW_LINES);
+    $handle = fopen($path, 'c+');
+    if ($handle === false) {
+        return false;
+    }
+
+    if (!flock($handle, LOCK_EX)) {
+        fclose($handle);
+        return false;
+    }
+
+    $contents = stream_get_contents($handle);
+    $lines = preg_split("/\r?\n/", (string) $contents);
     if (!is_array($lines)) {
+        flock($handle, LOCK_UN);
+        fclose($handle);
         return false;
     }
 
     $updated = false;
     foreach ($lines as $index => $line) {
+        if ($line === '') {
+            continue;
+        }
+
         $record = vx_docker_parse_alert_record($line);
         if (!empty($record['AID']) && (string) $record['AID'] === (string) $aid) {
             $lines[$index] = preg_replace("/ACK='[^']*'/", "ACK='yes'", $line, 1, $count);
@@ -699,10 +727,22 @@ function vx_docker_acknowledge_alert_record($owner, $aid)
     }
 
     if (!$updated) {
+        flock($handle, LOCK_UN);
+        fclose($handle);
         return false;
     }
 
-    file_put_contents($path, implode("\n", $lines)."\n");
+    $tmp_path = $path.'.tmp.'.getmypid().'.'.uniqid('', true);
+    $payload = implode("\n", array_filter($lines, 'strlen'))."\n";
+    if (file_put_contents($tmp_path, $payload, LOCK_EX) === false || !rename($tmp_path, $path)) {
+        @unlink($tmp_path);
+        flock($handle, LOCK_UN);
+        fclose($handle);
+        return false;
+    }
+
+    flock($handle, LOCK_UN);
+    fclose($handle);
     return true;
 }
 
