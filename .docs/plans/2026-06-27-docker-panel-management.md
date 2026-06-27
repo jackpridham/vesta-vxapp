@@ -851,18 +851,18 @@ php -l web/ajax/docker/actions/install.php
 
 ---
 
-## Task 7: Expose Docker In The User And Admin Panel Navigation
+## Task 7 - COMPLETE: Expose Docker In The User And Admin Panel Navigation
 
 **Files:**
 - Modify: `web/templates/admin/panel.html`
 - Modify: `web/templates/user/panel.html`
 - Modify: `web/templates/admin/list_services.html`
 
-- [ ] **Step 1: Keep the host-level Docker entry under Server for admins**
+- [x] **Step 1: Keep the host-level Docker entry under Server for admins**
 
 Retain the current admin `Server` placement in `web/templates/admin/list_services.html`, but change the meaning of the page from “all host containers” to “all Vortex-managed containers, grouped by owner”.
 
-- [ ] **Step 2: Add a quota-driven Docker entry to both admin and user side panels**
+- [x] **Step 2: Add a quota-driven Docker entry to both admin and user side panels**
 
 Add a stats tile in both panel templates that is shown only when:
 
@@ -878,9 +878,19 @@ and displays:
 
 with the tile linking to `/list/docker/`.
 
-- [ ] **Step 3: Preserve the existing admin/user panel split**
+- [x] **Step 3: Preserve the existing admin/user panel split**
 
 Because `render_page()` loads `web/templates/user/$page.html` for non-admin users first, create user-specific list/add/edit Docker templates instead of relying on admin templates to serve both roles.
+
+#### Closeout Report
+
+- Summary: Added the Docker navigation tile to both admin and user panel shells, kept the admin Docker entry under Server, then closed the review follow-ups before Task 8 by grouping the all-users Docker list by owner, enforcing explicit admin add scoping, preserving the real user/admin Docker template split through shared partials, tightening owner-scope validation, and adding lightweight Playwright coverage for the new navigation/template seam.
+- Files changed: `web/templates/admin/panel.html`, `web/templates/user/panel.html`, `web/templates/admin/list_services.html`, `web/list/docker/index.php`, `web/add/docker/index.php`, `web/edit/docker/index.php`, `web/templates/admin/list_docker.html`, `web/templates/admin/add_docker.html`, `web/templates/admin/edit_docker.html`, `web/templates/user/list_docker.html`, `web/templates/user/add_docker.html`, `web/templates/user/edit_docker.html`, `web/templates/docker_list_shared.php`, `web/templates/docker_add_shared.php`, `web/templates/docker_edit_shared.php`, `web/inc/vx_docker.php`, `web/inc/i18n/en.php`, `web/js/pages/list_docker.js`, `tests/playwright/docker-panel.admin.authenticated.spec.js`, `tests/playwright/docker-panel.user.authenticated.spec.js`, `.docs/audits/2026-06-27-docker-panel-management-task7.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task7.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`
+- Tests run: `node --check tests/playwright/docker-panel.admin.authenticated.spec.js`; PASS. `node --check tests/playwright/docker-panel.user.authenticated.spec.js`; PASS. `node --check web/js/pages/list_docker.js`; PASS. `npx playwright test --list`; PASS. `php -l web/templates/admin/panel.html`; BLOCKED (`php: command not found`). `php -l web/templates/user/panel.html`; BLOCKED (`php: command not found`). `php -l web/templates/admin/list_services.html`; BLOCKED (`php: command not found`). `php -l web/list/docker/index.php`; BLOCKED (`php: command not found`). `php -l web/add/docker/index.php`; BLOCKED (`php: command not found`). `php -l web/edit/docker/index.php`; BLOCKED (`php: command not found`). `php -l web/templates/docker_list_shared.php`; BLOCKED (`php: command not found`). `php -l web/templates/docker_add_shared.php`; BLOCKED (`php: command not found`). `php -l web/templates/docker_edit_shared.php`; BLOCKED (`php: command not found`). `php -l web/inc/vx_docker.php`; BLOCKED (`php: command not found`). `php -l web/inc/i18n/en.php`; BLOCKED (`php: command not found`).
+- Commit SHA(s): `4c3fb19e`, `14169e62`, `65865a87`, `0762a053`, `0ecfed03`, `e6c53a23`, `1757fad4`
+- Spec review result: PASS after fixing the two Task 7 gaps flagged during review: owner-grouped admin all-users rendering and a real user/admin Docker template split.
+- Code quality review result: PASS after removing duplicated template drift through shared partials, adding targeted Playwright coverage, enforcing explicit admin add scoping, validating admin owner overrides, reducing the grouped admin refresh fan-out, and activating the Docker panel tab on Docker pages.
+- Follow-ups or concerns: PHP syntax validation still needs to be rerun in an environment with a `php` binary. The Playwright harness discovery passed locally, but the authenticated Docker specs still depend on configured panel credentials when run end-to-end.
 
 ---
 
