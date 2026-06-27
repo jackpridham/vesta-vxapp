@@ -392,7 +392,7 @@ bash -n bin/v-add-docker-container bin/v-change-docker-container \
 - Summary: Added spec-file based Docker create/change commands, converted lifecycle and readback commands to `USER NAME` ownership-safe access, and added route-sync plus rebuild commands on top of the Task 1 metadata helper seam.
 - Files changed: `func/vx/docker.sh`, `bin/v-add-docker-container`, `bin/v-change-docker-container`, `bin/v-start-docker-container`, `bin/v-stop-docker-container`, `bin/v-restart-docker-container`, `bin/v-delete-docker-container`, `bin/v-list-docker-container-logs`, `bin/v-list-docker-container-inspect`, `bin/v-sync-docker-container-route`, `bin/v-rebuild-docker-containers`, `.docs/audits/2026-06-27-docker-panel-management-task2.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task2.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`
 - Tests run: `bash -n func/vx/docker.sh bin/v-add-docker-container bin/v-change-docker-container bin/v-start-docker-container bin/v-stop-docker-container bin/v-restart-docker-container bin/v-delete-docker-container bin/v-list-docker-container-logs bin/v-list-docker-container-inspect bin/v-rebuild-docker-containers bin/v-sync-docker-container-route`; PASS
-- Commit SHA(s): None yet
+- Commit SHA(s): `110b8feb`
 - Spec review result: PASS after fixing two review findings: package-capacity enforcement on change and guaranteed proxy-route removal on delete/domain-switch paths.
 - Code quality review result: PASS. The implementation reused the Vortex Docker helper and existing proxy commands instead of introducing a second routing or persistence layer.
 - Follow-ups or concerns: None
