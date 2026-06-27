@@ -4,9 +4,14 @@
 *.gz
 .vscode
 .DS_Store
+
+# Playwright and repo-local browser test artifacts
 node_modules/
 playwright-report/
+blob-report/
 test-results/
 playwright/.auth/
+.playwright/
 .env.playwright
-.env.playwright.local
+.env.playwright.*
+!.env.playwright.example
