@@ -1169,7 +1169,7 @@ If any state is not explicitly documented and mapped to exact template markup, u
 
 ---
 
-## Task 11: Install Playwright For Panel UI Validation
+## Task 11 - COMPLETE: Install Playwright For Panel UI Validation
 
 **Files:**
 - Create: `package.json`
@@ -1184,7 +1184,7 @@ If any state is not explicitly documented and mapped to exact template markup, u
 - Create: `tests/playwright/panel-shell.admin.authenticated.spec.js`
 - Create: `tests/playwright/panel-shell.user.authenticated.spec.js`
 
-- [ ] **Step 1: Add repo-local Playwright tooling instead of reusing unrelated nested packages**
+- [x] **Step 1: Add repo-local Playwright tooling instead of reusing unrelated nested packages**
 
 Create a root-level `package.json` dedicated to panel UI validation and install only the required dependencies:
 
@@ -1219,7 +1219,7 @@ playwright/.auth/
 .env.playwright.local
 ```
 
-- [ ] **Step 2: Define the project matrix and environment contract up front**
+- [x] **Step 2: Define the project matrix and environment contract up front**
 
 Create `.env.playwright.example` with these exact variables:
 
@@ -1246,7 +1246,7 @@ Rules:
 - the admin project must load `playwright/.auth/admin.json`
 - the real non-admin project must load `playwright/.auth/docker-user.json`
 
-- [ ] **Step 3: Encode authentication so Docker UI tests are not blocked by panel security layers**
+- [x] **Step 3: Encode authentication so Docker UI tests are not blocked by panel security layers**
 
 Create `tests/playwright/helpers/panel-auth.js` and `tests/playwright/auth.setup.js`.
 
@@ -1280,7 +1280,7 @@ setup('create authenticated storage states for configured panel roles', async ({
 });
 ```
 
-- [ ] **Step 4: Add smoke tests that prove the harness can reach the panel before Docker work begins**
+- [x] **Step 4: Add smoke tests that prove the harness can reach the panel before Docker work begins**
 
 Create these smoke specs:
 
@@ -1298,7 +1298,7 @@ Minimum assertions:
 
 The user shell smoke must use a normal user page such as `/list/web/`, not an admin-only path.
 
-- [ ] **Step 5: Document how to run the harness and verify setup**
+- [x] **Step 5: Document how to run the harness and verify setup**
 
 Create `tests/playwright/README.md` with:
 - environment-file instructions
@@ -1321,6 +1321,16 @@ Expected:
 - the anonymous project is listed even with no local secrets
 - the docker-user project is listed when the example env file is supplied
 - no spec execution starts during the `--list` validation pass
+
+#### Closeout Report
+
+- Summary: Closed out the existing repo-local Playwright harness work, verified it against the Task 11 contract, added the missing explicit project matrix documentation, and followed up with harness fixes so the anonymous smoke honors secret-login installs, the non-admin smoke uses the Docker user's guaranteed panel path, and the Node 18+ runtime floor is declared in both docs and package metadata.
+- Files changed: `package.json`, `package-lock.json`, `.gitignore`, `.env.playwright.example`, `playwright.config.js`, `tests/playwright/README.md`, `tests/playwright/helpers/panel-auth.js`, `tests/playwright/auth.setup.js`, `tests/playwright/login-page.anonymous.spec.js`, `tests/playwright/panel-shell.admin.authenticated.spec.js`, `tests/playwright/panel-shell.user.authenticated.spec.js`, `.docs/audits/2026-06-27-docker-panel-management-task11.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task11.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`
+- Tests run: `npm run playwright:test -- --list`; PASS. `PLAYWRIGHT_ENV_FILE=.env.playwright.example npm run playwright:test -- --list`; PASS. `git diff --check`; PASS. `rg -n "Project Matrix|setup|chromium-anonymous|chromium-admin-authenticated|chromium-docker-user-authenticated" tests/playwright/README.md`; PASS. `rg -n "openPanelLogin|/list/docker/|node\":\\s*\">=18|Node.js 18\\+" tests/playwright/login-page.anonymous.spec.js tests/playwright/panel-shell.user.authenticated.spec.js package.json tests/playwright/README.md`; PASS.
+- Commit SHA(s): `b4870f00`, `90f245cd`, `e09485e4`
+- Spec review result: PASS after one follow-up fix. The first review found the README lacked an explicit project matrix; the update resolved it and the final spec pass approved Task 11.
+- Code quality review result: APPROVED after follow-up fixes. Initial review found that the anonymous smoke bypassed the optional secret-login gate, the non-admin smoke assumed `/list/web/` access instead of a Docker-user-safe path, and the Node 18+ floor was undocumented; the follow-up patch resolved all three issues.
+- Follow-ups or concerns: End-to-end browser execution against a live panel instance is still pending and is intentionally deferred to the later Docker-specific Playwright tasks.
 
 ---
 
