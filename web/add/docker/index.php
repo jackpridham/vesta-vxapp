@@ -1,7 +1,7 @@
 <?php
 error_reporting(NULL);
 ob_start();
-$TAB = 'SERVER';
+$TAB = 'DOCKER';
 
 include($_SERVER['DOCUMENT_ROOT']."/inc/main.php");
 include($_SERVER['DOCUMENT_ROOT']."/inc/vx_docker.php");
