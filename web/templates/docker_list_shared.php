@@ -203,52 +203,46 @@
     </script>
     <?php } ?>
 
-    <div id="docker-unavailable-state" class="l-center units" <?php if ($docker_primary_state !== 'unavailable') echo 'style="display:none;"'; ?>>
-      <div class="l-unit">
-        <div class="l-unit__col l-unit__col--right">
-          <div class="l-unit__name separate"><?=__('Docker is not installed')?></div>
-          <div class="l-unit__stats">
-            <table>
-              <tr>
-                <td><?=__('Install Docker from the panel to start managing containers.')?></td>
-              </tr>
-            </table>
-          </div>
+    <div id="docker-unavailable-state" class="l-unit l-unit--error" <?php if ($docker_primary_state !== 'unavailable') echo 'style="display:none;"'; ?>>
+      <div class="l-unit__col l-unit__col--right">
+        <div class="l-unit__name separate"><?=__('Docker is not installed')?></div>
+        <div class="l-unit__stats">
+          <table>
+            <tr>
+              <td><?=__('Install Docker from the panel to start managing containers.')?></td>
+            </tr>
+          </table>
         </div>
       </div>
     </div>
 
-    <div id="docker-empty-state" class="l-center units" <?php if ($docker_primary_state !== 'empty') echo 'style="display:none;"'; ?>>
-      <div class="l-unit">
-        <div class="l-unit__col l-unit__col--right">
-          <div class="l-unit__name separate"><?=__('No Docker containers are managed in this scope yet.')?></div>
-          <div class="l-unit__stats">
-            <table>
-              <tr>
-                <td><?=__('Create a managed container to start routing and monitoring it from the panel.')?></td>
-              </tr>
-            </table>
-          </div>
+    <div id="docker-empty-state" class="l-unit" <?php if ($docker_primary_state !== 'empty') echo 'style="display:none;"'; ?>>
+      <div class="l-unit__col l-unit__col--right">
+        <div class="l-unit__name separate"><?=__('No Docker containers are managed in this scope yet.')?></div>
+        <div class="l-unit__stats">
+          <table>
+            <tr>
+              <td><?=__('Create a managed container to start routing and monitoring it from the panel.')?></td>
+            </tr>
+          </table>
         </div>
       </div>
     </div>
 
-    <div id="docker-quota-reached-state" class="l-center units" <?php if ($docker_primary_state !== 'quota') echo 'style="display:none;"'; ?>>
-      <div class="l-unit l-unit--suspended">
-        <div class="l-unit__col l-unit__col--right">
-          <div class="l-unit__name separate"><?=__('Docker container quota is reached')?></div>
-          <div class="l-unit__stats">
-            <table>
-              <tr>
-                <td><?=__('This account is already using its allowed number of managed Docker containers.')?></td>
-              </tr>
-            </table>
-          </div>
+    <div id="docker-quota-reached-state" class="l-unit l-unit--suspended" <?php if ($docker_primary_state !== 'quota') echo 'style="display:none;"'; ?>>
+      <div class="l-unit__col l-unit__col--right">
+        <div class="l-unit__name separate"><?=__('Docker container quota is reached')?></div>
+        <div class="l-unit__stats">
+          <table>
+            <tr>
+              <td><?=__('This account is already using its allowed number of managed Docker containers.')?></td>
+            </tr>
+          </table>
         </div>
       </div>
     </div>
 
-    <div id="docker-list-state" <?php if ($docker_primary_state !== 'list') echo 'style="display:none;"'; ?>>
+    <div id="docker-list-state" class="l-center units" <?php if ($docker_primary_state !== 'list') echo 'style="display:none;"'; ?>>
       <div class="l-center">
         <?php if ($docker_available && !$docker_daemon_available) { ?>
         <div class="notice notice-warning" style="margin-bottom: 12px;"><?=__('Docker daemon is unavailable. Runtime actions may fail until the service returns, but managed metadata is still shown below.')?></div>
@@ -269,38 +263,36 @@
         </div>
       </div>
 
-      <div class="l-center units">
-        <div id="docker-list-cards">
-          <?php if ($docker_show_owner_groups) { ?>
-            <?php foreach ($docker_grouped_data as $docker_group_owner => $docker_group_containers) { ?>
-            <section class="docker-owner-group" data-owner="<?=htmlspecialchars($docker_group_owner, ENT_QUOTES)?>">
-              <div class="l-unit" style="margin-bottom: 12px;">
-                <div class="l-unit__col l-unit__col--right">
-                  <div class="l-unit__name separate"><?=htmlspecialchars($docker_group_owner, ENT_QUOTES)?></div>
-                  <div class="l-unit__stats">
-                    <table>
-                      <tr>
-                        <td><?=count($docker_group_containers)?> <?=__('containers')?></td>
-                      </tr>
-                    </table>
-                  </div>
+      <div id="docker-list-cards">
+        <?php if ($docker_show_owner_groups) { ?>
+          <?php foreach ($docker_grouped_data as $docker_group_owner => $docker_group_containers) { ?>
+          <section class="docker-owner-group" data-owner="<?=htmlspecialchars($docker_group_owner, ENT_QUOTES)?>">
+            <div class="l-unit" style="margin-bottom: 12px;">
+              <div class="l-unit__col l-unit__col--right">
+                <div class="l-unit__name separate"><?=htmlspecialchars($docker_group_owner, ENT_QUOTES)?></div>
+                <div class="l-unit__stats">
+                  <table>
+                    <tr>
+                      <td><?=count($docker_group_containers)?> <?=__('containers')?></td>
+                    </tr>
+                  </table>
                 </div>
               </div>
-              <?php foreach ($docker_group_containers as $docker_key => $container) { ?>
-                <?php $docker_render_card($docker_key, $container); ?>
-              <?php } ?>
-            </section>
-            <?php } ?>
-          <?php } else { ?>
-            <?php foreach ($data as $docker_key => $container) { ?>
+            </div>
+            <?php foreach ($docker_group_containers as $docker_key => $container) { ?>
               <?php $docker_render_card($docker_key, $container); ?>
             <?php } ?>
+          </section>
           <?php } ?>
-        </div>
+        <?php } else { ?>
+          <?php foreach ($data as $docker_key => $container) { ?>
+            <?php $docker_render_card($docker_key, $container); ?>
+          <?php } ?>
+        <?php } ?>
       </div>
     </div>
 
-    <div id="docker-health-dashboard" class="l-center units" style="margin-top: 18px; <?php if ($docker_primary_state !== 'list') echo 'display:none;'; ?>">
+    <section id="docker-health-dashboard" class="l-center units" style="margin-top: 18px; <?php if ($docker_primary_state !== 'list') echo 'display:none;'; ?>">
       <div class="l-unit">
         <div class="l-unit__col l-unit__col--right">
           <div class="l-unit__name separate"><?=__('Docker health dashboard')?></div>
@@ -323,9 +315,9 @@
           </div>
         </div>
       </div>
-    </div>
+    </section>
 
-    <div id="docker-alerts-panel" class="l-center units" style="margin-top: 18px; <?php if ($docker_primary_state !== 'list') echo 'display:none;'; ?>">
+    <section id="docker-alerts-panel" class="l-center units" style="margin-top: 18px; <?php if ($docker_primary_state !== 'list') echo 'display:none;'; ?>">
       <div class="l-unit">
         <div class="l-unit__col l-unit__col--right">
           <div class="l-unit__name separate"><?=__('Docker alerts')?></div>
@@ -335,7 +327,7 @@
           <button id="docker-alert-acknowledge" class="button" style="display:none; margin-top: 10px;"><?=__('Acknowledge alert')?></button>
         </div>
       </div>
-    </div>
+    </section>
 
     <div id="vstobjects">
       <div class="l-separator"></div>

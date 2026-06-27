@@ -32,8 +32,7 @@
         <?php } ?>
       </div>
 
-      <div id="docker-edit-form">
-        <form id="vstobjects" method="post" name="v_edit_docker" class="<?=htmlentities(isset($docker_details_container['STATUS']) ? $docker_details_container['STATUS'] : '')?>">
+        <form id="docker-edit-form" method="post" name="v_edit_docker" class="<?=htmlentities(isset($docker_details_container['STATUS']) ? $docker_details_container['STATUS'] : '')?>">
           <input type="hidden" name="token" value="<?=$_SESSION['token']?>" />
           <input type="hidden" name="save" value="save" />
 
@@ -162,5 +161,4 @@
             </tr>
           </table>
         </form>
-      </div>
     </div>

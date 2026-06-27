@@ -18,8 +18,7 @@
         <?php } ?>
       </div>
 
-      <div id="docker-create-form">
-        <form id="vstobjects" name="v_add_docker" method="post">
+        <form id="docker-create-form" name="v_add_docker" method="post">
           <input type="hidden" name="token" value="<?=$_SESSION['token']?>" />
           <input type="hidden" name="ok" value="Add" />
 
@@ -152,5 +151,4 @@
             </tr>
           </table>
         </form>
-      </div>
     </div>
