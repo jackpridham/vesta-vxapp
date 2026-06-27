@@ -13,10 +13,10 @@
 format=${1-shell}
 
 # Includes
-source $VESTA/func/main.sh
-source $VESTA/func/docker.sh
+source "$VESTA/func/main.sh"
+source "$VESTA/func/docker.sh"
 if [ -f "$VESTA/conf/vesta.conf" ]; then
-    source $VESTA/conf/vesta.conf
+    source "$VESTA/conf/vesta.conf"
 fi
 
 

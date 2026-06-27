@@ -1,0 +1,128 @@
+#!/bin/bash
+# info: list docker container parameters
+# options: USER NAME [FORMAT]
+#
+# The function lists one managed docker container by owner and name.
+
+
+#----------------------------------------------------------#
+#                    Variable&Function                     #
+#----------------------------------------------------------#
+
+# Argument definition
+user=$1
+name=$2
+format=${3-shell}
+
+# Includes
+source $VESTA/func/main.sh
+source $VESTA/func/docker.sh
+if [ -f "$VESTA/conf/vesta.conf" ]; then
+    source $VESTA/conf/vesta.conf
+fi
+
+json_list() {
+    echo '{'
+    echo '    "'$NAME'": {
+        "NAME": "'$NAME'",
+        "CTN_NAME": "'$CTN_NAME'",
+        "OWNER": "'$OWNER'",
+        "IMAGE": "'$IMAGE'",
+        "COMMAND": "'$COMMAND'",
+        "ENV": "'$ENV'",
+        "MOUNTS": "'$MOUNTS'",
+        "HOST_PORT": "'$HOST_PORT'",
+        "CONTAINER_PORT": "'$CONTAINER_PORT'",
+        "DOMAIN": "'$DOMAIN'",
+        "ROUTE_PATH": "'$ROUTE_PATH'",
+        "PROXY_MODE": "'$PROXY_MODE'",
+        "PROXY_TARGET": "'$PROXY_TARGET'",
+        "AUTO_START": "'$AUTO_START'",
+        "RESTART_POLICY": "'$RESTART_POLICY'",
+        "HEALTHCHECK_TYPE": "'$HEALTHCHECK_TYPE'",
+        "HEALTHCHECK_TARGET": "'$HEALTHCHECK_TARGET'",
+        "HEALTHCHECK_INTERVAL": "'$HEALTHCHECK_INTERVAL'",
+        "HEALTH_STATUS": "'$HEALTH_STATUS'",
+        "LAST_HEALTH_AT": "'$LAST_HEALTH_AT'",
+        "CPU_ALERT_PCT": "'$CPU_ALERT_PCT'",
+        "MEM_ALERT_MB": "'$MEM_ALERT_MB'",
+        "NET_ALERT_MBPS": "'$NET_ALERT_MBPS'",
+        "ALERT_EMAIL": "'$ALERT_EMAIL'",
+        "STATUS": "'$STATUS'",
+        "CREATED": "'$CREATED'",
+        "UPDATED": "'$UPDATED'"
+    }'
+    echo '}'
+}
+
+shell_list() {
+    echo "NAME:                 $NAME"
+    echo "OWNER:                $OWNER"
+    echo "CONTAINER NAME:       $CTN_NAME"
+    echo "IMAGE:                $IMAGE"
+    echo "COMMAND:              $COMMAND"
+    echo "ENV:                  $ENV"
+    echo "MOUNTS:               $MOUNTS"
+    echo "HOST PORT:            $HOST_PORT"
+    echo "CONTAINER PORT:       $CONTAINER_PORT"
+    echo "DOMAIN:               $DOMAIN"
+    echo "ROUTE PATH:           $ROUTE_PATH"
+    echo "PROXY MODE:           $PROXY_MODE"
+    echo "PROXY TARGET:         $PROXY_TARGET"
+    echo "AUTO START:           $AUTO_START"
+    echo "RESTART POLICY:       $RESTART_POLICY"
+    echo "HEALTHCHECK TYPE:     $HEALTHCHECK_TYPE"
+    echo "HEALTHCHECK TARGET:   $HEALTHCHECK_TARGET"
+    echo "HEALTHCHECK INTERVAL: $HEALTHCHECK_INTERVAL"
+    echo "HEALTH STATUS:        $HEALTH_STATUS"
+    echo "LAST HEALTH AT:       $LAST_HEALTH_AT"
+    echo "CPU ALERT PCT:        $CPU_ALERT_PCT"
+    echo "MEM ALERT MB:         $MEM_ALERT_MB"
+    echo "NET ALERT MBPS:       $NET_ALERT_MBPS"
+    echo "ALERT EMAIL:          $ALERT_EMAIL"
+    echo "STATUS:               $STATUS"
+    echo "CREATED:              $CREATED"
+    echo "UPDATED:              $UPDATED"
+}
+
+plain_list() {
+    echo -e "$NAME\t$CTN_NAME\t$OWNER\t$IMAGE\t$COMMAND\t$ENV\t$MOUNTS\t$HOST_PORT\t$CONTAINER_PORT\t$DOMAIN\t$ROUTE_PATH\t$PROXY_MODE\t$PROXY_TARGET\t$AUTO_START\t$RESTART_POLICY\t$HEALTHCHECK_TYPE\t$HEALTHCHECK_TARGET\t$HEALTHCHECK_INTERVAL\t$HEALTH_STATUS\t$LAST_HEALTH_AT\t$CPU_ALERT_PCT\t$MEM_ALERT_MB\t$NET_ALERT_MBPS\t$ALERT_EMAIL\t$STATUS\t$CREATED\t$UPDATED"
+}
+
+csv_list() {
+    echo "NAME,CTN_NAME,OWNER,IMAGE,COMMAND,ENV,MOUNTS,HOST_PORT,CONTAINER_PORT,DOMAIN,ROUTE_PATH,PROXY_MODE,PROXY_TARGET,AUTO_START,RESTART_POLICY,HEALTHCHECK_TYPE,HEALTHCHECK_TARGET,HEALTHCHECK_INTERVAL,HEALTH_STATUS,LAST_HEALTH_AT,CPU_ALERT_PCT,MEM_ALERT_MB,NET_ALERT_MBPS,ALERT_EMAIL,STATUS,CREATED,UPDATED"
+    echo "\"$NAME\",\"$CTN_NAME\",\"$OWNER\",\"$IMAGE\",\"$COMMAND\",\"$ENV\",\"$MOUNTS\",\"$HOST_PORT\",\"$CONTAINER_PORT\",\"$DOMAIN\",\"$ROUTE_PATH\",\"$PROXY_MODE\",\"$PROXY_TARGET\",\"$AUTO_START\",\"$RESTART_POLICY\",\"$HEALTHCHECK_TYPE\",\"$HEALTHCHECK_TARGET\",\"$HEALTHCHECK_INTERVAL\",\"$HEALTH_STATUS\",\"$LAST_HEALTH_AT\",\"$CPU_ALERT_PCT\",\"$MEM_ALERT_MB\",\"$NET_ALERT_MBPS\",\"$ALERT_EMAIL\",\"$STATUS\",\"$CREATED\",\"$UPDATED\""
+}
+
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+check_args '2' "$#" 'USER NAME [FORMAT]'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_format_valid "$name" 'container name'
+
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+vx_docker_load_record "$user" "$name" || check_result "$E_NOTEXIST" "docker container $name doesn't exist"
+vx_docker_assert_runtime_labels_match "$user" "$name" "$CTN_NAME"
+
+case "$format" in
+    json)  json_list ;;
+    plain) plain_list ;;
+    csv)   csv_list ;;
+    shell) shell_list ;;
+    *)     check_result "$E_INVALID" "invalid format :: $format" "$E_INVALID" ;;
+esac
+
+
+#----------------------------------------------------------#
+#                       Vesta                              #
+#----------------------------------------------------------#
+
+exit

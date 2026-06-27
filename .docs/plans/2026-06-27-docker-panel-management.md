@@ -184,12 +184,12 @@ If any later task uses a different name, fix the plan before implementation star
 - Summary: Created the four Task 0 contract artifacts for Docker container metadata, monitoring, alerts, and exact UI states. Tightened the healthcheck defaulting rules and clarified that the required `docker-create-form` and `docker-edit-form` ids are wrapper containers so later templates can preserve the exact markup contract.
 - Files changed: `.docs/contracts/docker-container-schema.md`, `.docs/contracts/docker-monitoring-schema.md`, `.docs/contracts/docker-alerts-schema.md`, `.docs/contracts/docker-ui-states.md`, `.docs/audits/2026-06-27-docker-panel-management-task0.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task0.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`
 - Tests run: `rg`-based contract/name verification against the Task 0 artifacts and later plan references; PASS
-- Commit SHA(s): None yet
+- Commit SHA(s): `21bf1683`
 - Spec review result: PASS. All Task 0 deliverables were created and the required names remained consistent across the later plan tasks.
 - Code quality review result: PASS. The contracts stayed within scope and removed the two main ambiguities found during closeout review: derived healthcheck target defaults and exact create/edit form container interpretation.
 - Follow-ups or concerns: None
 
-## Task 1: Define The Ownership Model And Managed Runtime Layout
+## Task 1: Define The Ownership Model And Managed Runtime Layout - COMPLETE
 
 **Files:**
 - Create: `func/vx/docker.sh`
@@ -199,7 +199,7 @@ If any later task uses a different name, fix the plan before implementation star
 - Create: `bin/v-list-docker-container`
 - Create: `bin/v-check-docker-container-owner`
 
-- [ ] **Step 1: Move Docker-specific state logic into a Vortex helper**
+- [x] **Step 1: Move Docker-specific state logic into a Vortex helper**
 
 Create `func/vx/docker.sh` and keep `func/docker.sh` as a thin adapter that sources it. The helper must own:
 - managed name generation: `vx-${user}-${name}`
@@ -224,7 +224,7 @@ CPU_ALERT_PCT='85' MEM_ALERT_MB='1024' NET_ALERT_MBPS='50' ALERT_EMAIL='yes' \
 STATUS='running' CREATED='2026-06-27 14:00:00' UPDATED='2026-06-27 14:05:00'
 ```
 
-- [ ] **Step 2: Make list/read commands ownership-aware instead of host-global**
+- [x] **Step 2: Make list/read commands ownership-aware instead of host-global**
 
 Replace the current host-global assumptions in `bin/v-list-docker-containers` with:
 - `bin/v-list-docker-containers [USER] [FORMAT]`
@@ -245,7 +245,7 @@ Rules:
 - when `USER` is non-admin, list only records from `data/users/$USER/docker.conf`
 - container lookups must resolve by metadata record first, then confirm the runtime container carries matching `vx.user` and `vx.name` labels
 
-- [ ] **Step 3: Keep the current non-`vx` Docker helper as a compatibility shim**
+- [x] **Step 3: Keep the current non-`vx` Docker helper as a compatibility shim**
 
 `func/docker.sh` should stay small:
 
@@ -256,9 +256,19 @@ source "$VESTA/func/vx/docker.sh"
 
 This keeps existing `bin/v-*-docker-*` command paths stable while moving the real behavior into a merge-friendly Vortex file.
 
-- [ ] **Step 4: Validate the helper and command syntax**
+- [x] **Step 4: Validate the helper and command syntax**
 
 Run:
+
+#### Closeout Report
+
+- Summary: Added `func/vx/docker.sh` as the Docker ownership/model seam, turned `func/docker.sh` into a compatibility shim, and replaced host-global list behavior with metadata-driven owner-aware `v-list-docker-containers`, `v-list-docker-container`, and `v-check-docker-container-owner` commands.
+- Files changed: `func/vx/docker.sh`, `func/docker.sh`, `bin/v-check-docker-engine`, `bin/v-list-docker-containers`, `bin/v-list-docker-container`, `bin/v-check-docker-container-owner`, `.docs/audits/2026-06-27-docker-panel-management-task1.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task1.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`
+- Tests run: `bash -n func/vx/docker.sh func/docker.sh bin/v-check-docker-engine bin/v-list-docker-containers bin/v-list-docker-container bin/v-check-docker-container-owner`; PASS
+- Commit SHA(s): None yet
+- Spec review result: PASS. Task 1 requirements for the Vortex helper seam, compatibility shim, ownership-aware list/read commands, metadata-first resolution, and syntax validation were satisfied.
+- Code quality review result: PASS. The implementation stayed inside the Task 1 seam and reused existing Vesta parsing and proxy helpers instead of introducing a second persistence or routing path.
+- Follow-ups or concerns: None
 
 ```bash
 bash -n func/vx/docker.sh func/docker.sh \

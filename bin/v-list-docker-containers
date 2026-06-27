@@ -1,8 +1,8 @@
 #!/bin/bash
 # info: list docker containers
-# options: [FORMAT]
+# options: [USER] [FORMAT]
 #
-# The function lists docker containers available on the host.
+# The function lists managed docker containers from metadata.
 
 
 #----------------------------------------------------------#
@@ -10,7 +10,16 @@
 #----------------------------------------------------------#
 
 # Argument definition
-format=${1-shell}
+user=$1
+format=${2-shell}
+
+if [ -z "$user" ]; then
+    user='admin'
+    format='shell'
+elif [ -z "$2" ] && { [ "$1" = 'json' ] || [ "$1" = 'plain' ] || [ "$1" = 'csv' ] || [ "$1" = 'shell' ]; }; then
+    format="$1"
+    user='admin'
+fi
 
 # Includes
 source $VESTA/func/main.sh
@@ -19,32 +28,101 @@ if [ -f "$VESTA/conf/vesta.conf" ]; then
     source $VESTA/conf/vesta.conf
 fi
 
-# JSON list function
-json_list() {
-    local index=1
-    local first='yes'
-    local line=''
+vx_docker_list_records_for_scope() {
+    if [ "$1" = 'admin' ]; then
+        vx_docker_list_all_records
+    else
+        vx_docker_list_owner_records "$1"
+    fi
+}
 
+record_count() {
+    local count=0
+    local line
+
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        count=$((count + 1))
+    done < <(vx_docker_list_records_for_scope "$user")
+
+    echo "$count"
+}
+
+json_list() {
+    local total current line key
+
+    total="$(record_count)"
+    current=0
     echo '{'
     while IFS= read -r line; do
-        [ -z "$line" ] && continue
-
-        if [ "$first" = 'no' ]; then
+        [ -n "$line" ] || continue
+        current=$((current + 1))
+        vx_docker_parse_record "$line"
+        key="$CTN_NAME"
+        echo -n '    "'$key'": {
+        "NAME": "'$NAME'",
+        "CTN_NAME": "'$CTN_NAME'",
+        "OWNER": "'$OWNER'",
+        "IMAGE": "'$IMAGE'",
+        "HOST_PORT": "'$HOST_PORT'",
+        "CONTAINER_PORT": "'$CONTAINER_PORT'",
+        "DOMAIN": "'$DOMAIN'",
+        "ROUTE_PATH": "'$ROUTE_PATH'",
+        "PROXY_MODE": "'$PROXY_MODE'",
+        "PROXY_TARGET": "'$PROXY_TARGET'",
+        "AUTO_START": "'$AUTO_START'",
+        "RESTART_POLICY": "'$RESTART_POLICY'",
+        "HEALTHCHECK_TYPE": "'$HEALTHCHECK_TYPE'",
+        "HEALTHCHECK_TARGET": "'$HEALTHCHECK_TARGET'",
+        "HEALTHCHECK_INTERVAL": "'$HEALTHCHECK_INTERVAL'",
+        "HEALTH_STATUS": "'$HEALTH_STATUS'",
+        "CPU_ALERT_PCT": "'$CPU_ALERT_PCT'",
+        "MEM_ALERT_MB": "'$MEM_ALERT_MB'",
+        "NET_ALERT_MBPS": "'$NET_ALERT_MBPS'",
+        "ALERT_EMAIL": "'$ALERT_EMAIL'",
+        "STATUS": "'$STATUS'",
+        "UPDATED": "'$UPDATED'"
+        }'
+        if [ "$current" -lt "$total" ]; then
             echo ','
+        else
+            echo
         fi
-
-        printf '    "%s": %s' "$index" "$line"
-        first='no'
-        index=$((index + 1))
-    done < <(docker ps -a --no-trunc --format '{{json .}}')
-
-    echo
+    done < <(vx_docker_list_records_for_scope "$user")
     echo '}'
 }
 
-# SHELL list function
 shell_list() {
-    docker ps -a --no-trunc --format 'NAME={{.Names}}\tSTATE={{.State}}\tSTATUS={{.Status}}\tIMAGE={{.Image}}\tPORTS={{.Ports}}'
+    local line
+
+    echo "OWNER NAME CTN_NAME STATUS IMAGE HOST_PORT DOMAIN HEALTH UPDATED"
+    echo "----- ---- -------- ------ ----- -------- ------ ------ -------"
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        vx_docker_parse_record "$line"
+        echo "$OWNER $NAME $CTN_NAME $STATUS $IMAGE $HOST_PORT $DOMAIN $HEALTH_STATUS $UPDATED"
+    done < <(vx_docker_list_records_for_scope "$user")
+}
+
+plain_list() {
+    local line
+
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        vx_docker_parse_record "$line"
+        echo -e "$OWNER\t$NAME\t$CTN_NAME\t$STATUS\t$IMAGE\t$HOST_PORT\t$CONTAINER_PORT\t$DOMAIN\t$ROUTE_PATH\t$PROXY_MODE\t$PROXY_TARGET\t$HEALTH_STATUS\t$UPDATED"
+    done < <(vx_docker_list_records_for_scope "$user")
+}
+
+csv_list() {
+    local line
+
+    echo "OWNER,NAME,CTN_NAME,STATUS,IMAGE,HOST_PORT,CONTAINER_PORT,DOMAIN,ROUTE_PATH,PROXY_MODE,PROXY_TARGET,HEALTH_STATUS,UPDATED"
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        vx_docker_parse_record "$line"
+        echo "\"$OWNER\",\"$NAME\",\"$CTN_NAME\",\"$STATUS\",\"$IMAGE\",\"$HOST_PORT\",\"$CONTAINER_PORT\",\"$DOMAIN\",\"$ROUTE_PATH\",\"$PROXY_MODE\",\"$PROXY_TARGET\",\"$HEALTH_STATUS\",\"$UPDATED\""
+    done < <(vx_docker_list_records_for_scope "$user")
 }
 
 
@@ -52,7 +130,9 @@ shell_list() {
 #                    Verifications                         #
 #----------------------------------------------------------#
 
-ensure_docker_engine_available
+check_args '0' "$#" '[USER] [FORMAT]'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
 
 
 #----------------------------------------------------------#
@@ -60,15 +140,11 @@ ensure_docker_engine_available
 #----------------------------------------------------------#
 
 case "$format" in
-    json)
-        json_list
-        ;;
-    shell|plain)
-        shell_list
-        ;;
-    *)
-        check_result "$E_INVALID" "invalid format :: $format" "$E_INVALID"
-        ;;
+    json)  json_list ;;
+    plain) plain_list ;;
+    csv)   csv_list ;;
+    shell) shell_list | column -t ;;
+    *)     check_result "$E_INVALID" "invalid format :: $format" "$E_INVALID" ;;
 esac
 
 
