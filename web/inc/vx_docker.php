@@ -370,6 +370,33 @@ function vx_docker_get_container($owner, $name)
     return $container[$name];
 }
 
+function vx_docker_resolve_accessible_container($owner, $name, $acting_user = null)
+{
+    if (!vx_docker_assert_actor_can_access_owner($owner, $acting_user)) {
+        return array();
+    }
+
+    $name = trim((string) $name);
+    if ($name === '') {
+        return array();
+    }
+
+    $container = vx_docker_get_container($owner, $name);
+    if (empty($container)) {
+        return array();
+    }
+
+    if (empty($container['OWNER'])) {
+        $container['OWNER'] = $owner;
+    }
+
+    if (empty($container['NAME'])) {
+        $container['NAME'] = $name;
+    }
+
+    return $container;
+}
+
 function vx_docker_list_users()
 {
     list($users) = vx_docker_exec_json(VESTA_CMD."v-list-users json");

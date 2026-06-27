@@ -6,6 +6,7 @@ include($_SERVER['DOCUMENT_ROOT']."/inc/form-elements.php");
 include($_SERVER['DOCUMENT_ROOT']."/inc/vx_docker.php");
 
 $selected_owner = !empty($_POST['dataset']['owner']) ? trim((string) $_POST['dataset']['owner']) : $myvesta_logged_user;
+$selected_container_name = !empty($_POST['dataset']['container_name']) ? trim((string) $_POST['dataset']['container_name']) : '';
 
 if (!empty($_POST['docker_install'])) {
     if ($myvesta_logged_user !== 'admin') {
@@ -18,7 +19,13 @@ if (!empty($_POST['docker_install'])) {
 }
 
 if (!empty($_POST['docker_logs']) || !empty($_POST['docker_inspect']) || !empty($_POST['docker_remove'])) {
-    if (!vx_docker_assert_actor_can_access_owner($selected_owner, $myvesta_logged_user)) {
+    $selected_container = vx_docker_resolve_accessible_container(
+        $selected_owner,
+        $selected_container_name,
+        $myvesta_logged_user
+    );
+
+    if (empty($selected_container)) {
         echo __('You do not have access to this Docker container.');
         exit;
     }
