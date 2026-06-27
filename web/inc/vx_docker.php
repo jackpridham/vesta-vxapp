@@ -19,6 +19,15 @@ function vx_docker_post_value($name, $default = '')
     return $value;
 }
 
+function vx_docker_raw_post_value($name, $default = '')
+{
+    if (!isset($_POST[$name]) || is_array($_POST[$name])) {
+        return $default;
+    }
+
+    return trim((string) $_POST[$name]);
+}
+
 function vx_docker_env_from_post()
 {
     return vx_docker_textarea_to_stored_string(vx_docker_post_value('v_container_env'));
@@ -106,6 +115,21 @@ function vx_docker_route_domain_options($account_user = null)
     return $options;
 }
 
+function vx_docker_route_domain_is_owned($account_user, $domain_name)
+{
+    if ($account_user === null || $account_user === '' || $domain_name === '') {
+        return false;
+    }
+
+    foreach (vx_docker_route_domain_options($account_user) as $domain_option) {
+        if (!empty($domain_option['domain']) && $domain_option['domain'] === $domain_name) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function vx_docker_spec_from_post()
 {
     $healthcheck = vx_docker_healthcheck_from_post();
@@ -189,6 +213,14 @@ function vx_docker_checkbox_to_yes_no($name, $default = 'no')
     return vx_docker_boolean_post_value($name) ? 'yes' : 'no';
 }
 
+function vx_docker_integer_post_is_valid($name, $default, $min, $max)
+{
+    $raw_value = vx_docker_raw_post_value($name, $default);
+    $normalized_value = vx_docker_normalize_integer_string($raw_value, '', $min, $max);
+
+    return $normalized_value !== '';
+}
+
 function vx_docker_boolean_post_value($name)
 {
     $value = strtolower(vx_docker_post_value($name));
@@ -265,6 +297,85 @@ function vx_docker_normalize_integer_string($value, $default, $min, $max)
     }
 
     return (string) $integer_value;
+}
+
+function vx_docker_collect_form_errors($owner)
+{
+    $errors = array();
+
+    $raw_container_name = vx_docker_raw_post_value('v_container_name');
+    $container_name = vx_docker_post_value('v_container_name');
+    if ($container_name === '') {
+        $errors[] = __('Field "%s" can not be blank.', __('container name'));
+    } elseif ($raw_container_name !== $container_name) {
+        $errors[] = __('Docker container name may only contain lowercase letters, numbers, and hyphens.');
+    }
+
+    if (vx_docker_post_value('v_container_image') === '') {
+        $errors[] = __('Field "%s" can not be blank.', __('image'));
+    }
+
+    $raw_container_port = vx_docker_raw_post_value('v_container_port');
+    $container_port = vx_docker_container_port_from_post();
+    if ($container_port === '') {
+        if ($raw_container_port === '') {
+            $errors[] = __('Field "%s" can not be blank.', __('container port'));
+        } else {
+            $errors[] = __('Container port must be between 1 and 65535.');
+        }
+    }
+
+    $route_domain = vx_docker_post_value('v_route_domain');
+    if ($route_domain !== '' && !vx_docker_route_domain_is_owned($owner, $route_domain)) {
+        $errors[] = __('Only domains owned by this user can be routed to this container');
+    }
+
+    $raw_route_path = vx_docker_raw_post_value('v_route_path');
+    if ($raw_route_path !== '' && $raw_route_path !== '/' && vx_docker_route_path_from_post() === '') {
+        $errors[] = __('Route path must start with / and may not contain spaces, ? or #.');
+    }
+
+    $raw_restart_policy = vx_docker_raw_post_value('v_restart_policy', 'unless-stopped');
+    if (vx_docker_normalize_restart_policy($raw_restart_policy) !== $raw_restart_policy) {
+        $errors[] = __('Restart policy is invalid.');
+    }
+
+    $raw_healthcheck_type = vx_docker_raw_post_value('v_healthcheck_type', 'http');
+    $healthcheck_type = vx_docker_normalize_healthcheck_type($raw_healthcheck_type);
+    if ($healthcheck_type !== $raw_healthcheck_type) {
+        $errors[] = __('Health check type is invalid.');
+    }
+
+    if (!vx_docker_integer_post_is_valid('v_healthcheck_interval', '60', 15, 3600)) {
+        $errors[] = __('Health check interval must be between 15 and 3600 seconds.');
+    }
+
+    $raw_healthcheck_target = vx_docker_raw_post_value('v_healthcheck_target');
+    if ($healthcheck_type === 'http' && $raw_healthcheck_target !== '' && !preg_match('/^https?:\/\//', $raw_healthcheck_target)) {
+        $errors[] = __('Health check target must be a full http:// or https:// URL.');
+    }
+
+    if ($healthcheck_type === 'tcp') {
+        if ($raw_healthcheck_target === '') {
+            $errors[] = __('Health check target is required for TCP checks.');
+        } elseif (!preg_match('/^[A-Za-z0-9.-]+:[0-9]{1,5}$/', $raw_healthcheck_target)) {
+            $errors[] = __('Health check target must use host:port for TCP checks.');
+        }
+    }
+
+    if (!vx_docker_integer_post_is_valid('v_cpu_alert_pct', '85', 1, 1000)) {
+        $errors[] = __('CPU alert threshold must be between 1 and 1000.');
+    }
+
+    if (!vx_docker_integer_post_is_valid('v_mem_alert_mb', '1024', 1, 1048576)) {
+        $errors[] = __('Memory alert threshold must be between 1 and 1048576 MB.');
+    }
+
+    if (!vx_docker_integer_post_is_valid('v_net_alert_mbps', '50', 1, 100000)) {
+        $errors[] = __('Network alert threshold must be between 1 and 100000 Mbps.');
+    }
+
+    return array_values(array_unique($errors));
 }
 
 function vx_docker_current_actor()
@@ -351,6 +462,27 @@ function vx_docker_list_containers($scope_owner)
     }
 
     return $containers;
+}
+
+function vx_docker_filter_containers_by_owner($containers, $owner)
+{
+    if ($owner === '' || !is_array($containers)) {
+        return is_array($containers) ? $containers : array();
+    }
+
+    $filtered_containers = array();
+    foreach ($containers as $container_key => $container_data) {
+        if (!is_array($container_data)) {
+            continue;
+        }
+
+        $container_owner = isset($container_data['OWNER']) ? trim((string) $container_data['OWNER']) : '';
+        if ($container_owner === $owner) {
+            $filtered_containers[$container_key] = $container_data;
+        }
+    }
+
+    return $filtered_containers;
 }
 
 function vx_docker_get_container($owner, $name)

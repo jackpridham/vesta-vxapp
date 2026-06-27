@@ -48,6 +48,18 @@ vx_docker_shell_quote_free() {
     fi
 }
 
+vx_docker_json_escape() {
+    local value="$1"
+
+    value="${value//\\/\\\\}"
+    value="${value//\"/\\\"}"
+    value="${value//$'\n'/\\n}"
+    value="${value//$'\r'/\\r}"
+    value="${value//$'\t'/\\t}"
+
+    printf '%s' "$value"
+}
+
 vx_docker_metadata_touch() {
     local owner="$1"
     local conf

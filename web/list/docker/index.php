@@ -9,7 +9,6 @@ include($_SERVER['DOCUMENT_ROOT']."/inc/vx_docker.php");
 $docker_state = vx_docker_get_engine_state();
 $docker_available = vx_docker_is_engine_available($docker_state);
 $docker_owner = vx_docker_is_admin_actor() ? vx_docker_resolve_owner_from_request('') : $user;
-$docker_scope = ($docker_owner !== '') ? $docker_owner : 'admin';
 $docker_owner_filter_options = vx_docker_is_admin_actor() ? vx_docker_list_users() : array();
 $docker_user_panel = ($docker_owner !== '') ? vx_docker_get_user_panel($docker_owner) : array();
 $docker_quota = ($docker_owner !== '') ? vx_docker_get_quota_state($docker_owner, $docker_user_panel) : array(
@@ -20,7 +19,10 @@ $docker_quota = ($docker_owner !== '') ? vx_docker_get_quota_state($docker_owner
 
 $data = array();
 if ($docker_available) {
-    $data = vx_docker_list_containers($docker_scope);
+    $data = vx_docker_list_containers(vx_docker_is_admin_actor() ? 'admin' : $user);
+    if (vx_docker_is_admin_actor() && $docker_owner !== '') {
+        $data = vx_docker_filter_containers_by_owner($data, $docker_owner);
+    }
 }
 
 render_page($user, $TAB, 'list_docker');

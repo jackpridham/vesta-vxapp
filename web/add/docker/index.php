@@ -28,12 +28,9 @@ if (!empty($_POST['ok'])) {
     $docker_form_values['v_auto_start'] = isset($_POST['v_auto_start']) ? 'yes' : 'no';
     $docker_form_values['v_alert_email'] = isset($_POST['v_alert_email']) ? 'yes' : 'no';
 
-    if ($docker_form_values['v_container_name'] === '') $errors[] = __('container name');
-    if ($docker_form_values['v_container_image'] === '') $errors[] = __('image');
-    if ($docker_form_values['v_container_port'] === '') $errors[] = __('container port');
-
-    if (!empty($errors)) {
-        $_SESSION['error_msg'] = __('Field "%s" can not be blank.', implode(', ', $errors));
+    $docker_form_errors = vx_docker_collect_form_errors($docker_form_owner);
+    if (!empty($docker_form_errors)) {
+        $_SESSION['error_msg'] = implode(' ', $docker_form_errors);
     }
 
     if (empty($_SESSION['error_msg'])) {

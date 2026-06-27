@@ -58,31 +58,31 @@ json_list() {
         [ -n "$line" ] || continue
         current=$((current + 1))
         vx_docker_parse_record "$line"
-        key="$CTN_NAME"
-        echo -n '    "'$key'": {
-        "NAME": "'$NAME'",
-        "CTN_NAME": "'$CTN_NAME'",
-        "OWNER": "'$OWNER'",
-        "IMAGE": "'$IMAGE'",
-        "HOST_PORT": "'$HOST_PORT'",
-        "CONTAINER_PORT": "'$CONTAINER_PORT'",
-        "DOMAIN": "'$DOMAIN'",
-        "ROUTE_PATH": "'$ROUTE_PATH'",
-        "PROXY_MODE": "'$PROXY_MODE'",
-        "PROXY_TARGET": "'$PROXY_TARGET'",
-        "AUTO_START": "'$AUTO_START'",
-        "RESTART_POLICY": "'$RESTART_POLICY'",
-        "HEALTHCHECK_TYPE": "'$HEALTHCHECK_TYPE'",
-        "HEALTHCHECK_TARGET": "'$HEALTHCHECK_TARGET'",
-        "HEALTHCHECK_INTERVAL": "'$HEALTHCHECK_INTERVAL'",
-        "HEALTH_STATUS": "'$HEALTH_STATUS'",
-        "CPU_ALERT_PCT": "'$CPU_ALERT_PCT'",
-        "MEM_ALERT_MB": "'$MEM_ALERT_MB'",
-        "NET_ALERT_MBPS": "'$NET_ALERT_MBPS'",
-        "ALERT_EMAIL": "'$ALERT_EMAIL'",
-        "STATUS": "'$STATUS'",
-        "UPDATED": "'$UPDATED'"
-        }'
+        key="$(vx_docker_json_escape "$CTN_NAME")"
+        printf '    "%s": {\n' "$key"
+        printf '        "NAME": "%s",\n' "$(vx_docker_json_escape "$NAME")"
+        printf '        "CTN_NAME": "%s",\n' "$(vx_docker_json_escape "$CTN_NAME")"
+        printf '        "OWNER": "%s",\n' "$(vx_docker_json_escape "$OWNER")"
+        printf '        "IMAGE": "%s",\n' "$(vx_docker_json_escape "$IMAGE")"
+        printf '        "HOST_PORT": "%s",\n' "$(vx_docker_json_escape "$HOST_PORT")"
+        printf '        "CONTAINER_PORT": "%s",\n' "$(vx_docker_json_escape "$CONTAINER_PORT")"
+        printf '        "DOMAIN": "%s",\n' "$(vx_docker_json_escape "$DOMAIN")"
+        printf '        "ROUTE_PATH": "%s",\n' "$(vx_docker_json_escape "$ROUTE_PATH")"
+        printf '        "PROXY_MODE": "%s",\n' "$(vx_docker_json_escape "$PROXY_MODE")"
+        printf '        "PROXY_TARGET": "%s",\n' "$(vx_docker_json_escape "$PROXY_TARGET")"
+        printf '        "AUTO_START": "%s",\n' "$(vx_docker_json_escape "$AUTO_START")"
+        printf '        "RESTART_POLICY": "%s",\n' "$(vx_docker_json_escape "$RESTART_POLICY")"
+        printf '        "HEALTHCHECK_TYPE": "%s",\n' "$(vx_docker_json_escape "$HEALTHCHECK_TYPE")"
+        printf '        "HEALTHCHECK_TARGET": "%s",\n' "$(vx_docker_json_escape "$HEALTHCHECK_TARGET")"
+        printf '        "HEALTHCHECK_INTERVAL": "%s",\n' "$(vx_docker_json_escape "$HEALTHCHECK_INTERVAL")"
+        printf '        "HEALTH_STATUS": "%s",\n' "$(vx_docker_json_escape "$HEALTH_STATUS")"
+        printf '        "CPU_ALERT_PCT": "%s",\n' "$(vx_docker_json_escape "$CPU_ALERT_PCT")"
+        printf '        "MEM_ALERT_MB": "%s",\n' "$(vx_docker_json_escape "$MEM_ALERT_MB")"
+        printf '        "NET_ALERT_MBPS": "%s",\n' "$(vx_docker_json_escape "$NET_ALERT_MBPS")"
+        printf '        "ALERT_EMAIL": "%s",\n' "$(vx_docker_json_escape "$ALERT_EMAIL")"
+        printf '        "STATUS": "%s",\n' "$(vx_docker_json_escape "$STATUS")"
+        printf '        "UPDATED": "%s"\n' "$(vx_docker_json_escape "$UPDATED")"
+        printf '    }'
         if [ "$current" -lt "$total" ]; then
             echo ','
         else
