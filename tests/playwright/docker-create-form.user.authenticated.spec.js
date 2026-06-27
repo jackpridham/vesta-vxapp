@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { getOptionalEnv, getPanelCredentials, loginAsRole } = require('./helpers/panel-auth');
-const { deleteContainer, hasLocalVestaRuntime, isLocalPanelTarget } = require('./helpers/docker-runtime-fixtures');
+const { deleteContainer, hasLocalVestaRuntime, hasRemoteVestaRuntime, isLocalPanelTarget } = require('./helpers/docker-runtime-fixtures');
 
 const contractedFields = [
   'v_container_name',
@@ -29,7 +29,6 @@ async function cleanupContainer(page, name) {
   }
 
   await deleteLink.click();
-  await page.waitForLoadState('networkidle');
   await expect(page).toHaveURL(/\/list\/docker\/?$/);
   await expect(page.locator(`a[href*="/delete/docker/?container=${encodeURIComponent(name)}"]`)).toHaveCount(0);
 }
@@ -97,17 +96,12 @@ test('successful create redirects back to the docker list', async ({ page }) => 
     }
 
     await page.getByRole('button', { name: /^Add$/i }).click();
-    await page.waitForLoadState('networkidle');
+    await expect(page).toHaveURL(/\/list\/docker\/?$/);
 
-    const errorText = ((await page.locator('#docker-form-errors').textContent()) || '').trim();
-    expect(
-      /\/list\/docker\/?$/.test(page.url()),
-      `Create did not redirect back to /list/docker/. Form errors: ${errorText || '[none]'}`,
-    ).toBeTruthy();
     await expect(page.locator(`#docker-list-cards article[data-name="${name}"]`)).toHaveCount(1);
     await expect(page.locator(`#docker-list-cards article[data-name="${name}"]`).first()).toBeVisible();
   } finally {
-    if (hasLocalVestaRuntime() && isLocalPanelTarget()) {
+    if ((hasLocalVestaRuntime() || hasRemoteVestaRuntime()) && isLocalPanelTarget()) {
       deleteContainer(getPanelCredentials('dockerUser').username, name);
     } else {
       if (page.isClosed()) {

@@ -3,7 +3,7 @@
 $authentication_check_this_is_nested_script = true;
 $authentication_check_required_param['dataset']['container_name'] = true;
 include($_SERVER['DOCUMENT_ROOT']."/ajax/include_authentication_check.php");
-include($_SERVER['DOCUMENT_ROOT']."/inc/vx_docker.php");
+include_once($_SERVER['DOCUMENT_ROOT']."/inc/vx_docker.php");
 
 $container_name = trim((string) $_POST['dataset']['container_name']);
 $container_owner = !empty($_POST['dataset']['owner']) ? trim((string) $_POST['dataset']['owner']) : $myvesta_logged_user;

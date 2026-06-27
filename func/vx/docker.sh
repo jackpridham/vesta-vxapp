@@ -1110,10 +1110,10 @@ vx_docker_rrd_period_graph_window() {
 
 vx_docker_stats_period_fetch_start() {
     case "$1" in
-        5m) echo '-5m' ;;
-        1h) echo '-1h' ;;
-        1d) echo '-1d' ;;
-        7d) echo '-7d' ;;
+        5m) echo 'end-300s' ;;
+        1h) echo 'end-3600s' ;;
+        1d) echo 'end-86400s' ;;
+        7d) echo 'end-604800s' ;;
         *) return 1 ;;
     esac
 }

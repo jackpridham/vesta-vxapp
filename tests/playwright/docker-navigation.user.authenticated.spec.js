@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { loginAsRole } = require('./helpers/panel-auth');
 
 async function visiblePrimaryState(page) {
   // Quota has dedicated coverage in docker-empty-state; this smoke test tracks the
@@ -15,6 +16,7 @@ async function visiblePrimaryState(page) {
 }
 
 test('user docker tile links to the docker list and the list renders a contracted state', async ({ page }) => {
+  await loginAsRole(page, 'dockerUser');
   await page.goto('/');
 
   const dockerTile = page.locator('a[href="/list/docker/"]').filter({ hasText: /DOCKER/i }).first();

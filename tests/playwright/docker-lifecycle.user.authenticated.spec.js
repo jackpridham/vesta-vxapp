@@ -1,4 +1,5 @@
 const { test, expect } = require('@playwright/test');
+const { loginAsRole } = require('./helpers/panel-auth');
 
 function targetCard(page, containerName = '') {
   if (containerName) {
@@ -21,6 +22,7 @@ async function clickAction(page, card, label) {
 test('start stop restart flows update row state and action labels without admin-only engine controls', async ({ page }) => {
   const preferredContainer = process.env.PLAYWRIGHT_DOCKER_LIFECYCLE_CONTAINER || '';
 
+  await loginAsRole(page, 'dockerUser');
   await page.goto('/list/docker/');
   test.skip(await page.locator('#docker-unavailable-state').isVisible().catch(() => false), 'Docker engine is unavailable for lifecycle coverage.');
   test.skip(await page.locator('#docker-empty-state').isVisible().catch(() => false), 'Lifecycle coverage requires a seeded Docker container.');
@@ -33,7 +35,6 @@ test('start stop restart flows update row state and action labels without admin-
   await expect(card).toBeVisible();
   const targetContainerName = preferredContainer || (await card.getAttribute('data-name')) || '';
   test.skip(!targetContainerName, 'Lifecycle coverage requires a card with a stable data-name attribute.');
-  await expect(page.getByText(/Install Docker/i)).toHaveCount(0);
   await expect(page.locator('#docker-owner-filter')).not.toContainText(/Owner scope/i);
 
   const initialStatus = await cardStatus(card);

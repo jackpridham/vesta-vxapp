@@ -18,9 +18,9 @@ test('admin docker list shows owner-aware rows and can pivot by owner when multi
   await expect(page.locator('#docker-owner-filter')).toContainText(/Owner scope/i);
 
   const ownerSelect = page.locator('form[action="/list/docker/"] select[name="user"]');
-  const optionValues = await ownerSelect.locator('option').evaluateAll((options) =>
-    options.map((option) => option.value).filter((value) => value)
-  );
+  const optionValues = (await Promise.all(
+    (await ownerSelect.locator('option').all()).map(async (option) => option.getAttribute('value'))
+  )).filter((value) => value);
   test.skip(optionValues.length < 2, 'Admin owner-filter coverage requires seeded Docker containers for at least two owners.');
   const currentOwner = await ownerSelect.inputValue();
 
@@ -40,8 +40,8 @@ test('admin docker list shows owner-aware rows and can pivot by owner when multi
   await expect(page.locator('#docker-owner-filter')).toContainText(new RegExp(`Owner scope.*${pivotOwner}`, 'i'));
 
   const filteredCards = page.locator('#docker-list-cards article[id^="docker-card-"]');
-  const owners = await filteredCards.evaluateAll((cards) =>
-    cards.map((card) => card.getAttribute('data-owner') || '')
+  const owners = await Promise.all(
+    (await filteredCards.all()).map(async (card) => (await card.getAttribute('data-owner')) || '')
   );
   expect(owners.length).toBeGreaterThan(0);
   expect(owners.every((owner) => owner === pivotOwner)).toBeTruthy();
