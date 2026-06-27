@@ -14,7 +14,7 @@ $docker_owner = vx_docker_resolve_owner_from_request($user);
 
 if (!empty($_GET['container']) && vx_docker_assert_actor_can_access_owner($docker_owner)) {
     exec(
-        VESTA_CMD."v-restart-docker-container "
+        VESTA_CMD."v-delete-docker-container "
         .escapeshellarg($docker_owner)
         ." "
         .escapeshellarg($_GET['container']),

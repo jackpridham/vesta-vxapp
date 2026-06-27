@@ -51,7 +51,7 @@ function vx_docker_healthcheck_from_post()
 
 function vx_docker_alert_thresholds_from_post()
 {
-    $alert_email = vx_docker_normalize_yes_no(vx_docker_post_value('v_alert_email', 'yes'), 'yes');
+    $alert_email = vx_docker_checkbox_to_yes_no('v_alert_email', 'no');
 
     return array(
         'CPU_ALERT_PCT' => vx_docker_normalize_integer_string(vx_docker_post_value('v_cpu_alert_pct', '85'), '85', 1, 1000),
@@ -120,7 +120,7 @@ function vx_docker_spec_from_post()
         'CONTAINER_PORT' => vx_docker_container_port_from_post(),
         'DOMAIN' => vx_docker_post_value('v_route_domain'),
         'ROUTE_PATH' => vx_docker_route_path_from_post(),
-        'AUTO_START' => vx_docker_checkbox_to_yes_no('v_auto_start', 'yes'),
+        'AUTO_START' => vx_docker_checkbox_to_yes_no('v_auto_start', 'no'),
         'RESTART_POLICY' => vx_docker_normalize_restart_policy(vx_docker_post_value('v_restart_policy', 'unless-stopped')),
         'HEALTHCHECK_TYPE' => $healthcheck['HEALTHCHECK_TYPE'],
         'HEALTHCHECK_TARGET' => $healthcheck['HEALTHCHECK_TARGET'],
@@ -265,4 +265,319 @@ function vx_docker_normalize_integer_string($value, $default, $min, $max)
     }
 
     return (string) $integer_value;
+}
+
+function vx_docker_current_actor()
+{
+    return isset($_SESSION['user']) ? $_SESSION['user'] : '';
+}
+
+function vx_docker_is_admin_actor()
+{
+    return vx_docker_current_actor() === 'admin';
+}
+
+function vx_docker_resolve_owner_from_request($default_owner = '', $allow_admin_override = true)
+{
+    $actor = vx_docker_current_actor();
+    if ($default_owner === '') {
+        $default_owner = $actor;
+    }
+
+    if ($allow_admin_override && vx_docker_is_admin_actor() && !empty($_REQUEST['user']) && !is_array($_REQUEST['user'])) {
+        return trim((string) $_REQUEST['user']);
+    }
+
+    return $default_owner;
+}
+
+function vx_docker_assert_actor_can_access_owner($owner, $acting_user = null)
+{
+    if ($acting_user === null || $acting_user === '') {
+        $acting_user = vx_docker_current_actor();
+    }
+
+    if ($acting_user !== 'admin' && $acting_user !== $owner) {
+        return false;
+    }
+
+    return true;
+}
+
+function vx_docker_exec_json($command)
+{
+    $output = array();
+    $return_var = 0;
+    exec($command, $output, $return_var);
+    if ($return_var !== 0) {
+        return array(null, $return_var, $output);
+    }
+
+    $data = json_decode(implode('', $output), true);
+    if (!is_array($data)) {
+        $data = array();
+    }
+
+    return array($data, $return_var, $output);
+}
+
+function vx_docker_get_engine_state()
+{
+    list($docker_state) = vx_docker_exec_json(VESTA_CMD."v-check-docker-engine json");
+    if (!is_array($docker_state)) {
+        $docker_state = array();
+    }
+
+    return $docker_state;
+}
+
+function vx_docker_is_engine_available($docker_state = null)
+{
+    if (!is_array($docker_state)) {
+        $docker_state = vx_docker_get_engine_state();
+    }
+
+    return !empty($docker_state['DOCKER_AVAILABLE']) && $docker_state['DOCKER_AVAILABLE'] === 'yes';
+}
+
+function vx_docker_list_containers($scope_owner)
+{
+    list($containers) = vx_docker_exec_json(
+        VESTA_CMD."v-list-docker-containers ".escapeshellarg($scope_owner)." json"
+    );
+
+    if (!is_array($containers)) {
+        return array();
+    }
+
+    return $containers;
+}
+
+function vx_docker_get_container($owner, $name)
+{
+    list($container) = vx_docker_exec_json(
+        VESTA_CMD."v-list-docker-container "
+        .escapeshellarg($owner)
+        ." "
+        .escapeshellarg($name)
+        ." json"
+    );
+
+    if (!is_array($container) || empty($container[$name]) || !is_array($container[$name])) {
+        return array();
+    }
+
+    return $container[$name];
+}
+
+function vx_docker_list_users()
+{
+    list($users) = vx_docker_exec_json(VESTA_CMD."v-list-users json");
+    if (!is_array($users)) {
+        return array();
+    }
+
+    ksort($users);
+    return $users;
+}
+
+function vx_docker_get_user_panel($owner)
+{
+    list($data) = vx_docker_exec_json(VESTA_CMD."v-list-user ".escapeshellarg($owner)." json");
+    if (!is_array($data) || empty($data[$owner]) || !is_array($data[$owner])) {
+        return array();
+    }
+
+    return $data[$owner];
+}
+
+function vx_docker_get_quota_state($owner, $user_panel = null)
+{
+    if (!is_array($user_panel) || empty($user_panel)) {
+        $user_panel = vx_docker_get_user_panel($owner);
+    }
+
+    $limit_raw = isset($user_panel['DOCKER_CONTAINERS']) ? trim((string) $user_panel['DOCKER_CONTAINERS']) : '';
+    $used_raw = isset($user_panel['U_DOCKER_CONTAINERS']) ? trim((string) $user_panel['U_DOCKER_CONTAINERS']) : '0';
+
+    $limit = null;
+    if ($limit_raw !== '' && strtolower($limit_raw) !== 'unlimited') {
+        $limit = (int) $limit_raw;
+    }
+
+    $used = (int) $used_raw;
+
+    return array(
+        'limit' => $limit,
+        'used' => $used,
+        'reached' => ($limit !== null && $used >= $limit),
+    );
+}
+
+function vx_docker_textarea_from_stored_string($value)
+{
+    $value = trim((string) $value);
+    if ($value === '') {
+        return '';
+    }
+
+    return str_replace('||', "\n", $value);
+}
+
+function vx_docker_form_defaults($container = array())
+{
+    return array(
+        'v_container_name' => isset($container['NAME']) ? $container['NAME'] : '',
+        'v_container_image' => isset($container['IMAGE']) ? $container['IMAGE'] : '',
+        'v_container_command' => isset($container['COMMAND']) ? $container['COMMAND'] : '',
+        'v_container_env' => vx_docker_textarea_from_stored_string(isset($container['ENV']) ? $container['ENV'] : ''),
+        'v_container_mounts' => vx_docker_textarea_from_stored_string(isset($container['MOUNTS']) ? $container['MOUNTS'] : ''),
+        'v_container_port' => isset($container['CONTAINER_PORT']) ? $container['CONTAINER_PORT'] : '',
+        'v_route_domain' => isset($container['DOMAIN']) ? $container['DOMAIN'] : '',
+        'v_route_path' => isset($container['ROUTE_PATH']) ? $container['ROUTE_PATH'] : '',
+        'v_auto_start' => isset($container['AUTO_START']) ? $container['AUTO_START'] : 'yes',
+        'v_restart_policy' => isset($container['RESTART_POLICY']) ? $container['RESTART_POLICY'] : 'unless-stopped',
+        'v_healthcheck_type' => isset($container['HEALTHCHECK_TYPE']) ? $container['HEALTHCHECK_TYPE'] : 'http',
+        'v_healthcheck_target' => isset($container['HEALTHCHECK_TARGET']) ? $container['HEALTHCHECK_TARGET'] : '',
+        'v_healthcheck_interval' => isset($container['HEALTHCHECK_INTERVAL']) ? $container['HEALTHCHECK_INTERVAL'] : '60',
+        'v_cpu_alert_pct' => isset($container['CPU_ALERT_PCT']) ? $container['CPU_ALERT_PCT'] : '85',
+        'v_mem_alert_mb' => isset($container['MEM_ALERT_MB']) ? $container['MEM_ALERT_MB'] : '1024',
+        'v_net_alert_mbps' => isset($container['NET_ALERT_MBPS']) ? $container['NET_ALERT_MBPS'] : '50',
+        'v_alert_email' => isset($container['ALERT_EMAIL']) ? $container['ALERT_EMAIL'] : 'yes',
+    );
+}
+
+function vx_docker_alerts_file($owner)
+{
+    return '/usr/local/vesta/data/users/'.$owner.'/docker-alerts.conf';
+}
+
+function vx_docker_parse_alert_record($line)
+{
+    $record = array();
+    if (preg_match_all("/([A-Z_]+)='([^']*)'/", $line, $matches, PREG_SET_ORDER)) {
+        foreach ($matches as $match) {
+            $record[$match[1]] = $match[2];
+        }
+    }
+
+    return $record;
+}
+
+function vx_docker_list_alerts_for_owner($owner)
+{
+    $path = vx_docker_alerts_file($owner);
+    if (!file_exists($path)) {
+        return array();
+    }
+
+    $lines = file($path, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    if (!is_array($lines)) {
+        return array();
+    }
+
+    $alerts = array();
+    foreach ($lines as $line) {
+        $alert = vx_docker_parse_alert_record($line);
+        if (!empty($alert)) {
+            $alerts[] = $alert;
+        }
+    }
+
+    usort($alerts, function ($left, $right) {
+        $left_seen = isset($left['LAST_SEEN']) ? $left['LAST_SEEN'] : '';
+        $right_seen = isset($right['LAST_SEEN']) ? $right['LAST_SEEN'] : '';
+        return strcmp($right_seen, $left_seen);
+    });
+
+    return $alerts;
+}
+
+function vx_docker_list_alerts_for_scope($owner = '')
+{
+    $alerts = array();
+
+    if ($owner !== '') {
+        return vx_docker_list_alerts_for_owner($owner);
+    }
+
+    foreach (array_keys(vx_docker_list_users()) as $user_name) {
+        $alerts = array_merge($alerts, vx_docker_list_alerts_for_owner($user_name));
+    }
+
+    usort($alerts, function ($left, $right) {
+        $left_seen = isset($left['LAST_SEEN']) ? $left['LAST_SEEN'] : '';
+        $right_seen = isset($right['LAST_SEEN']) ? $right['LAST_SEEN'] : '';
+        return strcmp($right_seen, $left_seen);
+    });
+
+    return $alerts;
+}
+
+function vx_docker_acknowledge_alert_record($owner, $aid)
+{
+    $path = vx_docker_alerts_file($owner);
+    if (!file_exists($path)) {
+        return false;
+    }
+
+    $lines = file($path, FILE_IGNORE_NEW_LINES);
+    if (!is_array($lines)) {
+        return false;
+    }
+
+    $updated = false;
+    foreach ($lines as $index => $line) {
+        $record = vx_docker_parse_alert_record($line);
+        if (!empty($record['AID']) && (string) $record['AID'] === (string) $aid) {
+            $lines[$index] = preg_replace("/ACK='[^']*'/", "ACK='yes'", $line, 1, $count);
+            if ($count === 0) {
+                $lines[$index] = rtrim($line)." ACK='yes'";
+            }
+            $updated = true;
+            break;
+        }
+    }
+
+    if (!$updated) {
+        return false;
+    }
+
+    file_put_contents($path, implode("\n", $lines)."\n");
+    return true;
+}
+
+function vx_docker_stats_payload($owner, $name, $period = '5m')
+{
+    $periods = array('5m', '1h', '1d', '7d');
+    if (!in_array($period, $periods, true)) {
+        $period = '5m';
+    }
+
+    return array(
+        'OWNER' => $owner,
+        'NAME' => $name,
+        'PERIOD' => $period,
+        'CPU_PCT' => array(),
+        'MEM_MB' => array(),
+        'RX_MBPS' => array(),
+        'TX_MBPS' => array(),
+        'LATEST' => array(
+            'CPU_PCT' => null,
+            'MEM_MB' => null,
+            'RX_MBPS' => null,
+            'TX_MBPS' => null,
+        ),
+    );
+}
+
+function vx_docker_health_payload($container)
+{
+    return array(
+        'OWNER' => isset($container['OWNER']) ? $container['OWNER'] : '',
+        'NAME' => isset($container['NAME']) ? $container['NAME'] : '',
+        'STATUS' => isset($container['STATUS']) ? $container['STATUS'] : '',
+        'HEALTH_STATUS' => isset($container['HEALTH_STATUS']) && $container['HEALTH_STATUS'] !== '' ? $container['HEALTH_STATUS'] : 'unknown',
+        'LAST_HEALTH_AT' => isset($container['LAST_HEALTH_AT']) ? $container['LAST_HEALTH_AT'] : '',
+    );
 }

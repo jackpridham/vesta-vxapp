@@ -1,31 +1,26 @@
 <?php
 error_reporting(NULL);
+ob_start();
 $TAB = 'SERVER';
 
 include($_SERVER['DOCUMENT_ROOT']."/inc/main.php");
+include($_SERVER['DOCUMENT_ROOT']."/inc/vx_docker.php");
 
-if ($_SESSION['user'] != 'admin') {
-    header('Location: /list/user');
-    exit;
-}
+$docker_state = vx_docker_get_engine_state();
+$docker_available = vx_docker_is_engine_available($docker_state);
+$docker_owner = vx_docker_is_admin_actor() ? vx_docker_resolve_owner_from_request('') : $user;
+$docker_scope = ($docker_owner !== '') ? $docker_owner : 'admin';
+$docker_owner_filter_options = vx_docker_is_admin_actor() ? vx_docker_list_users() : array();
+$docker_user_panel = ($docker_owner !== '') ? vx_docker_get_user_panel($docker_owner) : array();
+$docker_quota = ($docker_owner !== '') ? vx_docker_get_quota_state($docker_owner, $docker_user_panel) : array(
+    'limit' => null,
+    'used' => 0,
+    'reached' => false,
+);
 
-exec(VESTA_CMD."v-check-docker-engine json", $output, $return_var);
-$docker_state = json_decode(implode('', $output), true);
-if (!is_array($docker_state)) {
-    $docker_state = array();
-}
-unset($output);
-
-$docker_available = (!empty($docker_state['DOCKER_AVAILABLE']) && $docker_state['DOCKER_AVAILABLE'] === 'yes');
 $data = array();
-
 if ($docker_available) {
-    exec(VESTA_CMD."v-list-docker-containers json", $output, $return_var);
-    $data = json_decode(implode('', $output), true);
-    if (!is_array($data)) {
-        $data = array();
-    }
-    unset($output);
+    $data = vx_docker_list_containers($docker_scope);
 }
 
 render_page($user, $TAB, 'list_docker');
