@@ -5,6 +5,9 @@ test('admin docker list renders all-users scope safely and groups owners when co
 
   await expect(page.locator('.l-header')).toBeVisible();
   await expect(page.locator('#docker-owner-filter')).toContainText(/Owner scope/i);
+  await page.goto('/add/docker/');
+  await page.waitForLoadState('networkidle');
+  await expect(page).toHaveURL(/\/list\/docker\/?$/);
 
   const listVisible = await page.locator('#docker-list-state').isVisible().catch(() => false);
   if (!listVisible) {

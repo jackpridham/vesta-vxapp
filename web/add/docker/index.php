@@ -9,6 +9,11 @@ include($_SERVER['DOCUMENT_ROOT']."/inc/vx_docker.php");
 $docker_owner_users = vx_docker_is_admin_actor() ? vx_docker_list_users() : array();
 $docker_form_owner = vx_docker_resolve_owner_from_request($user);
 $docker_owner_requested = vx_docker_is_admin_actor() && isset($_REQUEST['user']) && !is_array($_REQUEST['user']);
+if (vx_docker_is_admin_actor() && !$docker_owner_requested) {
+    $_SESSION['error_msg'] = __('Select an owner scope to add a Docker container.');
+    header('Location: /list/docker/');
+    exit;
+}
 if ($docker_owner_requested && !vx_docker_user_exists($docker_form_owner, $docker_owner_users)) {
     $_SESSION['error_msg'] = __('Docker owner scope does not exist.');
     header('Location: /list/docker/');

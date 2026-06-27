@@ -739,7 +739,7 @@ function vx_docker_list_alerts_for_scope($owner = '')
         return vx_docker_list_alerts_for_owner($owner);
     }
 
-    foreach (array_keys(vx_docker_list_users()) as $user_name) {
+    foreach (vx_docker_list_managed_container_owners() as $user_name) {
         $alerts = array_merge($alerts, vx_docker_list_alerts_for_owner($user_name));
     }
 
@@ -750,6 +750,19 @@ function vx_docker_list_alerts_for_scope($owner = '')
     });
 
     return $alerts;
+}
+
+function vx_docker_list_managed_container_owners()
+{
+    $owners = array();
+
+    foreach (array_keys(vx_docker_list_users()) as $user_name) {
+        if (vx_docker_metadata_exists($user_name)) {
+            $owners[] = $user_name;
+        }
+    }
+
+    return $owners;
 }
 
 function vx_docker_acknowledge_alert_record($owner, $aid)

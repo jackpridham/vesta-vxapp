@@ -203,36 +203,39 @@
         var healthSummaries = [];
 
         $.each(config.containers, function(_, container) {
+            healthSummaries.push({
+                HEALTH_STATUS: container.healthStatus || 'unknown',
+                LAST_HEALTH_AT: container.lastHealthAt || ''
+            });
+        });
+
+        $.each(config.containers, function(_, container) {
             postJson(config.statsUrl, {
                 token: config.token,
                 owner: container.owner,
                 name: container.name,
                 period: '5m'
             }, function(metric) {
-                postJson(config.healthUrl, {
-                    token: config.token,
-                    owner: container.owner,
-                    name: container.name
-                }, function(health) {
-                    metrics.push(metric || { LATEST: { CPU_PCT: null, MEM_MB: null, RX_MBPS: null, TX_MBPS: null } });
-                    if (health) {
-                        healthSummaries.push(health);
-                    }
-                    updateCard(container.owner, container.name, metric, health);
-                    pending -= 1;
+                var health = {
+                    HEALTH_STATUS: container.healthStatus || 'unknown',
+                    LAST_HEALTH_AT: container.lastHealthAt || ''
+                };
 
-                    if (pending === 0) {
-                        postJson(config.alertsUrl, {
-                            token: config.token,
-                            owner: config.ownerScope
-                        }, function(alertsResponse) {
-                            var alerts = alertsResponse && alertsResponse.ALERTS ? alertsResponse.ALERTS : [];
-                            renderAlerts(alerts);
-                            updateSummary(metrics, healthSummaries, alerts);
-                            updatePrimaryState();
-                        });
-                    }
-                });
+                metrics.push(metric || { LATEST: { CPU_PCT: null, MEM_MB: null, RX_MBPS: null, TX_MBPS: null } });
+                updateCard(container.owner, container.name, metric, health);
+                pending -= 1;
+
+                if (pending === 0) {
+                    postJson(config.alertsUrl, {
+                        token: config.token,
+                        owner: config.ownerScope
+                    }, function(alertsResponse) {
+                        var alerts = alertsResponse && alertsResponse.ALERTS ? alertsResponse.ALERTS : [];
+                        renderAlerts(alerts);
+                        updateSummary(metrics, healthSummaries, alerts);
+                        updatePrimaryState();
+                    });
+                }
             });
         });
     }
