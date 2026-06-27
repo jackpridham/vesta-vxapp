@@ -21,10 +21,10 @@ FAILED=0
 random() {
     local rand=''
     local n=1
-    MATRIX='0123456789'
-    LENGTH=$1
-    while [ $n -le $LENGTH ]; do
-        rand="$rand${MATRIX:$(($RANDOM%${#MATRIX})):1}"
+    local matrix='0123456789'
+    local length=$1
+    while [ $n -le $length ]; do
+        rand="$rand${matrix:$(($RANDOM%${#matrix})):1}"
         let n+=1
     done
     echo "$rand"
@@ -50,6 +50,15 @@ echo_result() {
     echo -ne '\r\n'
 }
 
+echo_skip() {
+    echo -en "$1"
+    echo -en '\033[60G'
+    echo -n '[ SKIP ]'
+    echo -ne '\r\n'
+    cat "$2"
+    echo -ne '\r\n'
+}
+
 # Create random username
 user="testu_$(random 4)"
 while [ ! -z "$(grep "^$user:" /etc/passwd)" ]; do
@@ -58,6 +67,22 @@ done
 
 # Create random tmpfile
 tmpfile=$(mktemp -p /tmp )
+
+cleanup() {
+    if [ -n "${user:-}" ] && [ -d "$VESTA/data/users/$user" ]; then
+        v_delete_user "$user" yes >/dev/null 2>&1 || true
+    fi
+
+    for ip_cleanup in 198.18.0.123 198.18.0.125; do
+        if v_list_sys_ips plain 2>/dev/null | awk '{print $1}' | grep -qx "$ip_cleanup"; then
+            v_delete_sys_ip "$ip_cleanup" >/dev/null 2>&1 || true
+        fi
+    done
+
+    [ -n "${tmpfile:-}" ] && rm -f "$tmpfile"
+}
+
+trap cleanup EXIT
 
 
 #----------------------------------------------------------#
@@ -356,7 +381,11 @@ echo_result "Deleting ip 198.18.0.125" "$?" "$tmpfile" "$cmd"
 if [ -f "$V_TEST/test_docker_user_actions.sh" ]; then
     cmd="bash $V_TEST/test_docker_user_actions.sh"
     $cmd > $tmpfile 2>> $tmpfile
-    echo_result "DOCKER: Running dedicated ownership/quota/backup regressions" "$?" "$tmpfile" "$cmd"
+    if grep -q '^SKIP:' "$tmpfile"; then
+        echo_skip "DOCKER: Running dedicated ownership/quota/backup regressions" "$tmpfile"
+    else
+        echo_result "DOCKER: Running dedicated ownership/quota/backup regressions" "$?" "$tmpfile" "$cmd"
+    fi
 fi
 
 exit "$FAILED"

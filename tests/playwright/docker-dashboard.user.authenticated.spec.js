@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { getOptionalEnv } = require('./helpers/panel-auth');
+const { hasLocalVestaRuntime, withSeededAlert } = require('./helpers/docker-runtime-fixtures');
 
 const allowedHealthStates = new Set(['healthy', 'starting', 'degraded', 'unhealthy', 'unknown']);
 
@@ -35,37 +36,44 @@ async function requireRealDockerList(page, preferredContainer = '') {
 }
 
 test('docker list dashboard renders cards, constrained health vocabulary, and alert acknowledgement updates state', async ({ page }) => {
-  const alertContainer = getOptionalEnv('PLAYWRIGHT_DOCKER_ALERT_CONTAINER');
-  test.skip(!alertContainer, 'Dashboard alert-acknowledge coverage requires PLAYWRIGHT_DOCKER_ALERT_CONTAINER to target a disposable seeded container with an open alert.');
-  const { owner, name } = await requireRealDockerList(page, alertContainer);
+  test.skip(!hasLocalVestaRuntime(), 'Dashboard alert coverage requires local Vesta runtime access for deterministic alert setup.');
+  const preferredContainer = getOptionalEnv('PLAYWRIGHT_DOCKER_DASHBOARD_CONTAINER');
+  const { owner, name } = await requireRealDockerList(page, preferredContainer);
+  const restoreAlerts = withSeededAlert(owner, name);
 
-  await expect(page.locator('#docker-health-dashboard')).toBeVisible();
-  await expect(page.locator('#docker-alerts-panel')).toBeVisible();
+  try {
+    await page.goto('/list/docker/');
 
-  const badges = await page.locator('.docker-card-health-badge').allTextContents();
-  expect(badges.every((badge) => allowedHealthStates.has(badge.trim().toLowerCase()))).toBeTruthy();
+    await expect(page.locator('#docker-health-dashboard')).toBeVisible();
+    await expect(page.locator('#docker-alerts-panel')).toBeVisible();
 
-  await expect(page.locator('#docker-card-cpu')).not.toHaveText(/^No data$/);
-  await expect(page.locator('#docker-card-mem')).not.toHaveText(/^No data$/);
-  await expect(page.locator('#docker-card-rx')).not.toHaveText(/^No data$/);
-  await expect(page.locator('#docker-card-tx')).not.toHaveText(/^No data$/);
-  await expect(page.locator('#docker-card-health-status')).toHaveText(/healthy|starting|degraded|unhealthy|unknown/i);
-  await expect(page.locator('#docker-card-health-updated')).not.toHaveText(/^No data$/);
-  await expect(page.locator('#docker-card-alert-count')).toHaveText(/^\d+$/);
+    const badges = await page.locator('.docker-card-health-badge').allTextContents();
+    expect(badges.every((badge) => allowedHealthStates.has(badge.trim().toLowerCase()))).toBeTruthy();
 
-  const targetAlert = page.locator('#docker-alerts-panel article').filter({
-    hasText: new RegExp(`Container:\\s*${escapeRegExp(name)}\\s*/\\s*Owner:\\s*${escapeRegExp(owner)}`, 'i'),
-  }).filter({
-    hasText: /Status:\s*open/i,
-  }).filter({
-    hasText: /Ack:\s*no/i,
-  }).first();
-  test.skip((await targetAlert.count()) === 0, `Dashboard acknowledge coverage requires an open unacknowledged alert for ${owner}/${name}.`);
+    await expect(page.locator('#docker-card-cpu')).not.toHaveText(/^No data$/);
+    await expect(page.locator('#docker-card-mem')).not.toHaveText(/^No data$/);
+    await expect(page.locator('#docker-card-rx')).not.toHaveText(/^No data$/);
+    await expect(page.locator('#docker-card-tx')).not.toHaveText(/^No data$/);
+    await expect(page.locator('#docker-card-health-status')).toHaveText(/healthy|starting|degraded|unhealthy|unknown/i);
+    await expect(page.locator('#docker-card-health-updated')).not.toHaveText(/^No data$/);
+    await expect(page.locator('#docker-card-alert-count')).toHaveText(/^\d+$/);
 
-  const acknowledgeButton = page.locator('#docker-alert-acknowledge');
-  test.skip((await acknowledgeButton.isVisible().catch(() => false)) === false, 'Dashboard alert-acknowledge coverage requires a seeded open Docker alert.');
-  await acknowledgeButton.click();
-  await expect(targetAlert).toContainText(/Ack:\s*yes/i);
+    const targetAlert = page.locator('#docker-alerts-panel article').filter({
+      hasText: new RegExp(`Container:\\s*${escapeRegExp(name)}\\s*/\\s*Owner:\\s*${escapeRegExp(owner)}`, 'i'),
+    }).filter({
+      hasText: /Status:\s*open/i,
+    }).filter({
+      hasText: /Ack:\s*no/i,
+    }).first();
+    test.skip((await targetAlert.count()) === 0, `Dashboard acknowledge coverage requires an open unacknowledged alert for ${owner}/${name}.`);
+
+    const acknowledgeButton = targetAlert.locator('#docker-alert-acknowledge');
+    test.skip((await acknowledgeButton.isVisible().catch(() => false)) === false, 'Dashboard alert-acknowledge coverage requires a seeded open Docker alert.');
+    await acknowledgeButton.click();
+    await expect(targetAlert).toContainText(/Ack:\s*yes/i);
+  } finally {
+    restoreAlerts();
+  }
 });
 
 test('docker edit page renders live metrics and chart containers after stats data returns', async ({ page }) => {

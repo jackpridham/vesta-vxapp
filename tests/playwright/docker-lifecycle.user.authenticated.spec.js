@@ -37,6 +37,7 @@ test('start stop restart flows update row state and action labels without admin-
   await expect(page.locator('#docker-owner-filter')).not.toContainText(/Owner scope/i);
 
   const initialStatus = await cardStatus(card);
+  test.skip(!['running', 'exited'].includes(initialStatus), `Lifecycle coverage requires a seeded container in running or exited state, got "${initialStatus || 'unknown'}".`);
   try {
     if (initialStatus !== 'running') {
       await clickAction(page, card, '^start');

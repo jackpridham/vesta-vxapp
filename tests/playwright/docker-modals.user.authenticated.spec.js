@@ -1,5 +1,6 @@
 const { test, expect } = require('@playwright/test');
-const { getOptionalEnv } = require('./helpers/panel-auth');
+const { getOptionalEnv, getPanelCredentials } = require('./helpers/panel-auth');
+const { createDisposableContainer, deleteContainer, hasLocalVestaRuntime } = require('./helpers/docker-runtime-fixtures');
 
 async function requireRealDockerRow(page, preferredContainer = '') {
   await page.goto('/list/docker/');
@@ -68,23 +69,31 @@ test('docker logs and inspect modals open and Escape closes the active modal', a
 });
 
 test('docker remove modal supports cancel and confirm flows', async ({ page }) => {
-  const removableContainer = getOptionalEnv('PLAYWRIGHT_DOCKER_REMOVE_CONTAINER');
-  test.skip(!removableContainer, 'Remove-confirm coverage requires PLAYWRIGHT_DOCKER_REMOVE_CONTAINER to target a disposable seeded container that is reseeded between runs.');
+  test.skip(!hasLocalVestaRuntime(), 'Remove-confirm coverage requires local Vesta runtime access for disposable container setup.');
 
-  await openDockerActions(page, removableContainer);
-  await page.getByRole('button', { name: /Remove Docker Container/i }).click();
-  await expect(page.locator('#floating-center-div-content')).toContainText(/remove Docker container/i);
+  const owner = getPanelCredentials('dockerUser').username;
+  const image = getOptionalEnv('PLAYWRIGHT_DOCKER_TEST_IMAGE', 'busybox:latest');
+  const removableContainer = `pw-remove-${Date.now().toString(36)}`;
+  createDisposableContainer(owner, removableContainer, image);
 
-  await page.getByRole('button', { name: /^No$/i }).click();
-  await expect(page.locator('#floating-center-div')).toBeHidden();
+  try {
+    await openDockerActions(page, removableContainer);
+    await page.getByRole('button', { name: /Remove Docker Container/i }).click();
+    await expect(page.locator('#floating-center-div-content')).toContainText(/remove Docker container/i);
 
-  await openDockerActions(page, removableContainer);
-  await page.getByRole('button', { name: /Remove Docker Container/i }).click();
-  await expect(page.locator('#floating-center-div-content')).toContainText(/remove Docker container/i);
+    await page.getByRole('button', { name: /^No$/i }).click();
+    await expect(page.locator('#floating-center-div')).toBeHidden();
 
-  await page.getByRole('button', { name: /^Yes$/i }).click();
-  await expect(page.locator('#floating-center-div-content')).toContainText(/Docker remove output/i);
+    await openDockerActions(page, removableContainer);
+    await page.getByRole('button', { name: /Remove Docker Container/i }).click();
+    await expect(page.locator('#floating-center-div-content')).toContainText(/remove Docker container/i);
 
-  await page.goto('/list/docker/');
-  await expect(page.locator(`#docker-list-cards article[data-name="${removableContainer}"]`)).toHaveCount(0);
+    await page.getByRole('button', { name: /^Yes$/i }).click();
+    await expect(page.locator('#floating-center-div-content')).toContainText(/Docker remove output/i);
+
+    await page.goto('/list/docker/');
+    await expect(page.locator(`#docker-list-cards article[data-name="${removableContainer}"]`)).toHaveCount(0);
+  } finally {
+    deleteContainer(owner, removableContainer);
+  }
 });
