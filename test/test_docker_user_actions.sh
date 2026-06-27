@@ -82,7 +82,7 @@ run_cmd() {
     local stdout_file="$2"
     local stderr_file="$3"
 
-    bash -lc "$cmd" >"$stdout_file" 2>"$stderr_file"
+    bash -lc "set -o pipefail; $cmd" >"$stdout_file" 2>"$stderr_file"
     return $?
 }
 

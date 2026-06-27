@@ -21,6 +21,8 @@ PLAYWRIGHT_ENV_FILE=.env.playwright.local npm run playwright:test -- --list
 
 Supported variables:
 
+- The authenticated UI assertions currently assume the panel is using the English locale strings shipped in `web/inc/i18n/en.php`
+
 - `PLAYWRIGHT_BASE_URL`: full panel URL, including scheme and port
 - `PLAYWRIGHT_LOGIN_SECRET`: optional secret-login gate token from `web/inc/login_url.php`
 - `PLAYWRIGHT_ADMIN_USER` / `PLAYWRIGHT_ADMIN_PASSWORD`: enables admin-authenticated project

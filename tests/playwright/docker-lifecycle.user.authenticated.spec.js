@@ -40,20 +40,20 @@ test('start stop restart flows update row state and action labels without admin-
   test.skip(!['running', 'exited'].includes(initialStatus), `Lifecycle coverage requires a seeded container in running or exited state, got "${initialStatus || 'unknown'}".`);
   try {
     if (initialStatus !== 'running') {
-      await clickAction(page, card, '^start');
+      await clickAction(page, targetCard(page, targetContainerName), '^start');
       await expect(targetCard(page, targetContainerName).locator('.docker-card-status')).toHaveText(/running/i);
       await expect(targetCard(page, targetContainerName).getByRole('link', { name: /^stop/i })).toBeVisible();
     }
 
-    await clickAction(page, card, '^stop');
+    await clickAction(page, targetCard(page, targetContainerName), '^stop');
     await expect(targetCard(page, targetContainerName).locator('.docker-card-status')).toHaveText(/exited/i);
     await expect(targetCard(page, targetContainerName).getByRole('link', { name: /^start/i })).toBeVisible();
 
-    await clickAction(page, card, '^start');
+    await clickAction(page, targetCard(page, targetContainerName), '^start');
     await expect(targetCard(page, targetContainerName).locator('.docker-card-status')).toHaveText(/running/i);
     await expect(targetCard(page, targetContainerName).getByRole('link', { name: /^stop/i })).toBeVisible();
 
-    await clickAction(page, card, '^restart');
+    await clickAction(page, targetCard(page, targetContainerName), '^restart');
     await expect(targetCard(page, targetContainerName).locator('.docker-card-status')).toHaveText(/running/i);
     await expect(targetCard(page, targetContainerName).getByRole('link', { name: /^stop/i })).toBeVisible();
   } finally {

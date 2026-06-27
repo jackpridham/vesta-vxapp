@@ -13,6 +13,7 @@ async function textContentTrim(locator) {
 }
 
 async function waitForNonPlaceholder(page, selector, placeholderText, timeout = 5_000) {
+  await expect(page.locator(selector)).toHaveCount(1);
   try {
     await page.waitForFunction(
       ({ css, placeholder }) => {
