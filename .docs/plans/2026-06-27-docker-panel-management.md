@@ -265,7 +265,7 @@ Run:
 - Summary: Added `func/vx/docker.sh` as the Docker ownership/model seam, turned `func/docker.sh` into a compatibility shim, and replaced host-global list behavior with metadata-driven owner-aware `v-list-docker-containers`, `v-list-docker-container`, and `v-check-docker-container-owner` commands.
 - Files changed: `func/vx/docker.sh`, `func/docker.sh`, `bin/v-check-docker-engine`, `bin/v-list-docker-containers`, `bin/v-list-docker-container`, `bin/v-check-docker-container-owner`, `.docs/audits/2026-06-27-docker-panel-management-task1.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task1.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`
 - Tests run: `bash -n func/vx/docker.sh func/docker.sh bin/v-check-docker-engine bin/v-list-docker-containers bin/v-list-docker-container bin/v-check-docker-container-owner`; PASS
-- Commit SHA(s): None yet
+- Commit SHA(s): `f00b4cd3`
 - Spec review result: PASS. Task 1 requirements for the Vortex helper seam, compatibility shim, ownership-aware list/read commands, metadata-first resolution, and syntax validation were satisfied.
 - Code quality review result: PASS. The implementation stayed inside the Task 1 seam and reused existing Vesta parsing and proxy helpers instead of introducing a second persistence or routing path.
 - Follow-ups or concerns: None
