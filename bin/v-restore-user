@@ -21,7 +21,18 @@ mail=$5
 db=$6
 cron=$7
 udir=$8
-if [ "$#" -ge 10 ]; then
+if [ "$#" -eq 9 ]; then
+    case "$9" in
+        yes|no)
+            docker=$9
+            notify='no'
+            ;;
+        *)
+            docker='yes'
+            notify=${9-no}
+            ;;
+    esac
+elif [ "$#" -ge 10 ]; then
     docker=$9
     notify=${10-no}
 else
