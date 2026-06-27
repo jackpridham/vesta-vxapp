@@ -2,13 +2,160 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build complete Docker container management for both users and admins in `vesta-vxapp`, including user-facing container creation UI, per-user ownership and quota enforcement, user/admin lifecycle actions, backup/restore coverage, and domain routing through the existing `vx nginx vx-proxy` flow so a user-owned web domain can proxy traffic to a user-owned container.
+**Goal:** Build complete Docker container management for both users and admins in `vesta-vxapp`, including user-facing container creation UI, per-user ownership and quota enforcement, user/admin lifecycle actions, live CPU/RAM/network monitoring, health dashboards, alerts/notifications, long-form operator documentation, exact template-state markup, backup/restore coverage, and domain routing through the existing `vx nginx vx-proxy` flow so a user-owned web domain can proxy traffic to a user-owned container.
 
-**Architecture:** Keep Vortex-specific Docker logic in `vx`-scoped helpers. Persist managed container metadata in `data/users/<user>/docker.conf`, store managed bind data under `$HOMEDIR/$user/docker/<container>/`, publish container ports on `127.0.0.1:<allocated-port>`, and reuse the existing `PROXY_TARGET` / `PROXY_MODE` / `vx-proxy` path already implemented for web domains. Admins get a host-wide overview plus per-user oversight; regular users only see and manage containers they own. Do not support arbitrary host bind paths or unmanaged named volumes in the first complete implementation: keeping writable data under `/home/$user/docker` makes disk quota, cleanup, and backup/restore line up with existing Vesta account boundaries, and routing all public traffic through owned web domains keeps bandwidth accounting on the current nginx/web-domain path instead of inventing a second traffic meter.
+**Architecture:** Keep Vortex-specific Docker logic in `vx`-scoped helpers. Persist managed container metadata in `data/users/<user>/docker.conf`, store managed bind data under `$HOMEDIR/$user/docker/<container>/`, publish container ports on `127.0.0.1:<allocated-port>`, and reuse the existing `PROXY_TARGET` / `PROXY_MODE` / `vx-proxy` path already implemented for web domains. Admins get a host-wide overview plus per-user oversight; regular users only see and manage containers they own. Do not support arbitrary host bind paths or unmanaged named volumes in the first complete implementation: keeping writable data under `/home/$user/docker` makes disk quota, cleanup, and backup/restore line up with existing Vesta account boundaries, and routing all public traffic through owned web domains keeps bandwidth accounting on the current nginx/web-domain path instead of inventing a second traffic meter. Live charts should reuse the repo’s existing RRD pipeline, while alerts should reuse the existing Vesta user notification system plus Docker-specific persisted alert state.
 
-**Tech Stack:** Bash CLI commands in `bin/`, Vortex Bash helpers in `func/vx/`, existing Vesta config persistence in `data/users/*`, Docker CLI, PHP panel controllers in `web/`, myVesta modal/AJAX patterns, `v-spawn-ajax-process`, and the existing `func/vx/proxy.sh` / `web/inc/vx_proxy_form.php` routing model.
+**Tech Stack:** Bash CLI commands in `bin/`, Vortex Bash helpers in `func/vx/`, existing Vesta config persistence in `data/users/*`, Docker CLI, PHP panel controllers in `web/`, myVesta modal/AJAX patterns, `v-spawn-ajax-process`, the existing `func/vx/proxy.sh` / `web/inc/vx_proxy_form.php` routing model, the built-in Vesta user-notification commands, and the existing RRD graph/update pipeline under `bin/v-update-sys-rrd*` and `web/rrd/`.
 
 ---
+
+## Task 0: Define Contracts, Schemas, And UI State Specs Up Front
+
+**Files:**
+- Create: `.docs/contracts/docker-container-schema.md`
+- Create: `.docs/contracts/docker-monitoring-schema.md`
+- Create: `.docs/contracts/docker-alerts-schema.md`
+- Create: `.docs/contracts/docker-ui-states.md`
+
+- [ ] **Step 1: Write the container metadata and create/update spec contract**
+
+Create `.docs/contracts/docker-container-schema.md` with:
+- the create/update spec file schema consumed by `bin/v-add-docker-container` and `bin/v-change-docker-container`
+- the persisted `data/users/<user>/docker.conf` record schema
+- exact field names, types, defaults, allowed values, and validation rules
+
+The spec contract must define at least these create/update fields:
+
+```bash
+NAME='app'
+IMAGE='ghcr.io/example/app:latest'
+COMMAND=''
+ENV='PORT=3000||NODE_ENV=production'
+MOUNTS='data:/srv/app/data||config:/srv/app/config'
+CONTAINER_PORT='3000'
+DOMAIN='app.example.com'
+ROUTE_PATH=''
+AUTO_START='yes'
+RESTART_POLICY='unless-stopped'
+HEALTHCHECK_TYPE='http'
+HEALTHCHECK_TARGET='http://127.0.0.1:3000/health'
+HEALTHCHECK_INTERVAL='60'
+CPU_ALERT_PCT='85'
+MEM_ALERT_MB='1024'
+NET_ALERT_MBPS='50'
+ALERT_EMAIL='yes'
+```
+
+and at least these persisted fields:
+
+```bash
+NAME='app' CTN_NAME='vx-jack-app' OWNER='jack' IMAGE='ghcr.io/example/app:latest' COMMAND='' \
+ENV='PORT=3000||NODE_ENV=production' MOUNTS='data:/srv/app/data||config:/srv/app/config' \
+HOST_PORT='21001' CONTAINER_PORT='3000' DOMAIN='app.example.com' ROUTE_PATH='' \
+PROXY_MODE='proxy' PROXY_TARGET='http://127.0.0.1:21001' AUTO_START='yes' \
+RESTART_POLICY='unless-stopped' HEALTHCHECK_TYPE='http' \
+HEALTHCHECK_TARGET='http://127.0.0.1:21001/health' HEALTHCHECK_INTERVAL='60' \
+HEALTH_STATUS='healthy' LAST_HEALTH_AT='2026-06-27 14:00:00' \
+CPU_ALERT_PCT='85' MEM_ALERT_MB='1024' NET_ALERT_MBPS='50' ALERT_EMAIL='yes' \
+STATUS='running' CREATED='2026-06-27 14:00:00' UPDATED='2026-06-27 14:05:00'
+```
+
+- [ ] **Step 2: Write the monitoring schema contract**
+
+Create `.docs/contracts/docker-monitoring-schema.md` with:
+- the RRD path convention
+- datasource names and units
+- the JSON shape returned to the web UI for live charts and dashboard cards
+- the polling contract for “live” updates
+
+Use this exact runtime convention:
+
+```text
+$RRD/docker/<user>_<name>.rrd
+DS:CPU:GAUGE
+DS:MEM:GAUGE
+DS:RX:DERIVE
+DS:TX:DERIVE
+```
+
+and this exact JSON contract:
+
+```json
+{
+  "OWNER": "jack",
+  "NAME": "app",
+  "PERIOD": "5m",
+  "CPU_PCT": [{"TS": "2026-06-27T14:00:00Z", "VALUE": 12.4}],
+  "MEM_MB": [{"TS": "2026-06-27T14:00:00Z", "VALUE": 384}],
+  "RX_MBPS": [{"TS": "2026-06-27T14:00:00Z", "VALUE": 1.2}],
+  "TX_MBPS": [{"TS": "2026-06-27T14:00:00Z", "VALUE": 0.6}],
+  "LATEST": {"CPU_PCT": 12.4, "MEM_MB": 384, "RX_MBPS": 1.2, "TX_MBPS": 0.6}
+}
+```
+
+Define “live” explicitly as:
+- chart cards poll JSON endpoints every `60` seconds
+- edit-page metric panels refresh every `30` seconds while the page is open
+- RRD-backed history charts may lag one sampling interval behind the latest dashboard card values
+
+- [ ] **Step 3: Write the alerts and health schema contract**
+
+Create `.docs/contracts/docker-alerts-schema.md` with:
+- persisted alert records in `data/users/<user>/docker-alerts.conf`
+- health endpoint/status vocabulary
+- notification severity mapping to the existing Vesta notification surface
+
+Use this exact alert record shape:
+
+```bash
+AID='1' NAME='app' OWNER='jack' LEVEL='warning' TYPE='health' STATUS='open' \
+TITLE='Health check failing' MESSAGE='GET /health returned 500 three times' \
+STARTED='2026-06-27 14:01:00' LAST_SEEN='2026-06-27 14:03:00' ACK='no'
+```
+
+Allowed health statuses:
+
+```text
+healthy
+starting
+degraded
+unhealthy
+unknown
+```
+
+- [ ] **Step 4: Write the exact UI-state and markup contract**
+
+Create `.docs/contracts/docker-ui-states.md` with:
+- every list/add/edit/details page state
+- the exact state ids, section ids, card ids, alert ids, and chart container ids that templates must render
+- the user/admin differences
+
+Define at least these exact state containers:
+
+```html
+<div id="docker-unavailable-state"></div>
+<div id="docker-empty-state"></div>
+<div id="docker-quota-reached-state"></div>
+<div id="docker-list-state"></div>
+<div id="docker-health-dashboard"></div>
+<div id="docker-alerts-panel"></div>
+<div id="docker-create-form"></div>
+<div id="docker-edit-form"></div>
+```
+
+- [ ] **Step 5: Self-review the contracts before implementation tasks**
+
+Check that every later task in this plan uses the exact same field names:
+- `HEALTHCHECK_TYPE`
+- `HEALTHCHECK_TARGET`
+- `CPU_ALERT_PCT`
+- `MEM_ALERT_MB`
+- `NET_ALERT_MBPS`
+- `HEALTH_STATUS`
+- `docker-alerts.conf`
+
+If any later task uses a different name, fix the plan before implementation starts.
 
 ## Task 1: Define The Ownership Model And Managed Runtime Layout
 
@@ -31,14 +178,18 @@ Create `func/vx/docker.sh` and keep `func/docker.sh` as a thin adapter that sour
 - ownership validation for admin vs regular-user access
 - route sync helpers that write `http://127.0.0.1:${HOST_PORT}` into existing `web.conf` proxy keys
 
-Use a concrete metadata shape like this for each record in `data/users/<user>/docker.conf`:
+Use the contract from `.docs/contracts/docker-container-schema.md` and persist a concrete metadata shape like this for each record in `data/users/<user>/docker.conf`:
 
 ```bash
-NAME='app' CTN_NAME='vx-jack-app' IMAGE='ghcr.io/example/app:latest' COMMAND='' \
+NAME='app' CTN_NAME='vx-jack-app' OWNER='jack' IMAGE='ghcr.io/example/app:latest' COMMAND='' \
 ENV='PORT=3000||NODE_ENV=production' MOUNTS='data:/srv/app/data||config:/srv/app/config' \
 HOST_PORT='21001' CONTAINER_PORT='3000' DOMAIN='app.example.com' ROUTE_PATH='' \
 PROXY_MODE='proxy' PROXY_TARGET='http://127.0.0.1:21001' AUTO_START='yes' \
-RESTART_POLICY='unless-stopped' STATUS='running' CREATED='2026-06-27 14:00:00'
+RESTART_POLICY='unless-stopped' HEALTHCHECK_TYPE='http' \
+HEALTHCHECK_TARGET='http://127.0.0.1:21001/health' HEALTHCHECK_INTERVAL='60' \
+HEALTH_STATUS='healthy' LAST_HEALTH_AT='2026-06-27 14:00:00' \
+CPU_ALERT_PCT='85' MEM_ALERT_MB='1024' NET_ALERT_MBPS='50' ALERT_EMAIL='yes' \
+STATUS='running' CREATED='2026-06-27 14:00:00' UPDATED='2026-06-27 14:05:00'
 ```
 
 - [ ] **Step 2: Make list/read commands ownership-aware instead of host-global**
@@ -123,6 +274,13 @@ DOMAIN='app.example.com'
 ROUTE_PATH=''
 AUTO_START='yes'
 RESTART_POLICY='unless-stopped'
+HEALTHCHECK_TYPE='http'
+HEALTHCHECK_TARGET='http://127.0.0.1:3000/health'
+HEALTHCHECK_INTERVAL='60'
+CPU_ALERT_PCT='85'
+MEM_ALERT_MB='1024'
+NET_ALERT_MBPS='50'
+ALERT_EMAIL='yes'
 ```
 
 Create/update flow must:
@@ -347,6 +505,7 @@ This must happen before `$HOMEDIR/$user` and `$USER_DATA` are deleted.
 
 Extend `bin/v-backup-user` and `bin/v-list-user-backups` to include a Docker section that covers:
 - `vesta/docker.conf`
+- `vesta/docker-alerts.conf`
 - the managed bind-root tree under `$HOMEDIR/$user/docker`
 
 Only managed bind roots under `$HOMEDIR/$user/docker` should be supported. Do not design the feature around arbitrary host bind paths, because those cannot be backed up or safely cleaned up.
@@ -355,9 +514,10 @@ Only managed bind roots under `$HOMEDIR/$user/docker` should be supported. Do no
 
 Extend `bin/v-restore-user` and `bin/v-schedule-user-restore` so restore selectors include Docker metadata/data and the runtime rehydration pass:
 1. restore `vesta/docker.conf`
-2. restore `$HOMEDIR/$user/docker`
-3. recreate each managed container from metadata
-4. re-run `bin/v-sync-docker-container-route $user $name`
+2. restore `vesta/docker-alerts.conf`
+3. restore `$HOMEDIR/$user/docker`
+4. recreate each managed container from metadata
+5. re-run `bin/v-sync-docker-container-route $user $name`
 
 Concrete restore pass:
 
@@ -401,6 +561,7 @@ Create `web/inc/vx_docker.php` with helpers that mirror the existing proxy helpe
 - build the temp spec file payload
 - convert env/mount textarea input into `||`-joined stored strings
 - expose role-aware route/domain dropdown options from the user’s existing web domains
+- normalize health-check and alert-threshold fields
 
 Use concrete helper names:
 
@@ -408,6 +569,8 @@ Use concrete helper names:
 vx_docker_post_value('v_container_name');
 vx_docker_env_from_post();
 vx_docker_mounts_from_post();
+vx_docker_healthcheck_from_post();
+vx_docker_alert_thresholds_from_post();
 vx_docker_write_spec_file($tmpdir, $spec);
 ```
 
@@ -425,6 +588,16 @@ Add UI strings for:
 - `Route domain`
 - `Environment variables`
 - `Bind mounts`
+- `Health checks`
+- `Health status`
+- `CPU usage`
+- `Memory usage`
+- `Network traffic`
+- `Alerts`
+- `No active alerts`
+- `Live metrics`
+- `Degraded`
+- `Unhealthy`
 - `Only domains owned by this user can be routed to this container`
 - `Only managed bind roots under /home/<user>/docker are allowed`
 
@@ -451,10 +624,16 @@ php -l web/inc/vx_proxy_form.php
 - Create: `web/delete/docker/index.php`
 - Modify: `web/ajax/docker/index.php`
 - Modify: `web/ajax/docker/router.php`
+- Create: `web/ajax/docker/actions/stats.php`
+- Create: `web/ajax/docker/actions/health.php`
+- Create: `web/ajax/docker/actions/alerts.php`
+- Create: `web/ajax/docker/actions/acknowledge_alert.php`
 - Modify: `web/ajax/docker/actions/remove.php`
 - Modify: `web/ajax/docker/actions/logs.php`
 - Modify: `web/ajax/docker/actions/inspect.php`
 - Modify: `web/ajax/docker/actions/install.php`
+- Create: `web/js/pages/list_docker.js`
+- Create: `web/js/pages/edit_docker.js`
 - Create: `web/templates/admin/add_docker.html`
 - Create: `web/templates/admin/edit_docker.html`
 - Modify: `web/templates/admin/list_docker.html`
@@ -526,10 +705,30 @@ The add/edit forms must include:
 - route domain dropdown populated from the user’s existing web domains
 - restart policy
 - auto-start
+- health-check type
+- health-check target/path
+- health-check interval
+- CPU / memory / network alert thresholds
+- alert delivery toggle
 
 Do not add free-form nginx target input. The user should choose `container port + route domain`, and the backend should derive the proxy target from the allocated localhost port.
 
-- [ ] **Step 6: Validate syntax**
+- [ ] **Step 6: Add the live dashboard and alert panels to the list and edit pages**
+
+Render the exact containers defined in `.docs/contracts/docker-ui-states.md` and populate them through `web/js/pages/list_docker.js` and `web/js/pages/edit_docker.js`.
+
+Each populated container card must show:
+- latest CPU
+- latest memory
+- latest RX/TX
+- current health status badge
+- alert count
+- last health-check time
+
+Each page must have explicit empty/no-data states, not just hidden panels.
+Use the monitoring contract’s polling intervals exactly, and include an alert-acknowledge control in the alerts panel for open alerts.
+
+- [ ] **Step 7: Validate syntax**
 
 Run:
 
@@ -543,6 +742,10 @@ php -l web/restart/docker/index.php
 php -l web/delete/docker/index.php
 php -l web/ajax/docker/index.php
 php -l web/ajax/docker/router.php
+php -l web/ajax/docker/actions/stats.php
+php -l web/ajax/docker/actions/health.php
+php -l web/ajax/docker/actions/alerts.php
+php -l web/ajax/docker/actions/acknowledge_alert.php
 php -l web/ajax/docker/actions/remove.php
 php -l web/ajax/docker/actions/logs.php
 php -l web/ajax/docker/actions/inspect.php
@@ -624,7 +827,212 @@ Any rebuild/recovery path must read `data/users/<user>/docker.conf`, then call `
 
 ---
 
-## Task 9: Add Regression Coverage And Operator Validation Steps
+## Task 9: Add Metrics, Health, And Alert Pipelines
+
+**Files:**
+- Modify: `func/vx/docker.sh`
+- Modify: `func/rebuild.sh`
+- Modify: `bin/v-update-sys-rrd`
+- Create: `bin/v-update-sys-rrd-docker`
+- Create: `bin/v-list-docker-container-stats`
+- Create: `bin/v-update-docker-container-health`
+- Create: `bin/v-list-docker-container-health`
+- Create: `bin/v-list-docker-container-alerts`
+- Create: `bin/v-acknowledge-docker-container-alert`
+
+- [ ] **Step 1: Add per-container RRD sampling for live charts**
+
+Create `bin/v-update-sys-rrd-docker` and have `bin/v-update-sys-rrd` call it with the same period loop used for existing system graphs.
+
+Use the contract from `.docs/contracts/docker-monitoring-schema.md`:
+
+```bash
+$BIN/v-update-sys-rrd-docker daily
+$BIN/v-update-sys-rrd-docker weekly
+$BIN/v-update-sys-rrd-docker monthly
+$BIN/v-update-sys-rrd-docker yearly
+```
+
+The command must:
+- iterate all managed containers from `docker.conf`
+- sample CPU, memory, RX, and TX from `docker stats --no-stream`
+- update `$RRD/docker/<user>_<name>.rrd`
+- render chart PNGs beside the RRD using the repo’s existing graph pattern
+
+- [ ] **Step 2: Add stats list commands for the web UI**
+
+Create:
+
+```bash
+bin/v-list-docker-container-stats jack app 5m json
+bin/v-list-docker-container-stats jack app 5m json
+```
+
+The JSON response must match `.docs/contracts/docker-monitoring-schema.md` exactly so the JS chart layer does not invent field names ad hoc.
+
+Admin access should reuse the same owner-qualified command and only bypass the ownership check internally:
+
+```bash
+bin/v-list-docker-container-stats jack app 5m json
+```
+
+- [ ] **Step 3: Add health-check sampling and persisted state**
+
+Create:
+
+```bash
+bin/v-update-docker-container-health jack app
+bin/v-list-docker-container-health jack app json
+```
+
+Health evaluation order:
+1. Docker native health status from `docker inspect`, if present
+2. explicit HTTP/TCP target from `HEALTHCHECK_TYPE` and `HEALTHCHECK_TARGET`
+3. fallback status `unknown`
+
+Persist the result back into `docker.conf`:
+
+```bash
+HEALTH_STATUS='healthy'
+LAST_HEALTH_AT='2026-06-27 14:00:00'
+```
+
+- [ ] **Step 4: Add alert generation and notification fan-out**
+
+Create:
+
+```bash
+bin/v-list-docker-container-alerts jack app json
+```
+
+and use `data/users/<user>/docker-alerts.conf` as the persisted alert source of truth. Alert producers must open or update records when:
+- health becomes `degraded` or `unhealthy`
+- CPU exceeds `CPU_ALERT_PCT`
+- memory exceeds `MEM_ALERT_MB`
+- RX or TX exceeds `NET_ALERT_MBPS`
+
+For newly opened alerts, call the existing notification command:
+
+```bash
+$BIN/v-add-user-notification "$user" "Docker alert: app unhealthy" "/list/docker/"
+```
+
+Closed-loop alert handling must also support:
+
+```bash
+bin/v-acknowledge-docker-container-alert jack 1
+```
+
+which sets `ACK='yes'` on the persisted Docker alert record without deleting the underlying history.
+
+- [ ] **Step 5: Rebuild the monitoring files during user rebuild**
+
+Extend `func/rebuild.sh` to ensure:
+- `data/users/<user>/docker-alerts.conf` exists with correct permissions
+- `$RRD/docker/` exists
+- the Docker monitoring rebuild pass can regenerate charts after restore/rebuild
+
+- [ ] **Step 6: Validate syntax**
+
+Run:
+
+```bash
+bash -n func/vx/docker.sh func/rebuild.sh bin/v-update-sys-rrd \
+  bin/v-update-sys-rrd-docker bin/v-list-docker-container-stats \
+  bin/v-update-docker-container-health bin/v-list-docker-container-health \
+  bin/v-list-docker-container-alerts bin/v-acknowledge-docker-container-alert
+```
+
+---
+
+## Task 10: Add Exact Template Markup, Long-Form Docs, And Screenshot Deliverables
+
+**Files:**
+- Create: `.docs/user-guides/docker-containers.md`
+- Create: `.docs/user-guides/assets/docker/README.md`
+- Modify: `web/templates/admin/list_docker.html`
+- Modify: `web/templates/user/list_docker.html`
+- Create: `web/templates/admin/add_docker.html`
+- Create: `web/templates/user/add_docker.html`
+- Create: `web/templates/admin/edit_docker.html`
+- Create: `web/templates/user/edit_docker.html`
+
+- [ ] **Step 1: Document every user-facing workflow in a long-form guide**
+
+Create `.docs/user-guides/docker-containers.md` with explicit sections for:
+1. prerequisites and package limits
+2. creating a container
+3. routing a domain to a container
+4. reading charts and health state
+5. handling alerts
+6. viewing logs and inspect output
+7. deleting and restoring a container
+
+The guide must show the actual field names used in the forms, not generic paraphrases.
+
+- [ ] **Step 2: Add a screenshot manifest for required captures**
+
+Create `.docs/user-guides/assets/docker/README.md` listing the exact screenshots implementation must capture after the UI exists:
+
+```text
+user-list-empty.png
+user-list-populated.png
+user-create-form.png
+user-edit-health-dashboard.png
+user-alerts-panel.png
+admin-owner-overview.png
+admin-docker-unavailable.png
+```
+
+For each image, document:
+- page URL
+- login role
+- required seed data
+- exact state visible in the capture
+
+- [ ] **Step 3: Implement exact final template markup for every page state**
+
+Use `.docs/contracts/docker-ui-states.md` as the source of truth. The templates must render exact state containers, not loosely equivalent markup.
+
+At minimum, `list_docker` templates must implement:
+
+```html
+<div id="docker-unavailable-state" class="l-unit l-unit--error"></div>
+<div id="docker-empty-state" class="l-unit"></div>
+<div id="docker-quota-reached-state" class="l-unit l-unit--suspended"></div>
+<div id="docker-list-state" class="l-center units"></div>
+<section id="docker-health-dashboard" class="l-center units"></section>
+<section id="docker-alerts-panel" class="l-center units"></section>
+<button id="docker-alert-acknowledge"></button>
+```
+
+`add_docker` and `edit_docker` templates must implement:
+
+```html
+<form id="docker-create-form"></form>
+<form id="docker-edit-form"></form>
+<div id="docker-form-errors"></div>
+<section id="docker-live-metrics"></section>
+<section id="docker-health-settings"></section>
+<section id="docker-alert-thresholds"></section>
+```
+
+- [ ] **Step 4: Verify template/docs completeness**
+
+Check the final docs/template set against this required state list:
+- Docker unavailable
+- Empty owned-container list
+- Quota-reached creation state
+- Healthy container with charts
+- Degraded/unhealthy container with alerts
+- Validation-error state on create/edit
+- Admin multi-owner overview
+
+If any state is not explicitly documented and mapped to exact template markup, update the plan before implementation starts.
+
+---
+
+## Task 11: Add Regression Coverage And Operator Validation Steps
 
 **Files:**
 - Create: `test/test_docker_user_actions.sh`
@@ -638,6 +1046,7 @@ Add shell tests that exercise:
 - user cannot create a container when the package limit is exhausted
 - user cannot start/stop/delete another user’s container
 - admin can inspect and manage another user’s container
+- user can acknowledge an open Docker alert without acknowledging another user’s alert
 
 - [ ] **Step 2: Cover route wiring**
 
@@ -646,6 +1055,7 @@ Add a smoke test that:
 2. creates a user-owned container bound to that domain
 3. verifies `v-list-web-domain <user> <domain> json` contains the expected `PROXY_TARGET`
 4. verifies `v-list-docker-container <user> <name> json` returns the same derived target
+5. verifies `v-list-docker-container-stats <user> <name> 5m json` returns the chart contract keys
 
 - [ ] **Step 3: Cover backup/restore metadata**
 
@@ -669,7 +1079,7 @@ If the local environment does not have Docker available, still run the syntax ch
 
 ---
 
-## Task 10: Commit In Merge-Friendly Slices
+## Task 12: Commit In Merge-Friendly Slices
 
 - [ ] **Step 1: Commit the backend ownership model**
 
@@ -677,6 +1087,10 @@ If the local environment does not have Docker available, still run the syntax ch
 git add func/vx/docker.sh func/docker.sh bin/v-*-docker-* \
   bin/v-add-user bin/v-change-user-package bin/v-list-user bin/v-list-users \
   bin/v-update-user-counters bin/v-update-user-stats \
+  bin/v-update-sys-rrd bin/v-update-sys-rrd-docker \
+  bin/v-list-docker-container-stats bin/v-update-docker-container-health \
+  bin/v-list-docker-container-health bin/v-list-docker-container-alerts \
+  bin/v-acknowledge-docker-container-alert \
   bin/v-suspend-user bin/v-unsuspend-user bin/v-delete-user \
   bin/v-backup-user bin/v-restore-user bin/v-rebuild-user
 git commit -m "feat: add user-owned docker container backend"
@@ -688,15 +1102,16 @@ git commit -m "feat: add user-owned docker container backend"
 git add web/inc/vx_docker.php web/inc/vx_proxy_form.php web/inc/i18n/en.php \
   web/list/docker/index.php web/add/docker/index.php web/edit/docker/index.php \
   web/start/docker/index.php web/stop/docker/index.php web/restart/docker/index.php \
-  web/delete/docker/index.php web/ajax/docker web/templates/admin \
-  web/templates/user web/add/package/index.php web/edit/package/index.php
-git commit -m "feat: add docker container UI for users and admins"
+  web/delete/docker/index.php web/ajax/docker web/js/pages \
+  web/templates/admin web/templates/user web/add/package/index.php web/edit/package/index.php
+git commit -m "feat: add docker container UI and monitoring dashboards"
 ```
 
 - [ ] **Step 3: Commit tests and plan artifacts**
 
 ```bash
 git add test/test_docker_user_actions.sh test/test_json_listing.sh test/test_actions.sh \
+  .docs/contracts .docs/user-guides \
   .docs/plans/2026-06-27-docker-panel-management.md
 git commit -m "docs: finalize docker ownership implementation plan"
 ```
