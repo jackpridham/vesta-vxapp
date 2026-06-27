@@ -12,6 +12,8 @@ if [ -z "$VESTA" ] || [ ! -d "$VESTA/bin" ]; then
     exit 0
 fi
 
+set -o pipefail
+
 V_BIN="$VESTA/bin"
 V_TEST="$VESTA/test"
 TMP_ROOT="${TMPDIR:-/tmp}"

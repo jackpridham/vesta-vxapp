@@ -19,9 +19,11 @@ FAILED=0
 
 # Define functions
 random() {
+    local rand=''
+    local n=1
     MATRIX='0123456789'
     LENGTH=$1
-    while [ ${n:=1} -le $LENGTH ]; do
+    while [ $n -le $LENGTH ]; do
         rand="$rand${MATRIX:$(($RANDOM%${#MATRIX})):1}"
         let n+=1
     done

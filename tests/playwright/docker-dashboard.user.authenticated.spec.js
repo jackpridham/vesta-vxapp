@@ -3,6 +3,10 @@ const { getOptionalEnv } = require('./helpers/panel-auth');
 
 const allowedHealthStates = new Set(['healthy', 'starting', 'degraded', 'unhealthy', 'unknown']);
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 async function requireRealDockerList(page, preferredContainer = '') {
   await page.goto('/list/docker/');
 
@@ -33,7 +37,7 @@ async function requireRealDockerList(page, preferredContainer = '') {
 test('docker list dashboard renders cards, constrained health vocabulary, and alert acknowledgement updates state', async ({ page }) => {
   const alertContainer = getOptionalEnv('PLAYWRIGHT_DOCKER_ALERT_CONTAINER');
   test.skip(!alertContainer, 'Dashboard alert-acknowledge coverage requires PLAYWRIGHT_DOCKER_ALERT_CONTAINER to target a disposable seeded container with an open alert.');
-  await requireRealDockerList(page, alertContainer);
+  const { owner, name } = await requireRealDockerList(page, alertContainer);
 
   await expect(page.locator('#docker-health-dashboard')).toBeVisible();
   await expect(page.locator('#docker-alerts-panel')).toBeVisible();
@@ -49,11 +53,19 @@ test('docker list dashboard renders cards, constrained health vocabulary, and al
   await expect(page.locator('#docker-card-health-updated')).not.toHaveText(/^No data$/);
   await expect(page.locator('#docker-card-alert-count')).toHaveText(/^\d+$/);
 
+  const targetAlert = page.locator('#docker-alerts-panel article').filter({
+    hasText: new RegExp(`Container:\\s*${escapeRegExp(name)}\\s*/\\s*Owner:\\s*${escapeRegExp(owner)}`, 'i'),
+  }).filter({
+    hasText: /Status:\s*open/i,
+  }).filter({
+    hasText: /Ack:\s*no/i,
+  }).first();
+  test.skip((await targetAlert.count()) === 0, `Dashboard acknowledge coverage requires an open unacknowledged alert for ${owner}/${name}.`);
+
   const acknowledgeButton = page.locator('#docker-alert-acknowledge');
   test.skip((await acknowledgeButton.isVisible().catch(() => false)) === false, 'Dashboard alert-acknowledge coverage requires a seeded open Docker alert.');
   await acknowledgeButton.click();
-  await expect(acknowledgeButton).toBeHidden();
-  await expect(page.locator('#docker-alerts-panel')).toContainText(/Ack:\s*yes/i);
+  await expect(targetAlert).toContainText(/Ack:\s*yes/i);
 });
 
 test('docker edit page renders live metrics and chart containers after stats data returns', async ({ page }) => {

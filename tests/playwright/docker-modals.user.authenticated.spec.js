@@ -84,4 +84,7 @@ test('docker remove modal supports cancel and confirm flows', async ({ page }) =
 
   await page.getByRole('button', { name: /^Yes$/i }).click();
   await expect(page.locator('#floating-center-div-content')).toContainText(/Docker remove output/i);
+
+  await page.goto('/list/docker/');
+  await expect(page.locator(`#docker-list-cards article[data-name="${removableContainer}"]`)).toHaveCount(0);
 });

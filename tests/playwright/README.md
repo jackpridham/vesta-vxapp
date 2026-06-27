@@ -22,7 +22,7 @@ Supported variables:
 - `PLAYWRIGHT_BASE_URL`: full panel URL, including scheme and port
 - `PLAYWRIGHT_LOGIN_SECRET`: optional secret-login gate token from `web/inc/login_url.php`
 - `PLAYWRIGHT_ADMIN_USER` / `PLAYWRIGHT_ADMIN_PASSWORD`: enables admin-authenticated project
-- `PLAYWRIGHT_DOCKER_USER` / `PLAYWRIGHT_DOCKER_PASSWORD`: enables real non-admin-authenticated project
+- `PLAYWRIGHT_DOCKER_USER` / `PLAYWRIGHT_DOCKER_PASSWORD`: enables the main real non-admin-authenticated project; seed this user below quota so navigation/create/lifecycle/modal/dashboard coverage lands on the contracted list states instead of the dedicated quota fixture
 - `PLAYWRIGHT_DOCKER_EMPTY_USER` / `PLAYWRIGHT_DOCKER_EMPTY_PASSWORD`: optional seeded user that should render `/list/docker/` in the empty state
 - `PLAYWRIGHT_DOCKER_QUOTA_USER` / `PLAYWRIGHT_DOCKER_QUOTA_PASSWORD`: optional seeded user that should render `/list/docker/` in the quota-reached state
 - `PLAYWRIGHT_DOCKER_OWNER_FILTER_USER`: optional preferred owner value for admin owner-filter coverage when multiple seeded owners exist
