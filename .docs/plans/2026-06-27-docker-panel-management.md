@@ -1072,7 +1072,7 @@ bash -n func/vx/docker.sh func/rebuild.sh bin/v-update-sys-rrd \
 
 ---
 
-## Task 10: Add Exact Template Markup, Long-Form Docs, And Screenshot Deliverables
+## Task 10 - COMPLETE: Add Exact Template Markup, Long-Form Docs, And Screenshot Deliverables
 
 **Files:**
 - Create: `.docs/user-guides/docker-containers.md`
@@ -1084,7 +1084,7 @@ bash -n func/vx/docker.sh func/rebuild.sh bin/v-update-sys-rrd \
 - Create: `web/templates/admin/edit_docker.html`
 - Create: `web/templates/user/edit_docker.html`
 
-- [ ] **Step 1: Document every user-facing workflow in a long-form guide**
+- [x] **Step 1: Document every user-facing workflow in a long-form guide**
 
 Create `.docs/user-guides/docker-containers.md` with explicit sections for:
 1. prerequisites and package limits
@@ -1097,7 +1097,7 @@ Create `.docs/user-guides/docker-containers.md` with explicit sections for:
 
 The guide must show the actual field names used in the forms, not generic paraphrases.
 
-- [ ] **Step 2: Add a screenshot manifest for required captures**
+- [x] **Step 2: Add a screenshot manifest for required captures**
 
 Create `.docs/user-guides/assets/docker/README.md` listing the exact screenshots implementation must capture after the UI exists:
 
@@ -1117,7 +1117,7 @@ For each image, document:
 - required seed data
 - exact state visible in the capture
 
-- [ ] **Step 3: Implement exact final template markup for every page state**
+- [x] **Step 3: Implement exact final template markup for every page state**
 
 Use `.docs/contracts/docker-ui-states.md` as the source of truth. The templates must render exact state containers, not loosely equivalent markup.
 
@@ -1144,7 +1144,7 @@ At minimum, `list_docker` templates must implement:
 <section id="docker-alert-thresholds"></section>
 ```
 
-- [ ] **Step 4: Verify template/docs completeness**
+- [x] **Step 4: Verify template/docs completeness**
 
 Check the final docs/template set against this required state list:
 - Docker unavailable
@@ -1156,6 +1156,16 @@ Check the final docs/template set against this required state list:
 - Admin multi-owner overview
 
 If any state is not explicitly documented and mapped to exact template markup, update the plan before implementation starts.
+
+#### Closeout Report
+
+- Summary: Added the long-form Docker user guide and screenshot manifest, tightened the shared Docker list/add/edit templates to the Task 10 exact state markup, and then followed up with a compatibility fix so the Docker add/edit forms keep the panel's standard shared JS/CSS behavior while preserving the required Docker-specific form ids.
+- Files changed: `.docs/user-guides/docker-containers.md`, `.docs/user-guides/assets/docker/README.md`, `web/templates/docker_list_shared.php`, `web/templates/docker_add_shared.php`, `web/templates/docker_edit_shared.php`, `web/js/init.js`, `web/css/styles.min.css`, `.docs/audits/2026-06-27-docker-panel-management-task10.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task10.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`
+- Tests run: `rg -n "docker-create-form|docker-edit-form|docker-unavailable-state|docker-empty-state|docker-quota-reached-state|docker-list-state|docker-health-dashboard|docker-alerts-panel|docker-live-metrics|docker-health-settings|docker-alert-thresholds" web/templates/docker_list_shared.php web/templates/docker_add_shared.php web/templates/docker_edit_shared.php .docs/user-guides/docker-containers.md .docs/user-guides/assets/docker/README.md`; PASS. `git diff --check b163bb2b..HEAD`; PASS. `php -l web/templates/docker_add_shared.php`, `php -l web/templates/docker_edit_shared.php`, `php -l web/templates/docker_list_shared.php`; FAIL (environment: `php` not installed).
+- Commit SHA(s): `42682c21`, `938e593a`
+- Spec review result: PASS. Task 10 requirements were satisfied at `42682c21`.
+- Code quality review result: APPROVED after follow-up fix. Initial review found a shared-form regression from removing `form#vstobjects` assumptions plus a likely layout regression in non-list states; `938e593a` resolved both issues and the final re-review approved the task.
+- Follow-ups or concerns: None.
 
 ---
 
