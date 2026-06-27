@@ -101,6 +101,13 @@
 	          </a>
 	        </div>
 		<?php } ?>
+		<?php if($panel[$user]['DOCKER_CONTAINERS'] != "0") { ?>
+	        <div class="l-stat__col <?php if($TAB == 'DOCKER' ) echo 'l-stat__col--active' ?>">
+	          <a href="/list/docker/">
+	            <div class="l-stat__col-title"><?=__('DOCKER')?><span><?=$panel[$user]['U_DOCKER_CONTAINERS']?></span></div>
+	          </a>
+	        </div>
+		<?php } ?>
 		<?php if($panel[$user]['BACKUPS'] != "0") { ?>
 	        <div class="l-stat__col <?php if($TAB == 'BACKUP' ) echo 'l-stat__col--active' ?>">
 	          <a href="/list/backup/">
