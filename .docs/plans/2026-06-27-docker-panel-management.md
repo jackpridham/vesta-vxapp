@@ -130,6 +130,7 @@ Create `.docs/contracts/docker-ui-states.md` with:
 - every list/add/edit/details page state
 - the exact state ids, section ids, card ids, alert ids, and chart container ids that templates must render
 - the user/admin differences
+- the exact form field names used for automated panel submission
 
 Define at least these exact state containers:
 
@@ -142,6 +143,27 @@ Define at least these exact state containers:
 <div id="docker-alerts-panel"></div>
 <div id="docker-create-form"></div>
 <div id="docker-edit-form"></div>
+```
+
+Define at least these exact POST field names:
+
+```text
+v_container_name
+v_container_image
+v_container_command
+v_container_env
+v_container_mounts
+v_container_port
+v_route_domain
+v_auto_start
+v_restart_policy
+v_healthcheck_type
+v_healthcheck_target
+v_healthcheck_interval
+v_cpu_alert_pct
+v_mem_alert_mb
+v_net_alert_mbps
+v_alert_email
 ```
 
 - [ ] **Step 5: Self-review the contracts before implementation tasks**
@@ -1079,7 +1101,279 @@ If the local environment does not have Docker available, still run the syntax ch
 
 ---
 
-## Task 12: Commit In Merge-Friendly Slices
+## Task 12: Validate And Close Out Against sydlocal.jackpridham.com
+
+**Files:**
+- Create: `.docs/validation/sydlocal-docker-e2e-closeout.md`
+- Modify: `/home/jackpridham/Work/vortex-scripts/Servers/pve01.jackpridham.com/sydlocal.jackpridham.com/README.md`
+
+- [ ] **Step 1: Stage and apply the runtime overlay to the sydlocal host**
+
+Use the host documented in `/home/jackpridham/Work/vortex-scripts/Servers/pve01.jackpridham.com/sydlocal.jackpridham.com/README.md` and always connect by internal IP:
+
+```bash
+export TARGET_HOST="192.168.100.100"
+export TARGET_SSH="debian@${TARGET_HOST}"
+export DEPLOY_COMMIT="$(git rev-parse --short HEAD)"
+export DEPLOY_DATE="$(date -u +%F)"
+
+ssh "$TARGET_SSH" 'rm -rf /tmp/vortex-vesta-overlay && mkdir -p /tmp/vortex-vesta-overlay'
+rsync -a bin/ "$TARGET_SSH:/tmp/vortex-vesta-overlay/bin/"
+rsync -a func/ "$TARGET_SSH:/tmp/vortex-vesta-overlay/func/"
+rsync -a web/ "$TARGET_SSH:/tmp/vortex-vesta-overlay/web/"
+rsync -a install/debian/13/templates/web/nginx/vx-proxy.tpl "$TARGET_SSH:/tmp/vortex-vesta-overlay/vx-proxy.tpl"
+rsync -a install/debian/13/templates/web/nginx/vx-proxy.stpl "$TARGET_SSH:/tmp/vortex-vesta-overlay/vx-proxy.stpl"
+
+ssh "$TARGET_SSH" "sudo DEPLOY_COMMIT='$DEPLOY_COMMIT' DEPLOY_DATE='$DEPLOY_DATE' bash -s" <<'EOF'
+set -euo pipefail
+export VESTA=/usr/local/vesta
+export HOMEDIR=/home
+
+test -d /tmp/vortex-vesta-overlay/bin
+test -d /tmp/vortex-vesta-overlay/func
+test -d /tmp/vortex-vesta-overlay/web
+test -f /tmp/vortex-vesta-overlay/vx-proxy.tpl
+test -f /tmp/vortex-vesta-overlay/vx-proxy.stpl
+
+rsync -a /tmp/vortex-vesta-overlay/bin/ /usr/local/vesta/bin/
+rsync -a /tmp/vortex-vesta-overlay/func/ /usr/local/vesta/func/
+rsync -a /tmp/vortex-vesta-overlay/web/ /usr/local/vesta/web/
+install -m 0644 /tmp/vortex-vesta-overlay/vx-proxy.tpl /usr/local/vesta/data/templates/web/nginx/vx-proxy.tpl
+install -m 0644 /tmp/vortex-vesta-overlay/vx-proxy.stpl /usr/local/vesta/data/templates/web/nginx/vx-proxy.stpl
+
+chown -R root:root /usr/local/vesta/bin /usr/local/vesta/func /usr/local/vesta/web
+find /usr/local/vesta/bin -type f -name 'v-*' -exec chmod 755 {} \;
+echo "$DEPLOY_COMMIT" > /usr/local/vesta/conf/vortex-vesta-fork-commit
+base_version="$(cat /usr/local/vesta/version.txt 2>/dev/null || echo '0.9.9-0-14')"
+base_version="${base_version%%+vxapp*}"
+echo "${base_version}+vxapp.${DEPLOY_COMMIT}" > /usr/local/vesta/version.txt
+echo "$DEPLOY_DATE" > /usr/local/vesta/build_date.txt
+
+apt-mark hold vesta
+systemctl restart vesta nginx apache2
+EOF
+```
+
+Constraints:
+- do not use `rsync --delete`
+- do not overwrite `/usr/local/vesta/data/users`
+- do not SSH to the hostname; use `ssh debian@192.168.100.100`
+
+- [ ] **Step 2: Validate the deployed runtime on sydlocal before E2E**
+
+Run:
+
+```bash
+ssh "$TARGET_SSH" "sudo bash -s" <<'EOF'
+set -euo pipefail
+export VESTA=/usr/local/vesta
+export HOMEDIR=/home
+
+hostname -f
+cat /usr/local/vesta/conf/vortex-vesta-fork-commit
+cat /usr/local/vesta/version.txt
+cat /usr/local/vesta/build_date.txt
+apt-mark showhold | grep '^vesta$'
+
+bash -n \
+  /usr/local/vesta/func/vx/docker.sh \
+  /usr/local/vesta/bin/v-add-docker-container \
+  /usr/local/vesta/bin/v-change-docker-container \
+  /usr/local/vesta/bin/v-list-docker-containers \
+  /usr/local/vesta/bin/v-list-docker-container-stats \
+  /usr/local/vesta/bin/v-update-docker-container-health \
+  /usr/local/vesta/bin/v-list-docker-container-alerts
+
+php -l /usr/local/vesta/web/list/docker/index.php
+php -l /usr/local/vesta/web/add/docker/index.php
+php -l /usr/local/vesta/web/edit/docker/index.php
+php -l /usr/local/vesta/web/ajax/docker/router.php
+php -l /usr/local/vesta/web/ajax/docker/actions/stats.php
+php -l /usr/local/vesta/web/ajax/docker/actions/health.php
+php -l /usr/local/vesta/web/ajax/docker/actions/alerts.php
+
+test -f /usr/local/vesta/data/templates/web/nginx/vx-proxy.tpl
+test -f /usr/local/vesta/data/templates/web/nginx/vx-proxy.stpl
+nginx -t
+apache2ctl configtest
+/usr/local/vesta/bin/v-check-docker-engine json || true
+EOF
+```
+
+Expected:
+- deployed marker matches `git rev-parse --short HEAD`
+- `vesta` is still package-held
+- remote Bash and PHP syntax checks pass
+- nginx and Apache config tests pass
+
+- [ ] **Step 3: Prepare repeatable scratch data for non-admin E2E**
+
+Run:
+
+```bash
+ssh "$TARGET_SSH" "sudo bash -s" <<'EOF'
+set -euo pipefail
+export VESTA=/usr/local/vesta
+export HOMEDIR=/home
+
+scratch_pkg="docker-e2e"
+scratch_user="dockere2e"
+scratch_pass="ChangeMe-123!"
+scratch_mail="dockere2e@local.test"
+scratch_domain="docker-e2e.local"
+
+if [ -d "$VESTA/data/users/$scratch_user" ]; then
+  /usr/local/vesta/bin/v-delete-user "$scratch_user" yes || true
+fi
+if [ -f "$VESTA/data/packages/${scratch_pkg}.pkg" ]; then
+  /usr/local/vesta/bin/v-delete-user-package "$scratch_pkg" || true
+fi
+
+tmpdir="$(mktemp -d)"
+cp "$VESTA/data/packages/default.pkg" "$tmpdir/${scratch_pkg}.pkg"
+if grep -q "^DOCKER_CONTAINERS=" "$tmpdir/${scratch_pkg}.pkg"; then
+  sed -i "s/^DOCKER_CONTAINERS=.*/DOCKER_CONTAINERS='2'/" "$tmpdir/${scratch_pkg}.pkg"
+else
+  echo "DOCKER_CONTAINERS='2'" >> "$tmpdir/${scratch_pkg}.pkg"
+fi
+/usr/local/vesta/bin/v-add-user-package "$tmpdir" "$scratch_pkg"
+rm -rf "$tmpdir"
+
+/usr/local/vesta/bin/v-add-user "$scratch_user" "$scratch_pass" "$scratch_mail" "$scratch_pkg" Docker E2E
+ip="$($VESTA/bin/v-list-user-ips "$scratch_user" plain | awk 'NR==1 {print $1}')"
+test -n "$ip"
+/usr/local/vesta/bin/v-add-web-domain "$scratch_user" "$scratch_domain" "$ip" no none no
+EOF
+```
+
+Expected:
+- scratch package exists with `DOCKER_CONTAINERS='2'`
+- scratch user exists
+- scratch domain exists and belongs to the scratch user
+
+- [ ] **Step 4: Run authenticated panel E2E against the sydlocal installation**
+
+Use the default panel port from the sydlocal README unless the live host has been intentionally reconfigured:
+
+```bash
+export PANEL_BASE="https://192.168.100.100:8083"
+tmpdir="$(mktemp -d)"
+
+curl -ksS -c "$tmpdir/cookies.txt" "$PANEL_BASE/login/" -o "$tmpdir/login.html"
+token="$(grep -o 'name=\"token\" value=\"[^\"]*' "$tmpdir/login.html" | sed 's/.*value=\"//')"
+test -n "$token"
+
+curl -ksS -L -b "$tmpdir/cookies.txt" -c "$tmpdir/cookies.txt" \
+  -d "token=$token" \
+  -d "user=dockere2e" \
+  -d "password=ChangeMe-123!" \
+  "$PANEL_BASE/login/" -o "$tmpdir/after-login.html"
+
+grep -q '/list/user/' "$tmpdir/after-login.html" || true
+
+curl -ksS -b "$tmpdir/cookies.txt" "$PANEL_BASE/add/docker/" -o "$tmpdir/add-docker.html"
+grep -q 'name="v_container_name"' "$tmpdir/add-docker.html"
+grep -q 'name="v_container_image"' "$tmpdir/add-docker.html"
+grep -q 'name="v_route_domain"' "$tmpdir/add-docker.html"
+grep -q 'name="v_healthcheck_type"' "$tmpdir/add-docker.html"
+grep -q 'name="v_cpu_alert_pct"' "$tmpdir/add-docker.html"
+
+add_token="$(grep -o 'name=\"token\" value=\"[^\"]*' "$tmpdir/add-docker.html" | sed 's/.*value=\"//')"
+curl -ksS -L -b "$tmpdir/cookies.txt" -c "$tmpdir/cookies.txt" \
+  -d "token=$add_token" \
+  -d "ok=1" \
+  -d "v_container_name=app" \
+  -d "v_container_image=nginx:alpine" \
+  -d "v_container_command=" \
+  -d "v_container_env=PORT=80" \
+  -d "v_container_mounts=data:/usr/share/nginx/html" \
+  -d "v_container_port=80" \
+  -d "v_route_domain=docker-e2e.local" \
+  -d "v_auto_start=yes" \
+  -d "v_restart_policy=unless-stopped" \
+  -d "v_healthcheck_type=http" \
+  -d "v_healthcheck_target=/" \
+  -d "v_healthcheck_interval=60" \
+  -d "v_cpu_alert_pct=85" \
+  -d "v_mem_alert_mb=256" \
+  -d "v_net_alert_mbps=25" \
+  -d "v_alert_email=yes" \
+  "$PANEL_BASE/add/docker/" -o "$tmpdir/add-result.html"
+
+curl -ksS -b "$tmpdir/cookies.txt" "$PANEL_BASE/list/docker/" -o "$tmpdir/list-docker.html"
+grep -q 'docker-health-dashboard' "$tmpdir/list-docker.html"
+grep -q 'docker-alerts-panel' "$tmpdir/list-docker.html"
+grep -q 'app' "$tmpdir/list-docker.html"
+```
+
+Expected:
+- non-admin login succeeds
+- add page renders the contracted field names
+- add form submission creates the container
+- list page renders the health and alerts containers for the created app
+
+- [ ] **Step 5: Validate backend routing, metrics, health, and alerts on sydlocal**
+
+Run:
+
+```bash
+ssh "$TARGET_SSH" "sudo bash -s" <<'EOF'
+set -euo pipefail
+export VESTA=/usr/local/vesta
+export HOMEDIR=/home
+
+/usr/local/vesta/bin/v-list-docker-container dockere2e app json
+/usr/local/vesta/bin/v-list-web-domain dockere2e docker-e2e.local json
+/usr/local/vesta/bin/v-update-docker-container-health dockere2e app
+/usr/local/vesta/bin/v-list-docker-container-health dockere2e app json
+/usr/local/vesta/bin/v-update-sys-rrd-docker daily
+/usr/local/vesta/bin/v-list-docker-container-stats dockere2e app 5m json
+/usr/local/vesta/bin/v-list-docker-container-alerts dockere2e app json || true
+
+grep "DOMAIN='docker-e2e.local'" /usr/local/vesta/data/users/dockere2e/web.conf
+grep "NAME='app'" /usr/local/vesta/data/users/dockere2e/docker.conf
+
+curl -H 'Host: docker-e2e.local' http://192.168.100.100/ -I
+EOF
+```
+
+Expected:
+- `docker.conf` and `web.conf` both persist the route relationship
+- health command returns one of `healthy|starting|degraded|unhealthy|unknown`
+- stats JSON contains `CPU_PCT`, `MEM_MB`, `RX_MBPS`, `TX_MBPS`, and `LATEST`
+- the domain proxies through nginx to the user-owned container
+
+- [ ] **Step 6: Capture closeout artifacts and clean up scratch data**
+
+Create `.docs/validation/sydlocal-docker-e2e-closeout.md` and record:
+- deployed commit
+- panel URL used
+- scratch package/user/domain/container names
+- exact commands run
+- pass/fail results for overlay validation, panel E2E, routing, metrics, health, alerts, and cleanup
+- any deviations from the plan
+
+Then update `/home/jackpridham/Work/vortex-scripts/Servers/pve01.jackpridham.com/sydlocal.jackpridham.com/README.md` with:
+- deployed fork commit
+- whether Docker user-management E2E passed
+- where the closeout report lives
+
+Finally clean up the scratch objects:
+
+```bash
+ssh "$TARGET_SSH" "sudo bash -s" <<'EOF'
+set -euo pipefail
+export VESTA=/usr/local/vesta
+export HOMEDIR=/home
+
+/usr/local/vesta/bin/v-delete-user dockere2e yes || true
+/usr/local/vesta/bin/v-delete-user-package docker-e2e || true
+EOF
+```
+
+---
+
+## Task 13: Commit In Merge-Friendly Slices
 
 - [ ] **Step 1: Commit the backend ownership model**
 
@@ -1111,7 +1405,17 @@ git commit -m "feat: add docker container UI and monitoring dashboards"
 
 ```bash
 git add test/test_docker_user_actions.sh test/test_json_listing.sh test/test_actions.sh \
-  .docs/contracts .docs/user-guides \
+  .docs/contracts .docs/user-guides .docs/validation \
   .docs/plans/2026-06-27-docker-panel-management.md
 git commit -m "docs: finalize docker ownership implementation plan"
 ```
+
+- [ ] **Step 4: Commit the sydlocal README update in the `vortex-scripts` repo**
+
+After the validation run updates:
+
+```text
+/home/jackpridham/Work/vortex-scripts/Servers/pve01.jackpridham.com/sydlocal.jackpridham.com/README.md
+```
+
+commit that change from the `vortex-scripts` repository separately so the server documentation does not stay dirty outside this repo.
