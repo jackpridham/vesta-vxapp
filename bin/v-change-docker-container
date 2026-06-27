@@ -57,7 +57,7 @@ vx_docker_derive_proxy_fields
 vx_docker_derive_persisted_health_target
 
 if [ -n "$OLD_DOMAIN" ] && [ "$OLD_DOMAIN" != "$DOMAIN" ]; then
-    if vx_docker_domain_has_proxy_route "$user" "$OLD_DOMAIN"; then
+    if vx_docker_domain_matches_target "$user" "$OLD_DOMAIN" "$OLD_HOST_PORT"; then
         $BIN/v-delete-web-domain-proxy "$user" "$OLD_DOMAIN" no >/dev/null
         check_result $? "docker route removal failed"
     fi

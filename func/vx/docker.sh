@@ -218,6 +218,18 @@ vx_docker_domain_matches_record_route() {
     [ "$route_target" = "http://127.0.0.1:${HOST_PORT}" ]
 }
 
+vx_docker_domain_matches_target() {
+    local owner="$1"
+    local domain_name="$2"
+    local host_port="$3"
+    local route_target
+
+    [ -n "$domain_name" ] || return 1
+    [ -n "$host_port" ] || return 1
+    route_target="$(vx_docker_domain_proxy_target "$owner" "$domain_name")" || return 1
+    [ "$route_target" = "http://127.0.0.1:${host_port}" ]
+}
+
 vx_docker_runtime_label_tuple() {
     docker inspect --format "{{ index .Config.Labels \"$VX_DOCKER_LABEL_MANAGED_KEY\" }}|{{ index .Config.Labels \"$VX_DOCKER_LABEL_USER_KEY\" }}|{{ index .Config.Labels \"$VX_DOCKER_LABEL_NAME_KEY\" }}" "$1" 2>/dev/null
 }

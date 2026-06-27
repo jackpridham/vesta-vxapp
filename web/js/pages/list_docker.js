@@ -46,6 +46,15 @@
         var txCount = 0;
         var healthLabel = 'No data';
         var healthUpdated = 'No data';
+        var alertCount = 0;
+        var healthPriority = {
+            unhealthy: 5,
+            degraded: 4,
+            starting: 3,
+            unknown: 2,
+            healthy: 1
+        };
+        var bestHealthScore = 0;
 
         $.each(metrics, function(_, metric) {
             if (!metric || !metric.LATEST) {
@@ -70,10 +79,31 @@
             }
         });
 
-        if (healthSummaries.length > 0) {
-            healthLabel = healthSummaries[0].HEALTH_STATUS || 'unknown';
-            healthUpdated = healthSummaries[0].LAST_HEALTH_AT || 'No data';
-        }
+        $.each(healthSummaries, function(_, health) {
+            var status;
+            var score;
+
+            if (!health) {
+                return;
+            }
+
+            status = health.HEALTH_STATUS || 'unknown';
+            score = healthPriority[status] || healthPriority.unknown;
+            if (score > bestHealthScore) {
+                bestHealthScore = score;
+                healthLabel = status;
+            }
+
+            if (health.LAST_HEALTH_AT && (healthUpdated === 'No data' || health.LAST_HEALTH_AT > healthUpdated)) {
+                healthUpdated = health.LAST_HEALTH_AT;
+            }
+        });
+
+        $.each(alerts, function(_, alert) {
+            if (alert && alert.STATUS === 'open') {
+                alertCount += 1;
+            }
+        });
 
         $('#docker-card-cpu').text(cpuCount ? formatMetric(cpuTotal.toFixed(1), '%') : 'No data');
         $('#docker-card-mem').text(memCount ? formatMetric(memTotal.toFixed(1), ' MB') : 'No data');
@@ -81,7 +111,7 @@
         $('#docker-card-tx').text(txCount ? formatMetric(txTotal.toFixed(2), ' MB/s') : 'No data');
         $('#docker-card-health-status').text(healthLabel);
         $('#docker-card-health-updated').text(healthUpdated);
-        $('#docker-card-alert-count').text(alerts.length);
+        $('#docker-card-alert-count').text(alertCount);
     }
 
     function renderAlerts(alerts) {

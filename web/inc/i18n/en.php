@@ -107,6 +107,8 @@ $LANG['en'] = array(
     'CPU alert threshold must be between 1 and 1000.' => 'CPU alert threshold must be between 1 and 1000.',
     'Memory alert threshold must be between 1 and 1048576 MB.' => 'Memory alert threshold must be between 1 and 1048576 MB.',
     'Network alert threshold must be between 1 and 100000 Mbps.' => 'Network alert threshold must be between 1 and 100000 Mbps.',
+    'Environment variables must use KEY=value with uppercase letters, numbers, and underscores in the key.' => 'Environment variables must use KEY=value with uppercase letters, numbers, and underscores in the key.',
+    'Bind mounts must use name:/absolute/path.' => 'Bind mounts must use name:/absolute/path.',
     'containers' => 'containers',
     'Add one more FTP Account' => 'Add one more FTP Account',
     'Overall Statistics'  => 'Overall Statistics',

@@ -195,6 +195,29 @@ function vx_docker_textarea_to_stored_string($raw)
     return implode('||', $values);
 }
 
+function vx_docker_textarea_lines($raw)
+{
+    if ($raw === '') {
+        return array();
+    }
+
+    $raw = str_replace("\r", "\n", $raw);
+    $lines = preg_split('/\n+/', $raw);
+    if (!is_array($lines)) {
+        return array();
+    }
+
+    $values = array();
+    foreach ($lines as $line) {
+        $line = trim((string) $line);
+        if ($line !== '') {
+            $values[] = $line;
+        }
+    }
+
+    return $values;
+}
+
 function vx_docker_escape_spec_value($value)
 {
     return str_replace(
@@ -373,6 +396,30 @@ function vx_docker_collect_form_errors($owner)
 
     if (!vx_docker_integer_post_is_valid('v_net_alert_mbps', '50', 1, 100000)) {
         $errors[] = __('Network alert threshold must be between 1 and 100000 Mbps.');
+    }
+
+    foreach (vx_docker_textarea_lines(vx_docker_raw_post_value('v_container_env')) as $env_line) {
+        if (!preg_match('/^[A-Z0-9_][A-Z0-9_]*=.*$/', $env_line)) {
+            $errors[] = __('Environment variables must use KEY=value with uppercase letters, numbers, and underscores in the key.');
+            break;
+        }
+    }
+
+    foreach (vx_docker_textarea_lines(vx_docker_raw_post_value('v_container_mounts')) as $mount_line) {
+        $mount_separator = strpos($mount_line, ':');
+        $mount_name = ($mount_separator === false) ? false : substr($mount_line, 0, $mount_separator);
+        $mount_path = ($mount_separator === false) ? false : substr($mount_line, $mount_separator + 1);
+        if (
+            $mount_name === false
+            || $mount_name === ''
+            || $mount_path === false
+            || $mount_path === ''
+            || !preg_match('/^[a-z0-9][a-z0-9_-]{0,63}$/', $mount_name)
+            || strpos($mount_path, '/') !== 0
+        ) {
+            $errors[] = __('Bind mounts must use name:/absolute/path.');
+            break;
+        }
     }
 
     return array_values(array_unique($errors));
