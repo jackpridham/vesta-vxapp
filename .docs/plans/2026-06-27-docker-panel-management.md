@@ -10,7 +10,7 @@
 
 ---
 
-## Task 0: Define Contracts, Schemas, And UI State Specs Up Front
+## Task 0: Define Contracts, Schemas, And UI State Specs Up Front - COMPLETE
 
 **Files:**
 - Create: `.docs/contracts/docker-container-schema.md`
@@ -18,7 +18,7 @@
 - Create: `.docs/contracts/docker-alerts-schema.md`
 - Create: `.docs/contracts/docker-ui-states.md`
 
-- [ ] **Step 1: Write the container metadata and create/update spec contract**
+- [x] **Step 1: Write the container metadata and create/update spec contract**
 
 Create `.docs/contracts/docker-container-schema.md` with:
 - the create/update spec file schema consumed by `bin/v-add-docker-container` and `bin/v-change-docker-container`
@@ -61,7 +61,7 @@ CPU_ALERT_PCT='85' MEM_ALERT_MB='1024' NET_ALERT_MBPS='50' ALERT_EMAIL='yes' \
 STATUS='running' CREATED='2026-06-27 14:00:00' UPDATED='2026-06-27 14:05:00'
 ```
 
-- [ ] **Step 2: Write the monitoring schema contract**
+- [x] **Step 2: Write the monitoring schema contract**
 
 Create `.docs/contracts/docker-monitoring-schema.md` with:
 - the RRD path convention
@@ -99,7 +99,7 @@ Define “live” explicitly as:
 - edit-page metric panels refresh every `30` seconds while the page is open
 - RRD-backed history charts may lag one sampling interval behind the latest dashboard card values
 
-- [ ] **Step 3: Write the alerts and health schema contract**
+- [x] **Step 3: Write the alerts and health schema contract**
 
 Create `.docs/contracts/docker-alerts-schema.md` with:
 - persisted alert records in `data/users/<user>/docker-alerts.conf`
@@ -124,7 +124,7 @@ unhealthy
 unknown
 ```
 
-- [ ] **Step 4: Write the exact UI-state and markup contract**
+- [x] **Step 4: Write the exact UI-state and markup contract**
 
 Create `.docs/contracts/docker-ui-states.md` with:
 - every list/add/edit/details page state
@@ -166,7 +166,7 @@ v_net_alert_mbps
 v_alert_email
 ```
 
-- [ ] **Step 5: Self-review the contracts before implementation tasks**
+- [x] **Step 5: Self-review the contracts before implementation tasks**
 
 Check that every later task in this plan uses the exact same field names:
 - `HEALTHCHECK_TYPE`
@@ -178,6 +178,16 @@ Check that every later task in this plan uses the exact same field names:
 - `docker-alerts.conf`
 
 If any later task uses a different name, fix the plan before implementation starts.
+
+#### Closeout Report
+
+- Summary: Created the four Task 0 contract artifacts for Docker container metadata, monitoring, alerts, and exact UI states. Tightened the healthcheck defaulting rules and clarified that the required `docker-create-form` and `docker-edit-form` ids are wrapper containers so later templates can preserve the exact markup contract.
+- Files changed: `.docs/contracts/docker-container-schema.md`, `.docs/contracts/docker-monitoring-schema.md`, `.docs/contracts/docker-alerts-schema.md`, `.docs/contracts/docker-ui-states.md`, `.docs/audits/2026-06-27-docker-panel-management-task0.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task0.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`
+- Tests run: `rg`-based contract/name verification against the Task 0 artifacts and later plan references; PASS
+- Commit SHA(s): None yet
+- Spec review result: PASS. All Task 0 deliverables were created and the required names remained consistent across the later plan tasks.
+- Code quality review result: PASS. The contracts stayed within scope and removed the two main ambiguities found during closeout review: derived healthcheck target defaults and exact create/edit form container interpretation.
+- Follow-ups or concerns: None
 
 ## Task 1: Define The Ownership Model And Managed Runtime Layout
 
