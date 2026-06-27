@@ -63,9 +63,24 @@ async function openPanelLogin(page) {
 
   if (loginSecret) {
     await page.goto(`/?${encodeURIComponent(loginSecret)}`);
-    await page.waitForURL(/\/login\/?$/, {
-      timeout: 15_000,
-    });
+    try {
+      await page.waitForURL(/\/login\/?$/, {
+        timeout: 15_000,
+      });
+      return;
+    } catch {
+      const logoutLink = page.locator('.l-profile__logout').first();
+      if (await logoutLink.isVisible().catch(() => false)) {
+        const logoutHref = await logoutLink.getAttribute('href');
+        if (logoutHref) {
+          await page.goto(logoutHref);
+          await page.waitForURL(/\/login\/?$/, {
+            timeout: 15_000,
+          });
+          return;
+        }
+      }
+    }
   }
 
   await page.goto('/login/');
@@ -73,7 +88,8 @@ async function openPanelLogin(page) {
 
 async function loginWithPassword(page, { username, password }) {
   await openPanelLogin(page);
-  await page.locator('input[name="token"]').waitFor();
+  await page.locator('input[name="user"]').waitFor();
+  await page.locator('input[name="password"]').waitFor();
 
   await page.fill('input[name="user"]', username);
   await page.fill('input[name="password"]', password);
