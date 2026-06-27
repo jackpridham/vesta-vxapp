@@ -1480,13 +1480,13 @@ and document that full runtime Docker validation moved to the sydlocal closeout 
 
 ---
 
-## Task 13: Validate And Close Out Against sydlocal.jackpridham.com
+## Task 13: Validate And Close Out Against sydlocal.jackpridham.com - COMPLETE
 
 **Files:**
 - Create: `.docs/validation/sydlocal-docker-e2e-closeout.md`
 - Modify: `/home/jackpridham/Work/vortex-scripts/Servers/pve01.jackpridham.com/sydlocal.jackpridham.com/README.md`
 
-- [ ] **Step 1: Stage and apply the runtime overlay to the sydlocal host**
+- [x] **Step 1: Stage and apply the runtime overlay to the sydlocal host**
 
 Use the host documented in `/home/jackpridham/Work/vortex-scripts/Servers/pve01.jackpridham.com/sydlocal.jackpridham.com/README.md` and always connect by internal IP:
 
@@ -1538,7 +1538,7 @@ Constraints:
 - do not overwrite `/usr/local/vesta/data/users`
 - do not SSH to the hostname; use `ssh debian@192.168.100.100`
 
-- [ ] **Step 2: Validate the deployed runtime on sydlocal before E2E**
+- [x] **Step 2: Validate the deployed runtime on sydlocal before E2E**
 
 Run:
 
@@ -1585,7 +1585,7 @@ Expected:
 - remote Bash and PHP syntax checks pass
 - nginx and Apache config tests pass
 
-- [ ] **Step 3: Prepare repeatable scratch data and Playwright auth inputs**
+- [x] **Step 3: Prepare repeatable scratch data and Playwright auth inputs**
 
 Run:
 
@@ -1643,7 +1643,7 @@ Expected:
 - `.env.playwright.local` exists for the sydlocal target
 - `PLAYWRIGHT_LOGIN_SECRET` is populated only when the panel uses secret-login gating
 
-- [ ] **Step 4: Run Playwright UI validation against the sydlocal installation**
+- [x] **Step 4: Run Playwright UI validation against the sydlocal installation**
 
 Use the repo-local harness against the live panel URL:
 
@@ -1673,7 +1673,7 @@ The sydlocal Playwright pass must validate at least:
 
 If admin credentials are intentionally withheld during an implementation pass, still execute the anonymous and real non-admin suites and record the admin suite as pending operator-secret confirmation rather than treating the entire plan as blocked.
 
-- [ ] **Step 5: Validate backend routing, metrics, health, and alerts on sydlocal**
+- [x] **Step 5: Validate backend routing, metrics, health, and alerts on sydlocal**
 
 Run:
 
@@ -1704,7 +1704,7 @@ Expected:
 - stats JSON contains `CPU_PCT`, `MEM_MB`, `RX_MBPS`, `TX_MBPS`, and `LATEST`
 - the domain proxies through nginx to the user-owned container
 
-- [ ] **Step 6: Capture closeout artifacts and clean up scratch data**
+- [x] **Step 6: Capture closeout artifacts and clean up scratch data**
 
 Create `.docs/validation/sydlocal-docker-e2e-closeout.md` and record:
 - deployed commit
@@ -1733,6 +1733,16 @@ export HOMEDIR=/home
 /usr/local/vesta/bin/v-delete-user-package docker-e2e || true
 EOF
 ```
+
+#### Closeout Report
+
+- Summary: Applied and validated the sydlocal runtime overlay against live host `192.168.100.100`, then used the live Task 13 loop to uncover and fix three remaining defects before closeout: admin `login as` Docker owner-scope leakage, missing nginx reload after Docker route sync, and a flaky async delete assertion in the Docker remove-modal coverage. The final host was stamped to deployed runtime commit `02e4042d`, `docker-e2e.local` proxied to the seeded `dockere2e/app` container, the backend stats/health/alert commands returned valid JSON, and the final Playwright matrix passed `17/17`.
+- Files changed: `web/inc/vx_docker.php`, `web/list/docker/index.php`, `web/templates/docker_list_shared.php`, `tests/playwright/helpers/panel-auth.js`, `tests/playwright/docker-access-control.admin.authenticated.spec.js`, `bin/v-sync-docker-container-route`, `tests/playwright/docker-dashboard.user.authenticated.spec.js`, `tests/playwright/docker-modals.user.authenticated.spec.js`, `.docs/validation/sydlocal-docker-e2e-closeout.md`, `.docs/audits/2026-06-27-docker-panel-management-task13.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task13.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`, `/home/jackpridham/Work/vortex-scripts/Servers/pve01.jackpridham.com/sydlocal.jackpridham.com/README.md`
+- Tests run: sydlocal overlay deploy + stamp; PASS. `ssh debian@192.168.100.100 "sudo bash -s"` runtime validation with `bash -n`, `php -l`, `nginx -t`, `apache2ctl configtest`, and `v-check-docker-engine json`; PASS. `PLAYWRIGHT_ENV_FILE=.env.playwright.local npx playwright test --project=chromium-anonymous --project=chromium-docker-user-authenticated --project=chromium-admin-authenticated`; PASS (`17 passed`). `v-list-docker-container dockere2e app json`; PASS. `v-list-web-domain dockere2e docker-e2e.local json`; PASS. `v-list-docker-container-health dockere2e app json`; PASS. `v-list-docker-container-stats dockere2e app 5m json`; PASS with populated `CPU_PCT`, `MEM_MB`, `RX_MBPS`, `TX_MBPS`, and `LATEST`. `v-list-docker-container-alerts dockere2e app json`; PASS. `curl -H 'Host: docker-e2e.local' http://192.168.100.100/`; PASS after the route-sync reload fix, returning the seeded container body.
+- Commit SHA(s): `ea8eac0c`, `3204226b`, `02e4042d`, `30fd00d1`
+- Spec review result: PASS. The task requirements for sydlocal overlay, runtime validation, seeded auth/runtime state, full live Playwright coverage, backend route/metrics/health/alerts checks, closeout artifacts, and cleanup are all satisfied and recorded in the Task 13 audit artifacts.
+- Code quality review result: APPROVED. The final revalidation accepted the tighter actor handling for admin `login as`, the explicit nginx reload on Docker route sync, and the more resilient dashboard/remove-modal Playwright assertions for live-host timing and data shape.
+- Follow-ups or concerns: None for Task 13. Remaining work shifts to Task 14 commit-slice/accounting and any repo-history reconciliation needed there.
 
 ---
 
