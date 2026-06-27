@@ -219,9 +219,11 @@ expect_code "DOCKER: Wrong owner start fails for foreign container record" 3 "$V
 expect_code "DOCKER: Wrong owner stop fails for foreign container record" 3 "$V_BIN/v-stop-docker-container $user_one $container_two"
 expect_code "DOCKER: Wrong owner delete fails for foreign container record" 3 "$V_BIN/v-delete-docker-container $user_one $container_two"
 
-expect_ok "DOCKER: Rightful owner can inspect owned container" "$V_BIN/v-list-docker-container-inspect $user_two $container_two >/dev/null"
-expect_ok "DOCKER: Rightful owner can stop owned container" "$V_BIN/v-stop-docker-container $user_two $container_two"
-expect_ok "DOCKER: Rightful owner can start owned container" "$V_BIN/v-start-docker-container $user_two $container_two"
+# The suite runs as the root/admin panel context, so owner-targeted CLI calls here
+# exercise the admin cross-owner management seam directly.
+expect_ok "DOCKER: Admin can inspect another user's container" "$V_BIN/v-list-docker-container-inspect $user_two $container_two >/dev/null"
+expect_ok "DOCKER: Admin can stop another user's container" "$V_BIN/v-stop-docker-container $user_two $container_two"
+expect_ok "DOCKER: Admin can start another user's container" "$V_BIN/v-start-docker-container $user_two $container_two"
 
 cat >"$VESTA/data/users/$user_one/docker-alerts.conf" <<EOF
 AID='1' NAME='$container_one' OWNER='$user_one' LEVEL='warning' TYPE='health' STATUS='open' TITLE='Owner alert' MESSAGE='Owner alert message' STARTED='2026-06-27 14:01:00' LAST_SEEN='2026-06-27 14:03:00' ACK='no'
