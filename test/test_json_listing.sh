@@ -10,6 +10,7 @@ v_list_databases admin json
 v_list_database admin admin_vesta json
 v_list_database_server mysql localhost json
 v_list_database_servers mysql json
+v_check_docker_engine json
 v_list_dns_domains admin json
 v_list_mail_domains admin json
 v_list_dns_templates json
@@ -24,10 +25,31 @@ v_list_user_ips admin json
 v_list_user_ns admin json
 v_list_user_packages json
 v_list_users json
+v_list_docker_containers admin json
 v_list_web_domains admin json
 v_list_web_domain admin default.vesta.domain json
 v_list_web_templates admin json
 v_list_web_templates_nginx admin json'
+
+docker_owner=''
+docker_name=''
+for docker_conf in "$VESTA"/data/users/*/docker.conf; do
+    [ -s "$docker_conf" ] || continue
+    docker_owner=$(basename "$(dirname "$docker_conf")")
+    docker_name=$(awk -F"'" '/^NAME=/{print $2; exit}' "$docker_conf")
+    if [ -n "$docker_owner" ] && [ -n "$docker_name" ]; then
+        break
+    fi
+done
+
+if [ -n "$docker_owner" ] && [ -n "$docker_name" ]; then
+    commands="$commands
+v_list_docker_containers $docker_owner json
+v_list_docker_container $docker_owner $docker_name json
+v_list_docker_container_health $docker_owner $docker_name json
+v_list_docker_container_alerts $docker_owner $docker_name json
+v_list_docker_container_stats $docker_owner $docker_name 5m json"
+fi
 
 IFS=$'\n'
 for cmd in $commands; do

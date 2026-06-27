@@ -338,3 +338,8 @@ cmd="v_delete_sys_ip 198.18.0.125"
 $cmd > $tmpfile 2>> $tmpfile
 echo_result "Deleting ip 198.18.0.125" "$?" "$tmpfile" "$cmd"
 
+if [ -x "$V_TEST/test_docker_user_actions.sh" ]; then
+    cmd="RUN_DOCKER_USER_ACTIONS_TESTS=${RUN_DOCKER_USER_ACTIONS_TESTS-no} $V_TEST/test_docker_user_actions.sh"
+    $cmd > $tmpfile 2>> $tmpfile
+    echo_result "DOCKER: Running dedicated ownership/quota/backup regressions" "$?" "$tmpfile" "$cmd"
+fi

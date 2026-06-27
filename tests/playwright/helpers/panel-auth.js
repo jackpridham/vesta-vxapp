@@ -17,6 +17,10 @@ function hasEnv(name) {
   return Boolean(process.env[name]);
 }
 
+function getOptionalEnv(name, defaultValue = '') {
+  return Object.prototype.hasOwnProperty.call(process.env, name) ? process.env[name] : defaultValue;
+}
+
 function hasPanelCredentials(role = 'admin') {
   if (role === 'admin') {
     return hasEnv('PLAYWRIGHT_ADMIN_USER') && hasEnv('PLAYWRIGHT_ADMIN_PASSWORD');
@@ -109,6 +113,7 @@ module.exports = {
   ensureAuthStateDir,
   getAuthStatePath,
   getPanelCredentials,
+  getOptionalEnv,
   hasPanelCredentials,
   loginAsRole,
   loginWithPassword,
