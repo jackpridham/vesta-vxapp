@@ -79,6 +79,10 @@ cleanup() {
         fi
     done
 
+    if [ -n "${domain:-}" ]; then
+        rm -f "/tmp/${domain}.crt" "/tmp/${domain}.key"
+    fi
+
     [ -n "${tmpfile:-}" ] && rm -f "$tmpfile"
 }
 

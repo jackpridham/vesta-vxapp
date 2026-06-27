@@ -58,7 +58,10 @@ test('docker list dashboard renders cards, constrained health vocabulary, and al
     const memText = await textContentTrim(page.locator('#docker-card-mem'));
     const rxText = await textContentTrim(page.locator('#docker-card-rx'));
     const txText = await textContentTrim(page.locator('#docker-card-tx'));
-    test.skip([cpuText, memText, rxText, txText].every((value) => value === 'No data'), 'Dashboard summary coverage requires seeded live metric samples.');
+    test.skip(cpuText === 'No data', 'Dashboard summary coverage requires seeded CPU metric data.');
+    test.skip(memText === 'No data', 'Dashboard summary coverage requires seeded memory metric data.');
+    test.skip(rxText === 'No data', 'Dashboard summary coverage requires seeded RX metric data.');
+    test.skip(txText === 'No data', 'Dashboard summary coverage requires seeded TX metric data.');
     await expect(page.locator('#docker-card-health-status')).toHaveText(/healthy|starting|degraded|unhealthy|unknown/i);
     test.skip((await textContentTrim(page.locator('#docker-card-health-updated'))) === 'No data', 'Dashboard summary coverage requires seeded health-check data.');
     await expect(page.locator('#docker-card-alert-count')).toHaveText(/^\d+$/);
@@ -91,10 +94,10 @@ test('docker edit page renders live metrics and chart containers after stats dat
   const memChart = await textContentTrim(page.locator('#docker-chart-mem'));
   const rxChart = await textContentTrim(page.locator('#docker-chart-rx'));
   const txChart = await textContentTrim(page.locator('#docker-chart-tx'));
-  test.skip(
-    [cpuChart, memChart, rxChart, txChart].every((value) => /No metrics available yet\./i.test(value)),
-    'Dashboard detail coverage requires seeded stats history.',
-  );
+  test.skip(/No metrics available yet\./i.test(cpuChart), 'Dashboard detail coverage requires seeded CPU stats history.');
+  test.skip(/No metrics available yet\./i.test(memChart), 'Dashboard detail coverage requires seeded memory stats history.');
+  test.skip(/No metrics available yet\./i.test(rxChart), 'Dashboard detail coverage requires seeded RX stats history.');
+  test.skip(/No metrics available yet\./i.test(txChart), 'Dashboard detail coverage requires seeded TX stats history.');
   test.skip((await textContentTrim(page.locator('#docker-detail-status'))) === 'No data', 'Dashboard detail coverage requires seeded status data.');
   await expect(page.locator('#docker-detail-health-status')).toHaveText(/healthy|starting|degraded|unhealthy|unknown/i);
   test.skip((await textContentTrim(page.locator('#docker-detail-health-updated'))) === 'No data', 'Dashboard detail coverage requires seeded health-check data.');

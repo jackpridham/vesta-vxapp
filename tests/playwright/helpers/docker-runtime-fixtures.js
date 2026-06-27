@@ -83,7 +83,11 @@ function deleteContainer(owner, containerName) {
   try {
     runVestaCommand('v-list-docker-container', [owner, containerName, 'json']);
   } catch (error) {
-    return false;
+    if (error && error.status === 3) {
+      return false;
+    }
+
+    throw error;
   }
 
   runVestaCommand('v-delete-docker-container', [owner, containerName]);
@@ -92,7 +96,8 @@ function deleteContainer(owner, containerName) {
 
 function withSeededAlert(owner, containerName) {
   const alertsPath = path.join(getVestaRoot(), 'data', 'users', owner, 'docker-alerts.conf');
-  const seededLine = `AID='9${Date.now()}' NAME='${containerName}' OWNER='${owner}' LEVEL='warning' TYPE='health' STATUS='open' TITLE='Playwright alert' MESSAGE='Seeded alert for Playwright coverage' STARTED='2026-06-27 14:01:00' LAST_SEEN='2026-06-27 14:03:00' ACK='no'`;
+  const seededAid = `9${Date.now()}`;
+  const seededLine = `AID='${seededAid}' NAME='${containerName}' OWNER='${owner}' LEVEL='warning' TYPE='health' STATUS='open' TITLE='Playwright alert' MESSAGE='Seeded alert for Playwright coverage' STARTED='2026-06-27 14:01:00' LAST_SEEN='2026-06-27 14:03:00' ACK='no'`;
   const existing = fs.existsSync(alertsPath) ? fs.readFileSync(alertsPath, 'utf8').trimEnd() : '';
   const nextContent = existing ? `${existing}\n${seededLine}\n` : `${seededLine}\n`;
   fs.writeFileSync(alertsPath, nextContent);
@@ -104,7 +109,7 @@ function withSeededAlert(owner, containerName) {
 
     const filtered = fs.readFileSync(alertsPath, 'utf8')
       .split('\n')
-      .filter((line) => line && line !== seededLine)
+      .filter((line) => line && !line.includes(`AID='${seededAid}'`))
       .join('\n');
 
     if (filtered) {
