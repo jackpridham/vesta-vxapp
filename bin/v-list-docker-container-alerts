@@ -1,0 +1,108 @@
+#!/bin/bash
+# info: list docker container alerts
+# options: USER NAME [FORMAT]
+#
+# The function lists persisted docker alerts for one managed container.
+
+
+#----------------------------------------------------------#
+#                    Variable&Function                     #
+#----------------------------------------------------------#
+
+# Argument definition
+user=$1
+name=$2
+format=${3-json}
+
+# Includes
+source $VESTA/func/main.sh
+source $VESTA/func/docker.sh
+source $VESTA/conf/vesta.conf
+
+collect_alerts() {
+    local path line payload
+
+    alerts_payload=''
+    path="$(vx_docker_alerts_path "$user")"
+    [ -f "$path" ] || return 0
+
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        vx_docker_parse_alert_record "$line"
+        if [ "$OWNER" = "$user" ] && [ "$NAME" = "$name" ]; then
+            payload="${LAST_SEEN}|${line}"
+            alerts_payload="${alerts_payload}${payload}"$'\n'
+        fi
+    done < "$path"
+}
+
+json_list() {
+    local first='yes' line
+
+    echo '{'
+    printf '    "OWNER": "%s",\n' "$(vx_docker_json_escape "$user")"
+    printf '    "NAME": "%s",\n' "$(vx_docker_json_escape "$name")"
+    echo '    "ALERTS": ['
+    while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        vx_docker_parse_alert_record "${line#*|}"
+        if [ "$first" = 'no' ]; then
+            echo ','
+        fi
+        first='no'
+        printf '        {"AID":"%s","OWNER":"%s","NAME":"%s","TITLE":"%s","LEVEL":"%s","MESSAGE":"%s","STATUS":"%s","ACK":"%s","LAST_SEEN":"%s","TYPE":"%s","STARTED":"%s"}' \
+            "$(vx_docker_json_escape "$AID")" \
+            "$(vx_docker_json_escape "$OWNER")" \
+            "$(vx_docker_json_escape "$NAME")" \
+            "$(vx_docker_json_escape "$TITLE")" \
+            "$(vx_docker_json_escape "$LEVEL")" \
+            "$(vx_docker_json_escape "$MESSAGE")" \
+            "$(vx_docker_json_escape "$STATUS")" \
+            "$(vx_docker_json_escape "$ACK")" \
+            "$(vx_docker_json_escape "$LAST_SEEN")" \
+            "$(vx_docker_json_escape "$TYPE")" \
+            "$(vx_docker_json_escape "$STARTED")"
+    done < <(printf '%s' "$alerts_payload" | sort -r)
+    echo
+    echo '    ]'
+    echo '}'
+}
+
+shell_list() {
+    printf '%s' "$alerts_payload" | sort -r | while IFS= read -r line; do
+        [ -n "$line" ] || continue
+        vx_docker_parse_alert_record "${line#*|}"
+        echo "$AID $LEVEL $TYPE $STATUS $ACK $LAST_SEEN $TITLE"
+    done
+}
+
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+check_args '2' "$#" 'USER NAME [FORMAT]'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_format_valid "$name" 'container name'
+
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+vx_docker_load_record "$user" "$name" || check_result "$E_NOTEXIST" "docker container $name doesn't exist"
+collect_alerts
+
+case "$format" in
+    json)  json_list ;;
+    shell) shell_list ;;
+    *)     check_result "$E_INVALID" "invalid format :: $format" ;;
+esac
+
+
+#----------------------------------------------------------#
+#                       Vesta                              #
+#----------------------------------------------------------#
+
+exit

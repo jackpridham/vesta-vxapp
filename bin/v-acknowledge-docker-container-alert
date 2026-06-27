@@ -1,8 +1,8 @@
 #!/bin/bash
-# info: rebuild system user
-# options: USER [RESTART]
+# info: acknowledge docker container alert
+# options: USER AID
 #
-# The function rebuilds system user account.
+# The function acknowledges a persisted docker alert.
 
 
 #----------------------------------------------------------#
@@ -11,50 +11,33 @@
 
 # Argument definition
 user=$1
-restart=$2
+aid=$2
 
 # Includes
 source $VESTA/func/main.sh
-source $VESTA/func/rebuild.sh
+source $VESTA/func/docker.sh
 source $VESTA/conf/vesta.conf
-
-# Export sbin
-export PATH=$PATH:/usr/sbin
 
 
 #----------------------------------------------------------#
 #                    Verifications                         #
 #----------------------------------------------------------#
 
-check_args '1' "$#" 'USER [RESTART]'
+check_args '2' "$#" 'USER AID'
 is_format_valid 'user'
 is_object_valid 'user' 'USER' "$user"
-is_object_unsuspended 'user' 'USER' "$user"
+is_int_format_valid "$aid" 'alert id'
 
 
 #----------------------------------------------------------#
 #                       Action                             #
 #----------------------------------------------------------#
 
-# Update disk quota
-if [ "$DISK_QUOTA" = 'yes' ]; then
-    $BIN/v-update-user-quota $user
-fi
-
-# Rebuild user
-rebuild_user_conf
-
-if [ -s "$USER_DATA/docker.conf" ]; then
-    $BIN/v-rebuild-docker-containers "$user"
-    check_result $? "docker container rebuild failed"
-fi
+vx_docker_acknowledge_alert "$user" "$aid" || check_result "$E_NOTEXIST" "docker alert $aid doesn't exist"
 
 
 #----------------------------------------------------------#
 #                       Vesta                              #
 #----------------------------------------------------------#
-
-# Logging
-log_event "$OK" "$ARGUMENTS"
 
 exit

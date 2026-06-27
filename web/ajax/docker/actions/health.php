@@ -22,9 +22,40 @@ if (!vx_docker_assert_actor_can_access_owner($owner, $myvesta_logged_user)) {
     exit;
 }
 
-$container = vx_docker_get_container($owner, $name);
-if (empty($container)) {
-    $container = array(
+$output = array();
+$return_var = 0;
+exec(
+    VESTA_CMD."v-update-docker-container-health "
+    .escapeshellarg($owner)." "
+    .escapeshellarg($name),
+    $output,
+    $return_var
+);
+
+$output = array();
+$return_var = 0;
+exec(
+    VESTA_CMD."v-list-docker-container-health "
+    .escapeshellarg($owner)." "
+    .escapeshellarg($name)." json",
+    $output,
+    $return_var
+);
+
+if ($return_var !== 0) {
+    echo json_encode(vx_docker_health_payload(array(
+        'OWNER' => $owner,
+        'NAME' => $name,
+        'STATUS' => '',
+        'HEALTH_STATUS' => 'unknown',
+        'LAST_HEALTH_AT' => '',
+    )));
+    exit;
+}
+
+$payload = json_decode(implode('', $output), true);
+if (!is_array($payload)) {
+    $payload = array(
         'OWNER' => $owner,
         'NAME' => $name,
         'STATUS' => '',
@@ -33,5 +64,5 @@ if (empty($container)) {
     );
 }
 
-echo json_encode(vx_docker_health_payload($container));
+echo json_encode(vx_docker_health_payload($payload));
 exit;

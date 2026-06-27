@@ -16,9 +16,6 @@ rebuild_user_conf() {
     if [ -f "$USER_DATA/docker.conf" ]; then
         chmod 660 $USER_DATA/docker.conf
     fi
-    if [ -f "$USER_DATA/docker-alerts.conf" ]; then
-        chmod 660 $USER_DATA/docker-alerts.conf
-    fi
 
     # Run template trigger
     if [ -x "$VESTA/data/packages/$PACKAGE.sh" ]; then
@@ -59,10 +56,19 @@ rebuild_user_conf() {
     chmod a+x $HOMEDIR/$user/conf
     chown --no-dereference $user:$user $HOMEDIR/$user
     chown root:root $HOMEDIR/$user/conf
-    if [ -d "$HOMEDIR/$user/docker" ] || [ -f "$USER_DATA/docker.conf" ] || [ -f "$USER_DATA/docker-alerts.conf" ]; then
+    if [ -s "$USER_DATA/docker.conf" ]; then
+        touch $USER_DATA/docker-alerts.conf
+        chmod 660 $USER_DATA/docker-alerts.conf
         mkdir -p $HOMEDIR/$user/docker
         chmod 750 $HOMEDIR/$user/docker
         chown --no-dereference $user:$user $HOMEDIR/$user/docker
+        mkdir -p $RRD/docker
+        if [ -x "$BIN/v-update-sys-rrd-docker" ]; then
+            $BIN/v-update-sys-rrd-docker daily >/dev/null 2>&1
+            $BIN/v-update-sys-rrd-docker weekly >/dev/null 2>&1
+            $BIN/v-update-sys-rrd-docker monthly >/dev/null 2>&1
+            $BIN/v-update-sys-rrd-docker yearly >/dev/null 2>&1
+        fi
     fi
 
     # Update disk pipe

@@ -1,0 +1,152 @@
+#!/bin/bash
+# info: list docker container stats
+# options: USER NAME PERIOD [FORMAT]
+#
+# The function lists docker container monitoring data for web charts.
+
+
+#----------------------------------------------------------#
+#                    Variable&Function                     #
+#----------------------------------------------------------#
+
+# Argument definition
+user=$1
+name=$2
+period=${3-5m}
+format=${4-json}
+
+# Includes
+source $VESTA/func/main.sh
+source $VESTA/func/docker.sh
+source $VESTA/conf/vesta.conf
+
+json_series_push() {
+    local current="$1"
+    local ts="$2"
+    local value="$3"
+    local number
+
+    number="$(vx_docker_float_to_json_number "$value" 2>/dev/null)" || {
+        echo "$current"
+        return 0
+    }
+
+    if [ -n "$current" ]; then
+        current="${current},"
+    fi
+    current="${current}{\"TS\":\"$ts\",\"VALUE\":$number}"
+    echo "$current"
+}
+
+json_or_null() {
+    local value="$1"
+    local number
+
+    number="$(vx_docker_float_to_json_number "$value" 2>/dev/null)" || {
+        echo 'null'
+        return 0
+    }
+
+    echo "$number"
+}
+
+json_list() {
+    printf '{\n'
+    printf '    "OWNER": "%s",\n' "$(vx_docker_json_escape "$OWNER")"
+    printf '    "NAME": "%s",\n' "$(vx_docker_json_escape "$NAME")"
+    printf '    "PERIOD": "%s",\n' "$(vx_docker_json_escape "$period")"
+    printf '    "CPU_PCT": [%s],\n' "$cpu_json"
+    printf '    "MEM_MB": [%s],\n' "$mem_json"
+    printf '    "RX_MBPS": [%s],\n' "$rx_json"
+    printf '    "TX_MBPS": [%s],\n' "$tx_json"
+    printf '    "LATEST": {\n'
+    printf '        "CPU_PCT": %s,\n' "$(json_or_null "$latest_cpu")"
+    printf '        "MEM_MB": %s,\n' "$(json_or_null "$latest_mem")"
+    printf '        "RX_MBPS": %s,\n' "$(json_or_null "$latest_rx")"
+    printf '        "TX_MBPS": %s\n' "$(json_or_null "$latest_tx")"
+    printf '    }\n'
+    printf '}\n'
+}
+
+shell_list() {
+    echo "OWNER:        $OWNER"
+    echo "NAME:         $NAME"
+    echo "PERIOD:       $period"
+    echo "LATEST CPU:   ${latest_cpu:-null}"
+    echo "LATEST MEM:   ${latest_mem:-null}"
+    echo "LATEST RX:    ${latest_rx:-null}"
+    echo "LATEST TX:    ${latest_tx:-null}"
+}
+
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+check_args '3' "$#" 'USER NAME PERIOD [FORMAT]'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_format_valid "$name" 'container name'
+
+case "$period" in
+    5m|1h|1d|7d) ;;
+    *) check_result "$E_INVALID" "invalid period :: $period" ;;
+esac
+
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+vx_docker_load_record "$user" "$name" || check_result "$E_NOTEXIST" "docker container $name doesn't exist"
+
+cpu_json=''
+mem_json=''
+rx_json=''
+tx_json=''
+latest_cpu=''
+latest_mem=''
+latest_rx=''
+latest_tx=''
+
+while IFS= read -r row; do
+    [ -n "$row" ] || continue
+    ts="$(echo "$row" | cut -d '|' -f 1)"
+    cpu="$(echo "$row" | cut -d '|' -f 2)"
+    mem="$(echo "$row" | cut -d '|' -f 3)"
+    rx="$(echo "$row" | cut -d '|' -f 4)"
+    tx="$(echo "$row" | cut -d '|' -f 5)"
+    ts_json="$(vx_docker_ts_utc "$ts")"
+
+    cpu_json="$(json_series_push "$cpu_json" "$ts_json" "$cpu")"
+    mem_json="$(json_series_push "$mem_json" "$ts_json" "$mem")"
+    rx_json="$(json_series_push "$rx_json" "$ts_json" "$rx")"
+    tx_json="$(json_series_push "$tx_json" "$ts_json" "$tx")"
+
+    vx_docker_float_to_json_number "$cpu" >/dev/null 2>&1 && latest_cpu="$cpu"
+    vx_docker_float_to_json_number "$mem" >/dev/null 2>&1 && latest_mem="$mem"
+    vx_docker_float_to_json_number "$rx" >/dev/null 2>&1 && latest_rx="$rx"
+    vx_docker_float_to_json_number "$tx" >/dev/null 2>&1 && latest_tx="$tx"
+done < <(vx_docker_rrd_fetch_rows "$OWNER" "$NAME" "$period")
+
+if vx_docker_sample_live_stats "$CTN_NAME"; then
+    latest_cpu="$VX_DOCKER_SAMPLE_CPU_PCT"
+    latest_mem="$VX_DOCKER_SAMPLE_MEM_MB"
+fi
+
+vx_docker_rrd_latest_rates "$OWNER" "$NAME"
+[ -n "$VX_DOCKER_LATEST_RX_MBPS" ] && latest_rx="$VX_DOCKER_LATEST_RX_MBPS"
+[ -n "$VX_DOCKER_LATEST_TX_MBPS" ] && latest_tx="$VX_DOCKER_LATEST_TX_MBPS"
+
+case "$format" in
+    json)  json_list ;;
+    shell) shell_list ;;
+    *)     check_result "$E_INVALID" "invalid format :: $format" ;;
+esac
+
+
+#----------------------------------------------------------#
+#                       Vesta                              #
+#----------------------------------------------------------#
+
+exit

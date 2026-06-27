@@ -748,6 +748,11 @@ function vx_docker_alerts_file($owner)
     return '/usr/local/vesta/data/users/'.$owner.'/docker-alerts.conf';
 }
 
+function vx_docker_alerts_lock_file($owner)
+{
+    return vx_docker_alerts_file($owner).'.lock';
+}
+
 function vx_docker_parse_alert_record($line)
 {
     $record = array();
@@ -830,7 +835,12 @@ function vx_docker_acknowledge_alert_record($owner, $aid)
         return false;
     }
 
-    $handle = fopen($path, 'c+');
+    $lock_path = vx_docker_alerts_lock_file($owner);
+    if (@file_put_contents($lock_path, '', FILE_APPEND) === false) {
+        return false;
+    }
+
+    $handle = fopen($lock_path, 'c+');
     if ($handle === false) {
         return false;
     }
@@ -840,7 +850,7 @@ function vx_docker_acknowledge_alert_record($owner, $aid)
         return false;
     }
 
-    $contents = stream_get_contents($handle);
+    $contents = @file_get_contents($path);
     $lines = preg_split("/\r?\n/", (string) $contents);
     if (!is_array($lines)) {
         flock($handle, LOCK_UN);
@@ -892,7 +902,7 @@ function vx_docker_stats_payload($owner, $name, $period = '5m')
         $period = '5m';
     }
 
-    return array(
+    $fallback = array(
         'OWNER' => $owner,
         'NAME' => $name,
         'PERIOD' => $period,
@@ -907,6 +917,28 @@ function vx_docker_stats_payload($owner, $name, $period = '5m')
             'TX_MBPS' => null,
         ),
     );
+
+    $output = array();
+    $return_var = 0;
+    exec(
+        VESTA_CMD."v-list-docker-container-stats "
+        .escapeshellarg($owner)." "
+        .escapeshellarg($name)." "
+        .escapeshellarg($period)." json",
+        $output,
+        $return_var
+    );
+
+    if ($return_var !== 0) {
+        return $fallback;
+    }
+
+    $payload = json_decode(implode('', $output), true);
+    if (!is_array($payload)) {
+        return $fallback;
+    }
+
+    return $payload;
 }
 
 function vx_docker_health_payload($container)

@@ -1,0 +1,68 @@
+#!/bin/bash
+# info: update docker container health
+# options: USER NAME
+#
+# The function evaluates docker container health and persists it.
+
+
+#----------------------------------------------------------#
+#                    Variable&Function                     #
+#----------------------------------------------------------#
+
+# Argument definition
+user=$1
+name=$2
+
+# Includes
+source $VESTA/func/main.sh
+source $VESTA/func/docker.sh
+source $VESTA/conf/vesta.conf
+
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+check_args '2' "$#" 'USER NAME'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_format_valid "$name" 'container name'
+
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+vx_docker_load_record "$user" "$name" || check_result "$E_NOTEXIST" "docker container $name doesn't exist"
+
+old_status="$STATUS"
+old_health_status="${HEALTH_STATUS:-unknown}"
+runtime_status="$(vx_docker_runtime_state "$CTN_NAME")"
+health_check_due='yes'
+if ! vx_docker_healthcheck_due "$user" "$name"; then
+    health_check_due='no'
+fi
+
+if [ "$health_check_due" = 'yes' ]; then
+    vx_docker_evaluate_health_status "$user" "$name" || VX_DOCKER_HEALTH_RESULT='unknown'
+    HEALTH_STATUS="$VX_DOCKER_HEALTH_RESULT"
+    LAST_HEALTH_AT="$(vx_docker_now)"
+fi
+
+STATUS="$runtime_status"
+
+if [ "$health_check_due" = 'yes' ] || [ "$STATUS" != "$old_status" ] || [ "$HEALTH_STATUS" != "$old_health_status" ]; then
+    UPDATED="$(vx_docker_now)"
+    vx_docker_replace_record "$user" "$name"
+fi
+
+if [ "$health_check_due" = 'yes' ]; then
+    vx_docker_sync_health_alert "$user" "$name" "$HEALTH_STATUS"
+fi
+
+
+#----------------------------------------------------------#
+#                       Vesta                              #
+#----------------------------------------------------------#
+
+exit

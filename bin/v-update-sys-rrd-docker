@@ -1,0 +1,61 @@
+#!/bin/bash
+# info: update docker container rrd
+# options: PERIOD
+#
+# The function updates managed docker container rrd databases and graphs.
+
+
+#----------------------------------------------------------#
+#                    Variable&Function                     #
+#----------------------------------------------------------#
+
+# Argument definition
+period=${1-daily}
+
+# Includes
+source $VESTA/func/main.sh
+source $VESTA/func/docker.sh
+source $VESTA/conf/vesta.conf
+
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+vx_docker_rrd_period_graph_window "$period" || exit "$E_RRD"
+vx_docker_ensure_rrd_dir
+
+while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    vx_docker_parse_record "$line"
+    vx_docker_ensure_rrd_file "$OWNER" "$NAME"
+
+    if [ "$period" = 'daily' ]; then
+        if vx_docker_sample_live_stats "$CTN_NAME"; then
+            vx_docker_update_rrd_sample "$OWNER" "$NAME" \
+                "$VX_DOCKER_SAMPLE_CPU_PCT" \
+                "$VX_DOCKER_SAMPLE_MEM_MB" \
+                "$VX_DOCKER_SAMPLE_RX_BYTES" \
+                "$VX_DOCKER_SAMPLE_TX_BYTES"
+            vx_docker_rrd_latest_rates "$OWNER" "$NAME"
+            vx_docker_sync_threshold_alerts "$OWNER" "$NAME" \
+                "$VX_DOCKER_SAMPLE_CPU_PCT" \
+                "$VX_DOCKER_SAMPLE_MEM_MB" \
+                "$VX_DOCKER_LATEST_RX_MBPS" \
+                "$VX_DOCKER_LATEST_TX_MBPS"
+        else
+            vx_docker_update_rrd_sample "$OWNER" "$NAME" 'U' 'U' 'U' 'U'
+        fi
+
+        "$BIN/v-update-docker-container-health" "$OWNER" "$NAME" >/dev/null 2>&1 || true
+    fi
+
+    vx_docker_graph_rrd "$OWNER" "$NAME" "$period"
+done < <(vx_docker_list_all_records)
+
+
+#----------------------------------------------------------#
+#                       Vesta                              #
+#----------------------------------------------------------#
+
+exit

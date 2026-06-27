@@ -1,0 +1,68 @@
+#!/bin/bash
+# info: list docker container health
+# options: USER NAME [FORMAT]
+#
+# The function lists persisted docker container health data.
+
+
+#----------------------------------------------------------#
+#                    Variable&Function                     #
+#----------------------------------------------------------#
+
+# Argument definition
+user=$1
+name=$2
+format=${3-json}
+
+# Includes
+source $VESTA/func/main.sh
+source $VESTA/func/docker.sh
+source $VESTA/conf/vesta.conf
+
+json_list() {
+    printf '{\n'
+    printf '    "OWNER": "%s",\n' "$(vx_docker_json_escape "$OWNER")"
+    printf '    "NAME": "%s",\n' "$(vx_docker_json_escape "$NAME")"
+    printf '    "STATUS": "%s",\n' "$(vx_docker_json_escape "$STATUS")"
+    printf '    "HEALTH_STATUS": "%s",\n' "$(vx_docker_json_escape "${HEALTH_STATUS:-unknown}")"
+    printf '    "LAST_HEALTH_AT": "%s"\n' "$(vx_docker_json_escape "$LAST_HEALTH_AT")"
+    printf '}\n'
+}
+
+shell_list() {
+    echo "OWNER:          $OWNER"
+    echo "NAME:           $NAME"
+    echo "STATUS:         $STATUS"
+    echo "HEALTH STATUS:  ${HEALTH_STATUS:-unknown}"
+    echo "LAST HEALTH AT: $LAST_HEALTH_AT"
+}
+
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+check_args '2' "$#" 'USER NAME [FORMAT]'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_format_valid "$name" 'container name'
+
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+vx_docker_load_record "$user" "$name" || check_result "$E_NOTEXIST" "docker container $name doesn't exist"
+
+case "$format" in
+    json)  json_list ;;
+    shell) shell_list ;;
+    *)     check_result "$E_INVALID" "invalid format :: $format" ;;
+esac
+
+
+#----------------------------------------------------------#
+#                       Vesta                              #
+#----------------------------------------------------------#
+
+exit

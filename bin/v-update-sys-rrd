@@ -100,6 +100,7 @@ for period in $periods; do
     $BIN/v-update-sys-rrd-net $period >/dev/null 2>&1
     $BIN/v-update-sys-rrd-mem $period >/dev/null 2>&1
     $BIN/v-update-sys-rrd-ssh $period >/dev/null 2>&1
+    $BIN/v-update-sys-rrd-docker $period >/dev/null 2>&1
 
     # Updating web stats
     if [ ! -z "$WEB_SYSTEM" ]; then
