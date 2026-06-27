@@ -26,6 +26,7 @@ if (!isset($_POST['Yes']) && !isset($_POST['No'])) {
 
 if (isset($_POST['No'])) {
     myvesta_hide_floating_div();
+    exit;
 }
 
 $cmd = VESTA_CMD."v-spawn-ajax-process "
