@@ -447,19 +447,60 @@ vx_docker_spec_defaults() {
     ALERT_EMAIL="${ALERT_EMAIL-$VX_DOCKER_DEFAULT_ALERT_EMAIL}"
 }
 
+vx_docker_unescape_double_quoted_spec_value() {
+    local value="$1"
+
+    value="${value//\\\\/---VX_DOCKER_BSLASH---}"
+    value="${value//\\\"/\"}"
+    value="${value//\\\$/\$}"
+    value="${value//\\\`/\`}"
+    value="${value//---VX_DOCKER_BSLASH---/\\}"
+    echo "$value"
+}
+
+vx_docker_parse_spec_file() {
+    local spec_file="$1"
+    local line key raw_value value
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        [ -n "$line" ] || continue
+        key="${line%%=*}"
+        raw_value="${line#*=}"
+
+        if [ -z "$key" ] || [ "$key" = "$line" ]; then
+            check_result "$E_INVALID" "invalid docker spec line :: $line"
+        fi
+
+        if ! [[ "$key" =~ ^[[:alnum:]][_[:alnum:]]{0,64}[[:alnum:]]$ ]]; then
+            check_result "$E_INVALID" "Invalid key format [$key]"
+        fi
+
+        case "$raw_value" in
+            \"*\")
+                value="${raw_value#\"}"
+                value="${value%\"}"
+                value="$(vx_docker_unescape_double_quoted_spec_value "$value")"
+                ;;
+            \'*\')
+                value="${raw_value#\'}"
+                value="${value%\'}"
+                value="${value//\\\'/\'}"
+                ;;
+            *)
+                check_result "$E_INVALID" "invalid docker spec value :: $key"
+                ;;
+        esac
+
+        declare -g "$key"="$value"
+    done < "$spec_file"
+}
+
 vx_docker_load_spec() {
     local spec_file="$1"
-    local parse_double_quotes_var_backup="${PARSE_DOUBLE_QUOTES_VAR-}"
 
     [ -f "$spec_file" ] || check_result "$E_NOTEXIST" "docker spec file doesn't exist"
     vx_docker_reset_record_vars
-    PARSE_DOUBLE_QUOTES_VAR='yes'
-    parse_object_kv_list_non_eval "$(cat "$spec_file")"
-    if [ -n "$parse_double_quotes_var_backup" ]; then
-        PARSE_DOUBLE_QUOTES_VAR="$parse_double_quotes_var_backup"
-    else
-        unset PARSE_DOUBLE_QUOTES_VAR
-    fi
+    vx_docker_parse_spec_file "$spec_file"
     vx_docker_spec_defaults
     [ -n "$NAME" ] || check_result "$E_ARGS" "docker spec missing NAME"
     [ -n "$IMAGE" ] || check_result "$E_ARGS" "docker spec missing IMAGE"
