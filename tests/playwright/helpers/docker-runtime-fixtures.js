@@ -24,6 +24,21 @@ function isLocalPanelTarget() {
     }
   }
 
+  try {
+    const resolvedHosts = execFileSync('getent', ['hosts', hostname], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim().split('\n');
+    for (const entry of resolvedHosts) {
+      const ip = entry.trim().split(/\s+/)[0];
+      if (ip) {
+        localHosts.add(ip);
+      }
+    }
+  } catch {
+    // Best-effort only; unresolved aliases simply fall back to the direct checks above.
+  }
+
   return localHosts.has(hostname);
 }
 
@@ -113,12 +128,16 @@ function deleteContainer(owner, containerName) {
 function withSeededAlert(owner, containerName) {
   const alertsPath = path.join(getVestaRoot(), 'data', 'users', owner, 'docker-alerts.conf');
   const seededAid = `9${Date.now()}`;
-  const seededLine = `AID='${seededAid}' NAME='${containerName}' OWNER='${owner}' LEVEL='warning' TYPE='health' STATUS='open' TITLE='Playwright alert' MESSAGE='Seeded alert for Playwright coverage' STARTED='2026-06-27 14:01:00' LAST_SEEN='2026-06-27 14:03:00' ACK='no'`;
+  const seededTitle = `Playwright alert ${seededAid}`;
+  const seededLine = `AID='${seededAid}' NAME='${containerName}' OWNER='${owner}' LEVEL='warning' TYPE='health' STATUS='open' TITLE='${seededTitle}' MESSAGE='Seeded alert for Playwright coverage' STARTED='2026-06-27 14:01:00' LAST_SEEN='2026-06-27 14:03:00' ACK='no'`;
   const existing = fs.existsSync(alertsPath) ? fs.readFileSync(alertsPath, 'utf8').trimEnd() : '';
-  const nextContent = existing ? `${existing}\n${seededLine}\n` : `${seededLine}\n`;
+  const nextContent = existing ? `${seededLine}\n${existing}\n` : `${seededLine}\n`;
   fs.writeFileSync(alertsPath, nextContent);
 
-  return () => {
+  return {
+    seededAid,
+    seededTitle,
+    restore() {
     if (!fs.existsSync(alertsPath)) {
       return;
     }
@@ -133,6 +152,7 @@ function withSeededAlert(owner, containerName) {
     } else {
       fs.rmSync(alertsPath, { force: true });
     }
+    },
   };
 }
 

@@ -60,7 +60,7 @@ test('docker list dashboard renders cards, constrained health vocabulary, and al
   test.skip(!isLocalPanelTarget(), 'Dashboard alert coverage requires PLAYWRIGHT_BASE_URL to target the same host as the local Vesta runtime.');
   const preferredContainer = getOptionalEnv('PLAYWRIGHT_DOCKER_DASHBOARD_CONTAINER');
   const { owner, name } = await requireRealDockerList(page, preferredContainer);
-  const restoreAlerts = withSeededAlert(owner, name);
+  const seededAlert = withSeededAlert(owner, name);
 
   try {
     await page.goto('/list/docker/');
@@ -80,11 +80,9 @@ test('docker list dashboard renders cards, constrained health vocabulary, and al
     await expect(page.locator('#docker-card-alert-count')).toHaveText(/^\d+$/);
 
     const targetAlert = page.locator('#docker-alerts-panel article').filter({
+      hasText: new RegExp(escapeRegExp(seededAlert.seededTitle), 'i'),
+    }).filter({
       hasText: new RegExp(`Container:\\s*${escapeRegExp(name)}\\s*/\\s*Owner:\\s*${escapeRegExp(owner)}`, 'i'),
-    }).filter({
-      hasText: /Status:\s*open/i,
-    }).filter({
-      hasText: /Ack:\s*no/i,
     });
     await expect(targetAlert).toHaveCount(1);
 
@@ -93,12 +91,11 @@ test('docker list dashboard renders cards, constrained health vocabulary, and al
     await acknowledgeButton.click();
     await expect(targetAlert).toContainText(/Ack:\s*yes/i);
   } finally {
-    restoreAlerts();
+    seededAlert.restore();
   }
 });
 
 test('docker edit page renders live metrics and chart containers after stats data returns', async ({ page }) => {
-  test.skip(!isLocalPanelTarget(), 'Dashboard detail coverage requires PLAYWRIGHT_BASE_URL to target the same host as the local Vesta runtime.');
   const preferredContainer = getOptionalEnv('PLAYWRIGHT_DOCKER_DASHBOARD_CONTAINER');
   const { editHref } = await requireRealDockerList(page, preferredContainer);
   await page.goto(editHref);
