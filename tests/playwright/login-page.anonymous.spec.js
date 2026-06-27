@@ -1,7 +1,8 @@
 const { test, expect } = require('@playwright/test');
+const { openPanelLogin } = require('./helpers/panel-auth');
 
 test('login page exposes the expected form and CSRF token', async ({ page }) => {
-  await page.goto('/login/');
+  await openPanelLogin(page);
 
   await expect(page.locator('form[action="/login/"]')).toBeVisible();
   await expect(page.locator('input[name="token"]')).toHaveAttribute('value', /.+/);

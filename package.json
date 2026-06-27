@@ -26,6 +26,9 @@
     "url": "https://github.com/jackpridham/vesta-vxapp/issues"
   },
   "homepage": "https://github.com/jackpridham/vesta-vxapp#readme",
+  "engines": {
+    "node": ">=18"
+  },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
     "dotenv": "^17.4.2"

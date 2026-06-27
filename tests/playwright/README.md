@@ -4,7 +4,7 @@ This repo uses a repo-local Playwright harness for validating Vesta web-panel ch
 
 ## Prerequisites
 
-- Node.js and `npm`
+- Node.js 18+ and `npm`
 - Chromium browser binary installed via `npm run playwright:install`
 - If Linux shared-library dependencies are missing, run `npx playwright install-deps chromium`
 
@@ -30,6 +30,13 @@ Supported variables:
 - Authenticated projects are enabled only when the matching credentials are present.
 - The setup project performs a real browser login and writes session storage state under `playwright/.auth/`.
 - Secret-login installs are handled by visiting `/?<secret>` before `/login/`.
+
+## Project Matrix
+
+- `setup`: creates authenticated storage states for every configured panel role in one run.
+- `chromium-anonymous`: always enabled; covers anonymous panel smoke checks without stored auth state.
+- `chromium-admin-authenticated`: enabled only when `PLAYWRIGHT_ADMIN_USER` and `PLAYWRIGHT_ADMIN_PASSWORD` are present; loads `playwright/.auth/admin.json`.
+- `chromium-docker-user-authenticated`: enabled only when `PLAYWRIGHT_DOCKER_USER` and `PLAYWRIGHT_DOCKER_PASSWORD` are present; loads `playwright/.auth/docker-user.json`.
 
 ## Useful Commands
 
