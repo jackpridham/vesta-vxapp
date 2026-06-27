@@ -11,6 +11,22 @@ function hasLocalVestaRuntime() {
   return fs.existsSync('/etc/profile.d/vesta.sh');
 }
 
+function isLocalPanelTarget() {
+  const baseUrl = process.env.PLAYWRIGHT_BASE_URL || 'https://192.168.100.100:8083';
+  const hostname = new URL(baseUrl).hostname;
+  const localHosts = new Set(['localhost', '127.0.0.1', '::1', os.hostname()]);
+
+  for (const addresses of Object.values(os.networkInterfaces())) {
+    for (const address of addresses || []) {
+      if (address && address.address) {
+        localHosts.add(address.address);
+      }
+    }
+  }
+
+  return localHosts.has(hostname);
+}
+
 let cachedVestaRoot = null;
 
 function getVestaRoot() {
@@ -124,5 +140,6 @@ module.exports = {
   createDisposableContainer,
   deleteContainer,
   hasLocalVestaRuntime,
+  isLocalPanelTarget,
   withSeededAlert,
 };

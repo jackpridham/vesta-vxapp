@@ -385,10 +385,11 @@ echo_result "Deleting ip 198.18.0.125" "$?" "$tmpfile" "$cmd"
 if [ -f "$V_TEST/test_docker_user_actions.sh" ]; then
     cmd="bash $V_TEST/test_docker_user_actions.sh"
     $cmd > $tmpfile 2>> $tmpfile
+    docker_rc="$?"
     if grep -q '^SKIP:' "$tmpfile"; then
         echo_skip "DOCKER: Running dedicated ownership/quota/backup regressions" "$tmpfile"
     else
-        echo_result "DOCKER: Running dedicated ownership/quota/backup regressions" "$?" "$tmpfile" "$cmd"
+        echo_result "DOCKER: Running dedicated ownership/quota/backup regressions" "$docker_rc" "$tmpfile" "$cmd"
     fi
 fi
 

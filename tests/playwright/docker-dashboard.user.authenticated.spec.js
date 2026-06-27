@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { getOptionalEnv } = require('./helpers/panel-auth');
-const { hasLocalVestaRuntime, withSeededAlert } = require('./helpers/docker-runtime-fixtures');
+const { hasLocalVestaRuntime, isLocalPanelTarget, withSeededAlert } = require('./helpers/docker-runtime-fixtures');
 
 const allowedHealthStates = new Set(['healthy', 'starting', 'degraded', 'unhealthy', 'unknown']);
 
@@ -10,6 +10,22 @@ function escapeRegExp(value) {
 
 async function textContentTrim(locator) {
   return ((await locator.textContent()) || '').trim();
+}
+
+async function waitForNonPlaceholder(page, selector, placeholderText, timeout = 5_000) {
+  try {
+    await page.waitForFunction(
+      ({ css, placeholder }) => {
+        const node = document.querySelector(css);
+        return Boolean(node) && node.textContent.trim() !== placeholder;
+      },
+      { css: selector, placeholder: placeholderText },
+      { timeout },
+    );
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function requireRealDockerList(page, preferredContainer = '') {
@@ -41,6 +57,7 @@ async function requireRealDockerList(page, preferredContainer = '') {
 
 test('docker list dashboard renders cards, constrained health vocabulary, and alert acknowledgement updates state', async ({ page }) => {
   test.skip(!hasLocalVestaRuntime(), 'Dashboard alert coverage requires local Vesta runtime access for deterministic alert setup.');
+  test.skip(!isLocalPanelTarget(), 'Dashboard alert coverage requires PLAYWRIGHT_BASE_URL to target the same host as the local Vesta runtime.');
   const preferredContainer = getOptionalEnv('PLAYWRIGHT_DOCKER_DASHBOARD_CONTAINER');
   const { owner, name } = await requireRealDockerList(page, preferredContainer);
   const restoreAlerts = withSeededAlert(owner, name);
@@ -54,16 +71,12 @@ test('docker list dashboard renders cards, constrained health vocabulary, and al
     const badges = await page.locator('.docker-card-health-badge').allTextContents();
     expect(badges.every((badge) => allowedHealthStates.has(badge.trim().toLowerCase()))).toBeTruthy();
 
-    const cpuText = await textContentTrim(page.locator('#docker-card-cpu'));
-    const memText = await textContentTrim(page.locator('#docker-card-mem'));
-    const rxText = await textContentTrim(page.locator('#docker-card-rx'));
-    const txText = await textContentTrim(page.locator('#docker-card-tx'));
-    test.skip(cpuText === 'No data', 'Dashboard summary coverage requires seeded CPU metric data.');
-    test.skip(memText === 'No data', 'Dashboard summary coverage requires seeded memory metric data.');
-    test.skip(rxText === 'No data', 'Dashboard summary coverage requires seeded RX metric data.');
-    test.skip(txText === 'No data', 'Dashboard summary coverage requires seeded TX metric data.');
+    test.skip(!(await waitForNonPlaceholder(page, '#docker-card-cpu', 'No data')), 'Dashboard summary coverage requires seeded CPU metric data.');
+    test.skip(!(await waitForNonPlaceholder(page, '#docker-card-mem', 'No data')), 'Dashboard summary coverage requires seeded memory metric data.');
+    test.skip(!(await waitForNonPlaceholder(page, '#docker-card-rx', 'No data')), 'Dashboard summary coverage requires seeded RX metric data.');
+    test.skip(!(await waitForNonPlaceholder(page, '#docker-card-tx', 'No data')), 'Dashboard summary coverage requires seeded TX metric data.');
     await expect(page.locator('#docker-card-health-status')).toHaveText(/healthy|starting|degraded|unhealthy|unknown/i);
-    test.skip((await textContentTrim(page.locator('#docker-card-health-updated'))) === 'No data', 'Dashboard summary coverage requires seeded health-check data.');
+    test.skip(!(await waitForNonPlaceholder(page, '#docker-card-health-updated', 'No data')), 'Dashboard summary coverage requires seeded health-check data.');
     await expect(page.locator('#docker-card-alert-count')).toHaveText(/^\d+$/);
 
     const targetAlert = page.locator('#docker-alerts-panel article').filter({
@@ -72,7 +85,7 @@ test('docker list dashboard renders cards, constrained health vocabulary, and al
       hasText: /Status:\s*open/i,
     }).filter({
       hasText: /Ack:\s*no/i,
-    }).first();
+    });
     await expect(targetAlert).toHaveCount(1);
 
     const acknowledgeButton = targetAlert.locator('#docker-alert-acknowledge');
@@ -85,20 +98,17 @@ test('docker list dashboard renders cards, constrained health vocabulary, and al
 });
 
 test('docker edit page renders live metrics and chart containers after stats data returns', async ({ page }) => {
+  test.skip(!isLocalPanelTarget(), 'Dashboard detail coverage requires PLAYWRIGHT_BASE_URL to target the same host as the local Vesta runtime.');
   const preferredContainer = getOptionalEnv('PLAYWRIGHT_DOCKER_DASHBOARD_CONTAINER');
   const { editHref } = await requireRealDockerList(page, preferredContainer);
   await page.goto(editHref);
 
   await expect(page.locator('#docker-live-metrics')).toBeVisible();
-  const cpuChart = await textContentTrim(page.locator('#docker-chart-cpu'));
-  const memChart = await textContentTrim(page.locator('#docker-chart-mem'));
-  const rxChart = await textContentTrim(page.locator('#docker-chart-rx'));
-  const txChart = await textContentTrim(page.locator('#docker-chart-tx'));
-  test.skip(/No metrics available yet\./i.test(cpuChart), 'Dashboard detail coverage requires seeded CPU stats history.');
-  test.skip(/No metrics available yet\./i.test(memChart), 'Dashboard detail coverage requires seeded memory stats history.');
-  test.skip(/No metrics available yet\./i.test(rxChart), 'Dashboard detail coverage requires seeded RX stats history.');
-  test.skip(/No metrics available yet\./i.test(txChart), 'Dashboard detail coverage requires seeded TX stats history.');
-  test.skip((await textContentTrim(page.locator('#docker-detail-status'))) === 'No data', 'Dashboard detail coverage requires seeded status data.');
+  test.skip(!(await waitForNonPlaceholder(page, '#docker-chart-cpu', 'No metrics available yet.')), 'Dashboard detail coverage requires seeded CPU stats history.');
+  test.skip(!(await waitForNonPlaceholder(page, '#docker-chart-mem', 'No metrics available yet.')), 'Dashboard detail coverage requires seeded memory stats history.');
+  test.skip(!(await waitForNonPlaceholder(page, '#docker-chart-rx', 'No metrics available yet.')), 'Dashboard detail coverage requires seeded RX stats history.');
+  test.skip(!(await waitForNonPlaceholder(page, '#docker-chart-tx', 'No metrics available yet.')), 'Dashboard detail coverage requires seeded TX stats history.');
+  test.skip(!(await waitForNonPlaceholder(page, '#docker-detail-status', 'No data')), 'Dashboard detail coverage requires seeded status data.');
   await expect(page.locator('#docker-detail-health-status')).toHaveText(/healthy|starting|degraded|unhealthy|unknown/i);
-  test.skip((await textContentTrim(page.locator('#docker-detail-health-updated'))) === 'No data', 'Dashboard detail coverage requires seeded health-check data.');
+  test.skip(!(await waitForNonPlaceholder(page, '#docker-detail-health-updated', 'No data')), 'Dashboard detail coverage requires seeded health-check data.');
 });

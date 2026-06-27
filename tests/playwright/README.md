@@ -8,6 +8,7 @@ This repo uses a repo-local Playwright harness for validating Vesta web-panel ch
 - Chromium browser binary installed via `npm run playwright:install`
 - If Linux shared-library dependencies are missing, run `npx playwright install-deps chromium`
 - Destructive Docker specs self-seed through the local Vesta runtime, so `/etc/profile.d/vesta.sh` and the Vesta CLI need to be available on the same host that serves the panel
+- When the suite relies on those self-seeded Docker fixtures, `PLAYWRIGHT_BASE_URL` must point at that same local host rather than a different remote panel
 
 ## Environment
 

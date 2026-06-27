@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { getOptionalEnv, getPanelCredentials } = require('./helpers/panel-auth');
-const { createDisposableContainer, deleteContainer, hasLocalVestaRuntime } = require('./helpers/docker-runtime-fixtures');
+const { createDisposableContainer, deleteContainer, hasLocalVestaRuntime, isLocalPanelTarget } = require('./helpers/docker-runtime-fixtures');
 
 async function requireRealDockerRow(page, preferredContainer = '') {
   await page.goto('/list/docker/');
@@ -70,6 +70,7 @@ test('docker logs and inspect modals open and Escape closes the active modal', a
 
 test('docker remove modal supports cancel and confirm flows', async ({ page }) => {
   test.skip(!hasLocalVestaRuntime(), 'Remove-confirm coverage requires local Vesta runtime access for disposable container setup.');
+  test.skip(!isLocalPanelTarget(), 'Remove-confirm coverage requires PLAYWRIGHT_BASE_URL to target the same host as the local Vesta runtime.');
 
   const owner = getPanelCredentials('dockerUser').username;
   const image = getOptionalEnv('PLAYWRIGHT_DOCKER_TEST_IMAGE', 'busybox:1.36.1');
