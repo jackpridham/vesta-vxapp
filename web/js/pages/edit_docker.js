@@ -7,6 +7,14 @@
     var activeAlert = null;
     var acknowledgeButton = $('#docker-alert-acknowledge');
 
+    function setHealthState(node, status) {
+        if (!node || node.length === 0) {
+            return;
+        }
+
+        node.attr('data-health-state', status || 'unknown');
+    }
+
     function postJson(url, payload, callback) {
         $.ajax({
             url: url,
@@ -34,7 +42,7 @@
 
         node.empty().append(
             $('<pre/>', {
-                style: 'white-space: pre-wrap;'
+                'class': 'docker-chart-pre'
             }).text(lines.join("\n"))
         );
     }
@@ -68,6 +76,7 @@
 
             $('#docker-detail-status').text(health.STATUS || 'No data');
             $('#docker-detail-health-status').text(health.HEALTH_STATUS || 'unknown');
+            setHealthState($('#docker-detail-health-status'), health.HEALTH_STATUS || 'unknown');
             $('#docker-detail-health-updated').text(health.LAST_HEALTH_AT || 'No data');
         });
     }
@@ -86,8 +95,11 @@
         $.each(alerts, function(_, alert) {
             var article = $('<article/>', {
                 id: 'docker-alert-' + alert.OWNER + '-' + alert.AID,
+                'class': 'docker-alert-row',
                 'data-owner': alert.OWNER,
-                'data-aid': alert.AID
+                'data-aid': alert.AID,
+                'data-level': alert.LEVEL || 'info',
+                'data-status': alert.STATUS || 'open'
             });
 
             article.append(
@@ -108,11 +120,12 @@
 
             if (alert.STATUS === 'open' && alert.ACK === 'no' && activeAlert === null) {
                 activeAlert = alert;
-                article.append(acknowledgeButton.show());
             }
 
             panelBody.append(article);
         });
+
+        acknowledgeButton.toggle(activeAlert !== null);
     }
 
     function refreshAlerts() {

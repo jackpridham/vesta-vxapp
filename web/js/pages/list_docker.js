@@ -7,6 +7,14 @@
     var acknowledgeButton = $('#docker-alert-acknowledge');
     var activeAlert = null;
 
+    function setHealthState(node, status) {
+        if (!node || node.length === 0) {
+            return;
+        }
+
+        node.attr('data-health-state', status || 'unknown');
+    }
+
     function postJson(url, payload, callback) {
         $.ajax({
             url: url,
@@ -112,6 +120,7 @@
         $('#docker-card-rx').text(rxCount ? formatMetric(rxTotal.toFixed(2), ' MB/s') : 'No data');
         $('#docker-card-tx').text(txCount ? formatMetric(txTotal.toFixed(2), ' MB/s') : 'No data');
         $('#docker-card-health-status').text(healthLabel);
+        setHealthState($('#docker-card-health-status'), healthLabel);
         $('#docker-card-health-updated').text(healthUpdated);
         $('#docker-card-alert-count').text(alertCount);
     }
@@ -137,7 +146,9 @@
                 id: 'docker-alert-' + alert.OWNER + '-' + alert.AID,
                 'class': 'docker-alert-row',
                 'data-owner': alert.OWNER,
-                'data-aid': alert.AID
+                'data-aid': alert.AID,
+                'data-level': alert.LEVEL || 'info',
+                'data-status': alert.STATUS || 'open'
             });
 
             article.append(
@@ -165,11 +176,12 @@
 
             if (alert.STATUS === 'open' && alert.ACK === 'no' && activeAlert === null) {
                 activeAlert = alert;
-                article.append(acknowledgeButton.show());
             }
 
             panel.append(article);
         });
+
+        acknowledgeButton.toggle(activeAlert !== null);
 
         $('.docker-card-alert-count').each(function() {
             var card = $(this).closest('article');
@@ -189,6 +201,7 @@
         card.find('.docker-card-latest-rx').text(metric && metric.LATEST ? formatMetric(metric.LATEST.RX_MBPS, ' MB/s') : 'No data');
         card.find('.docker-card-latest-tx').text(metric && metric.LATEST ? formatMetric(metric.LATEST.TX_MBPS, ' MB/s') : 'No data');
         card.find('.docker-card-health-badge').text(health ? (health.HEALTH_STATUS || 'unknown') : 'No data');
+        setHealthState(card.find('.docker-card-health-badge'), health ? (health.HEALTH_STATUS || 'unknown') : 'unknown');
         card.find('.docker-card-health-updated').text(health && health.LAST_HEALTH_AT ? health.LAST_HEALTH_AT : 'No data');
     }
 

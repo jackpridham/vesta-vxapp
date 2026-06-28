@@ -1,0 +1,670 @@
+.body-docker {
+  background:
+    radial-gradient(circle at top left, rgba(10, 114, 239, 0.1), transparent 32%),
+    linear-gradient(180deg, #f7f8fb 0%, #ffffff 220px);
+  color: #171717;
+  font-family: 'Geist', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  font-feature-settings: "liga" 1;
+}
+
+.body-docker .l-content {
+  padding-bottom: 56px;
+}
+
+.body-docker .l-content .l-center {
+  max-width: 1200px;
+}
+
+.body-docker .docker-shell {
+  margin: 0 auto;
+  max-width: 1180px;
+  padding: 24px 0 0;
+}
+
+.body-docker .docker-shell--list {
+  padding-top: 20px;
+}
+
+.body-docker .docker-hero,
+.body-docker .docker-panel,
+.body-docker .docker-state,
+.body-docker .docker-form-card,
+.body-docker .docker-overview-card,
+.body-docker .docker-card,
+.body-docker .docker-owner-group,
+.body-docker .docker-footer-meta {
+  background: #ffffff;
+  border-radius: 16px;
+  box-shadow:
+    rgba(0, 0, 0, 0.08) 0 0 0 1px,
+    rgba(0, 0, 0, 0.04) 0 2px 2px,
+    rgba(0, 0, 0, 0.04) 0 8px 24px -16px,
+    #fafafa 0 0 0 1px inset;
+}
+
+.body-docker .docker-hero {
+  align-items: flex-end;
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  margin-bottom: 18px;
+  padding: 28px 30px;
+}
+
+.body-docker .docker-hero--compact {
+  align-items: center;
+}
+
+.body-docker .docker-eyebrow {
+  color: #4d4d4d;
+  font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+}
+
+.body-docker .docker-page-title {
+  font-size: 40px;
+  font-weight: 600;
+  letter-spacing: -2.4px;
+  line-height: 1.1;
+  margin: 0;
+}
+
+.body-docker .docker-page-copy,
+.body-docker .docker-panel__copy,
+.body-docker .docker-state__copy,
+.body-docker .docker-overview-card__meta,
+.body-docker .docker-list-meta__item {
+  color: #4d4d4d;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.body-docker .docker-page-copy {
+  margin: 12px 0 0;
+  max-width: 700px;
+}
+
+.body-docker .docker-hero__actions {
+  align-items: flex-end;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: flex-end;
+}
+
+.body-docker .docker-scope-form {
+  min-width: 220px;
+}
+
+.body-docker .docker-field-label {
+  color: #4d4d4d;
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  margin-bottom: 8px;
+}
+
+.body-docker .docker-button,
+.body-docker input.button.docker-button,
+.body-docker button.button.docker-button {
+  appearance: none;
+  background: #ffffff;
+  border: 0;
+  border-radius: 10px;
+  box-shadow: rgba(0, 0, 0, 0.08) 0 0 0 1px;
+  color: #171717;
+  cursor: pointer;
+  display: inline-flex;
+  font-family: 'Geist', system-ui, sans-serif;
+  font-size: 14px;
+  font-weight: 500;
+  justify-content: center;
+  line-height: 1.3;
+  padding: 11px 16px;
+  text-decoration: none;
+  transition: transform 120ms ease, box-shadow 120ms ease, background-color 120ms ease;
+}
+
+.body-docker .docker-button:hover,
+.body-docker .docker-button:focus {
+  box-shadow:
+    rgba(0, 0, 0, 0.08) 0 0 0 1px,
+    rgba(0, 0, 0, 0.06) 0 10px 20px -16px;
+  outline: none;
+  transform: translateY(-1px);
+}
+
+.body-docker .docker-button--primary {
+  background: #171717;
+  color: #ffffff;
+}
+
+.body-docker .docker-button--secondary {
+  background: #ffffff;
+  color: #171717;
+}
+
+.body-docker .docker-overview-grid,
+.body-docker .docker-metric-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 18px;
+}
+
+.body-docker .docker-metric-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.body-docker .docker-metric-grid--compact {
+  margin-bottom: 0;
+}
+
+.body-docker .docker-overview-card,
+.body-docker .docker-metric-card {
+  min-width: 0;
+  padding: 20px;
+}
+
+.body-docker .docker-overview-card__label,
+.body-docker .docker-metric-card__label,
+.body-docker .docker-stat__label {
+  color: #666666;
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.body-docker .docker-overview-card__value,
+.body-docker .docker-metric-card__value {
+  display: block;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -1.12px;
+  line-height: 1.15;
+}
+
+.body-docker .docker-overview-card__meta {
+  margin: 10px 0 0;
+}
+
+.body-docker .docker-metric-card--wide {
+  grid-column: span 2;
+}
+
+.body-docker .docker-state {
+  margin-bottom: 18px;
+  padding: 24px 28px;
+}
+
+.body-docker .docker-state--warning {
+  background: linear-gradient(180deg, #fff6ef 0%, #ffffff 100%);
+}
+
+.body-docker .docker-state--muted {
+  background: linear-gradient(180deg, #f6f7fa 0%, #ffffff 100%);
+}
+
+.body-docker .docker-state__title,
+.body-docker .docker-panel__title,
+.body-docker .docker-owner-group__title {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.96px;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.body-docker .docker-state__copy {
+  margin: 10px 0 0;
+  max-width: 640px;
+}
+
+.body-docker .docker-list-shell {
+  margin-bottom: 18px;
+}
+
+.body-docker .docker-inline-notice {
+  background: #f4f8ff;
+  border-radius: 12px;
+  box-shadow: rgba(0, 0, 0, 0.06) 0 0 0 1px inset;
+  color: #0a72ef;
+  font-size: 14px;
+  margin-bottom: 16px;
+  padding: 14px 16px;
+}
+
+.body-docker .docker-list-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+  margin: 0 0 16px;
+}
+
+.body-docker .docker-list-meta__item--warning {
+  color: #d63c2c;
+}
+
+.body-docker .docker-owner-group {
+  margin-bottom: 18px;
+  padding: 22px;
+}
+
+.body-docker .docker-owner-group__header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.body-docker .docker-owner-group__count {
+  background: #f4f5f7;
+  border-radius: 999px;
+  color: #171717;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 12px;
+}
+
+.body-docker .docker-card-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.body-docker .docker-card {
+  display: block;
+  margin: 0;
+  min-width: 0;
+  padding: 22px;
+}
+
+.body-docker .docker-card__header {
+  margin-bottom: 16px;
+}
+
+.body-docker .docker-card__title-row {
+  align-items: flex-start;
+  display: flex;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.body-docker .docker-card__title {
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.96px;
+  line-height: 1.2;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.body-docker .docker-card__image {
+  color: #4d4d4d;
+  font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 8px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.body-docker .docker-badge-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.body-docker .docker-status-badge,
+.body-docker .docker-health-badge {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 12px;
+  font-weight: 500;
+  justify-content: center;
+  min-width: 88px;
+  padding: 7px 10px;
+  text-transform: capitalize;
+}
+
+.body-docker .docker-status-badge[data-status="running"] {
+  background: #ecfdf3;
+  color: #0c7a43;
+}
+
+.body-docker .docker-status-badge[data-status="stopped"],
+.body-docker .docker-status-badge[data-status="suspended"] {
+  background: #f5f5f5;
+  color: #525252;
+}
+
+.body-docker .docker-status-badge[data-status="unknown"] {
+  background: #f5f5f5;
+  color: #666666;
+}
+
+.body-docker .docker-health-badge[data-health-state="healthy"] {
+  background: #ebf7ef;
+  color: #0c7a43;
+}
+
+.body-docker .docker-health-badge[data-health-state="starting"] {
+  background: #eef5ff;
+  color: #0a72ef;
+}
+
+.body-docker .docker-health-badge[data-health-state="degraded"] {
+  background: #fff7e8;
+  color: #b76600;
+}
+
+.body-docker .docker-health-badge[data-health-state="unhealthy"] {
+  background: #fff1f0;
+  color: #cf3c2c;
+}
+
+.body-docker .docker-health-badge[data-health-state="unknown"] {
+  background: #f4f5f7;
+  color: #666666;
+}
+
+.body-docker .docker-card__toolbar {
+  margin-bottom: 18px;
+}
+
+.body-docker .docker-actions,
+.body-docker .docker-actions .l-unit-toolbar__col,
+.body-docker .docker-actions .actions-panel {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: flex-start;
+}
+
+.body-docker .docker-actions .actions-panel__col {
+  background: #ffffff;
+  border-radius: 10px;
+  box-shadow: rgba(0, 0, 0, 0.08) 0 0 0 1px inset;
+  float: none;
+  height: auto;
+  line-height: 1.2;
+  margin: 0;
+  min-width: 0;
+  padding: 0;
+  width: auto;
+}
+
+.body-docker .docker-actions .actions-panel__logs {
+  background: #f4f8ff;
+  box-shadow: rgba(10, 114, 239, 0.18) 0 0 0 1px inset;
+}
+
+.body-docker .docker-actions .actions-panel__col a {
+  color: #171717;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 10px 12px;
+  text-decoration: none;
+}
+
+.body-docker .docker-actions .shortcut {
+  color: #999999;
+  display: none;
+}
+
+.body-docker .docker-card__stats {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.body-docker .docker-stat {
+  background: #fafafa;
+  border-radius: 12px;
+  min-width: 0;
+  padding: 14px 15px;
+}
+
+.body-docker .docker-stat__value {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.body-docker .docker-stat__meta {
+  color: #666666;
+  display: block;
+  font-size: 12px;
+  margin-top: 4px;
+}
+
+.body-docker .docker-mono {
+  font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+}
+
+.body-docker .docker-panel {
+  margin-bottom: 18px;
+  padding: 24px 26px;
+}
+
+.body-docker .docker-panel__header {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.body-docker .docker-panel__copy {
+  margin: 0;
+  max-width: 360px;
+}
+
+.body-docker .docker-alerts-list {
+  display: grid;
+  gap: 12px;
+}
+
+.body-docker .docker-alert-row {
+  background: #fafafa;
+  border-radius: 12px;
+  box-shadow: rgba(0, 0, 0, 0.06) 0 0 0 1px inset;
+  padding: 16px;
+}
+
+.body-docker .docker-alert-row[data-level="critical"],
+.body-docker .docker-alert-row[data-level="error"] {
+  background: #fff3f2;
+}
+
+.body-docker .docker-alert-row[data-level="warning"] {
+  background: #fff8ee;
+}
+
+.body-docker .docker-alert-row p {
+  margin: 0 0 8px;
+}
+
+.body-docker .docker-alert-row p:last-child {
+  margin-bottom: 0;
+}
+
+.body-docker .docker-alerts-empty {
+  color: #666666;
+  margin: 0;
+}
+
+.body-docker .docker-alert-actions {
+  margin-top: 16px;
+}
+
+.body-docker .docker-form-errors {
+  margin-bottom: 16px;
+}
+
+.body-docker .docker-form-errors .vst-error {
+  background: #fff1f0;
+  border-radius: 12px;
+  color: #cf3c2c;
+  display: block;
+  padding: 12px 16px;
+}
+
+.body-docker .docker-form-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.body-docker .docker-form-card {
+  padding: 24px 26px;
+}
+
+.body-docker .docker-form-card--wide {
+  grid-column: span 2;
+}
+
+.body-docker .docker-field-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.body-docker .docker-field,
+.body-docker .docker-form-card .step-top,
+.body-docker .docker-form-card td {
+  min-width: 0;
+}
+
+.body-docker .docker-field--full {
+  grid-column: span 2;
+}
+
+.body-docker .docker-check {
+  align-items: center;
+  color: #171717;
+  display: inline-flex;
+  font-size: 14px;
+  font-weight: 500;
+  gap: 10px;
+}
+
+.body-docker input.vst-input,
+.body-docker textarea.vst-textinput,
+.body-docker select.vst-list,
+.body-docker .docker-select {
+  background: #ffffff !important;
+  border: 0 !important;
+  border-radius: 10px;
+  box-shadow: rgba(0, 0, 0, 0.08) 0 0 0 1px inset !important;
+  color: #171717;
+  font-family: 'Geist', system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 10px 12px !important;
+  width: 100%;
+}
+
+.body-docker textarea.vst-textinput {
+  min-height: 120px;
+  resize: vertical;
+}
+
+.body-docker input.vst-input:disabled {
+  background: #f5f5f5 !important;
+  color: #666666;
+}
+
+.body-docker .docker-chart {
+  color: #171717;
+  font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  min-height: 120px;
+}
+
+.body-docker .docker-chart-pre {
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+
+.body-docker .docker-form-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.body-docker .docker-footer-meta {
+  align-items: center;
+  color: #666666;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 18px;
+  padding: 16px 20px;
+}
+
+@media (max-width: 1120px) {
+  .body-docker .docker-overview-grid,
+  .body-docker .docker-metric-grid,
+  .body-docker .docker-form-grid,
+  .body-docker .docker-field-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .body-docker .docker-form-card--wide,
+  .body-docker .docker-field--full,
+  .body-docker .docker-metric-card--wide {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 760px) {
+  .body-docker .docker-shell {
+    padding-top: 14px;
+  }
+
+  .body-docker .docker-hero,
+  .body-docker .docker-panel__header,
+  .body-docker .docker-owner-group__header,
+  .body-docker .docker-card__title-row,
+  .body-docker .docker-form-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .body-docker .docker-hero__actions {
+    justify-content: flex-start;
+  }
+
+  .body-docker .docker-overview-grid,
+  .body-docker .docker-metric-grid,
+  .body-docker .docker-form-grid,
+  .body-docker .docker-field-grid,
+  .body-docker .docker-card__stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .body-docker .docker-form-card--wide,
+  .body-docker .docker-field--full,
+  .body-docker .docker-metric-card--wide {
+    grid-column: auto;
+  }
+
+  .body-docker .docker-page-title {
+    font-size: 32px;
+    letter-spacing: -1.28px;
+  }
+}

@@ -1,17 +1,8 @@
 <?php
-  $docker_edit_query = ($_SESSION['user'] === 'admin') ? '&user='.urlencode($docker_form_owner) : '';
   $back = !empty($_SESSION['back']) ? "location.href='".$_SESSION['back']."'" : "location.href='/list/docker/'";
+  $docker_status_value = isset($docker_details_container['STATUS']) && $docker_details_container['STATUS'] !== '' ? $docker_details_container['STATUS'] : 'unknown';
+  $docker_health_value = isset($docker_details_container['HEALTH_STATUS']) && $docker_details_container['HEALTH_STATUS'] !== '' ? $docker_details_container['HEALTH_STATUS'] : 'unknown';
 ?>
-    <div class="l-center edit">
-      <div class="l-sort clearfix">
-        <div class="l-sort-toolbar clearfix float-left">
-          <span class="title edit"><b><?=__('Editing Docker Container')?></b></span>
-        </div>
-      </div>
-    </div>
-
-    <div class="l-separator"></div>
-
     <script>
       window.DOCKER_EDIT = {
         token: '<?=htmlspecialchars($_SESSION['token'], ENT_QUOTES)?>',
@@ -25,140 +16,209 @@
       };
     </script>
 
-    <div class="l-center">
-      <div id="docker-form-errors">
+    <div class="docker-shell docker-shell--form">
+      <section class="docker-hero docker-hero--compact">
+        <div>
+          <div class="docker-eyebrow"><?=__('Docker setup')?></div>
+          <h1 class="docker-page-title"><?=__('Editing Docker Container')?></h1>
+          <p class="docker-page-copy"><?=__('Tune the running container, verify health telemetry, and manage alert policy from the same page.')?></p>
+        </div>
+        <div class="docker-badge-group">
+          <span class="docker-status-badge" data-status="<?=htmlspecialchars($docker_status_value, ENT_QUOTES)?>"><?=htmlentities($docker_status_value)?></span>
+          <span class="docker-health-badge" data-health-state="<?=htmlspecialchars($docker_health_value, ENT_QUOTES)?>"><?=htmlentities($docker_health_value)?></span>
+        </div>
+      </section>
+
+      <div id="docker-form-errors" class="docker-form-errors">
         <?php if (!empty($_SESSION['error_msg'])) { ?>
         <span class="vst-error"><?=htmlentities($_SESSION['error_msg'])?></span>
         <?php } ?>
       </div>
 
-        <form id="docker-edit-form" method="post" name="v_edit_docker" class="<?=htmlentities(isset($docker_details_container['STATUS']) ? $docker_details_container['STATUS'] : '')?>">
-          <input type="hidden" name="token" value="<?=$_SESSION['token']?>" />
-          <input type="hidden" name="save" value="save" />
+      <form id="docker-edit-form" method="post" name="v_edit_docker" class="docker-form <?=htmlentities($docker_status_value)?>">
+        <input type="hidden" name="token" value="<?=$_SESSION['token']?>" />
+        <input type="hidden" name="save" value="save" />
 
-          <table class="data">
-            <tr class="data-add">
-              <td class="data-dotted">
-                <table class="data-col1">
-                  <tr>
-                    <td>
-                      <a class="data-date"><?=htmlentities(isset($docker_details_container['CREATED']) ? $docker_details_container['CREATED'] : '')?></a><br>
-                      <a class="data-date"><?=htmlentities(isset($docker_details_container['UPDATED']) ? $docker_details_container['UPDATED'] : '')?></a>
-                    </td>
-                  </tr>
-                  <tr><td class="data-active"><b><?=htmlentities(isset($docker_details_container['STATUS']) ? $docker_details_container['STATUS'] : '')?></b></td></tr>
-                </table>
-              </td>
-              <td class="data-dotted">
-                <table class="data-col2">
-                  <tr><td class="vst-text step-top"><?=__('Owner')?></td></tr>
-                  <tr><td><input type="text" size="20" class="vst-input" value="<?=htmlentities($docker_form_owner)?>" disabled></td></tr>
-                  <tr><td class="vst-text input-label"><?=__('Container Name')?></td></tr>
-                  <tr>
-                    <td>
-                      <input type="text" size="20" class="vst-input" value="<?=htmlentities($docker_form_values['v_container_name'])?>" disabled>
-                      <input type="hidden" name="v_container_name" value="<?=htmlentities($docker_form_values['v_container_name'])?>">
-                    </td>
-                  </tr>
-                  <tr><td class="vst-text input-label"><?=__('Image')?></td></tr>
-                  <tr><td><input type="text" size="20" class="vst-input" name="v_container_image" value="<?=htmlentities($docker_form_values['v_container_image'])?>"></td></tr>
-                  <tr><td class="vst-text input-label"><?=__('Command')?> <span class="optional">(<?=__('optional')?>)</span></td></tr>
-                  <tr><td><input type="text" size="20" class="vst-input" name="v_container_command" value="<?=htmlentities($docker_form_values['v_container_command'])?>"></td></tr>
-                  <tr><td class="vst-text input-label"><?=__('Environment Variables')?></td></tr>
-                  <tr><td><textarea class="vst-textinput" name="v_container_env"><?=htmlentities($docker_form_values['v_container_env'])?></textarea></td></tr>
-                  <tr><td class="vst-text input-label"><?=__('Bind Mounts')?></td></tr>
-                  <tr><td><textarea class="vst-textinput" name="v_container_mounts"><?=htmlentities($docker_form_values['v_container_mounts'])?></textarea></td></tr>
-                  <tr><td class="vst-text input-label"><?=__('Container Port')?></td></tr>
-                  <tr><td><input type="text" size="20" class="vst-input" name="v_container_port" value="<?=htmlentities($docker_form_values['v_container_port'])?>"></td></tr>
-                  <tr><td class="vst-text input-label"><?=__('Route Domain')?></td></tr>
-                  <tr>
-                    <td>
-                      <select class="vst-list" name="v_route_domain">
-                        <option value=""><?=__('Do not attach a domain')?></option>
-                        <?php foreach ($docker_route_domains as $docker_domain_option) { ?>
-                        <option value="<?=htmlentities($docker_domain_option['value'])?>" <?php if ($docker_form_values['v_route_domain'] === $docker_domain_option['value']) echo 'selected'; ?>><?=htmlentities($docker_domain_option['label'])?></option>
-                        <?php } ?>
-                      </select>
-                    </td>
-                  </tr>
-                  <tr><td class="vst-text input-label"><?=__('Route Path')?> <span class="optional">(<?=__('optional')?>)</span></td></tr>
-                  <tr><td><input type="text" size="20" class="vst-input" name="v_route_path" value="<?=htmlentities($docker_form_values['v_route_path'])?>" placeholder="/"></td></tr>
-                  <tr><td class="vst-text input-label"><?=__('Restart Policy')?></td></tr>
-                  <tr>
-                    <td>
-                      <select class="vst-list" name="v_restart_policy">
-                        <?php foreach (array('unless-stopped', 'always', 'on-failure', 'no') as $docker_restart_policy) { ?>
-                        <option value="<?=$docker_restart_policy?>" <?php if ($docker_form_values['v_restart_policy'] === $docker_restart_policy) echo 'selected'; ?>><?=$docker_restart_policy?></option>
-                        <?php } ?>
-                      </select>
-                    </td>
-                  </tr>
-                  <tr><td class="vst-text input-label"><label><input type="checkbox" class="vst-checkbox" name="v_auto_start" value="yes" <?php if ($docker_form_values['v_auto_start'] === 'yes') echo 'checked=yes'; ?>> <?=__('Auto Start')?></label></td></tr>
-                </table>
+        <div class="docker-form-grid">
+          <section class="docker-form-card docker-form-card--wide">
+            <div class="docker-panel__header">
+              <div>
+                <div class="docker-eyebrow"><?=__('Overview')?></div>
+                <h2 class="docker-panel__title"><?=__('Container state')?></h2>
+              </div>
+            </div>
+            <div class="docker-metric-grid docker-metric-grid--compact">
+              <article class="docker-metric-card"><span class="docker-metric-card__label"><?=__('Owner')?></span><b class="docker-metric-card__value"><?=htmlentities($docker_form_owner)?></b></article>
+              <article class="docker-metric-card"><span class="docker-metric-card__label"><?=__('Container')?></span><b class="docker-metric-card__value"><?=htmlentities($docker_form_values['v_container_name'])?></b></article>
+              <article class="docker-metric-card"><span class="docker-metric-card__label"><?=__('Created')?></span><b class="docker-metric-card__value"><?=htmlentities(isset($docker_details_container['CREATED']) ? $docker_details_container['CREATED'] : __('No data'))?></b></article>
+              <article class="docker-metric-card"><span class="docker-metric-card__label"><?=__('Updated')?></span><b class="docker-metric-card__value"><?=htmlentities(isset($docker_details_container['UPDATED']) ? $docker_details_container['UPDATED'] : __('No data'))?></b></article>
+              <article class="docker-metric-card"><span class="docker-metric-card__label"><?=__('Proxy target')?></span><b id="docker-detail-proxy-target" class="docker-metric-card__value docker-mono"><?=htmlentities(isset($docker_details_container['PROXY_TARGET']) && $docker_details_container['PROXY_TARGET'] !== '' ? $docker_details_container['PROXY_TARGET'] : __('No data'))?></b></article>
+              <article class="docker-metric-card"><span class="docker-metric-card__label"><?=__('Last health update')?></span><b id="docker-detail-health-updated" class="docker-metric-card__value"><?=htmlentities(isset($docker_details_container['LAST_HEALTH_AT']) && $docker_details_container['LAST_HEALTH_AT'] !== '' ? $docker_details_container['LAST_HEALTH_AT'] : __('No data'))?></b></article>
+            </div>
+          </section>
 
-                <section id="docker-live-metrics">
-                  <table class="data-col2">
-                    <tr><td class="vst-text step-top"><b><?=__('Live Metrics')?></b></td></tr>
-                    <tr><td><div id="docker-chart-cpu"><?=__('No metrics available yet.')?></div></td></tr>
-                    <tr><td><div id="docker-chart-mem"><?=__('No metrics available yet.')?></div></td></tr>
-                    <tr><td><div id="docker-chart-rx"><?=__('No metrics available yet.')?></div></td></tr>
-                    <tr><td><div id="docker-chart-tx"><?=__('No metrics available yet.')?></div></td></tr>
-                    <tr><td><div id="docker-detail-status"><?=htmlentities(isset($docker_details_container['STATUS']) ? $docker_details_container['STATUS'] : __('No data'))?></div></td></tr>
-                    <tr><td><div id="docker-detail-health-status"><?=htmlentities(isset($docker_details_container['HEALTH_STATUS']) ? $docker_details_container['HEALTH_STATUS'] : __('No data'))?></div></td></tr>
-                    <tr><td><div id="docker-detail-health-updated"><?=htmlentities(isset($docker_details_container['LAST_HEALTH_AT']) && $docker_details_container['LAST_HEALTH_AT'] !== '' ? $docker_details_container['LAST_HEALTH_AT'] : __('No data'))?></div></td></tr>
-                    <tr><td><div id="docker-detail-proxy-target"><?=htmlentities(isset($docker_details_container['PROXY_TARGET']) && $docker_details_container['PROXY_TARGET'] !== '' ? $docker_details_container['PROXY_TARGET'] : __('No data'))?></div></td></tr>
-                  </table>
-                </section>
+          <section class="docker-form-card">
+            <div class="docker-panel__header">
+              <div>
+                <div class="docker-eyebrow"><?=__('Container')?></div>
+                <h2 class="docker-panel__title"><?=__('Runtime basics')?></h2>
+              </div>
+            </div>
+            <div class="docker-field-grid">
+              <div class="docker-field">
+                <label class="docker-field-label"><?=__('Owner')?></label>
+                <input type="text" class="vst-input" value="<?=htmlentities($docker_form_owner)?>" disabled>
+              </div>
+              <div class="docker-field">
+                <label class="docker-field-label"><?=__('Container Name')?></label>
+                <input type="text" class="vst-input" value="<?=htmlentities($docker_form_values['v_container_name'])?>" disabled>
+                <input type="hidden" name="v_container_name" value="<?=htmlentities($docker_form_values['v_container_name'])?>">
+              </div>
+              <div class="docker-field docker-field--full">
+                <label class="docker-field-label" for="docker-edit-image"><?=__('Image')?></label>
+                <input id="docker-edit-image" type="text" class="vst-input" name="v_container_image" value="<?=htmlentities($docker_form_values['v_container_image'])?>">
+              </div>
+              <div class="docker-field docker-field--full">
+                <label class="docker-field-label" for="docker-edit-command"><?=__('Command')?> <span class="optional">(<?=__('optional')?>)</span></label>
+                <input id="docker-edit-command" type="text" class="vst-input" name="v_container_command" value="<?=htmlentities($docker_form_values['v_container_command'])?>">
+              </div>
+              <div class="docker-field docker-field--full">
+                <label class="docker-field-label" for="docker-edit-env"><?=__('Environment Variables')?></label>
+                <textarea id="docker-edit-env" class="vst-textinput" name="v_container_env"><?=htmlentities($docker_form_values['v_container_env'])?></textarea>
+              </div>
+              <div class="docker-field docker-field--full">
+                <label class="docker-field-label" for="docker-edit-mounts"><?=__('Bind Mounts')?></label>
+                <textarea id="docker-edit-mounts" class="vst-textinput" name="v_container_mounts"><?=htmlentities($docker_form_values['v_container_mounts'])?></textarea>
+              </div>
+            </div>
+          </section>
 
-                <section id="docker-health-settings">
-                  <table class="data-col2">
-                    <tr><td class="vst-text step-top"><b><?=__('Health Settings')?></b></td></tr>
-                    <tr><td class="vst-text input-label"><?=__('Health Check Type')?></td></tr>
-                    <tr>
-                      <td>
-                        <select class="vst-list" name="v_healthcheck_type">
-                          <?php foreach (array('http', 'tcp', 'docker', 'none') as $docker_health_type) { ?>
-                          <option value="<?=$docker_health_type?>" <?php if ($docker_form_values['v_healthcheck_type'] === $docker_health_type) echo 'selected'; ?>><?=$docker_health_type?></option>
-                          <?php } ?>
-                        </select>
-                      </td>
-                    </tr>
-                    <tr><td class="vst-text input-label"><?=__('Health Check Target / Path')?></td></tr>
-                    <tr><td><input type="text" size="20" class="vst-input" name="v_healthcheck_target" value="<?=htmlentities($docker_form_values['v_healthcheck_target'])?>"></td></tr>
-                    <tr><td class="vst-text input-label"><?=__('Health Check Interval')?></td></tr>
-                    <tr><td><input type="text" size="20" class="vst-input" name="v_healthcheck_interval" value="<?=htmlentities($docker_form_values['v_healthcheck_interval'])?>"></td></tr>
-                  </table>
-                </section>
+          <section class="docker-form-card">
+            <div class="docker-panel__header">
+              <div>
+                <div class="docker-eyebrow"><?=__('Routing')?></div>
+                <h2 class="docker-panel__title"><?=__('Ingress and startup')?></h2>
+              </div>
+            </div>
+            <div class="docker-field-grid">
+              <div class="docker-field">
+                <label class="docker-field-label" for="docker-edit-port"><?=__('Container Port')?></label>
+                <input id="docker-edit-port" type="text" class="vst-input" name="v_container_port" value="<?=htmlentities($docker_form_values['v_container_port'])?>">
+              </div>
+              <div class="docker-field">
+                <label class="docker-field-label" for="docker-edit-restart-policy"><?=__('Restart Policy')?></label>
+                <select id="docker-edit-restart-policy" class="vst-list docker-select" name="v_restart_policy">
+                  <?php foreach (array('unless-stopped', 'always', 'on-failure', 'no') as $docker_restart_policy) { ?>
+                  <option value="<?=$docker_restart_policy?>" <?php if ($docker_form_values['v_restart_policy'] === $docker_restart_policy) echo 'selected'; ?>><?=$docker_restart_policy?></option>
+                  <?php } ?>
+                </select>
+              </div>
+              <div class="docker-field docker-field--full">
+                <label class="docker-field-label" for="docker-edit-route-domain"><?=__('Route Domain')?></label>
+                <select id="docker-edit-route-domain" class="vst-list docker-select" name="v_route_domain">
+                  <option value=""><?=__('Do not attach a domain')?></option>
+                  <?php foreach ($docker_route_domains as $docker_domain_option) { ?>
+                  <option value="<?=htmlentities($docker_domain_option['value'])?>" <?php if ($docker_form_values['v_route_domain'] === $docker_domain_option['value']) echo 'selected'; ?>><?=htmlentities($docker_domain_option['label'])?></option>
+                  <?php } ?>
+                </select>
+              </div>
+              <div class="docker-field docker-field--full">
+                <label class="docker-field-label" for="docker-edit-route-path"><?=__('Route Path')?> <span class="optional">(<?=__('optional')?>)</span></label>
+                <input id="docker-edit-route-path" type="text" class="vst-input" name="v_route_path" value="<?=htmlentities($docker_form_values['v_route_path'])?>" placeholder="/">
+              </div>
+              <div class="docker-field docker-field--full">
+                <label class="docker-check"><input type="checkbox" class="vst-checkbox" name="v_auto_start" value="yes" <?php if ($docker_form_values['v_auto_start'] === 'yes') echo 'checked=yes'; ?>> <?=__('Auto Start')?></label>
+              </div>
+            </div>
+          </section>
 
-                <section id="docker-alert-thresholds">
-                  <table class="data-col2">
-                    <tr><td class="vst-text step-top"><b><?=__('Alert Thresholds')?></b></td></tr>
-                    <tr><td class="vst-text input-label"><?=__('CPU Alert Percent')?></td></tr>
-                    <tr><td><input type="text" size="20" class="vst-input" name="v_cpu_alert_pct" value="<?=htmlentities($docker_form_values['v_cpu_alert_pct'])?>"></td></tr>
-                    <tr><td class="vst-text input-label"><?=__('Memory Alert MB')?></td></tr>
-                    <tr><td><input type="text" size="20" class="vst-input" name="v_mem_alert_mb" value="<?=htmlentities($docker_form_values['v_mem_alert_mb'])?>"></td></tr>
-                    <tr><td class="vst-text input-label"><?=__('Network Alert MB/s')?></td></tr>
-                    <tr><td><input type="text" size="20" class="vst-input" name="v_net_alert_mbps" value="<?=htmlentities($docker_form_values['v_net_alert_mbps'])?>"></td></tr>
-                    <tr><td class="vst-text input-label"><label><input type="checkbox" class="vst-checkbox" name="v_alert_email" value="yes" <?php if ($docker_form_values['v_alert_email'] === 'yes') echo 'checked=yes'; ?>> <?=__('Enable alert delivery')?></label></td></tr>
-                  </table>
-                </section>
+          <section id="docker-live-metrics" class="docker-form-card docker-form-card--wide">
+            <div class="docker-panel__header">
+              <div>
+                <div class="docker-eyebrow"><?=__('Monitoring')?></div>
+                <h2 class="docker-panel__title"><?=__('Live Metrics')?></h2>
+              </div>
+            </div>
+            <div class="docker-metric-grid">
+              <article class="docker-metric-card"><span class="docker-metric-card__label">CPU</span><div id="docker-chart-cpu" class="docker-chart"><?=__('No metrics available yet.')?></div></article>
+              <article class="docker-metric-card"><span class="docker-metric-card__label"><?=__('Memory')?></span><div id="docker-chart-mem" class="docker-chart"><?=__('No metrics available yet.')?></div></article>
+              <article class="docker-metric-card"><span class="docker-metric-card__label">RX</span><div id="docker-chart-rx" class="docker-chart"><?=__('No metrics available yet.')?></div></article>
+              <article class="docker-metric-card"><span class="docker-metric-card__label">TX</span><div id="docker-chart-tx" class="docker-chart"><?=__('No metrics available yet.')?></div></article>
+              <article class="docker-metric-card"><span class="docker-metric-card__label"><?=__('Status')?></span><b id="docker-detail-status" class="docker-metric-card__value"><?=htmlentities(isset($docker_details_container['STATUS']) ? $docker_details_container['STATUS'] : __('No data'))?></b></article>
+              <article class="docker-metric-card"><span class="docker-metric-card__label"><?=__('Health status')?></span><b id="docker-detail-health-status" class="docker-metric-card__value docker-health-badge" data-health-state="<?=htmlspecialchars($docker_health_value, ENT_QUOTES)?>"><?=htmlentities(isset($docker_details_container['HEALTH_STATUS']) ? $docker_details_container['HEALTH_STATUS'] : __('No data'))?></b></article>
+            </div>
+          </section>
 
-                <section id="docker-alerts-panel">
-                  <table class="data-col2">
-                    <tr><td class="vst-text step-top"><b><?=__('Docker Alerts')?></b></td></tr>
-                    <tr><td><div class="docker-alerts-list"><div class="docker-alerts-empty"><?=__('No Docker alerts are active for this container.')?></div></div></td></tr>
-                    <tr><td><button id="docker-alert-acknowledge" class="button" style="display:none;"><?=__('Acknowledge alert')?></button></td></tr>
-                  </table>
-                </section>
+          <section id="docker-health-settings" class="docker-form-card">
+            <div class="docker-panel__header">
+              <div>
+                <div class="docker-eyebrow"><?=__('Health')?></div>
+                <h2 class="docker-panel__title"><?=__('Health Settings')?></h2>
+              </div>
+            </div>
+            <div class="docker-field-grid">
+              <div class="docker-field">
+                <label class="docker-field-label" for="docker-edit-healthcheck-type"><?=__('Health Check Type')?></label>
+                <select id="docker-edit-healthcheck-type" class="vst-list docker-select" name="v_healthcheck_type">
+                  <?php foreach (array('http', 'tcp', 'docker', 'none') as $docker_health_type) { ?>
+                  <option value="<?=$docker_health_type?>" <?php if ($docker_form_values['v_healthcheck_type'] === $docker_health_type) echo 'selected'; ?>><?=$docker_health_type?></option>
+                  <?php } ?>
+                </select>
+              </div>
+              <div class="docker-field">
+                <label class="docker-field-label" for="docker-edit-healthcheck-interval"><?=__('Health Check Interval')?></label>
+                <input id="docker-edit-healthcheck-interval" type="text" class="vst-input" name="v_healthcheck_interval" value="<?=htmlentities($docker_form_values['v_healthcheck_interval'])?>">
+              </div>
+              <div class="docker-field docker-field--full">
+                <label class="docker-field-label" for="docker-edit-healthcheck-target"><?=__('Health Check Target / Path')?></label>
+                <input id="docker-edit-healthcheck-target" type="text" class="vst-input" name="v_healthcheck_target" value="<?=htmlentities($docker_form_values['v_healthcheck_target'])?>">
+              </div>
+            </div>
+          </section>
 
-                <table class="data-col2">
-                  <tr>
-                    <td class="step-top" width="116px"><input type="submit" class="button" name="save" value="<?=__('Save')?>"></td>
-                    <td class="step-top"><input type="button" class="button cancel" value="<?=__('Back')?>" onclick="<?=$back?>"></td>
-                  </tr>
-                </table>
-              </td>
-            </tr>
-          </table>
-        </form>
+          <section id="docker-alert-thresholds" class="docker-form-card">
+            <div class="docker-panel__header">
+              <div>
+                <div class="docker-eyebrow"><?=__('Alerting')?></div>
+                <h2 class="docker-panel__title"><?=__('Alert Thresholds')?></h2>
+              </div>
+            </div>
+            <div class="docker-field-grid">
+              <div class="docker-field">
+                <label class="docker-field-label" for="docker-edit-cpu-alert"><?=__('CPU Alert Percent')?></label>
+                <input id="docker-edit-cpu-alert" type="text" class="vst-input" name="v_cpu_alert_pct" value="<?=htmlentities($docker_form_values['v_cpu_alert_pct'])?>">
+              </div>
+              <div class="docker-field">
+                <label class="docker-field-label" for="docker-edit-mem-alert"><?=__('Memory Alert MB')?></label>
+                <input id="docker-edit-mem-alert" type="text" class="vst-input" name="v_mem_alert_mb" value="<?=htmlentities($docker_form_values['v_mem_alert_mb'])?>">
+              </div>
+              <div class="docker-field">
+                <label class="docker-field-label" for="docker-edit-net-alert"><?=__('Network Alert MB/s')?></label>
+                <input id="docker-edit-net-alert" type="text" class="vst-input" name="v_net_alert_mbps" value="<?=htmlentities($docker_form_values['v_net_alert_mbps'])?>">
+              </div>
+              <div class="docker-field">
+                <label class="docker-check"><input type="checkbox" class="vst-checkbox" name="v_alert_email" value="yes" <?php if ($docker_form_values['v_alert_email'] === 'yes') echo 'checked=yes'; ?>> <?=__('Enable alert delivery')?></label>
+              </div>
+            </div>
+          </section>
+
+          <section id="docker-alerts-panel" class="docker-form-card docker-form-card--wide">
+            <div class="docker-panel__header">
+              <div>
+                <div class="docker-eyebrow"><?=__('Alerts')?></div>
+                <h2 class="docker-panel__title"><?=__('Docker Alerts')?></h2>
+              </div>
+            </div>
+            <div class="docker-alerts-list"><div class="docker-alerts-empty"><?=__('No Docker alerts are active for this container.')?></div></div>
+            <div class="docker-alert-actions">
+              <button id="docker-alert-acknowledge" class="button docker-button docker-button--secondary" style="display:none;"><?=__('Acknowledge alert')?></button>
+            </div>
+          </section>
+        </div>
+
+        <div class="docker-form-actions">
+          <input type="submit" class="button docker-button docker-button--primary" name="save" value="<?=__('Save')?>">
+          <input type="button" class="button cancel docker-button docker-button--secondary" value="<?=__('Back')?>" onclick="<?=$back?>">
+        </div>
+      </form>
     </div>

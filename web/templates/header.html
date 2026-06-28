@@ -9,6 +9,12 @@
   <link href="/css/fonts/font_sans_pro.css" rel="stylesheet">
   <link href="/css/fonts/font_lobster.css" rel="stylesheet">
   <link rel="stylesheet" href="/css/fonts/font_awesome5.css">
+  <?php if (strtolower($TAB) === 'docker') { ?>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/docker.css?<?=JS_LATEST_UPDATE?>">
+  <?php } ?>
   <script>
     //
     //  GLOBAL SETTINGS

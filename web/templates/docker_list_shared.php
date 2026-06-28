@@ -1,5 +1,4 @@
 <?php
-  $docker_manage_user = $docker_owner !== '' ? $docker_owner : 'admin';
   $docker_query = '';
   if ($docker_actor_is_admin && $docker_owner !== '') {
       $docker_query = '?user='.urlencode($docker_owner);
@@ -17,6 +16,9 @@
   }
 
   $docker_show_owner_groups = ($docker_actor_is_admin && $docker_owner === '' && !empty($docker_grouped_data));
+  $docker_scope_label = $docker_actor_is_admin ? ($docker_owner !== '' ? $docker_owner : __('All Users')) : $user;
+  $docker_quota_limit = (isset($docker_quota['limit']) && $docker_quota['limit'] !== null && $docker_quota['limit'] !== '') ? $docker_quota['limit'] : __('Unlimited');
+  $docker_total_containers = count($data);
   $docker_render_card = function ($docker_key, $container) use (&$i, $docker_actor_is_admin) {
       ++$i;
       $docker_card_owner = isset($container['OWNER']) ? $container['OWNER'] : '';
@@ -24,6 +26,11 @@
       $docker_card_id = 'docker-card-'.$docker_card_owner.'-'.$docker_card_name;
       $docker_card_status = isset($container['STATUS']) ? $container['STATUS'] : '';
       $docker_health_status = isset($container['HEALTH_STATUS']) && $container['HEALTH_STATUS'] !== '' ? $container['HEALTH_STATUS'] : 'unknown';
+      $docker_route_domain = isset($container['DOMAIN']) && $container['DOMAIN'] !== '' ? $container['DOMAIN'] : __('No route');
+      $docker_route_path = isset($container['ROUTE_PATH']) && $container['ROUTE_PATH'] !== '' ? $container['ROUTE_PATH'] : '/';
+      $docker_proxy_target = isset($container['PROXY_TARGET']) && $container['PROXY_TARGET'] !== '' ? $container['PROXY_TARGET'] : __('No target');
+      $docker_restart_policy = isset($container['RESTART_POLICY']) && $container['RESTART_POLICY'] !== '' ? $container['RESTART_POLICY'] : __('No restart policy');
+      $docker_host_port = isset($container['HOST_PORT']) && $container['HOST_PORT'] !== '' ? $container['HOST_PORT'] : __('No port');
       $docker_query_owner = $docker_actor_is_admin ? '&user='.urlencode($docker_card_owner) : '';
       $docker_action = ($docker_card_status === 'running') ? 'stop' : 'start';
 ?>
@@ -41,139 +48,84 @@
               lastHealthAt: '<?=htmlspecialchars(isset($container['LAST_HEALTH_AT']) ? $container['LAST_HEALTH_AT'] : '', ENT_QUOTES)?>'
             });
           </script>
-          <article id="<?=htmlspecialchars($docker_card_id, ENT_QUOTES)?>" class="l-unit <?php if ($docker_card_status !== 'running') echo 'l-unit--suspended'; ?>" data-owner="<?=htmlspecialchars($docker_card_owner, ENT_QUOTES)?>" data-name="<?=htmlspecialchars($docker_card_name, ENT_QUOTES)?>">
-            <div class="l-unit-toolbar clearfix">
-              <div class="l-unit-toolbar__col l-unit-toolbar__col--right noselect">
-                <div class="actions-panel clearfix">
-                  <div class="actions-panel__col actions-panel__edit shortcut-enter" key-action="href"><a href="/edit/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>"><?=__('edit')?> <i></i></a><span class="shortcut enter">&nbsp;&#8629;</span></div>
-                  <div class="actions-panel__col actions-panel__<?=$docker_action?> shortcut-s" key-action="href"><a href="/<?=$docker_action?>/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>&token=<?=$_SESSION['token']?>"><?=__($docker_action)?> <i></i></a><span class="shortcut">&nbsp;S</span></div>
-                  <div class="actions-panel__col actions-panel__restart shortcut-r" key-action="href"><a href="/restart/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>&token=<?=$_SESSION['token']?>"><?=__('restart')?> <i></i></a><span class="shortcut">&nbsp;R</span></div>
-                  <div class="actions-panel__col actions-panel__delete shortcut-delete" key-action="href"><a href="/delete/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>&token=<?=$_SESSION['token']?>"><?=__('delete')?> <i></i></a><span class="shortcut delete">&nbsp;Del</span></div>
-                  <div class="actions-panel__col actions-panel__logs" style="background-color: #cae1e5;"><a href="javascript:void(0)" onclick="more_button_click(<?=$i?>)"><?=__('Docker')?> <i></i></a><span class="shortcut more">&nbsp;&#8629;</span></div>
+          <article id="<?=htmlspecialchars($docker_card_id, ENT_QUOTES)?>" class="l-unit docker-card <?php if ($docker_card_status !== 'running') echo 'l-unit--suspended'; ?>" data-owner="<?=htmlspecialchars($docker_card_owner, ENT_QUOTES)?>" data-name="<?=htmlspecialchars($docker_card_name, ENT_QUOTES)?>" data-status="<?=htmlspecialchars($docker_card_status !== '' ? $docker_card_status : 'unknown', ENT_QUOTES)?>">
+            <div class="docker-card__header">
+              <div class="docker-card__title-group">
+                <div class="docker-eyebrow"><?=__('Managed container')?></div>
+                <div class="docker-card__title-row">
+                  <div>
+                    <h3 class="docker-card__title"><?=htmlspecialchars($docker_card_name, ENT_QUOTES)?></h3>
+                    <p class="docker-card__image"><?=htmlspecialchars(isset($container['IMAGE']) ? $container['IMAGE'] : '', ENT_QUOTES)?></p>
+                  </div>
+                  <div class="docker-badge-group">
+                    <span class="docker-status-badge docker-card-status" data-status="<?=htmlspecialchars($docker_card_status !== '' ? $docker_card_status : 'unknown', ENT_QUOTES)?>"><?=htmlspecialchars($docker_card_status !== '' ? $docker_card_status : __('unknown'), ENT_QUOTES)?></span>
+                    <span class="docker-health-badge docker-card-health-badge" data-health-state="<?=htmlspecialchars($docker_health_status, ENT_QUOTES)?>"><?=htmlspecialchars($docker_health_status, ENT_QUOTES)?></span>
+                  </div>
                 </div>
               </div>
             </div>
-
-            <div class="l-unit__col l-unit__col--left clearfix">
-              <div class="l-unit__date"><?=htmlspecialchars(isset($container['UPDATED']) ? $container['UPDATED'] : '', ENT_QUOTES)?></div>
-              <div class="l-unit__suspended"><?=__('stopped')?></div>
-            </div>
-            <div class="l-unit__col l-unit__col--right">
-              <div class="l-unit__name small-2">
-                <?=htmlspecialchars($docker_card_name, ENT_QUOTES)?>
-                <span><?=htmlspecialchars(isset($container['IMAGE']) ? $container['IMAGE'] : '', ENT_QUOTES)?></span>
+            <div class="l-unit-toolbar clearfix docker-card__toolbar">
+              <div class="l-unit-toolbar__col l-unit-toolbar__col--right noselect">
+                <div class="actions-panel clearfix docker-actions">
+                  <div class="actions-panel__col actions-panel__edit shortcut-enter" key-action="href"><a href="/edit/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>"><?=__('edit')?></a><span class="shortcut enter">&nbsp;&#8629;</span></div>
+                  <div class="actions-panel__col actions-panel__<?=$docker_action?> shortcut-s" key-action="href"><a href="/<?=$docker_action?>/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>&token=<?=$_SESSION['token']?>"><?=__($docker_action)?></a><span class="shortcut">&nbsp;S</span></div>
+                  <div class="actions-panel__col actions-panel__restart shortcut-r" key-action="href"><a href="/restart/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>&token=<?=$_SESSION['token']?>"><?=__('restart')?></a><span class="shortcut">&nbsp;R</span></div>
+                  <div class="actions-panel__col actions-panel__delete shortcut-delete" key-action="href"><a href="/delete/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>&token=<?=$_SESSION['token']?>"><?=__('delete')?></a><span class="shortcut delete">&nbsp;Del</span></div>
+                  <div class="actions-panel__col actions-panel__logs shortcut-more"><a href="javascript:void(0)" onclick="more_button_click(<?=$i?>)"><?=__('Docker')?></a><span class="shortcut more">&nbsp;&#8629;</span></div>
+                </div>
               </div>
-              <div class="l-unit__stats">
-                <table>
-                  <tr>
-                    <td>
-                      <div class="l-unit__stat-cols clearfix">
-                        <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Owner')?>:</div>
-                        <div class="l-unit__stat-col l-unit__stat-col--right"><b><?=htmlspecialchars($docker_card_owner, ENT_QUOTES)?></b></div>
-                      </div>
-                    </td>
-                    <td>
-                      <div class="l-unit__stat-cols clearfix">
-                        <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Status')?>:</div>
-                        <div class="l-unit__stat-col l-unit__stat-col--right"><b class="docker-card-status"><?=htmlspecialchars($docker_card_status, ENT_QUOTES)?></b></div>
-                      </div>
-                    </td>
-                    <td>
-                      <div class="l-unit__stat-cols clearfix last">
-                        <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Route')?>:</div>
-                        <div class="l-unit__stat-col l-unit__stat-col--right"><b><?=htmlspecialchars(isset($container['DOMAIN']) && $container['DOMAIN'] !== '' ? $container['DOMAIN'] : __('none'), ENT_QUOTES)?></b></div>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>
-                      <div class="l-unit__stat-cols clearfix">
-                        <div class="l-unit__stat-col l-unit__stat-col--left">CPU:</div>
-                        <div class="l-unit__stat-col l-unit__stat-col--right"><b class="docker-card-latest-cpu"><?=__('No data')?></b></div>
-                      </div>
-                    </td>
-                    <td>
-                      <div class="l-unit__stat-cols clearfix">
-                        <div class="l-unit__stat-col l-unit__stat-col--left">Memory:</div>
-                        <div class="l-unit__stat-col l-unit__stat-col--right"><b class="docker-card-latest-mem"><?=__('No data')?></b></div>
-                      </div>
-                    </td>
-                    <td>
-                      <div class="l-unit__stat-cols clearfix last">
-                        <div class="l-unit__stat-col l-unit__stat-col--left">RX / TX:</div>
-                        <div class="l-unit__stat-col l-unit__stat-col--right"><b><span class="docker-card-latest-rx"><?=__('No data')?></span> / <span class="docker-card-latest-tx"><?=__('No data')?></span></b></div>
-                      </div>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td>
-                      <div class="l-unit__stat-cols clearfix">
-                        <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Health')?>:</div>
-                        <div class="l-unit__stat-col l-unit__stat-col--right"><b class="docker-card-health-badge"><?=htmlspecialchars($docker_health_status, ENT_QUOTES)?></b></div>
-                      </div>
-                    </td>
-                    <td>
-                      <div class="l-unit__stat-cols clearfix">
-                        <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Alerts')?>:</div>
-                        <div class="l-unit__stat-col l-unit__stat-col--right"><b class="docker-card-alert-count">0</b></div>
-                      </div>
-                    </td>
-                    <td>
-                      <div class="l-unit__stat-cols clearfix last">
-                        <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Last health check')?>:</div>
-                        <div class="l-unit__stat-col l-unit__stat-col--right"><b class="docker-card-health-updated"><?=htmlspecialchars(isset($container['LAST_HEALTH_AT']) && $container['LAST_HEALTH_AT'] !== '' ? $container['LAST_HEALTH_AT'] : __('No data'), ENT_QUOTES)?></b></div>
-                      </div>
-                    </td>
-                  </tr>
-                </table>
+            </div>
+            <div class="docker-card__stats">
+              <div class="docker-stat">
+                <span class="docker-stat__label"><?=__('Owner')?></span>
+                <b class="docker-stat__value"><?=htmlspecialchars($docker_card_owner, ENT_QUOTES)?></b>
+              </div>
+              <div class="docker-stat">
+                <span class="docker-stat__label"><?=__('Route')?></span>
+                <b class="docker-stat__value"><?=htmlspecialchars($docker_route_domain, ENT_QUOTES)?></b>
+                <span class="docker-stat__meta"><?=htmlspecialchars($docker_route_path, ENT_QUOTES)?></span>
+              </div>
+              <div class="docker-stat">
+                <span class="docker-stat__label"><?=__('Proxy target')?></span>
+                <b class="docker-stat__value docker-mono"><?=htmlspecialchars($docker_proxy_target, ENT_QUOTES)?></b>
+              </div>
+              <div class="docker-stat">
+                <span class="docker-stat__label"><?=__('Host port')?></span>
+                <b class="docker-stat__value docker-mono"><?=htmlspecialchars($docker_host_port, ENT_QUOTES)?></b>
+              </div>
+              <div class="docker-stat">
+                <span class="docker-stat__label">CPU</span>
+                <b class="docker-stat__value docker-card-latest-cpu"><?=__('No data')?></b>
+              </div>
+              <div class="docker-stat">
+                <span class="docker-stat__label"><?=__('Memory')?></span>
+                <b class="docker-stat__value docker-card-latest-mem"><?=__('No data')?></b>
+              </div>
+              <div class="docker-stat">
+                <span class="docker-stat__label">RX / TX</span>
+                <b class="docker-stat__value"><span class="docker-card-latest-rx"><?=__('No data')?></span> / <span class="docker-card-latest-tx"><?=__('No data')?></span></b>
+              </div>
+              <div class="docker-stat">
+                <span class="docker-stat__label"><?=__('Alerts')?></span>
+                <b class="docker-stat__value docker-card-alert-count">0</b>
+              </div>
+              <div class="docker-stat">
+                <span class="docker-stat__label"><?=__('Restart policy')?></span>
+                <b class="docker-stat__value"><?=htmlspecialchars($docker_restart_policy, ENT_QUOTES)?></b>
+              </div>
+              <div class="docker-stat">
+                <span class="docker-stat__label"><?=__('Last health check')?></span>
+                <b class="docker-stat__value docker-card-health-updated"><?=htmlspecialchars(isset($container['LAST_HEALTH_AT']) && $container['LAST_HEALTH_AT'] !== '' ? $container['LAST_HEALTH_AT'] : __('No data'), ENT_QUOTES)?></b>
+              </div>
+              <div class="docker-stat">
+                <span class="docker-stat__label"><?=__('Updated')?></span>
+                <b class="docker-stat__value"><?=htmlspecialchars(isset($container['UPDATED']) ? $container['UPDATED'] : __('No data'), ENT_QUOTES)?></b>
               </div>
             </div>
           </article>
 <?php
   };
 ?>
-    <div class="l-center">
-      <div class="l-sort clearfix noselect">
-        <?php if ($docker_available && empty($docker_quota['reached']) && $docker_can_add_from_scope) { ?>
-        <a href="<?=$docker_add_href?>" class="l-sort__create-btn" title="<?=__('Add Docker Container')?>"><div id="add-icon"></div><div id="tooltip"><?=__('Add Docker Container')?></div></a>
-        <?php } else { ?>
-        <a href="/list/docker/<?=$docker_query?>" class="l-sort__create-btn edit" title="<?=__('Docker')?>"><div id="add-icon"></div><div id="tooltip"><?=__('Docker')?></div></a>
-        <?php } ?>
-
-        <div class="l-sort-toolbar clearfix">
-          <table>
-            <tr>
-              <td class="step-right">
-                <a class="vst" href="/list/server/"><?=__('Server')?></a>
-              </td>
-              <td class="step-right">
-                <a class="vst" href="/list/docker/<?=$docker_query?>"><?=__('refresh')?></a>
-              </td>
-              <?php if ($docker_actor_is_admin && !$docker_available) { ?>
-              <td class="step-right">
-                <a class="vst" href="javascript:void(0)" onclick="more_button_click(0)"><?=__('Install Docker')?></a>
-              </td>
-              <?php } ?>
-              <?php if ($docker_actor_is_admin && !empty($docker_owner_filter_options)) { ?>
-              <td class="step-right">
-                <form method="get" action="/list/docker/" style="display:inline;">
-                  <select name="user" class="vst-list" style="min-width: 160px;" onchange="this.form.submit()">
-                    <option value=""><?=__('All Users')?></option>
-                    <?php foreach ($docker_owner_filter_options as $docker_filter_user => $docker_filter_data) { ?>
-                    <option value="<?=htmlspecialchars($docker_filter_user, ENT_QUOTES)?>" <?php if ($docker_owner === $docker_filter_user) echo 'selected'; ?>><?=htmlspecialchars($docker_filter_user, ENT_QUOTES)?></option>
-                    <?php } ?>
-                  </select>
-                </form>
-              </td>
-              <?php } ?>
-            </tr>
-          </table>
-        </div>
-      </div>
-    </div>
-
-    <div class="l-separator"></div>
-
     <script>
       var dataset_values = [];
       window.DOCKER_LIST = {
@@ -193,7 +145,6 @@
         containers: []
       };
     </script>
-
     <?php if ($docker_actor_is_admin && !$docker_available) { ?>
     <script>
       dataset_values[0] = {
@@ -203,144 +154,152 @@
     </script>
     <?php } ?>
 
-    <div class="l-center units" <?php if ($docker_primary_state !== 'unavailable') echo 'style="display:none;"'; ?>>
-      <div id="docker-unavailable-state" class="l-unit l-unit--error">
-        <div class="l-unit__col l-unit__col--right">
-          <div class="l-unit__name separate"><?=__('Docker is not installed')?></div>
-          <div class="l-unit__stats">
-            <table>
-              <tr>
-                <td><?=__('Install Docker from the panel to start managing containers.')?></td>
-              </tr>
-            </table>
-          </div>
+    <div class="docker-shell docker-shell--list">
+      <section class="docker-hero">
+        <div>
+          <div class="docker-eyebrow"><?=__('Docker Panel')?></div>
+          <h1 class="docker-page-title"><?=__('Managed containers')?></h1>
+          <p class="docker-page-copy"><?=__('A focused control plane for container routing, health checks, alerts, and runtime visibility.')?></p>
         </div>
-      </div>
-    </div>
-
-    <div class="l-center units" <?php if ($docker_primary_state !== 'empty') echo 'style="display:none;"'; ?>>
-      <div id="docker-empty-state" class="l-unit">
-        <div class="l-unit__col l-unit__col--right">
-          <div class="l-unit__name separate"><?=__('No Docker containers are managed in this scope yet.')?></div>
-          <div class="l-unit__stats">
-            <table>
-              <tr>
-                <td><?=__('Create a managed container to start routing and monitoring it from the panel.')?></td>
-              </tr>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="l-center units" <?php if ($docker_primary_state !== 'quota') echo 'style="display:none;"'; ?>>
-      <div id="docker-quota-reached-state" class="l-unit l-unit--suspended">
-        <div class="l-unit__col l-unit__col--right">
-          <div class="l-unit__name separate"><?=__('Docker container quota is reached')?></div>
-          <div class="l-unit__stats">
-            <table>
-              <tr>
-                <td><?=__('This account is already using its allowed number of managed Docker containers.')?></td>
-              </tr>
-            </table>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div id="docker-list-state" class="l-center units" <?php if ($docker_primary_state !== 'list') echo 'style="display:none;"'; ?>>
-      <div class="l-center">
-        <?php if ($docker_available && !$docker_daemon_available) { ?>
-        <div class="notice notice-warning" style="margin-bottom: 12px;"><?=__('Docker daemon is unavailable. Runtime actions may fail until the service returns, but managed metadata is still shown below.')?></div>
-        <?php } ?>
-        <div id="docker-owner-filter">
-          <?php if ($docker_actor_is_admin) { ?>
-          <span class="vst-text"><b><?=__('Owner scope')?>:</b> <?=htmlspecialchars($docker_owner !== '' ? $docker_owner : __('All Users'), ENT_QUOTES)?></span>
+        <div class="docker-hero__actions">
+          <?php if ($docker_available && empty($docker_quota['reached']) && $docker_can_add_from_scope) { ?>
+          <a href="<?=$docker_add_href?>" class="button docker-button docker-button--primary" title="<?=__('Add Docker Container')?>"><?=__('Add Docker Container')?></a>
+          <?php } ?>
+          <a href="/list/docker/<?=$docker_query?>" class="button docker-button docker-button--secondary"><?=__('refresh')?></a>
+          <a href="/list/server/" class="button docker-button docker-button--secondary"><?=__('Server')?></a>
+          <?php if ($docker_actor_is_admin && !$docker_available) { ?>
+          <a href="javascript:void(0)" class="button docker-button docker-button--secondary" onclick="more_button_click(0)"><?=__('Install Docker')?></a>
+          <?php } ?>
+          <?php if ($docker_actor_is_admin && !empty($docker_owner_filter_options)) { ?>
+          <form method="get" action="/list/docker/" class="docker-scope-form">
+            <label class="docker-field-label" for="docker-owner-select"><?=__('Owner scope')?></label>
+            <select id="docker-owner-select" name="user" class="vst-list docker-select" onchange="this.form.submit()">
+              <option value=""><?=__('All Users')?></option>
+              <?php foreach ($docker_owner_filter_options as $docker_filter_user => $docker_filter_data) { ?>
+              <option value="<?=htmlspecialchars($docker_filter_user, ENT_QUOTES)?>" <?php if ($docker_owner === $docker_filter_user) echo 'selected'; ?>><?=htmlspecialchars($docker_filter_user, ENT_QUOTES)?></option>
+              <?php } ?>
+            </select>
+          </form>
           <?php } ?>
         </div>
-        <div id="docker-list-toolbar" style="margin: 14px 0;">
-          <span class="vst-text"><b><?=__('Managed Docker containers')?>:</b> <?=count($data)?></span>
+      </section>
+
+      <div class="docker-overview-grid">
+        <article class="docker-overview-card">
+          <span class="docker-overview-card__label"><?=__('Owner scope')?></span>
+          <strong class="docker-overview-card__value"><?=htmlspecialchars($docker_scope_label, ENT_QUOTES)?></strong>
+          <p class="docker-overview-card__meta"><?=__('Current panel scope for Docker management.')?></p>
+        </article>
+        <article class="docker-overview-card">
+          <span class="docker-overview-card__label"><?=__('Managed containers')?></span>
+          <strong class="docker-overview-card__value"><?=$docker_total_containers?></strong>
+          <p class="docker-overview-card__meta"><?=__('Live inventory available to this view.')?></p>
+        </article>
+        <article class="docker-overview-card">
+          <span class="docker-overview-card__label"><?=__('Quota')?></span>
+          <strong class="docker-overview-card__value"><?=$docker_total_containers?> / <?=htmlspecialchars($docker_quota_limit, ENT_QUOTES)?></strong>
+          <p class="docker-overview-card__meta"><?php if (!empty($docker_quota['reached'])) { ?><?=__('This owner scope is at capacity.')?><?php } else { ?><?=__('Capacity remains for additional managed containers.')?><?php } ?></p>
+        </article>
+      </div>
+
+      <section id="docker-unavailable-state" class="docker-state docker-state--warning" <?php if ($docker_primary_state !== 'unavailable') echo 'style="display:none;"'; ?>>
+        <div class="docker-state__title"><?=__('Docker is not installed')?></div>
+        <p class="docker-state__copy"><?=__('Install Docker from the panel to start managing containers.')?></p>
+      </section>
+
+      <section id="docker-empty-state" class="docker-state" <?php if ($docker_primary_state !== 'empty') echo 'style="display:none;"'; ?>>
+        <div class="docker-state__title"><?=__('No Docker containers are managed in this scope yet.')?></div>
+        <p class="docker-state__copy"><?=__('Create a managed container to start routing and monitoring it from the panel.')?></p>
+      </section>
+
+      <section id="docker-quota-reached-state" class="docker-state docker-state--muted" <?php if ($docker_primary_state !== 'quota') echo 'style="display:none;"'; ?>>
+        <div class="docker-state__title"><?=__('Docker container quota is reached')?></div>
+        <p class="docker-state__copy"><?=__('This account is already using its allowed number of managed Docker containers.')?></p>
+      </section>
+
+      <section id="docker-list-state" class="docker-list-shell" <?php if ($docker_primary_state !== 'list') echo 'style="display:none;"'; ?>>
+        <?php if ($docker_available && !$docker_daemon_available) { ?>
+        <div class="docker-inline-notice"><?=__('Docker daemon is unavailable. Runtime actions may fail until the service returns, but managed metadata is still shown below.')?></div>
+        <?php } ?>
+        <div id="docker-owner-filter" class="docker-list-meta">
+          <?php if ($docker_actor_is_admin) { ?>
+          <span class="docker-list-meta__item"><b><?=__('Owner scope')?>:</b> <?=htmlspecialchars($docker_scope_label, ENT_QUOTES)?></span>
+          <?php } ?>
+        </div>
+        <div id="docker-list-toolbar" class="docker-list-meta">
+          <span class="docker-list-meta__item"><b><?=__('Managed Docker containers')?>:</b> <?=$docker_total_containers?></span>
           <?php if ($docker_actor_is_admin && $docker_owner === '') { ?>
-          <span class="vst-text" style="margin-left: 12px;"><?=__('Select an owner scope to add a Docker container.')?></span>
+          <span class="docker-list-meta__item"><?=__('Select an owner scope to add a Docker container.')?></span>
           <?php } ?>
           <?php if (!empty($docker_quota['reached'])) { ?>
-          <span class="vst-error" style="margin-left: 12px;"><?=__('Quota reached for this owner scope.')?></span>
+          <span class="docker-list-meta__item docker-list-meta__item--warning"><?=__('Quota reached for this owner scope.')?></span>
           <?php } ?>
         </div>
-      </div>
 
-      <div id="docker-list-cards">
-        <?php if ($docker_show_owner_groups) { ?>
-          <?php foreach ($docker_grouped_data as $docker_group_owner => $docker_group_containers) { ?>
-          <section class="docker-owner-group" data-owner="<?=htmlspecialchars($docker_group_owner, ENT_QUOTES)?>">
-            <div class="l-unit" style="margin-bottom: 12px;">
-              <div class="l-unit__col l-unit__col--right">
-                <div class="l-unit__name separate"><?=htmlspecialchars($docker_group_owner, ENT_QUOTES)?></div>
-                <div class="l-unit__stats">
-                  <table>
-                    <tr>
-                      <td><?=count($docker_group_containers)?> <?=__('containers')?></td>
-                    </tr>
-                  </table>
+        <div id="docker-list-cards">
+          <?php if ($docker_show_owner_groups) { ?>
+            <?php foreach ($docker_grouped_data as $docker_group_owner => $docker_group_containers) { ?>
+            <section class="docker-owner-group" data-owner="<?=htmlspecialchars($docker_group_owner, ENT_QUOTES)?>">
+              <div class="docker-owner-group__header">
+                <div>
+                  <div class="docker-eyebrow"><?=__('Owner group')?></div>
+                  <h2 class="docker-owner-group__title"><?=htmlspecialchars($docker_group_owner, ENT_QUOTES)?></h2>
                 </div>
+                <div class="docker-owner-group__count"><?=count($docker_group_containers)?> <?=__('containers')?></div>
               </div>
-            </div>
-            <?php foreach ($docker_group_containers as $docker_key => $container) { ?>
+              <div class="docker-card-grid">
+                <?php foreach ($docker_group_containers as $docker_key => $container) { ?>
+                  <?php $docker_render_card($docker_key, $container); ?>
+                <?php } ?>
+              </div>
+            </section>
+            <?php } ?>
+          <?php } else { ?>
+          <div class="docker-card-grid">
+            <?php foreach ($data as $docker_key => $container) { ?>
               <?php $docker_render_card($docker_key, $container); ?>
             <?php } ?>
-          </section>
-          <?php } ?>
-        <?php } else { ?>
-          <?php foreach ($data as $docker_key => $container) { ?>
-            <?php $docker_render_card($docker_key, $container); ?>
-          <?php } ?>
-        <?php } ?>
-      </div>
-    </div>
-
-    <section id="docker-health-dashboard" class="l-center units" style="margin-top: 18px; <?php if ($docker_primary_state !== 'list') echo 'display:none;'; ?>">
-      <div class="l-unit">
-        <div class="l-unit__col l-unit__col--right">
-          <div class="l-unit__name separate"><?=__('Docker health dashboard')?></div>
-          <div class="l-unit__stats">
-            <table>
-              <tr>
-                <td><div class="l-unit__stat-cols clearfix"><div class="l-unit__stat-col l-unit__stat-col--left">CPU:</div><div class="l-unit__stat-col l-unit__stat-col--right"><b id="docker-card-cpu"><?=__('No data')?></b></div></div></td>
-                <td><div class="l-unit__stat-cols clearfix"><div class="l-unit__stat-col l-unit__stat-col--left">Memory:</div><div class="l-unit__stat-col l-unit__stat-col--right"><b id="docker-card-mem"><?=__('No data')?></b></div></div></td>
-                <td><div class="l-unit__stat-cols clearfix last"><div class="l-unit__stat-col l-unit__stat-col--left">RX:</div><div class="l-unit__stat-col l-unit__stat-col--right"><b id="docker-card-rx"><?=__('No data')?></b></div></div></td>
-              </tr>
-              <tr>
-                <td><div class="l-unit__stat-cols clearfix"><div class="l-unit__stat-col l-unit__stat-col--left">TX:</div><div class="l-unit__stat-col l-unit__stat-col--right"><b id="docker-card-tx"><?=__('No data')?></b></div></div></td>
-                <td><div class="l-unit__stat-cols clearfix"><div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Health state')?>:</div><div class="l-unit__stat-col l-unit__stat-col--right"><b id="docker-card-health-status"><?=__('No data')?></b></div></div></td>
-                <td><div class="l-unit__stat-cols clearfix last"><div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Last health update')?>:</div><div class="l-unit__stat-col l-unit__stat-col--right"><b id="docker-card-health-updated"><?=__('No data')?></b></div></div></td>
-              </tr>
-              <tr>
-                <td colspan="3"><div class="l-unit__stat-cols clearfix"><div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Open alerts')?>:</div><div class="l-unit__stat-col l-unit__stat-col--right"><b id="docker-card-alert-count">0</b></div></div></td>
-              </tr>
-            </table>
           </div>
+          <?php } ?>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <section id="docker-alerts-panel" class="l-center units" style="margin-top: 18px; <?php if ($docker_primary_state !== 'list') echo 'display:none;'; ?>">
-      <div class="l-unit">
-        <div class="l-unit__col l-unit__col--right">
-          <div class="l-unit__name separate"><?=__('Docker alerts')?></div>
-          <div class="l-unit__stats docker-alerts-list">
-            <p class="docker-alerts-empty"><?=__('No Docker alerts are active in this scope.')?></p>
+      <section id="docker-health-dashboard" class="docker-panel" <?php if ($docker_primary_state !== 'list') echo 'style="display:none;"'; ?>>
+        <div class="docker-panel__header">
+          <div>
+            <div class="docker-eyebrow"><?=__('Dashboard')?></div>
+            <h2 class="docker-panel__title"><?=__('Docker health dashboard')?></h2>
           </div>
-          <button id="docker-alert-acknowledge" class="button" style="display:none; margin-top: 10px;"><?=__('Acknowledge alert')?></button>
+          <p class="docker-panel__copy"><?=__('Aggregated metrics refresh automatically so the list view stays useful during active operations.')?></p>
         </div>
-      </div>
-    </section>
+        <div class="docker-metric-grid">
+          <article class="docker-metric-card"><span class="docker-metric-card__label">CPU</span><b id="docker-card-cpu" class="docker-metric-card__value"><?=__('No data')?></b></article>
+          <article class="docker-metric-card"><span class="docker-metric-card__label"><?=__('Memory')?></span><b id="docker-card-mem" class="docker-metric-card__value"><?=__('No data')?></b></article>
+          <article class="docker-metric-card"><span class="docker-metric-card__label">RX</span><b id="docker-card-rx" class="docker-metric-card__value"><?=__('No data')?></b></article>
+          <article class="docker-metric-card"><span class="docker-metric-card__label">TX</span><b id="docker-card-tx" class="docker-metric-card__value"><?=__('No data')?></b></article>
+          <article class="docker-metric-card"><span class="docker-metric-card__label"><?=__('Health state')?></span><b id="docker-card-health-status" class="docker-metric-card__value docker-health-badge" data-health-state="unknown"><?=__('No data')?></b></article>
+          <article class="docker-metric-card"><span class="docker-metric-card__label"><?=__('Last health update')?></span><b id="docker-card-health-updated" class="docker-metric-card__value"><?=__('No data')?></b></article>
+          <article class="docker-metric-card docker-metric-card--wide"><span class="docker-metric-card__label"><?=__('Open alerts')?></span><b id="docker-card-alert-count" class="docker-metric-card__value">0</b></article>
+        </div>
+      </section>
 
-    <div id="vstobjects">
-      <div class="l-separator"></div>
-      <div class="l-center">
-        <div class="l-unit-ft">
-          <div class="l-unit__col l-unit__col--left clearfix"></div>
-          <div class="data-count l-unit__col l-unit__col--right clearfix"><?=count($data)?> <?=__('containers')?></div>
+      <section id="docker-alerts-panel" class="docker-panel" <?php if ($docker_primary_state !== 'list') echo 'style="display:none;"'; ?>>
+        <div class="docker-panel__header">
+          <div>
+            <div class="docker-eyebrow"><?=__('Alerts')?></div>
+            <h2 class="docker-panel__title"><?=__('Docker alerts')?></h2>
+          </div>
+          <p class="docker-panel__copy"><?=__('Open health and threshold notifications across the active owner scope.')?></p>
         </div>
+        <div class="docker-alerts-list">
+          <p class="docker-alerts-empty"><?=__('No Docker alerts are active in this scope.')?></p>
+        </div>
+        <div class="docker-alert-actions">
+          <button id="docker-alert-acknowledge" class="button docker-button docker-button--secondary" style="display:none;"><?=__('Acknowledge alert')?></button>
+        </div>
+      </section>
+
+      <div id="vstobjects" class="docker-footer-meta">
+        <div class="data-count"><?=count($data)?> <?=__('containers')?></div>
       </div>
     </div>
