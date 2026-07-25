@@ -15,7 +15,9 @@ This contract defines:
 - the persisted record format stored in `data/users/<user>/docker.conf`
 - exact field names, types, defaults, allowed values, and validation rules
 
-The contract is the source of truth for later Bash and PHP implementation tasks in `.docs/plans/2026-06-27-docker-panel-management.md`.
+At the time of the direct-container MVP, this contract was the source of truth
+for the Bash and PHP implementation tasks in
+`.docs/plans/2026-06-27-docker-panel-management.md`.
 
 ## File Format
 

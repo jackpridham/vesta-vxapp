@@ -89,6 +89,7 @@ explicitly named by the selected administrator profile.
 - Admin access changes authorization, not project ownership or labels.
 - Removing a project deletes control metadata only after runtime removal
   succeeds or the operator explicitly uses a metadata-only recovery action.
-- Managed data and volumes are retained by default. Purging them requires a
-  distinct destructive flag, backup-state check, and audit event.
+- Managed data and volumes are retained by default. The current public remove
+  command exposes only retained-data removal; any future purge path must be a
+  distinct destructive operation with backup-state checks and audit evidence.
 - Global prune commands are forbidden.

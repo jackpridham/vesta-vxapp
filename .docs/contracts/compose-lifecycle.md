@@ -89,5 +89,6 @@ For each `docker.conf` record:
 6. on failure, remove only candidate Compose runtime, restart the legacy
    container, restore its route, and keep the legacy record authoritative.
 
-Legacy records are archived, not deleted, until the final migration checkpoint
-and backup/restore tests pass.
+Legacy records are archived, not deleted, so compatibility commands and audit
+history can resolve migrated projects without treating `docker.conf` as the
+current runtime source of truth.

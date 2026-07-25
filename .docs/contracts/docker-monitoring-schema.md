@@ -1,8 +1,8 @@
 # Docker Monitoring Schema Contract
 
 > **Historical contract (superseded 2026-07-25):** This schema applies to the
-> direct-container MVP. Project/service monitoring will be delivered under the
-> [current Compose plan](../plans/2026-07-25-compose-orchestration.md) and its
+> direct-container MVP. Current project/service monitoring is governed by the
+> [Compose plan](../plans/2026-07-25-compose-orchestration.md) and its
 > authoritative [status](../status/2026-07-25-compose-orchestration.md).
 
 ## Scope

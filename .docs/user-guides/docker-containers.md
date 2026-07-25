@@ -1,12 +1,12 @@
 # Docker Containers
 
-> **Legacy panel workflow:** This guide documents the currently shipped panel
-> fields. The simple add/change backend now generates a constrained Compose
-> project; the panel itself is replaced in Checkpoint 9.
+> **Historical legacy panel workflow:** This guide documents the direct
+> container field model retained for audit history. The current panel manages
+> Docker Compose projects, while the simple add/change compatibility path now
+> generates a constrained Compose project.
 > Follow the [authoritative status](../status/2026-07-25-compose-orchestration.md)
 > and [operator architecture guide](../../docs/container-orchestration.md) for
-> the migration state. Use only Compose commands whose checkpoint is marked
-> complete.
+> current operation.
 
 ## Prerequisites And Package Limits
 

@@ -1,5 +1,10 @@
 # Docker Screenshot Manifest
 
+> **Historical legacy screenshots:** These targets describe the direct-container
+> panel screenshot set. The current Vortex Docker panel is Compose-project
+> based and is documented in
+> [the operator guide](../../../../docs/container-orchestration.md).
+
 ## `user-list-empty.png`
 
 - Page URL: `/list/docker/`

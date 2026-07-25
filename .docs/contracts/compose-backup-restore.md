@@ -59,8 +59,9 @@ identity/labels only after full validation.
 
 Backups are ordinary Vesta backup artifacts and participate in existing
 retention. Removing a project never removes its last known-good backup.
-Purging volumes/data is a separate audited operation with an explicit
-confirmation token.
+The current public project remove command retains data. Any future
+volume/data purge must be a separate audited operation with an explicit
+confirmation token and backup-state checks.
 
 ## Acceptance
 
