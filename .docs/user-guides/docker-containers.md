@@ -1,5 +1,12 @@
 # Docker Containers
 
+> **Legacy workflow:** This guide documents the currently shipped
+> direct-container MVP. It does not describe Docker Compose orchestration.
+> Follow the [authoritative status](../status/2026-07-25-compose-orchestration.md)
+> and [operator architecture guide](../../docs/container-orchestration.md) for
+> the migration state. Do not use planned Compose commands until their
+> checkpoint is marked complete.
+
 ## Prerequisites And Package Limits
 
 Docker container management is available in the panel at `/list/docker/`, `/add/docker/`, and `/edit/docker/`.

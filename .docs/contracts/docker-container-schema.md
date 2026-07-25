@@ -1,5 +1,12 @@
 # Docker Container Schema Contract
 
+> **Historical contract (superseded 2026-07-25):** This describes the shipped
+> direct-container MVP. New orchestration work follows
+> [Compose storage](compose-storage.md),
+> [lifecycle](compose-lifecycle.md), and
+> [interfaces](compose-interfaces.md). Do not extend this record format as the
+> Compose source of truth.
+
 ## Scope
 
 This contract defines:

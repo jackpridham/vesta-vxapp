@@ -1,5 +1,10 @@
 # Docker Alerts And Health Schema Contract
 
+> **Historical contract (superseded 2026-07-25):** This schema applies to
+> direct-container alerts. Compose project/service alert behavior is governed
+> by the [current plan](../plans/2026-07-25-compose-orchestration.md) and
+> [security contract](compose-security.md).
+
 ## Scope
 
 This contract defines:

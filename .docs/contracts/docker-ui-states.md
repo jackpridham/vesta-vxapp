@@ -1,5 +1,9 @@
 # Docker UI State And Markup Contract
 
+> **Historical contract (superseded 2026-07-25):** These states describe the
+> direct-container panel. The current Compose UI and compatibility surface are
+> defined by [compose-interfaces.md](compose-interfaces.md).
+
 ## Scope
 
 This contract defines the exact page-state containers, section ids, card ids, alert ids, chart ids, and POST field names for the Docker panel UI.

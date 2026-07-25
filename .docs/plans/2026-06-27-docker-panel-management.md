@@ -1,5 +1,11 @@
 # Docker Container Ownership And Panel Management Implementation Plan
 
+> **Historical completed plan:** This records the direct-container MVP. Its
+> architecture is superseded for new work by
+> [2026-07-25-compose-orchestration.md](2026-07-25-compose-orchestration.md).
+> Preserve this file as checkpoint evidence; do not infer current Compose
+> readiness from its completed checkboxes.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build complete Docker container management for both users and admins in `vesta-vxapp`, including user-facing container creation UI, per-user ownership and quota enforcement, user/admin lifecycle actions, live CPU/RAM/network monitoring, health dashboards, alerts/notifications, long-form operator documentation, exact template-state markup, backup/restore coverage, and domain routing through the existing `vx nginx vx-proxy` flow so a user-owned web domain can proxy traffic to a user-owned container.
