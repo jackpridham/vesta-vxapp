@@ -1,11 +1,12 @@
 # Docker Containers
 
-> **Legacy workflow:** This guide documents the currently shipped
-> direct-container MVP. It does not describe Docker Compose orchestration.
+> **Legacy panel workflow:** This guide documents the currently shipped panel
+> fields. The simple add/change backend now generates a constrained Compose
+> project; the panel itself is replaced in Checkpoint 9.
 > Follow the [authoritative status](../status/2026-07-25-compose-orchestration.md)
 > and [operator architecture guide](../../docs/container-orchestration.md) for
-> the migration state. Do not use planned Compose commands until their
-> checkpoint is marked complete.
+> the migration state. Use only Compose commands whose checkpoint is marked
+> complete.
 
 ## Prerequisites And Package Limits
 
