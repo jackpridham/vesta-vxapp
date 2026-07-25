@@ -273,3 +273,39 @@ vx_compose_age_encrypt() {
         return 1
     fi
 }
+
+vx_compose_age_decrypt() {
+    local input_file="$1"
+    local output_file="$2"
+    local identity_file="${VX_DOCKER_AGE_IDENTITY_FILE:-}"
+    local temp_file
+
+    command -v age >/dev/null 2>&1 \
+        || {
+            vx_compose_error 'age decryption is not installed'
+            return 1
+        }
+    [[ "$identity_file" == /*
+        && -f "$identity_file"
+        && ! -L "$identity_file"
+        && "$(stat -c '%a' "$identity_file")" == 600
+        && "$identity_file" != "$VESTA/data/users/"* ]] \
+        || {
+            vx_compose_error 'restore-required: age identity is not configured securely'
+            return 1
+        }
+    if [[ "$EUID" -eq 0 && "$(stat -c '%u' "$identity_file")" -ne 0 ]]; then
+        vx_compose_error 'restore-required: age identity is not root-owned'
+        return 1
+    fi
+    temp_file="$(mktemp "${output_file}.XXXXXX")" || return 1
+    if age --decrypt --identity "$identity_file" \
+        --output "$temp_file" "$input_file" >/dev/null 2>&1; then
+        chmod 0600 "$temp_file"
+        mv -f -- "$temp_file" "$output_file"
+    else
+        rm -f -- "$temp_file"
+        vx_compose_error 'encrypted secret payload decryption failed'
+        return 1
+    fi
+}

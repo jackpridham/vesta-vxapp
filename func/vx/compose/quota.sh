@@ -90,7 +90,7 @@ vx_compose_usage_collect() {
 
 vx_compose_measured_storage_mb() {
     local owner="$1"
-    local projects_root data_root total=0 size path
+    local projects_root data_root total=0 size path volume_size
 
     projects_root="$(vx_compose_projects_root "$owner")"
     data_root="$HOMEDIR/$owner/docker"
@@ -100,6 +100,10 @@ vx_compose_measured_storage_mb() {
             || return 1
         total=$((total + size))
     done
+    if declare -F vx_compose_volume_storage_mb >/dev/null 2>&1; then
+        volume_size="$(vx_compose_volume_storage_mb "$owner")" || return 1
+        total=$((total + volume_size))
+    fi
     printf '%s\n' "$total"
 }
 

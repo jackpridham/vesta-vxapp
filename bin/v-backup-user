@@ -21,6 +21,7 @@ source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
 source $VESTA/func/db.sh
 source $VESTA/func/docker.sh
+source "$VESTA/func/vx/compose/main.sh"
 source $VESTA/conf/vesta.conf
 
 if [ ! -z "$NOW" ]; then
@@ -126,7 +127,7 @@ echo
 
 # Docker metadata and managed bind data
 docker_list='no'
-if [ -e "$USER_DATA/docker.conf" ] || [ -e "$USER_DATA/docker-alerts.conf" ] || [ -d "$HOMEDIR/$user/docker" ]; then
+if [ -e "$USER_DATA/docker.conf" ] || [ -e "$USER_DATA/docker-alerts.conf" ] || [ -d "$HOMEDIR/$user/docker" ] || [ -d "$(vx_compose_projects_root "$user")" ]; then
     echo -e "\n-- DOCKER --" |tee -a $BACKUP/$user.log
     mkdir -p $tmpdir/docker/vesta
 
@@ -146,6 +147,13 @@ if [ -e "$USER_DATA/docker.conf" ] || [ -e "$USER_DATA/docker-alerts.conf" ] || 
         echo -e "$(date "+%F %T") docker/" |tee -a $BACKUP/$user.log
         mkdir -p $tmpdir/docker/home
         cp -a $HOMEDIR/$user/docker $tmpdir/docker/home/
+        docker_list='yes'
+    fi
+
+    if [ -d "$(vx_compose_projects_root "$user")" ]; then
+        echo -e "$(date "+%F %T") Compose projects" |tee -a $BACKUP/$user.log
+        vx_compose_backup_user_projects "$user" "$tmpdir/docker/compose"
+        check_result $? "Docker Compose project backup failed"
         docker_list='yes'
     fi
 fi

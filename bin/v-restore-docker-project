@@ -1,0 +1,28 @@
+#!/bin/bash
+# info: validate or apply a Docker Compose project restore
+# options: USER PROJECT BACKUP [MODE]
+
+user=$1
+compose_project=$2
+backup_file=$3
+mode=${4-validate}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '3' "$#" 'USER PROJECT BACKUP [validate|apply]'
+[ "$#" -le 4 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+vx_compose_require_project_key "$compose_project" \
+    || check_result "$E_INVALID" "invalid Compose project :: $compose_project"
+[[ "$mode" == validate || "$mode" == apply ]] \
+    || check_result "$E_INVALID" 'restore mode must be validate or apply'
+
+vx_compose_restore_project "$user" "$compose_project" "$backup_file" "$mode" \
+    || check_result "$E_INVALID" 'Docker Compose project restore failed'
+
+log_history "$mode Docker Compose project restore $compose_project"
+log_event "$OK" "$ARGUMENTS"
+exit

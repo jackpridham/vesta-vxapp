@@ -48,6 +48,7 @@ source $VESTA/func/domain.sh
 source $VESTA/func/ip.sh
 source $VESTA/func/db.sh
 source $VESTA/func/docker.sh
+source "$VESTA/func/vx/compose/main.sh"
 source $VESTA/func/rebuild.sh
 source $VESTA/conf/vesta.conf
 
@@ -853,6 +854,11 @@ if [ "$docker" != 'no' ] && [ ! -z "$(tar -tf $BACKUP/$backup |grep '^./docker')
         done < "$USER_DATA/docker.conf"
     fi
 
+    if [ -d "$(vx_compose_projects_root "$user")" ]; then
+        vx_compose_remove_owner_runtime "$user"
+        check_result $? "Docker Compose runtime removal failed"
+    fi
+
     rm -f "$USER_DATA/docker.conf" "$USER_DATA/docker-alerts.conf"
     rm -rf "$HOMEDIR/$user/docker"
 
@@ -883,6 +889,11 @@ if [ "$docker" != 'no' ] && [ ! -z "$(tar -tf $BACKUP/$backup |grep '^./docker')
             vx_docker_parse_record "$line"
             vx_docker_rehydrate_runtime "$user" "$NAME"
         done < "$USER_DATA/docker.conf"
+    fi
+
+    if [ -d "$tmpdir/docker/compose" ]; then
+        vx_compose_restore_user_projects "$user" "$tmpdir/docker/compose"
+        check_result $? "Docker Compose project restore failed"
     fi
 fi
 

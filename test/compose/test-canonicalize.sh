@@ -18,6 +18,10 @@ fail() {
 source "$repo_root/func/vx/compose/common.sh"
 # shellcheck source=func/vx/compose/policy.sh
 source "$repo_root/func/vx/compose/policy.sh"
+# shellcheck source=func/vx/compose/storage.sh
+source "$repo_root/func/vx/compose/storage.sh"
+# shellcheck source=func/vx/compose/volumes.sh
+source "$repo_root/func/vx/compose/volumes.sh"
 # shellcheck source=func/vx/compose/canonicalize.sh
 source "$repo_root/func/vx/compose/canonicalize.sh"
 

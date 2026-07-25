@@ -49,6 +49,26 @@ vx_compose_write_ownership_override() {
             printf '      vx.project: "%s"\n' "$project"
         } >>"$output_file"
     done < <(jq -r '.services | keys[]' "$canonical_json")
+    if jq -e '((.volumes // {}) | length) > 0' "$canonical_json" >/dev/null; then
+        printf '%s\n' 'volumes:' >>"$output_file"
+        while IFS= read -r volume; do
+            [[ "$volume" =~ ^[a-z][a-z0-9_-]{0,62}$ ]] \
+                || {
+                    vx_compose_error "invalid canonical volume name: $volume"
+                    return 1
+                }
+            {
+                printf '  %s:\n' "$volume"
+                printf '    name: "%s"\n' \
+                    "$(vx_compose_volume_runtime_name "$owner" "$project" "$volume")"
+                printf '%s\n' '    labels:'
+                printf '%s\n' '      vx.managed: "yes"'
+                printf '      vx.user: "%s"\n' "$owner"
+                printf '      vx.project: "%s"\n' "$project"
+                printf '      vx.volume: "%s"\n' "$volume"
+            } >>"$output_file"
+        done < <(jq -r '(.volumes // {}) | keys[]' "$canonical_json")
+    fi
 }
 
 vx_compose_baseline_policy_check() {
@@ -64,7 +84,10 @@ vx_compose_prepare_candidate() {
     local output_root="$4"
     local profile="${5:-$VX_COMPOSE_DEFAULT_PROFILE}"
     local allow_existing_labels="${6:-no}"
+    local validation_bind_root="${7:-}"
+    local validation_secret_root="${8:-}"
     local work_root raw_json override_file
+    local -a canonical_files
 
     vx_compose_require_owner "$owner" || return 1
     vx_compose_require_project_key "$project" || return 1
@@ -107,30 +130,39 @@ vx_compose_prepare_candidate() {
     if [[ "$allow_existing_labels" == yes ]]; then
         vx_compose_policy_check_existing_labels \
             "$raw_json" "$owner" "$project" || return 1
+        vx_compose_policy_check_existing_volume_labels \
+            "$raw_json" "$owner" "$project" || return 1
     else
         vx_compose_policy_check_reserved_labels "$raw_json" || return 1
+        vx_compose_policy_check_reserved_volume_labels "$raw_json" || return 1
     fi
-    vx_compose_write_ownership_override "$owner" "$project" "$raw_json" "$override_file"
+    canonical_files=(--file "$work_root/input.compose.yaml")
+    if [[ "$allow_existing_labels" != yes ]]; then
+        vx_compose_write_ownership_override \
+            "$owner" "$project" "$raw_json" "$override_file"
+        canonical_files+=(--file "$override_file")
+    fi
 
     mkdir -m 0750 "$output_root"
     vx_compose_config_command \
         "$owner" "$project" "$work_root" \
-        --file "$work_root/input.compose.yaml" \
-        --file "$override_file" \
+        "${canonical_files[@]}" \
         config --format json \
         | jq -S . >"$output_root/canonical.json" \
         || vx_compose_error 'canonical Compose JSON generation failed'
     vx_compose_policy_check_existing_labels \
         "$output_root/canonical.json" "$owner" "$project" || return 1
+    vx_compose_policy_check_existing_volume_labels \
+        "$output_root/canonical.json" "$owner" "$project" || return 1
     vx_compose_policy_evaluate \
-        "$output_root/canonical.json" "$profile" "$owner" "$project" || return 1
+        "$output_root/canonical.json" "$profile" "$owner" "$project" \
+        "$validation_bind_root" "$validation_secret_root" || return 1
     vx_compose_write_policy_facts \
         "$output_root/canonical.json" "$profile" "$output_root/policy.conf" \
         || return 1
     vx_compose_config_command \
         "$owner" "$project" "$work_root" \
-        --file "$work_root/input.compose.yaml" \
-        --file "$override_file" \
+        "${canonical_files[@]}" \
         config >"$output_root/compose.yaml" \
         || vx_compose_error 'canonical Compose YAML generation failed'
     chmod 0640 \

@@ -1,0 +1,48 @@
+services:
+  app:
+    image: python:3.12-alpine
+    command:
+      - sh
+      - -eu
+      - -c
+      - |
+        if [ ! -f /srv/state/index.html ]; then
+          printf 'persistent-http\n' >/srv/state/index.html
+        fi
+        exec python -m http.server 8080 --directory /srv/state
+    restart: unless-stopped
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 0.125
+    mem_limit: 64m
+    pids_limit: 32
+    ports:
+      - target: 8080
+        published: "18085"
+        host_ip: 127.0.0.1
+        protocol: tcp
+    volumes:
+      - type: volume
+        source: state
+        target: /srv/state
+      - type: bind
+        source: /home/vxfixture/docker/persistent/binds/config
+        target: /srv/config
+        read_only: true
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/', timeout=1).read()"
+      interval: 2s
+      timeout: 2s
+      retries: 15
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+volumes:
+  state: {}
