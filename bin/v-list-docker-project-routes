@@ -1,0 +1,41 @@
+#!/bin/bash
+# info: list managed HTTP routes for a Docker Compose project
+# options: USER PROJECT [FORMAT]
+
+user=$1
+compose_project=$2
+format=${3-json}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '2' "$#" 'USER PROJECT [FORMAT]'
+[ "$#" -le 3 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+
+routes="$(vx_compose_route_list_json "$user" "$compose_project")" \
+    || check_result "$E_INVALID" 'Docker Compose route listing failed'
+case "$format" in
+    json)
+        printf '%s\n' "$routes"
+        ;;
+    plain)
+        jq -r '
+            to_entries[]
+            | [
+                .key,
+                .value.SERVICE,
+                (.value.CONTAINER_PORT | tostring),
+                (.value.HOST_PORT | tostring),
+                .value.SCHEME,
+                .value.PATH
+            ]
+            | @tsv
+        ' <<<"$routes"
+        ;;
+    *)
+        check_result "$E_INVALID" 'format must be json or plain'
+        ;;
+esac
+exit

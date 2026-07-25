@@ -1,0 +1,18 @@
+services:
+  app:
+    image: alpine:3.20
+    command: ["sleep", "3600"]
+    init: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    cpus: 0.125
+    mem_limit: 64m
+    pids_limit: 32
+    ports:
+      - "127.0.0.1:19010:8010/tcp"
+      - "127.0.0.1:19011:8011/udp"
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

@@ -8,6 +8,9 @@ trap 'rm -rf -- "$test_root"' EXIT
 export VESTA="$test_root/vesta"
 export HOMEDIR="$test_root/home"
 mkdir -p "$VESTA/data/users/alice" "$HOMEDIR/alice"
+printf '%s\n' '#!/usr/bin/env bash' 'exit 0' >"$test_root/fake-ss"
+chmod 0755 "$test_root/fake-ss"
+export VX_COMPOSE_SS_BIN="$test_root/fake-ss"
 
 fail() {
     echo "FAIL: $1" >&2
@@ -20,6 +23,12 @@ source "$repo_root/func/vx/compose/common.sh"
 source "$repo_root/func/vx/compose/policy.sh"
 # shellcheck source=func/vx/compose/storage.sh
 source "$repo_root/func/vx/compose/storage.sh"
+# shellcheck source=func/vx/compose/profile.sh
+source "$repo_root/func/vx/compose/profile.sh"
+# shellcheck source=func/vx/compose/network.sh
+source "$repo_root/func/vx/compose/network.sh"
+# shellcheck source=func/vx/compose/ports.sh
+source "$repo_root/func/vx/compose/ports.sh"
 # shellcheck source=func/vx/compose/volumes.sh
 source "$repo_root/func/vx/compose/volumes.sh"
 # shellcheck source=func/vx/compose/canonicalize.sh
@@ -44,6 +53,14 @@ jq -e '.services.web.labels["vx.user"] == "alice"' \
 jq -e '.services.web.labels["vx.project"] == "web"' \
     "$candidate/canonical.json" >/dev/null \
     || fail "project label was not injected"
+jq -e '
+    .networks.default.name == "vx_alice_web_default"
+    and .networks.default.labels["vx.managed"] == "yes"
+    and .networks.default.labels["vx.user"] == "alice"
+    and .networks.default.labels["vx.project"] == "web"
+    and .networks.default.labels["vx.network"] == "default"
+' "$candidate/canonical.json" >/dev/null \
+    || fail "network ownership was not canonicalized"
 jq -e '.services.web.ports[0].host_ip == "127.0.0.1"' \
     "$candidate/canonical.json" >/dev/null \
     || fail "localhost port binding was not canonicalized"
@@ -64,6 +81,34 @@ vx_compose_prepare_candidate \
     "$second"
 cmp -s "$candidate/canonical.json" "$second/canonical.json" \
     || fail "canonical JSON is not deterministic"
+
+range_candidate="$test_root/candidate-range"
+vx_compose_prepare_candidate \
+    alice range "$repo_root/test/compose/fixtures/port-range.compose.yaml" \
+    "$range_candidate"
+jq -e '
+    [.services.app.ports[].published]
+    == ["19020", "19021", "19022"]
+    and all(.services.app.ports[]; .host_ip == "127.0.0.1")
+' "$range_candidate/canonical.json" >/dev/null \
+    || fail "matching port range was not canonicalized"
+
+protocol_candidate="$test_root/candidate-protocols"
+vx_compose_prepare_candidate \
+    alice protocols "$repo_root/test/compose/fixtures/tcp-udp.compose.yaml" \
+    "$protocol_candidate"
+jq -e '
+    [.services.app.ports[].protocol] | sort == ["tcp", "udp"]
+' "$protocol_candidate/canonical.json" >/dev/null \
+    || fail "TCP/UDP mappings were not canonicalized"
+
+no_port_candidate="$test_root/candidate-no-port"
+vx_compose_prepare_candidate \
+    alice internal "$repo_root/test/compose/fixtures/no-port.compose.yaml" \
+    "$no_port_candidate"
+jq -e '(.services.app.ports // []) | length == 0' \
+    "$no_port_candidate/canonical.json" >/dev/null \
+    || fail "internal-only workload gained a published port"
 
 existing="$test_root/candidate-existing"
 vx_compose_prepare_candidate \

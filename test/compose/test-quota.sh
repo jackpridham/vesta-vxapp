@@ -41,9 +41,9 @@ make_policy() {
     mkdir -p "$(dirname -- "$output")"
     {
         printf "POLICY_SCHEMA='1'\n"
-        printf "VALIDATOR_VERSION='1'\n"
+        printf "VALIDATOR_VERSION='2'\n"
         printf "PROFILE='standard'\n"
-        printf "PROFILE_VERSION='1'\n"
+        printf "PROFILE_VERSION='2'\n"
         printf "SERVICES='%s'\n" "$services"
         printf "CPUS_MILLI='%s'\n" "$cpu"
         printf "MEMORY_MB='%s'\n" "$memory"

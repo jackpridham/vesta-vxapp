@@ -7,6 +7,7 @@ VX_PROXY_DEFAULT_MODE="proxy"
 VX_PROXY_DEFAULT_PROFILE="standard"
 VX_PROXY_DEFAULT_TIMEOUT="60"
 VX_PROXY_DEFAULT_PRESERVE_HOST="yes"
+VX_PROXY_DEFAULT_PATH="/"
 VX_PROXY_HEADER_SEPARATOR="||"
 
 vx_proxy_reset_options() {
@@ -16,6 +17,7 @@ vx_proxy_reset_options() {
     VX_PROXY_OPTION_PRESERVE_HOST=""
     VX_PROXY_OPTION_TIMEOUT=""
     VX_PROXY_OPTION_HEADERS=""
+    VX_PROXY_OPTION_PATH=""
 }
 
 vx_proxy_append_header_option() {
@@ -61,6 +63,11 @@ vx_proxy_parse_long_options() {
                 vx_proxy_append_header_option "$2"
                 shift 2
                 ;;
+            --proxy-path)
+                [ -n "$2" ] || check_result "$E_ARGS" "--proxy-path requires a path"
+                VX_PROXY_OPTION_PATH="$2"
+                shift 2
+                ;;
             "")
                 shift
                 ;;
@@ -78,6 +85,7 @@ vx_proxy_apply_option_globals() {
     [ -n "$VX_PROXY_OPTION_PRESERVE_HOST" ] && PROXY_PRESERVE_HOST="$VX_PROXY_OPTION_PRESERVE_HOST"
     [ -n "$VX_PROXY_OPTION_TIMEOUT" ] && PROXY_TIMEOUT="$VX_PROXY_OPTION_TIMEOUT"
     [ -n "$VX_PROXY_OPTION_HEADERS" ] && PROXY_HEADERS="$VX_PROXY_OPTION_HEADERS"
+    [ -n "$VX_PROXY_OPTION_PATH" ] && PROXY_PATH="$VX_PROXY_OPTION_PATH"
 }
 
 vx_proxy_apply_positional_globals() {
@@ -95,6 +103,7 @@ vx_proxy_defaults() {
     [ -n "$PROXY_PRESERVE_HOST" ] || PROXY_PRESERVE_HOST="$VX_PROXY_DEFAULT_PRESERVE_HOST"
     [ -n "$PROXY_TIMEOUT" ] || PROXY_TIMEOUT="$VX_PROXY_DEFAULT_TIMEOUT"
     [ -n "$PROXY_HEADERS" ] || PROXY_HEADERS=""
+    [ -n "$PROXY_PATH" ] || PROXY_PATH="${VX_COMPOSE_ROUTE_PATH:-$VX_PROXY_DEFAULT_PATH}"
 }
 
 vx_proxy_validate_mode() {
@@ -151,6 +160,16 @@ vx_proxy_validate_headers() {
     done <<< "${PROXY_HEADERS//$VX_PROXY_HEADER_SEPARATOR/$'\n'}"
 }
 
+vx_proxy_validate_path() {
+    if ! [[ "$PROXY_PATH" == /*
+        && "$PROXY_PATH" != *..*
+        && "$PROXY_PATH" != *'//'*
+        && "$PROXY_PATH" != *$'\n'*
+        && "$PROXY_PATH" =~ ^/[A-Za-z0-9._~!%+:,@/-]*$ ]]; then
+        check_result "$E_INVALID" "proxy path is invalid"
+    fi
+}
+
 vx_proxy_validate() {
     vx_proxy_defaults
     vx_proxy_validate_target
@@ -159,6 +178,7 @@ vx_proxy_validate() {
     vx_proxy_validate_bool
     vx_proxy_validate_timeout
     vx_proxy_validate_headers
+    vx_proxy_validate_path
 }
 
 vx_proxy_target_host() {
@@ -170,12 +190,15 @@ vx_proxy_is_native() {
 }
 
 vx_proxy_ensure_web_conf_keys() {
+    # The Vesta command that sources this helper owns the domain global.
+    # shellcheck disable=SC2154
     add_object_key 'web' 'DOMAIN' "$domain" 'PROXY_MODE' 'STATS'
     add_object_key 'web' 'DOMAIN' "$domain" 'PROXY_TARGET' 'STATS'
     add_object_key 'web' 'DOMAIN' "$domain" 'PROXY_PRESERVE_HOST' 'STATS'
     add_object_key 'web' 'DOMAIN' "$domain" 'PROXY_PROFILE' 'STATS'
     add_object_key 'web' 'DOMAIN' "$domain" 'PROXY_TIMEOUT' 'STATS'
     add_object_key 'web' 'DOMAIN' "$domain" 'PROXY_HEADERS' 'STATS'
+    add_object_key 'web' 'DOMAIN' "$domain" 'PROXY_PATH' 'STATS'
 }
 
 vx_proxy_update_web_conf() {
@@ -185,6 +208,7 @@ vx_proxy_update_web_conf() {
     local proxy_profile_value="$PROXY_PROFILE"
     local proxy_timeout_value="$PROXY_TIMEOUT"
     local proxy_headers_value="$PROXY_HEADERS"
+    local proxy_path_value="$PROXY_PATH"
 
     vx_proxy_ensure_web_conf_keys
     update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_MODE' "$proxy_mode_value"
@@ -193,6 +217,7 @@ vx_proxy_update_web_conf() {
     update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_PROFILE' "$proxy_profile_value"
     update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_TIMEOUT' "$proxy_timeout_value"
     update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_HEADERS' "$proxy_headers_value"
+    update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_PATH' "$proxy_path_value"
 }
 
 vx_proxy_clear_web_conf() {
@@ -203,6 +228,7 @@ vx_proxy_clear_web_conf() {
     update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_PROFILE' ""
     update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_TIMEOUT' ""
     update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_HEADERS' ""
+    update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_PATH' ""
 }
 
 vx_proxy_build_header_block() {
@@ -288,7 +314,7 @@ vx_proxy_prepare_template_values() {
         proxy_ssl_server_name on;"
     fi
 
-    VX_PROXY_LOCATION_BLOCK="    location / {
+    VX_PROXY_LOCATION_BLOCK="    location ${PROXY_PATH} {
         proxy_pass ${PROXY_TARGET};
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;

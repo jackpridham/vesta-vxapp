@@ -44,9 +44,9 @@ printf '%s\n' '{"name":"vx-alice-app","services":{}}' >"$candidate/canonical.jso
 printf '%s\n' 'abc123' >"$candidate/canonical.sha256"
 {
     printf "POLICY_SCHEMA='1'\n"
-    printf "VALIDATOR_VERSION='1'\n"
+    printf "VALIDATOR_VERSION='2'\n"
     printf "PROFILE='standard'\n"
-    printf "PROFILE_VERSION='1'\n"
+    printf "PROFILE_VERSION='2'\n"
     printf "SERVICES='0'\n"
     printf "CPUS_MILLI='0'\n"
     printf "MEMORY_MB='0'\n"

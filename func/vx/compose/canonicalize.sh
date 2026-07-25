@@ -69,6 +69,27 @@ vx_compose_write_ownership_override() {
             } >>"$output_file"
         done < <(jq -r '(.volumes // {}) | keys[]' "$canonical_json")
     fi
+    if jq -e '((.networks // {}) | length) > 0' "$canonical_json" >/dev/null; then
+        printf '%s\n' 'networks:' >>"$output_file"
+        while IFS= read -r network; do
+            [[ "$network" =~ ^[a-z][a-z0-9_-]{0,62}$ ]] \
+                || {
+                    vx_compose_error "invalid canonical network name: $network"
+                    return 1
+                }
+            {
+                printf '  %s:\n' "$network"
+                printf '    name: "%s"\n' \
+                    "$(vx_compose_network_runtime_name \
+                        "$owner" "$project" "$network")"
+                printf '%s\n' '    labels:'
+                printf '%s\n' '      vx.managed: "yes"'
+                printf '      vx.user: "%s"\n' "$owner"
+                printf '      vx.project: "%s"\n' "$project"
+                printf '      vx.network: "%s"\n' "$network"
+            } >>"$output_file"
+        done < <(jq -r '(.networks // {}) | keys[]' "$canonical_json")
+    fi
 }
 
 vx_compose_baseline_policy_check() {
@@ -91,6 +112,8 @@ vx_compose_prepare_candidate() {
 
     vx_compose_require_owner "$owner" || return 1
     vx_compose_require_project_key "$project" || return 1
+    vx_compose_profile_require_authorized "$owner" "$project" "$profile" \
+        || return 1
     [[ -f "$input_file" && ! -L "$input_file" ]] \
         || {
             vx_compose_error 'Compose input must be a regular non-symlink file'
@@ -132,9 +155,12 @@ vx_compose_prepare_candidate() {
             "$raw_json" "$owner" "$project" || return 1
         vx_compose_policy_check_existing_volume_labels \
             "$raw_json" "$owner" "$project" || return 1
+        vx_compose_policy_check_existing_network_labels \
+            "$raw_json" "$owner" "$project" || return 1
     else
         vx_compose_policy_check_reserved_labels "$raw_json" || return 1
         vx_compose_policy_check_reserved_volume_labels "$raw_json" || return 1
+        vx_compose_policy_check_reserved_network_labels "$raw_json" || return 1
     fi
     canonical_files=(--file "$work_root/input.compose.yaml")
     if [[ "$allow_existing_labels" != yes ]]; then
@@ -154,9 +180,13 @@ vx_compose_prepare_candidate() {
         "$output_root/canonical.json" "$owner" "$project" || return 1
     vx_compose_policy_check_existing_volume_labels \
         "$output_root/canonical.json" "$owner" "$project" || return 1
+    vx_compose_policy_check_existing_network_labels \
+        "$output_root/canonical.json" "$owner" "$project" || return 1
     vx_compose_policy_evaluate \
         "$output_root/canonical.json" "$profile" "$owner" "$project" \
         "$validation_bind_root" "$validation_secret_root" || return 1
+    vx_compose_ports_check_conflicts \
+        "$owner" "$project" "$output_root/canonical.json" || return 1
     vx_compose_write_policy_facts \
         "$output_root/canonical.json" "$profile" "$output_root/policy.conf" \
         || return 1

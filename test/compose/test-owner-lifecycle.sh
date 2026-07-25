@@ -80,9 +80,9 @@ make_project() {
     )
     {
         printf "POLICY_SCHEMA='1'\n"
-        printf "VALIDATOR_VERSION='1'\n"
+        printf "VALIDATOR_VERSION='2'\n"
         printf "PROFILE='standard'\n"
-        printf "PROFILE_VERSION='1'\n"
+        printf "PROFILE_VERSION='2'\n"
         printf "SERVICES='1'\n"
         printf "CPUS_MILLI='250'\n"
         printf "MEMORY_MB='64'\n"

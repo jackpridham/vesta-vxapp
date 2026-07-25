@@ -39,6 +39,8 @@ vx_compose_backup_member_is_expected() {
         control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]/canonical.json|\
         control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]/manifest.sha256|\
         control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]/policy.conf|\
+        control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]/images.json|\
+        control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]/routes.conf|\
         binds|binds/*|volumes|volumes/[a-z][a-z0-9_-]*.tar.gz)
             return 0
             ;;
@@ -401,6 +403,11 @@ vx_compose_restore_prepare() {
         return 1
     fi
     rm -f -- "$normalized_archived" "$normalized_candidate"
+    if [[ -f "$extracted/control/routes.conf" ]]; then
+        vx_compose_routes_validate_file \
+            "$owner" "$project" "$candidate/canonical.json" \
+            "$extracted/control/routes.conf" || return 1
+    fi
     vx_compose_restore_verify_images \
         "$owner" "$candidate/canonical.json" "$extracted/control/images.json" \
         || return 1
@@ -450,6 +457,10 @@ vx_compose_restore_install_active() {
     if [[ -f "$extracted/control/images.json" ]]; then
         install -m 0640 \
             "$extracted/control/images.json" "$temp_revision/images.json"
+    fi
+    if [[ -f "$extracted/control/routes.conf" ]]; then
+        install -m 0640 \
+            "$extracted/control/routes.conf" "$temp_revision/routes.conf"
     fi
     mv -- "$temp_revision" "$root/revisions/$revision_name" || return 1
     install -m 0640 "$candidate/compose.yaml" "$root/compose.yaml"
@@ -559,6 +570,7 @@ vx_compose_restore_project_existing() {
                 && vx_compose_invoke "$owner" "$project" \
                     up -d --remove-orphans --wait \
                     --wait-timeout "$VX_COMPOSE_WAIT_TIMEOUT" \
+                && vx_compose_routes_apply "$owner" "$project" \
                 || result=1
             if [[ "$result" -eq 0 && "$desired_state" == stopped ]]; then
                 vx_compose_invoke "$owner" "$project" stop --timeout 30 \
@@ -604,6 +616,7 @@ vx_compose_restore_project_existing() {
         vx_compose_project_resolve_images "$owner" "$project" \
             && vx_compose_invoke "$owner" "$project" \
                 up -d --wait --wait-timeout "$VX_COMPOSE_WAIT_TIMEOUT" \
+            && vx_compose_routes_apply "$owner" "$project" \
             && {
                 if [[ "$previous_state" == stopped ]]; then
                     vx_compose_invoke "$owner" "$project" stop --timeout 30

@@ -1,0 +1,22 @@
+#!/bin/bash
+# info: delete managed HTTP route from a Docker Compose project
+# options: USER PROJECT DOMAIN
+
+user=$1
+compose_project=$2
+domain=$3
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '3' "$#" 'USER PROJECT DOMAIN'
+[ "$#" -le 3 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user' 'domain'
+is_object_valid 'user' 'USER' "$user"
+
+vx_compose_route_delete "$user" "$compose_project" "$domain" \
+    || check_result "$E_INVALID" 'Docker Compose route deletion failed'
+
+log_history "deleted Docker Compose route $domain from $compose_project"
+log_event "$OK" "$ARGUMENTS"
+exit

@@ -1,0 +1,29 @@
+#!/bin/bash
+# info: add managed HTTP route to a Docker Compose project
+# options: USER PROJECT DOMAIN SERVICE PORT [SCHEME] [PATH]
+
+user=$1
+compose_project=$2
+domain=$3
+service=$4
+container_port=$5
+scheme=${6-http}
+route_path=${7-/}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '5' "$#" 'USER PROJECT DOMAIN SERVICE PORT [SCHEME] [PATH]'
+[ "$#" -le 7 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user' 'domain'
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+
+vx_compose_route_add \
+    "$user" "$compose_project" "$domain" "$service" \
+    "$container_port" "$scheme" "$route_path" \
+    || check_result "$E_INVALID" 'Docker Compose route persistence failed'
+
+log_history "added Docker Compose route $domain to $compose_project"
+log_event "$OK" "$ARGUMENTS"
+exit

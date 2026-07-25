@@ -1,11 +1,12 @@
 {
   "name": "admin-approved",
-  "version": 1,
-  "enabled": false,
+  "version": 2,
+  "enabled": true,
   "admin_only": true,
   "allow_build": false,
   "allow_bind_mounts": true,
   "allow_external_networks": false,
-  "allow_host_namespaces": false,
+  "allow_public_ports": true,
+  "allow_host_namespaces": true,
   "allowed_cap_add": []
 }

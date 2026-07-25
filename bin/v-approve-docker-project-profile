@@ -1,0 +1,26 @@
+#!/bin/bash
+# info: assign an expiring administrator Docker Compose profile
+# options: USER PROJECT PROFILE EXPIRES
+
+user=$1
+compose_project=$2
+profile=$3
+expires=$4
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '4' "$#" 'USER PROJECT PROFILE EXPIRES'
+[ "$#" -le 4 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+vx_compose_require_project_key "$compose_project" \
+    || check_result "$E_INVALID" "invalid Compose project :: $compose_project"
+
+vx_compose_profile_assignment_add \
+    "$user" "$compose_project" "$profile" "$expires" \
+    || check_result "$E_INVALID" 'Docker Compose profile assignment failed'
+
+log_history "assigned Docker Compose profile $profile to $compose_project"
+log_event "$OK" "$ARGUMENTS"
+exit
