@@ -5,6 +5,7 @@ $TAB = 'DOCKER';
 
 include($_SERVER['DOCUMENT_ROOT']."/inc/main.php");
 include($_SERVER['DOCUMENT_ROOT']."/inc/vx_docker.php");
+include($_SERVER['DOCUMENT_ROOT']."/inc/vx_compose.php");
 
 $docker_owner_users = vx_docker_is_admin_actor() ? vx_docker_list_users() : array();
 $docker_form_owner = vx_docker_resolve_owner_from_request($user);
@@ -24,7 +25,8 @@ $docker_form_values = vx_docker_form_defaults();
 $docker_page_mode = 'add';
 $docker_state = vx_docker_get_engine_state();
 $docker_available = vx_docker_is_engine_available($docker_state);
-$docker_quota = vx_docker_get_quota_state($docker_form_owner);
+$docker_quota = vx_compose_quota_state($docker_form_owner);
+$docker_spawn_hash = '';
 
 if (!empty($_POST['ok'])) {
     if ((!isset($_POST['token'])) || ($_SESSION['token'] != $_POST['token'])) {
@@ -45,37 +47,27 @@ if (!empty($_POST['ok'])) {
     }
 
     if (empty($_SESSION['error_msg'])) {
-        exec('mktemp -d', $output, $return_var);
-        $tmpdir = isset($output[0]) ? trim($output[0]) : '';
-        unset($output);
-
-        if ($return_var !== 0 || $tmpdir === '') {
-            $_SESSION['error_msg'] = __('Unable to prepare Docker spec file.');
+        $spec_payload = vx_docker_spec_from_post();
+        $spec_file = vx_compose_web_source_create(
+            $spec_payload,
+            'simple.spec'
+        );
+        if ($spec_file === '') {
+            $_SESSION['error_msg'] = __('Unable to prepare protected Docker spec file.');
         } else {
-            $spec_file = vx_docker_write_spec_file($tmpdir, vx_docker_spec_from_post());
-            exec(
-                VESTA_CMD."v-add-docker-container "
-                .escapeshellarg($docker_form_owner)
-                ." "
-                .escapeshellarg($spec_file),
-                $output,
-                $return_var
-            );
-            check_return_code($return_var, $output);
-            unset($output);
-            @unlink($spec_file);
-            @rmdir($tmpdir);
+            $cmd = VESTA_CMD."v-spawn-ajax-process "
+                .escapeshellarg($user)
+                ." /usr/local/vesta/bin/v-web-add-docker-container "
+                .escapeshellarg($docker_form_owner)." "
+                .escapeshellarg($spec_file);
+            $docker_spawn_hash = trim((string) shell_exec($cmd));
+            if ($docker_spawn_hash === '') {
+                vx_compose_web_source_discard($spec_file);
+                $_SESSION['error_msg'] = __('Unable to start simple Compose project creation.');
+            }
         }
     }
 
-    if (empty($_SESSION['error_msg'])) {
-        $redirect = '/list/docker/';
-        if (vx_docker_is_admin_actor() && $docker_form_owner !== 'admin') {
-            $redirect .= '?user='.urlencode($docker_form_owner);
-        }
-        header('Location: '.$redirect);
-        exit;
-    }
 }
 
 render_page($user, $TAB, 'add_docker');

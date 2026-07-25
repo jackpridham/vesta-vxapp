@@ -107,13 +107,24 @@ vx_compose_prepare_candidate() {
     local allow_existing_labels="${6:-no}"
     local validation_bind_root="${7:-}"
     local validation_secret_root="${8:-}"
+    local authorization_mode="${9:-enforce}"
     local work_root raw_json override_file
     local -a canonical_files
 
     vx_compose_require_owner "$owner" || return 1
     vx_compose_require_project_key "$project" || return 1
-    vx_compose_profile_require_authorized "$owner" "$project" "$profile" \
-        || return 1
+    if [[ "$authorization_mode" == preview ]]; then
+        [[ "$profile" == standard || "$profile" == admin-approved ]] \
+            || {
+                vx_compose_error \
+                    'preview supports only standard or admin-approved profiles'
+                return 1
+            }
+    else
+        [[ "$authorization_mode" == enforce ]] || return 1
+        vx_compose_profile_require_authorized "$owner" "$project" "$profile" \
+            || return 1
+    fi
     [[ -f "$input_file" && ! -L "$input_file" ]] \
         || {
             vx_compose_error 'Compose input must be a regular non-symlink file'
@@ -206,6 +217,68 @@ vx_compose_prepare_candidate() {
     chmod 0640 "$output_root/canonical.sha256"
     rm -rf -- "$work_root"
     trap - RETURN
+}
+
+vx_compose_candidate_summary_json() {
+    local owner="$1"
+    local project="$2"
+    local profile="$3"
+    local candidate="$4"
+
+    jq -n \
+        --arg owner "$owner" \
+        --arg project "$project" \
+        --arg profile "$profile" \
+        --arg sha "$(vx_compose_candidate_sha "$candidate")" \
+        --argjson canonical "$(cat "$candidate/canonical.json")" \
+        --arg services "$(vx_compose_meta_get \
+            "$candidate/policy.conf" SERVICES)" \
+        --arg cpus "$(vx_compose_meta_get \
+            "$candidate/policy.conf" CPUS_MILLI)" \
+        --arg memory "$(vx_compose_meta_get \
+            "$candidate/policy.conf" MEMORY_MB)" \
+        --arg pids "$(vx_compose_meta_get "$candidate/policy.conf" PIDS)" \
+        --arg storage "$(vx_compose_meta_get \
+            "$candidate/policy.conf" STORAGE_MB)" '
+        {
+            OWNER: $owner,
+            PROJECT: $project,
+            COMPOSE_PROJECT: $canonical.name,
+            PROFILE: $profile,
+            VALID: true,
+            CANONICAL_SHA256: $sha,
+            SERVICES: ($canonical.services | keys),
+            SERVICE_SUMMARY: (
+                $canonical.services
+                | with_entries(.value = {
+                    IMAGE: (.value.image // ""),
+                    PORTS: [
+                        .value.ports[]?
+                        | if type == "string" then .
+                          else
+                            ((.host_ip // "0.0.0.0") + ":"
+                            + ((.published // "") | tostring) + ":"
+                            + ((.target // "") | tostring) + "/"
+                            + (.protocol // "tcp"))
+                          end
+                    ],
+                    HAS_HEALTHCHECK: (
+                        (.value.healthcheck // null) != null
+                    )
+                })
+            ),
+            IMAGES: ([$canonical.services[].image] | unique),
+            NETWORKS: (($canonical.networks // {}) | keys),
+            VOLUMES: (($canonical.volumes // {}) | keys),
+            SECRETS: (($canonical.secrets // {}) | keys),
+            RESOURCES: {
+                SERVICES: ($services | tonumber),
+                CPUS_MILLI: ($cpus | tonumber),
+                MEMORY_MB: ($memory | tonumber),
+                PIDS: ($pids | tonumber),
+                STORAGE_MB: ($storage | tonumber)
+            }
+        }'
 }
 
 vx_compose_validate_existing() {

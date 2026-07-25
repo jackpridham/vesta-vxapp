@@ -64,7 +64,11 @@ vx_compose_ports_keys() {
 vx_compose_ports_lock_acquire() {
     local lock_path="$VESTA/data/.vx-compose-ports.lock"
 
-    install -d -m 0750 "$VESTA/data"
+    [[ -d "$VESTA/data" && ! -L "$VESTA/data" ]] \
+        || {
+            vx_compose_error 'Vesta data root is unavailable'
+            return 1
+        }
     exec {VX_COMPOSE_PORTS_LOCK_FD}>"$lock_path"
     chmod 0640 "$lock_path"
     flock -x "$VX_COMPOSE_PORTS_LOCK_FD"

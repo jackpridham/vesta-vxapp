@@ -1,0 +1,30 @@
+#!/bin/bash
+# info: consume a validated simple web Docker Compose update
+# options: USER PROJECT SPEC
+
+user=$1
+compose_project=$2
+spec_file=$3
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '3' "$#" 'USER PROJECT SPEC'
+[ "$#" -le 3 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+vx_compose_web_source_validate "$spec_file" simple.spec \
+    || check_result "$E_INVALID" 'invalid protected web simple spec'
+trap 'vx_compose_web_source_cleanup "$spec_file" >/dev/null 2>&1 || true' EXIT
+
+"$VESTA/bin/v-change-docker-container" \
+    "$user" "$compose_project" "$spec_file" \
+    || check_result "$E_UPDATE" 'web simple Compose project update failed'
+
+vx_compose_web_source_cleanup "$spec_file" \
+    || check_result "$E_UPDATE" 'web simple spec cleanup failed'
+trap - EXIT
+log_history "changed web simple Docker Compose project $compose_project"
+log_event "$OK" "$ARGUMENTS"
+exit

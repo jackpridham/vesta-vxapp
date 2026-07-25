@@ -1,0 +1,37 @@
+#!/bin/bash
+# info: preview a canonical Docker Compose project definition
+# options: USER PROJECT SOURCE PROFILE
+
+user=$1
+compose_project=$2
+source_file=$3
+profile=$4
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+if [ -f "$VESTA/conf/vesta.conf" ]; then
+    # shellcheck source=/dev/null
+    source "$VESTA/conf/vesta.conf"
+fi
+
+check_args '4' "$#" 'USER PROJECT SOURCE PROFILE'
+[ "$#" -le 4 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+vx_compose_require_project_key "$compose_project" \
+    || check_result "$E_INVALID" "invalid Compose project :: $compose_project"
+vx_compose_profile_is_available "$profile" \
+    || check_result "$E_INVALID" "Compose profile is not available :: $profile"
+
+candidate_parent="$(mktemp -d)"
+candidate="$candidate_parent/candidate"
+trap 'rm -rf -- "$candidate_parent"' EXIT
+vx_compose_prepare_candidate \
+    "$user" "$compose_project" "$source_file" "$candidate" "$profile" \
+    no '' '' preview \
+    || check_result "$E_INVALID" 'Compose project validation preview failed'
+vx_compose_candidate_summary_json \
+    "$user" "$compose_project" "$profile" "$candidate" \
+    || check_result "$E_INVALID" 'Compose validation summary failed'
+exit

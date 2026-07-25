@@ -147,6 +147,7 @@
         postJson(config.acknowledgeUrl, {
             token: config.token,
             owner: activeAlert.OWNER,
+            name: activeAlert.NAME || config.name,
             aid: activeAlert.AID
         }, function() {
             activeAlert = null;

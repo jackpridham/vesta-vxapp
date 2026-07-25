@@ -1,19 +1,23 @@
 #!/bin/bash
 # info: validate or adopt an existing Docker Compose definition
-# options: USER PROJECT SOURCE [dry-run|apply]
+# options: USER PROJECT SOURCE [dry-run|apply] [PROFILE]
 
 user=$1
 compose_project=$2
 source_file=$3
 mode=${4-dry-run}
+profile=${5-standard}
 
 source "$VESTA/func/main.sh"
 source "$VESTA/func/vx/compose/main.sh"
 
-check_args '3' "$#" 'USER PROJECT SOURCE [dry-run|apply]'
-[ "$#" -le 4 ] || check_result "$E_ARGS" 'too many arguments'
+check_args '3' "$#" 'USER PROJECT SOURCE [dry-run|apply] [PROFILE]'
+[ "$#" -le 5 ] || check_result "$E_ARGS" 'too many arguments'
 is_format_valid 'user'
 is_object_valid 'user' 'USER' "$user"
-vx_compose_adopt "$user" "$compose_project" "$source_file" "$mode" standard \
+is_object_unsuspended 'user' 'USER' "$user"
+vx_compose_profile_is_available "$profile" \
+    || check_result "$E_INVALID" "Compose profile is not available :: $profile"
+vx_compose_adopt "$user" "$compose_project" "$source_file" "$mode" "$profile" \
     || check_result "$E_INVALID" 'Docker Compose adoption failed'
 exit

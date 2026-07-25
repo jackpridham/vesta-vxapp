@@ -1,25 +1,37 @@
 #!/bin/bash
 # info: create a verified Docker Compose project backup
-# options: USER PROJECT BACKUP
+# options: USER PROJECT [BACKUP]
 
 user=$1
 compose_project=$2
-backup_file=$3
+backup_file=${3-}
+managed_default=no
 
 source "$VESTA/func/main.sh"
 source "$VESTA/func/vx/compose/main.sh"
 
-check_args '3' "$#" 'USER PROJECT BACKUP'
+check_args '2' "$#" 'USER PROJECT [BACKUP]'
 [ "$#" -le 3 ] || check_result "$E_ARGS" 'too many arguments'
 is_format_valid 'user'
 is_object_valid 'user' 'USER' "$user"
 is_object_unsuspended 'user' 'USER' "$user"
 vx_compose_require_project_key "$compose_project" \
     || check_result "$E_INVALID" "invalid Compose project :: $compose_project"
+if [[ -z "$backup_file" ]]; then
+    managed_default=yes
+    backup_file="$(vx_compose_backup_allocate_path "$user" "$compose_project")" \
+        || check_result "$E_INVALID" \
+            'Docker Compose backup destination allocation failed'
+fi
 
 vx_compose_backup_project "$user" "$compose_project" "$backup_file" \
     || check_result "$E_INVALID" 'Docker Compose project backup failed'
 
+if [[ "$managed_default" == yes ]]; then
+    printf '%s\n' "$(basename -- "$backup_file")"
+else
+    printf '%s\n' "$backup_file"
+fi
 log_history "backed up Docker Compose project $compose_project"
 log_event "$OK" "$ARGUMENTS"
 exit

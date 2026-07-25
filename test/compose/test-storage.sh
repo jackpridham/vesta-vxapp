@@ -40,14 +40,16 @@ fi
 candidate="$test_root/candidate"
 mkdir -p "$candidate"
 printf '%s\n' 'services: {}' >"$candidate/compose.yaml"
-printf '%s\n' '{"name":"vx-alice-app","services":{}}' >"$candidate/canonical.json"
+printf '%s\n' \
+    '{"name":"vx-alice-app","services":{"web":{"image":"example.test/web:v1"}}}' \
+    >"$candidate/canonical.json"
 printf '%s\n' 'abc123' >"$candidate/canonical.sha256"
 {
     printf "POLICY_SCHEMA='1'\n"
     printf "VALIDATOR_VERSION='2'\n"
     printf "PROFILE='standard'\n"
     printf "PROFILE_VERSION='2'\n"
-    printf "SERVICES='0'\n"
+    printf "SERVICES='1'\n"
     printf "CPUS_MILLI='0'\n"
     printf "MEMORY_MB='0'\n"
     printf "PIDS='0'\n"
@@ -56,6 +58,10 @@ printf '%s\n' 'abc123' >"$candidate/canonical.sha256"
     printf "SECRETS='0'\n"
     printf "VOLUMES='0'\n"
 } >"$candidate/policy.conf"
+printf '%s\n' \
+    '{"GENERATED":true,"OWNER":"alice","NAME":"app","IMAGE":"example.test/web:v1"}' \
+    >"$candidate/simple.json"
+chmod 0600 "$candidate/simple.json"
 
 vx_compose_store_new alice app standard "$candidate"
 project_root="$(vx_compose_project_root alice app)"
@@ -63,6 +69,13 @@ project_root="$(vx_compose_project_root alice app)"
 [[ -f "$project_root/compose.yaml" ]] || fail "canonical Compose file was not stored"
 [[ -f "$project_root/runtime/canonical.json" ]] || fail "canonical JSON was not stored"
 [[ -f "$project_root/revisions/000001/compose.yaml" ]] || fail "first revision was not stored"
+[[ -f "$project_root/simple.json"
+    && -f "$project_root/revisions/000001/simple.json" ]] \
+    || fail "simple-form provenance was not revisioned"
+vx_compose_inspect_json alice app | jq -e \
+    '.SIMPLE.GENERATED == true and .SIMPLE.IMAGE == "example.test/web:v1"' \
+    >/dev/null \
+    || fail "simple-form provenance is missing from safe project inspection"
 [[ "$(vx_compose_meta_get "$project_root/project.conf" OWNER)" == alice ]] \
     || fail "owner metadata is wrong"
 [[ "$(vx_compose_meta_get "$project_root/project.conf" COMPOSE_PROJECT)" == vx-alice-app ]] \
@@ -87,6 +100,7 @@ printf '%s\n' 'services: {web: {image: example.test/web:v2}}' >"$candidate/compo
 printf '%s\n' '{"name":"vx-alice-app","services":{"web":{"image":"example.test/web:v2"}}}' \
     >"$candidate/canonical.json"
 printf '%s\n' 'def456' >"$candidate/canonical.sha256"
+rm -f -- "$candidate/simple.json"
 vx_compose_store_revision alice app "$candidate" validated
 
 [[ "$(vx_compose_meta_get "$project_root/project.conf" REVISION)" == 2 ]] \
@@ -95,5 +109,8 @@ vx_compose_store_revision alice app "$candidate" validated
     || fail "second immutable revision is missing"
 [[ -f "$project_root/revisions/000001/compose.yaml" ]] \
     || fail "first revision was overwritten"
+[[ ! -e "$project_root/simple.json"
+    && ! -e "$project_root/revisions/000002/simple.json" ]] \
+    || fail "advanced revision retained stale simple-form provenance"
 
 echo "Compose storage tests passed."

@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC1091,SC2086
 # Vesta record helpers consume these globals across sourced functions.
 # shellcheck disable=SC2034
 # info: change docker container
@@ -35,6 +36,16 @@ is_object_valid 'user' 'USER' "$user"
 is_object_unsuspended 'user' 'USER' "$user"
 ensure_docker_engine_available
 if vx_compose_require_project "$user" "$name" >/dev/null 2>&1; then
+    simple_metadata="$(vx_compose_project_root "$user" "$name")/simple.json"
+    jq -e \
+        --arg owner "$user" \
+        --arg project "$name" '
+            .GENERATED == true
+            and .OWNER == $owner
+            and .NAME == $project
+        ' "$simple_metadata" >/dev/null 2>&1 \
+        || check_result "$E_FORBIDEN" \
+            'advanced Compose projects cannot use the simple editor'
     vx_docker_load_spec "$spec_file"
     [ "$NAME" = "$name" ] \
         || check_result "$E_INVALID" "docker spec NAME must match $name"

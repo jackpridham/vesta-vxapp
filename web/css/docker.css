@@ -620,6 +620,28 @@
   white-space: pre-wrap;
 }
 
+.body-docker pre.docker-mono {
+  background: #f6f6f4;
+  border: 1px solid #dfdfda;
+  border-radius: 6px;
+  box-sizing: border-box;
+  line-height: 1.5;
+  margin: 12px 0 0;
+  max-height: 360px;
+  overflow: auto;
+  padding: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.body-docker .docker-compose-editor {
+  box-sizing: border-box;
+  font-family: 'Geist Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  min-height: 420px;
+  resize: vertical;
+  width: 100%;
+}
+
 .body-docker .docker-form-actions {
   display: flex;
   gap: 12px;

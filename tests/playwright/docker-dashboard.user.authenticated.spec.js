@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 const { getOptionalEnv, loginAsRole } = require('./helpers/panel-auth');
-const { cleanupContainersWithPrefix, hasLocalVestaRuntime, hasRemoteVestaRuntime, isLocalPanelTarget, withSeededAlert } = require('./helpers/docker-runtime-fixtures');
+const { hasLocalVestaRuntime, hasRemoteVestaRuntime, isLocalPanelTarget, withSeededAlert } = require('./helpers/docker-runtime-fixtures');
 
 const allowedHealthStates = new Set(['healthy', 'starting', 'degraded', 'unhealthy', 'unknown']);
 
@@ -77,14 +77,14 @@ async function requireRealDockerList(page, preferredContainer = '') {
 
   const owner = (await card.getAttribute('data-owner')) || '';
   const name = (await card.getAttribute('data-name')) || '';
-  const editLink = card.locator('a[href*="/edit/docker/?container="]').first();
-  const editHref = (await editLink.getAttribute('href')) || '';
+  const detailsLink = card.locator('a[href*="/list/docker/project/?project="]').first();
+  const detailsHref = (await detailsLink.getAttribute('href')) || '';
 
   expect(owner).not.toBe('');
   expect(name).not.toBe('');
-  expect(editHref).not.toBe('');
+  expect(detailsHref).not.toBe('');
 
-  return { card, owner, name, editHref };
+  return { card, owner, name, detailsHref };
 }
 
 test('docker list dashboard renders cards, constrained health vocabulary, and alert acknowledgement updates state', async ({ page }) => {
@@ -93,7 +93,6 @@ test('docker list dashboard renders cards, constrained health vocabulary, and al
   await loginAsRole(page, 'dockerUser');
   const preferredContainer = getOptionalEnv('PLAYWRIGHT_DOCKER_DASHBOARD_CONTAINER');
   const { owner, name } = await requireRealDockerList(page, preferredContainer);
-  cleanupContainersWithPrefix(owner);
   const seededAlert = withSeededAlert(owner, name);
 
   try {
@@ -138,18 +137,17 @@ test('docker list dashboard renders cards, constrained health vocabulary, and al
   }
 });
 
-test('docker edit page renders live metrics and chart containers after stats data returns', async ({ page }) => {
+test('Compose detail page renders project health, metrics, and revision context', async ({ page }) => {
   await loginAsRole(page, 'dockerUser');
   const preferredContainer = getOptionalEnv('PLAYWRIGHT_DOCKER_DASHBOARD_CONTAINER');
-  const { editHref } = await requireRealDockerList(page, preferredContainer);
-  await page.goto(editHref);
+  const { detailsHref } = await requireRealDockerList(page, preferredContainer);
+  await page.goto(detailsHref);
 
-  await expect(page.locator('#docker-live-metrics')).toBeVisible();
-  await waitForRenderedSeries(page, '#docker-chart-cpu');
-  await waitForRenderedSeries(page, '#docker-chart-mem');
-  await waitForRenderedSeriesOrPlaceholder(page, '#docker-chart-rx', 'No metrics available yet');
-  await waitForRenderedSeries(page, '#docker-chart-tx');
-  await waitForMetricValue(page, '#docker-detail-status', 'No data', /^(running|restarting|created|exited|paused|dead|unknown)$/i);
-  await expect(page.locator('#docker-detail-health-status')).toHaveText(/healthy|starting|degraded|unhealthy|unknown/i);
-  await waitForMetricValue(page, '#docker-detail-health-updated', 'No data', /\d/);
+  await expect(page.getByRole('heading', { name: /Recent metrics/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Health/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Available rollback revisions/i })).toBeVisible();
+  await expect(page.locator('.docker-status-badge')).toHaveText(/\S+/);
+  await expect(page.locator('.docker-health-badge')).toHaveText(
+    /healthy|starting|degraded|unhealthy|unknown/i
+  );
 });

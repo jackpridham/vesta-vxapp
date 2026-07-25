@@ -51,7 +51,7 @@
           <article id="<?=htmlspecialchars($docker_card_id, ENT_QUOTES)?>" class="l-unit docker-card <?php if ($docker_card_status !== 'running') echo 'l-unit--suspended'; ?>" data-owner="<?=htmlspecialchars($docker_card_owner, ENT_QUOTES)?>" data-name="<?=htmlspecialchars($docker_card_name, ENT_QUOTES)?>" data-status="<?=htmlspecialchars($docker_card_status !== '' ? $docker_card_status : 'unknown', ENT_QUOTES)?>">
             <div class="docker-card__header">
               <div class="docker-card__title-group">
-                <div class="docker-eyebrow"><?=__('Managed container')?></div>
+                <div class="docker-eyebrow"><?=__('Managed Compose project')?></div>
                 <div class="docker-card__title-row">
                   <div>
                     <h3 class="docker-card__title"><?=htmlspecialchars($docker_card_name, ENT_QUOTES)?></h3>
@@ -67,11 +67,10 @@
             <div class="l-unit-toolbar clearfix docker-card__toolbar">
               <div class="l-unit-toolbar__col l-unit-toolbar__col--right noselect">
                 <div class="actions-panel clearfix docker-actions">
-                  <div class="actions-panel__col actions-panel__edit shortcut-enter" key-action="href"><a href="/edit/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>"><?=__('edit')?></a><span class="shortcut enter">&nbsp;&#8629;</span></div>
+                  <div class="actions-panel__col actions-panel__edit shortcut-enter" key-action="href"><a href="/list/docker/project/?project=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>"><?=__('details')?></a><span class="shortcut enter">&nbsp;&#8629;</span></div>
                   <div class="actions-panel__col actions-panel__<?=$docker_action?> shortcut-s" key-action="href"><a href="/<?=$docker_action?>/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>&token=<?=$_SESSION['token']?>"><?=__($docker_action)?></a><span class="shortcut">&nbsp;S</span></div>
                   <div class="actions-panel__col actions-panel__restart shortcut-r" key-action="href"><a href="/restart/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>&token=<?=$_SESSION['token']?>"><?=__('restart')?></a><span class="shortcut">&nbsp;R</span></div>
-                  <div class="actions-panel__col actions-panel__delete shortcut-delete" key-action="href"><a href="/delete/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>&token=<?=$_SESSION['token']?>"><?=__('delete')?></a><span class="shortcut delete">&nbsp;Del</span></div>
-                  <div class="actions-panel__col actions-panel__logs shortcut-more"><a href="javascript:void(0)" onclick="more_button_click(<?=$i?>)"><?=__('Docker')?></a><span class="shortcut more">&nbsp;&#8629;</span></div>
+                  <div class="actions-panel__col actions-panel__logs shortcut-more"><a href="javascript:void(0)" onclick="more_button_click(<?=$i?>)"><?=__('Project actions')?></a><span class="shortcut more">&nbsp;&#8629;</span></div>
                 </div>
               </div>
             </div>
@@ -79,6 +78,16 @@
               <div class="docker-stat">
                 <span class="docker-stat__label"><?=__('Owner')?></span>
                 <b class="docker-stat__value"><?=htmlspecialchars($docker_card_owner, ENT_QUOTES)?></b>
+              </div>
+              <div class="docker-stat">
+                <span class="docker-stat__label"><?=__('Services')?></span>
+                <b class="docker-stat__value"><?=htmlspecialchars(isset($container['SERVICE_COUNT']) ? $container['SERVICE_COUNT'] : 0, ENT_QUOTES)?></b>
+                <span class="docker-stat__meta"><?=htmlspecialchars(isset($container['SERVICES']) ? implode(', ', $container['SERVICES']) : '', ENT_QUOTES)?></span>
+              </div>
+              <div class="docker-stat">
+                <span class="docker-stat__label"><?=__('Revision')?></span>
+                <b class="docker-stat__value"><?=htmlspecialchars(isset($container['REVISION']) ? $container['REVISION'] : 0, ENT_QUOTES)?></b>
+                <span class="docker-stat__meta"><?=htmlspecialchars(isset($container['PROFILE']) ? $container['PROFILE'] : 'standard', ENT_QUOTES)?></span>
               </div>
               <div class="docker-stat">
                 <span class="docker-stat__label"><?=__('Route')?></span>
@@ -158,12 +167,15 @@
       <section class="docker-hero">
         <div>
           <div class="docker-eyebrow"><?=__('Docker Panel')?></div>
-          <h1 class="docker-page-title"><?=__('Managed containers')?></h1>
-          <p class="docker-page-copy"><?=__('A focused control plane for container routing, health checks, alerts, and runtime visibility.')?></p>
+          <h1 class="docker-page-title"><?=__('Compose projects')?></h1>
+          <p class="docker-page-copy"><?=__('Constrained multi-service projects with managed routing, revisions, health, and runtime visibility.')?></p>
         </div>
         <div class="docker-hero__actions">
           <?php if ($docker_available && empty($docker_quota['reached']) && $docker_can_add_from_scope) { ?>
-          <a href="<?=$docker_add_href?>" class="button docker-button docker-button--primary" title="<?=__('Add Docker Container')?>"><?=__('Add Docker Container')?></a>
+          <a href="<?=$docker_add_href?>" class="button docker-button docker-button--primary" title="<?=__('Add simple Compose project')?>"><?=__('Add simple project')?></a>
+          <?php } ?>
+          <?php if ($docker_actor_is_admin && $docker_can_add_from_scope) { ?>
+          <a href="/add/docker/project/<?=$docker_query?>" class="button docker-button docker-button--secondary"><?=__('Advanced Compose')?></a>
           <?php } ?>
           <a href="/list/docker/<?=$docker_query?>" class="button docker-button docker-button--secondary"><?=__('refresh')?></a>
           <a href="/list/server/" class="button docker-button docker-button--secondary"><?=__('Server')?></a>
@@ -191,9 +203,9 @@
           <p class="docker-overview-card__meta"><?=__('Current panel scope for Docker management.')?></p>
         </article>
         <article class="docker-overview-card">
-          <span class="docker-overview-card__label"><?=__('Managed containers')?></span>
+          <span class="docker-overview-card__label"><?=__('Compose projects')?></span>
           <strong class="docker-overview-card__value"><?=$docker_total_containers?></strong>
-          <p class="docker-overview-card__meta"><?=__('Live inventory available to this view.')?></p>
+          <p class="docker-overview-card__meta"><?=__('Validated project inventory available to this view.')?></p>
         </article>
         <article class="docker-overview-card">
           <span class="docker-overview-card__label"><?=__('Quota')?></span>
@@ -208,8 +220,8 @@
       </section>
 
       <section id="docker-empty-state" class="docker-state" <?php if ($docker_primary_state !== 'empty') echo 'style="display:none;"'; ?>>
-        <div class="docker-state__title"><?=__('No Docker containers are managed in this scope yet.')?></div>
-        <p class="docker-state__copy"><?=__('Create a managed container to start routing and monitoring it from the panel.')?></p>
+        <div class="docker-state__title"><?=__('No Compose projects are managed in this scope yet.')?></div>
+        <p class="docker-state__copy"><?=__('Create a project to start routing and monitoring it from the panel.')?></p>
       </section>
 
       <section id="docker-quota-reached-state" class="docker-state docker-state--muted" <?php if ($docker_primary_state !== 'quota') echo 'style="display:none;"'; ?>>
@@ -227,7 +239,7 @@
           <?php } ?>
         </div>
         <div id="docker-list-toolbar" class="docker-list-meta">
-          <span class="docker-list-meta__item"><b><?=__('Managed Docker containers')?>:</b> <?=$docker_total_containers?></span>
+          <span class="docker-list-meta__item"><b><?=__('Managed Compose projects')?>:</b> <?=$docker_total_containers?></span>
           <?php if ($docker_actor_is_admin && $docker_owner === '') { ?>
           <span class="docker-list-meta__item"><?=__('Select an owner scope to add a Docker container.')?></span>
           <?php } ?>
@@ -245,7 +257,7 @@
                   <div class="docker-eyebrow"><?=__('Owner group')?></div>
                   <h2 class="docker-owner-group__title"><?=htmlspecialchars($docker_group_owner, ENT_QUOTES)?></h2>
                 </div>
-                <div class="docker-owner-group__count"><?=count($docker_group_containers)?> <?=__('containers')?></div>
+                <div class="docker-owner-group__count"><?=count($docker_group_containers)?> <?=__('projects')?></div>
               </div>
               <div class="docker-card-grid">
                 <?php foreach ($docker_group_containers as $docker_key => $container) { ?>
@@ -300,6 +312,6 @@
       </section>
 
       <div id="vstobjects" class="docker-footer-meta">
-        <div class="data-count"><?=count($data)?> <?=__('containers')?></div>
+        <div class="data-count"><?=count($data)?> <?=__('projects')?></div>
       </div>
     </div>

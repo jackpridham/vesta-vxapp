@@ -1,0 +1,30 @@
+#!/bin/bash
+# info: consume a validated web Docker Compose project update
+# options: USER PROJECT SOURCE
+
+user=$1
+compose_project=$2
+source_file=$3
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '3' "$#" 'USER PROJECT SOURCE'
+[ "$#" -le 3 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+vx_compose_web_source_validate "$source_file" compose.yaml \
+    || check_result "$E_INVALID" 'invalid protected web Compose source'
+trap 'vx_compose_web_source_cleanup "$source_file" >/dev/null 2>&1 || true' EXIT
+
+"$VESTA/bin/v-change-docker-project" \
+    "$user" "$compose_project" "$source_file" \
+    || check_result "$E_UPDATE" 'web Docker Compose project update failed'
+
+vx_compose_web_source_cleanup "$source_file" \
+    || check_result "$E_UPDATE" 'web Compose source cleanup failed'
+trap - EXIT
+log_history "changed web Docker Compose project $compose_project"
+log_event "$OK" "$ARGUMENTS"
+exit

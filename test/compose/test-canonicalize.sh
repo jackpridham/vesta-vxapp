@@ -68,6 +68,17 @@ jq -e '.services.web.ports[0].published == "18081"' \
     "$candidate/canonical.json" >/dev/null \
     || fail "caller interpolation environment leaked into canonicalization"
 unset VX_HTTP_PORT
+vx_compose_candidate_summary_json alice web standard "$candidate" | jq -e '
+    .VALID == true
+    and .COMPOSE_PROJECT == "vx-alice-web"
+    and .SERVICES == ["web"]
+    and .SERVICE_SUMMARY.web.IMAGE
+        == "nginxinc/nginx-unprivileged:1.27-alpine"
+    and .SERVICE_SUMMARY.web.PORTS == ["127.0.0.1:18081:8080/tcp"]
+    and (.CANONICAL_SHA256 | test("^[a-f0-9]{64}$"))
+    and (has("canonical") | not)
+' >/dev/null \
+    || fail "safe canonical validation preview is incomplete"
 (
     cd "$candidate"
     sha256sum -c canonical.sha256 >/dev/null 2>&1

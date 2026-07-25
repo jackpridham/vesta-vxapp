@@ -92,6 +92,8 @@ printf '%s\n' \
     'fi' >"$fake_ss"
 chmod 0755 "$fake_ss"
 VX_COMPOSE_SS_BIN="$fake_ss"
+# The single-quoted lines intentionally write a separate test executable.
+# shellcheck disable=SC2016
 printf '%s\n' \
     '#!/usr/bin/env bash' \
     'if [[ "$1" == ps ]]; then' \
@@ -103,6 +105,8 @@ if vx_compose_ports_check_live_conflicts \
     alice app "$test_root/free.json" 2>/dev/null; then
     fail "unmanaged live-listener conflict was accepted"
 fi
+# The single-quoted lines intentionally write a separate test executable.
+# shellcheck disable=SC2016
 printf '%s\n' \
     '#!/usr/bin/env bash' \
     'if [[ "$1" == ps ]]; then' \
@@ -114,9 +118,12 @@ chmod 0755 "$fake_docker"
 vx_compose_ports_check_live_conflicts alice app "$test_root/free.json" \
     || fail "current project listener was treated as unrelated"
 
+chmod 0755 "$VESTA/data"
 vx_compose_ports_lock_acquire
 [[ -n "${VX_COMPOSE_PORTS_LOCK_FD:-}" ]] \
     || fail "global port allocation lock was not acquired"
+[[ "$(stat -c '%a' "$VESTA/data")" == 755 ]] \
+    || fail "port locking changed the shared Vesta data-root mode"
 vx_compose_ports_lock_release
 [[ -z "${VX_COMPOSE_PORTS_LOCK_FD:-}" ]] \
     || fail "global port allocation lock was not released"

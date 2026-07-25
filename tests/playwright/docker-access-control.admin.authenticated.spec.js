@@ -1,5 +1,9 @@
 const { test, expect } = require('@playwright/test');
-const { getOptionalEnv, switchLookUser } = require('./helpers/panel-auth');
+const {
+  getOptionalEnv,
+  getPanelCredentials,
+  switchLookUser,
+} = require('./helpers/panel-auth');
 
 test('admin server navigation still exposes the docker page', async ({ page }) => {
   await page.goto('/list/server/');
@@ -51,17 +55,21 @@ test('admin login-as user does not expose all-user docker scope', async ({ page 
   const lookedUser = getOptionalEnv('PLAYWRIGHT_DOCKER_USER');
   test.skip(!lookedUser, 'Admin login-as coverage requires PLAYWRIGHT_DOCKER_USER.');
 
-  await page.goto('/list/user/');
-  await switchLookUser(page, lookedUser);
-  await page.goto('/list/docker/');
+  try {
+    await page.goto('/list/user/');
+    await switchLookUser(page, lookedUser);
+    await page.goto('/list/docker/');
 
-  await expect(page.locator('#docker-owner-filter')).not.toContainText(/Owner scope/i);
-  await expect(page.locator('form[action="/list/docker/"] select[name="user"]')).toHaveCount(0);
+    await expect(page.locator('#docker-owner-filter')).not.toContainText(/Owner scope/i);
+    await expect(page.locator('form[action="/list/docker/"] select[name="user"]')).toHaveCount(0);
 
-  const visibleCards = page.locator('#docker-list-cards article[id^="docker-card-"]');
-  const owners = await Promise.all(
-    (await visibleCards.all()).map(async (card) => (await card.getAttribute('data-owner')) || '')
-  );
+    const visibleCards = page.locator('#docker-list-cards article[id^="docker-card-"]');
+    const owners = await Promise.all(
+      (await visibleCards.all()).map(async (card) => (await card.getAttribute('data-owner')) || '')
+    );
 
-  expect(owners.every((owner) => owner === '' || owner === lookedUser)).toBeTruthy();
+    expect(owners.every((owner) => owner === '' || owner === lookedUser)).toBeTruthy();
+  } finally {
+    await switchLookUser(page, getPanelCredentials('admin').username);
+  }
 });

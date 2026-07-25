@@ -24,6 +24,7 @@ test('user docker tile links to the docker list and the list renders a contracte
 
   await dockerTile.click();
   await expect(page).toHaveURL(/\/list\/docker\/?$/);
+  await expect(page.getByRole('heading', { name: /Compose projects/i })).toBeVisible();
 
   const selector = await visiblePrimaryState(page);
   expect(selector).not.toBe('');

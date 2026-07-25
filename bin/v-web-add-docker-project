@@ -1,0 +1,63 @@
+#!/bin/bash
+# info: consume and deploy a validated web Docker Compose project source
+# options: USER PROJECT SOURCE PROFILE [EXPIRES]
+
+user=$1
+compose_project=$2
+source_file=$3
+profile=$4
+expires=${5-}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+if [ -f "$VESTA/conf/vesta.conf" ]; then
+    # shellcheck source=/dev/null
+    source "$VESTA/conf/vesta.conf"
+fi
+
+check_args '4' "$#" 'USER PROJECT SOURCE PROFILE [EXPIRES]'
+[ "$#" -le 5 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+vx_compose_require_project_key "$compose_project" \
+    || check_result "$E_INVALID" "invalid Compose project :: $compose_project"
+vx_compose_profile_is_available "$profile" \
+    || check_result "$E_INVALID" "Compose profile is not available :: $profile"
+vx_compose_web_source_validate "$source_file" compose.yaml \
+    || check_result "$E_INVALID" 'invalid protected web Compose source'
+trap 'vx_compose_web_source_cleanup "$source_file" >/dev/null 2>&1 || true' EXIT
+
+if vx_compose_require_project "$user" "$compose_project" >/dev/null 2>&1; then
+    check_result "$E_EXISTS" "Docker Compose project already exists :: $compose_project"
+fi
+approval_created=no
+if [[ "$profile" == admin-approved ]]; then
+    vx_compose_profile_assignment_add \
+        "$user" "$compose_project" "$profile" "$expires" \
+        || check_result "$E_INVALID" 'administrator profile assignment failed'
+    approval_created=yes
+elif [[ "$profile" != standard || -n "$expires" ]]; then
+    check_result "$E_INVALID" 'invalid web Compose profile or expiry'
+fi
+
+if ! "$VESTA/bin/v-add-docker-project" \
+    "$user" "$compose_project" "$source_file" "$profile"; then
+    if [[ "$approval_created" == yes ]] \
+        && ! vx_compose_require_project \
+            "$user" "$compose_project" >/dev/null 2>&1 \
+        && ! vx_compose_profile_assignment_delete "$user" "$compose_project"; then
+        check_result "$E_UPDATE" \
+            'Compose project failed and profile authority cleanup failed'
+    fi
+    check_result "$E_INVALID" 'Docker Compose project validation failed'
+fi
+"$VESTA/bin/v-deploy-docker-project" "$user" "$compose_project" \
+    || check_result "$E_UPDATE" 'Docker Compose project deployment failed'
+
+vx_compose_web_source_cleanup "$source_file" \
+    || check_result "$E_UPDATE" 'web Compose source cleanup failed'
+trap - EXIT
+log_history "added web Docker Compose project $compose_project"
+log_event "$OK" "$ARGUMENTS"
+exit

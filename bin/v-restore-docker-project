@@ -19,6 +19,11 @@ vx_compose_require_project_key "$compose_project" \
     || check_result "$E_INVALID" "invalid Compose project :: $compose_project"
 [[ "$mode" == validate || "$mode" == apply ]] \
     || check_result "$E_INVALID" 'restore mode must be validate or apply'
+if [[ "$backup_file" == managed:* ]]; then
+    backup_file="$(vx_compose_backup_resolve_managed \
+        "$user" "$compose_project" "${backup_file#managed:}")" \
+        || check_result "$E_INVALID" 'managed Compose backup does not exist'
+fi
 
 vx_compose_restore_project "$user" "$compose_project" "$backup_file" "$mode" \
     || check_result "$E_INVALID" 'Docker Compose project restore failed'

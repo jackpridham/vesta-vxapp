@@ -4,6 +4,7 @@ ob_start();
 session_start();
 include($_SERVER['DOCUMENT_ROOT']."/inc/main.php");
 include($_SERVER['DOCUMENT_ROOT']."/inc/vx_docker.php");
+include($_SERVER['DOCUMENT_ROOT']."/inc/vx_compose.php");
 
 if ((!isset($_GET['token'])) || ($_SESSION['token'] != $_GET['token'])) {
     header('location: /login/');
@@ -12,9 +13,14 @@ if ((!isset($_GET['token'])) || ($_SESSION['token'] != $_GET['token'])) {
 
 $docker_owner = vx_docker_resolve_owner_from_request($user);
 
-if (!empty($_GET['container']) && vx_docker_assert_actor_can_access_owner($docker_owner)) {
+if (!empty($_GET['container'])
+    && !empty(vx_compose_resolve_accessible_project(
+        $docker_owner,
+        trim((string) $_GET['container']),
+        $user
+    ))) {
     exec(
-        VESTA_CMD."v-restart-docker-container "
+        VESTA_CMD."v-restart-docker-project "
         .escapeshellarg($docker_owner)
         ." "
         .escapeshellarg($_GET['container']),

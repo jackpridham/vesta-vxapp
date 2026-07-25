@@ -23,6 +23,7 @@ async function requireRealDockerRow(page, preferredContainer = '') {
 
   expect(owner).not.toBe('');
   expect(name).not.toBe('');
+  await row.hover();
   await expect(dockerAction).toBeVisible();
 
   return { row, owner, name, dockerAction };
@@ -56,16 +57,16 @@ test('docker logs and inspect modals open and Escape closes the active modal', a
   const floatingModal = page.locator('#floating-center-div').first();
   const floatingContent = page.locator('#floating-center-div-content').first();
   await openDockerActions(page, preferredContainer);
-  await page.getByRole('button', { name: /View Docker Logs/i }).click();
-  await expect(floatingContent).toContainText(/Docker container logs/i);
+  await page.getByRole('button', { name: /View project logs/i }).click();
+  await expect(floatingContent).toContainText(/Compose project logs/i);
   await expect(floatingContent.locator('textarea')).toBeVisible();
 
   await page.keyboard.press('Escape');
   await expect(floatingModal).toBeHidden();
 
   await openDockerActions(page, preferredContainer);
-  await page.getByRole('button', { name: /Inspect Docker Container/i }).click();
-  await expect(floatingContent).toContainText(/Docker container inspect/i);
+  await page.getByRole('button', { name: /Project summary/i }).click();
+  await expect(floatingContent).toContainText(/Redacted Compose project summary/i);
   await expect(floatingContent.locator('textarea')).toBeVisible();
 });
 
@@ -105,18 +106,18 @@ test('docker remove modal supports cancel and confirm flows', async ({ page }) =
 
     await expect(page.locator(`#docker-list-cards article[data-name="${removableContainer}"]`)).toHaveCount(1);
     await openDockerActions(page, removableContainer);
-    await page.getByRole('button', { name: /Remove Docker Container/i }).click();
-    await expect(floatingContent).toContainText(/remove Docker container/i);
+    await page.getByRole('button', { name: /Remove project \(keep data\)/i }).click();
+    await expect(floatingContent).toContainText(/remove Compose project/i);
 
     await page.getByRole('button', { name: /^No$/i }).click();
     await expect(floatingModal).toBeHidden();
 
     await openDockerActions(page, removableContainer);
-    await page.getByRole('button', { name: /Remove Docker Container/i }).click();
-    await expect(floatingContent).toContainText(/remove Docker container/i);
+    await page.getByRole('button', { name: /Remove project \(keep data\)/i }).click();
+    await expect(floatingContent).toContainText(/remove Compose project/i);
 
     await page.getByRole('button', { name: /^Yes$/i }).click();
-    await expect(floatingContent).toContainText(/Docker remove output/i);
+    await expect(floatingContent).toContainText(/Compose project remove output/i);
 
     await expect.poll(async () => {
       await page.goto('/list/docker/');

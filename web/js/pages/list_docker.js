@@ -262,6 +262,7 @@
         postJson(config.acknowledgeUrl, {
             token: config.token,
             owner: activeAlert.OWNER,
+            name: activeAlert.NAME,
             aid: activeAlert.AID
         }, function() {
             activeAlert = null;

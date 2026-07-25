@@ -16,6 +16,18 @@
         <?php } ?>
       </div>
 
+      <?php if ($docker_spawn_hash !== '') { ?>
+      <section id="docker-simple-spawn-output" class="docker-form-card docker-form-card--wide">
+        <div class="docker-panel__header"><h2 class="docker-panel__title"><?=__('Simple Compose project creation started')?></h2></div>
+        <textarea disabled id="confirm-div-content-textarea-variable" class="vst-textinput ajax-newline" style="width:100%;height:420px;font-family:monospace;"></textarea>
+        <script>
+          startWatchingSpawnedAjaxProcess(
+            '<?=htmlspecialchars($user, ENT_QUOTES)?>',
+            '<?=htmlspecialchars($docker_spawn_hash, ENT_QUOTES)?>'
+          );
+        </script>
+      </section>
+      <?php } else { ?>
       <form id="docker-create-form" name="v_add_docker" method="post" class="docker-form">
         <input type="hidden" name="token" value="<?=$_SESSION['token']?>" />
         <input type="hidden" name="ok" value="Add" />
@@ -154,4 +166,5 @@
           <input type="button" class="button cancel docker-button docker-button--secondary" value="<?=__('Back')?>" onclick="<?=$back?>">
         </div>
       </form>
+      <?php } ?>
     </div>

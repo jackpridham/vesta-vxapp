@@ -2,6 +2,55 @@
 
 # Render the already validated globals produced by vx_docker_load_spec. This is
 # the narrow compatibility seam between the legacy simple form and Compose.
+vx_compose_simple_metadata_write_candidate() {
+    local owner="$1"
+    local host_port="$2"
+    local candidate="$3"
+
+    jq -n -S \
+        --arg owner "$owner" \
+        --arg name "$NAME" \
+        --arg image "$IMAGE" \
+        --arg command "${COMMAND:-}" \
+        --arg environment "${ENV:-}" \
+        --arg mounts "${MOUNTS:-}" \
+        --arg host_port "$host_port" \
+        --arg container_port "$CONTAINER_PORT" \
+        --arg domain "${DOMAIN:-}" \
+        --arg route_path "${ROUTE_PATH:-}" \
+        --arg auto_start "${AUTO_START:-yes}" \
+        --arg restart_policy "${RESTART_POLICY:-unless-stopped}" \
+        --arg healthcheck_type "${HEALTHCHECK_TYPE:-none}" \
+        --arg healthcheck_target "${HEALTHCHECK_TARGET:-}" \
+        --arg healthcheck_interval "${HEALTHCHECK_INTERVAL:-60}" \
+        --arg cpu_alert_pct "${CPU_ALERT_PCT:-85}" \
+        --arg mem_alert_mb "${MEM_ALERT_MB:-1024}" \
+        --arg net_alert_mbps "${NET_ALERT_MBPS:-50}" \
+        --arg alert_email "${ALERT_EMAIL:-yes}" '{
+            GENERATED: true,
+            OWNER: $owner,
+            NAME: $name,
+            IMAGE: $image,
+            COMMAND: $command,
+            ENV: $environment,
+            MOUNTS: $mounts,
+            HOST_PORT: $host_port,
+            CONTAINER_PORT: $container_port,
+            DOMAIN: $domain,
+            ROUTE_PATH: $route_path,
+            AUTO_START: $auto_start,
+            RESTART_POLICY: $restart_policy,
+            HEALTHCHECK_TYPE: $healthcheck_type,
+            HEALTHCHECK_TARGET: $healthcheck_target,
+            HEALTHCHECK_INTERVAL: $healthcheck_interval,
+            CPU_ALERT_PCT: $cpu_alert_pct,
+            MEM_ALERT_MB: $mem_alert_mb,
+            NET_ALERT_MBPS: $net_alert_mbps,
+            ALERT_EMAIL: $alert_email
+        }' >"$candidate/simple.json" || return 1
+    chmod 0600 "$candidate/simple.json"
+}
+
 vx_compose_simple_render_loaded() {
     local owner="$1"
     local host_port="$2"
@@ -68,14 +117,18 @@ vx_compose_simple_add_loaded() {
     temp_root="$(mktemp -d)"
     compose_file="$temp_root/compose.yaml"
     candidate="$temp_root/candidate"
-    vx_compose_simple_prepare_binds "$owner" "$NAME" \
+    if ! {
+        vx_compose_simple_prepare_binds "$owner" "$NAME" \
         && vx_compose_simple_render_loaded "$owner" "$host_port" "$compose_file" \
         && vx_compose_prepare_candidate \
             "$owner" "$NAME" "$compose_file" "$candidate" standard \
-        && vx_compose_store_new "$owner" "$NAME" standard "$candidate" || {
-            rm -rf -- "$temp_root"
-            return 1
-        }
+        && vx_compose_simple_metadata_write_candidate \
+            "$owner" "$host_port" "$candidate" \
+        && vx_compose_store_new "$owner" "$NAME" standard "$candidate"
+    }; then
+        rm -rf -- "$temp_root"
+        return 1
+    fi
     rm -rf -- "$temp_root"
     root="$(vx_compose_project_root "$owner" "$NAME")"
     vx_compose_simple_alerts_write "$owner" "$NAME" || return 1
@@ -112,15 +165,19 @@ vx_compose_simple_change_loaded() {
     temp_root="$(mktemp -d)"
     compose_file="$temp_root/compose.yaml"
     candidate="$temp_root/candidate"
-    vx_compose_simple_prepare_binds "$owner" "$project" \
+    if ! {
+        vx_compose_simple_prepare_binds "$owner" "$project" \
         && vx_compose_simple_render_loaded "$owner" "$host_port" "$compose_file" \
         && vx_compose_prepare_candidate \
             "$owner" "$project" "$compose_file" "$candidate" standard \
+        && vx_compose_simple_metadata_write_candidate \
+            "$owner" "$host_port" "$candidate" \
         && vx_compose_transaction_update \
-            "$owner" "$project" "$candidate" || {
-            rm -rf -- "$temp_root" "$old_routes"
-            return 1
-        }
+            "$owner" "$project" "$candidate"
+    }; then
+        rm -rf -- "$temp_root" "$old_routes"
+        return 1
+    fi
     rm -rf -- "$temp_root"
     vx_compose_routes_clear "$owner" "$project" || route_ok=no
     if [[ "$route_ok" == yes && -n "${DOMAIN:-}" ]]; then

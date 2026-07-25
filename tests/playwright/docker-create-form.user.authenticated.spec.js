@@ -1,6 +1,12 @@
 const { test, expect } = require('@playwright/test');
 const { getOptionalEnv, getPanelCredentials, loginAsRole } = require('./helpers/panel-auth');
-const { deleteContainer, hasLocalVestaRuntime, hasRemoteVestaRuntime, isLocalPanelTarget } = require('./helpers/docker-runtime-fixtures');
+const {
+  deleteContainer,
+  hasLocalVestaRuntime,
+  hasRemoteVestaRuntime,
+  isLocalPanelTarget,
+  runVestaCommand,
+} = require('./helpers/docker-runtime-fixtures');
 
 const contractedFields = [
   'v_container_name',
@@ -53,7 +59,7 @@ test('docker add form renders contracted field names and validation errors insid
   await expect(page.locator('#docker-form-errors')).toContainText(/\S+/);
 });
 
-test('successful create redirects back to the docker list', async ({ page }) => {
+test('successful create streams the spawned job and reaches the docker list', async ({ page }) => {
   test.setTimeout(120_000);
   const image = getOptionalEnv('PLAYWRIGHT_DOCKER_TEST_IMAGE', 'busybox:1.36.1');
   const name = `pw-${Date.now().toString(36)}`;
@@ -88,16 +94,38 @@ test('successful create redirects back to the docker list', async ({ page }) => 
     await page.locator('[name="v_net_alert_mbps"]').fill('50');
 
     if (await page.locator('[name="v_auto_start"]').isChecked()) {
-      await page.locator('[name="v_auto_start"]').uncheck();
+      await page.locator('[name="v_auto_start"]').evaluate((element) => {
+        element.checked = false;
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+      });
     }
 
     if (!(await page.locator('[name="v_alert_email"]').isChecked())) {
-      await page.locator('[name="v_alert_email"]').check();
+      await page.locator('[name="v_alert_email"]').evaluate((element) => {
+        element.checked = true;
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+      });
     }
 
     await page.getByRole('button', { name: /^Add$/i }).click();
-    await expect(page).toHaveURL(/\/list\/docker\/?$/);
+    await expect(page).toHaveURL(/\/add\/docker\/?$/);
+    await expect(page.locator('#docker-simple-spawn-output')).toBeVisible();
+    await expect(page.locator('#docker-simple-spawn-output textarea')).toBeVisible();
+    await expect.poll(() => {
+      try {
+        const project = JSON.parse(
+          runVestaCommand(
+            'v-list-docker-project',
+            [getPanelCredentials('dockerUser').username, name, 'json']
+          )
+        );
+        return project.PROJECT || '';
+      } catch {
+        return '';
+      }
+    }, { timeout: 120_000 }).toBe(name);
 
+    await page.goto('/list/docker/');
     await expect(page.locator(`#docker-list-cards article[data-name="${name}"]`)).toHaveCount(1);
     await expect(page.locator(`#docker-list-cards article[data-name="${name}"]`).first()).toBeVisible();
   } finally {

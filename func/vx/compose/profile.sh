@@ -70,6 +70,24 @@ vx_compose_profile_assignment_add() {
     mv -f -- "$temp_file" "$assignment"
 }
 
+vx_compose_profile_assignment_delete() {
+    local owner="$1"
+    local project="$2"
+    local root assignment expected
+
+    vx_compose_require_owner "$owner" || return 1
+    vx_compose_require_project_key "$project" || return 1
+    root="$(vx_compose_profile_assignment_root "$owner")"
+    assignment="$(vx_compose_profile_assignment_path "$owner" "$project")"
+    expected="$root/$project.json"
+    [[ "$assignment" == "$expected" ]] || {
+        vx_compose_error 'refusing to remove unresolved profile assignment'
+        return 1
+    }
+    rm -f -- "$assignment"
+    rmdir -- "$root" 2>/dev/null || true
+}
+
 vx_compose_profile_require_authorized() {
     local owner="$1"
     local project="$2"

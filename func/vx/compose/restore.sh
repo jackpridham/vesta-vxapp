@@ -33,7 +33,7 @@ vx_compose_backup_member_is_expected() {
         control|control/compose.yaml|control/canonical.json|\
         control/project.conf|control/policy.conf|control/variables.env|\
         control/images.json|control/secrets.json|control/audit.log|\
-        control/routes.conf|control/revisions|\
+        control/routes.conf|control/simple.json|control/revisions|\
         control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]|\
         control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]/compose.yaml|\
         control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]/canonical.json|\
@@ -41,6 +41,7 @@ vx_compose_backup_member_is_expected() {
         control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]/policy.conf|\
         control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]/images.json|\
         control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]/routes.conf|\
+        control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]/simple.json|\
         binds|binds/*|volumes|volumes/[a-z][a-z0-9_-]*.tar.gz)
             return 0
             ;;
@@ -379,6 +380,35 @@ vx_compose_restore_prepare() {
             vx_compose_error 'restore control metadata does not match the target'
             return 1
         }
+    if [[ -f "$extracted/control/simple.json" ]]; then
+        jq -e \
+            --arg owner "$owner" \
+            --arg project "$project" \
+            --arg image "$(jq -r '.IMAGE' "$extracted/control/simple.json")" \
+            --argjson canonical \
+                "$(cat "$extracted/control/canonical.json")" '
+                .GENERATED == true
+                and .OWNER == $owner
+                and .NAME == $project
+                and (
+                    [
+                        .IMAGE, .COMMAND, .ENV, .MOUNTS, .HOST_PORT,
+                        .CONTAINER_PORT, .DOMAIN, .ROUTE_PATH, .AUTO_START,
+                        .RESTART_POLICY, .HEALTHCHECK_TYPE,
+                        .HEALTHCHECK_TARGET, .HEALTHCHECK_INTERVAL,
+                        .CPU_ALERT_PCT, .MEM_ALERT_MB, .NET_ALERT_MBPS,
+                        .ALERT_EMAIL
+                    ]
+                    | all(type == "string")
+                )
+                and ($canonical.services | length) == 1
+                and any($canonical.services[]; .image == $image)
+            ' "$extracted/control/simple.json" >/dev/null 2>&1 \
+            || {
+                vx_compose_error 'restore simple-form metadata is invalid'
+                return 1
+            }
+    fi
     vx_compose_profile_is_available "$profile" \
         || {
             vx_compose_error 'restore profile is not currently available'
@@ -390,6 +420,9 @@ vx_compose_restore_prepare() {
         "$owner" "$project" "$extracted/control/compose.yaml" \
         "$candidate" "$profile" yes "$extracted/binds" "$validation_secrets" \
         || return 1
+    if [[ -f "$extracted/control/simple.json" ]]; then
+        install -m 0600 "$extracted/control/simple.json" "$candidate/simple.json"
+    fi
     normalized_archived="$(mktemp)"
     normalized_candidate="$(mktemp)"
     if ! jq -S . "$extracted/control/canonical.json" >"$normalized_archived" \
@@ -462,10 +495,19 @@ vx_compose_restore_install_active() {
         install -m 0640 \
             "$extracted/control/routes.conf" "$temp_revision/routes.conf"
     fi
+    if [[ -f "$extracted/control/simple.json" ]]; then
+        install -m 0600 \
+            "$extracted/control/simple.json" "$temp_revision/simple.json"
+    fi
     mv -- "$temp_revision" "$root/revisions/$revision_name" || return 1
     install -m 0640 "$candidate/compose.yaml" "$root/compose.yaml"
     install -m 0640 "$candidate/canonical.json" "$root/runtime/canonical.json"
     install -m 0640 "$candidate/policy.conf" "$root/policy.conf"
+    if [[ -f "$extracted/control/simple.json" ]]; then
+        install -m 0600 "$extracted/control/simple.json" "$root/simple.json"
+    else
+        rm -f -- "$root/simple.json"
+    fi
     for name in variables.env routes.conf; do
         if [[ -f "$extracted/control/$name" ]]; then
             install -m 0600 "$extracted/control/$name" "$root/$name"
@@ -519,6 +561,8 @@ vx_compose_restore_project_existing() {
         && cp -a -- "$root/routes.conf" "$snapshot_root/control/"
     [[ -f "$root/images.json" ]] \
         && cp -a -- "$root/images.json" "$snapshot_root/control/"
+    [[ -f "$root/simple.json" ]] \
+        && cp -a -- "$root/simple.json" "$snapshot_root/control/"
     cp -a -- "$root/secrets" "$snapshot_root/control/secrets"
     [[ -f "$root/secrets.json" ]] \
         && cp -a -- "$root/secrets.json" "$snapshot_root/control/"
@@ -598,6 +642,9 @@ vx_compose_restore_project_existing() {
             && cp -a -- "$snapshot_root/control/routes.conf" "$root/routes.conf"
         [[ -f "$snapshot_root/control/images.json" ]] \
             && cp -a -- "$snapshot_root/control/images.json" "$root/images.json"
+        rm -f -- "$root/simple.json"
+        [[ -f "$snapshot_root/control/simple.json" ]] \
+            && cp -a -- "$snapshot_root/control/simple.json" "$root/simple.json"
         rm -rf -- "$root/secrets"
         cp -a -- "$snapshot_root/control/secrets" "$root/secrets"
         rm -f -- "$root/secrets.json"

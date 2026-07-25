@@ -118,6 +118,162 @@ function runVestaCommand(command, args = []) {
   });
 }
 
+function composeProjectDefinition({
+  image = 'busybox:1.36.1',
+  secretPath = '',
+  services = ['web', 'worker'],
+} = {}) {
+  const serviceBlocks = services.map((service) => {
+    const readsSecret = service === 'worker' && secretPath;
+    const command = readsSecret
+      ? 'cat /run/secrets/ui_canary; exec sleep 3600'
+      : `printf '${service}-ready\\\\n'; exec sleep 3600`;
+    const secretMount = readsSecret
+      ? `
+    secrets:
+      - source: ui_canary
+        target: /run/secrets/ui_canary
+        mode: 0444`
+      : '';
+
+    return `  ${service}:
+    image: ${image}
+    command:
+      - sh
+      - -c
+      - ${command}
+    restart: unless-stopped
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    cpus: 0.125
+    mem_limit: 64m
+    pids_limit: 32
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"${secretMount}`;
+  });
+  const secretDefinition = secretPath
+    ? `
+secrets:
+  ui_canary:
+    file: ${secretPath}`
+    : '';
+
+  return `services:
+${serviceBlocks.join('\n')}${secretDefinition}
+`;
+}
+
+function createComposeProject(owner, project, definition, { deploy = true } = {}) {
+  if (!hasRemoteVestaRuntime()) {
+    const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-compose-'));
+    const fixtureFile = path.join(fixtureDir, 'compose.yaml');
+    try {
+      fs.writeFileSync(fixtureFile, definition, { mode: 0o600 });
+      runVestaCommand('v-add-docker-project', [owner, project, fixtureFile, 'standard']);
+      if (deploy) {
+        runVestaCommand('v-deploy-docker-project', [owner, project]);
+      }
+    } finally {
+      fs.rmSync(fixtureDir, { recursive: true, force: true });
+    }
+    return;
+  }
+
+  const encoded = Buffer.from(definition, 'utf8').toString('base64');
+  const script = [
+    'set -euo pipefail',
+    'source /etc/profile.d/vesta.sh',
+    'fixture_dir="$(mktemp -d)"',
+    'fixture_file="$fixture_dir/compose.yaml"',
+    'cleanup() { rm -rf -- "$fixture_dir"; }',
+    'trap cleanup EXIT',
+    `printf %s ${shellEscape(encoded)} | base64 -d > "$fixture_file"`,
+    'chmod 0600 "$fixture_file"',
+    `"$VESTA/bin/v-add-docker-project" ${shellEscape(owner)} ${shellEscape(project)} "$fixture_file" standard`,
+  ];
+  if (deploy) {
+    script.push(`"$VESTA/bin/v-deploy-docker-project" ${shellEscape(owner)} ${shellEscape(project)}`);
+  }
+  runRemoteBash(script.join('\n'));
+}
+
+function addComposeProjectSecret(owner, project, name, value) {
+  if (!hasRemoteVestaRuntime()) {
+    const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-secret-'));
+    const fixtureFile = path.join(fixtureDir, 'value');
+    try {
+      fs.writeFileSync(fixtureFile, value, { mode: 0o600 });
+      runVestaCommand('v-add-docker-secret', [owner, project, name, fixtureFile]);
+    } finally {
+      fs.rmSync(fixtureDir, { recursive: true, force: true });
+    }
+    return;
+  }
+
+  const encoded = Buffer.from(value, 'utf8').toString('base64');
+  const script = [
+    'set -euo pipefail',
+    'source /etc/profile.d/vesta.sh',
+    'fixture_dir="$(mktemp -d)"',
+    'fixture_file="$fixture_dir/value"',
+    'cleanup() { rm -rf -- "$fixture_dir"; }',
+    'trap cleanup EXIT',
+    `printf %s ${shellEscape(encoded)} | base64 -d > "$fixture_file"`,
+    'chmod 0600 "$fixture_file"',
+    `"$VESTA/bin/v-add-docker-secret" ${shellEscape(owner)} ${shellEscape(project)} ${shellEscape(name)} "$fixture_file" >/dev/null`,
+  ].join('\n');
+  runRemoteBash(script);
+}
+
+function managedSecretPath(owner, project, name) {
+  return `${getVestaRoot()}/data/users/${owner}/docker-projects/${project}/secrets/${name}`;
+}
+
+function cleanupRetainedFixturePaths(owner, project) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(owner)) {
+    throw new Error(`Refusing retained-data cleanup for invalid owner: ${owner}`);
+  }
+  if (!/^pw-[a-z0-9-]+$/.test(project)) {
+    throw new Error(`Refusing retained-data cleanup for non-Playwright project: ${project}`);
+  }
+
+  if (hasRemoteVestaRuntime()) {
+    const script = [
+      'set -euo pipefail',
+      'source /etc/profile.d/vesta.sh',
+      'readonly fixture_home_root=/home',
+      `owner=${shellEscape(owner)}`,
+      `project=${shellEscape(project)}`,
+      'case "$project" in pw-[a-z0-9-]*) ;; *) echo "invalid Playwright project" >&2; exit 1 ;; esac',
+      'backup_root="$VESTA/data/users/$owner/docker-project-backups/$project"',
+      'data_root="$fixture_home_root/$owner/docker/$project"',
+      'lock_file="$VESTA/data/users/$owner/docker-projects/.locks/$project.lock"',
+      'expected_backup="$VESTA/data/users/$owner/docker-project-backups/$project"',
+      'expected_data="$fixture_home_root/$owner/docker/$project"',
+      '[ "$backup_root" = "$expected_backup" ] && [ "$data_root" = "$expected_data" ]',
+      'if [ -e "$backup_root" ]; then [ -d "$backup_root" ] && [ ! -L "$backup_root" ]; rm -rf -- "$backup_root"; fi',
+      'if [ -e "$data_root" ]; then [ -d "$data_root" ] && [ ! -L "$data_root" ]; rm -rf -- "$data_root"; fi',
+      'rm -f -- "$lock_file"',
+    ].join('\n');
+    runRemoteBash(script);
+    return;
+  }
+
+  const vestaRoot = getVestaRoot();
+  const backupRoot = path.join(vestaRoot, 'data', 'users', owner, 'docker-project-backups', project);
+  const dataRoot = path.join('/home', owner, 'docker', project);
+  const lockFile = path.join(vestaRoot, 'data', 'users', owner, 'docker-projects', '.locks', `${project}.lock`);
+  fs.rmSync(backupRoot, { recursive: true, force: true });
+  fs.rmSync(dataRoot, { recursive: true, force: true });
+  fs.rmSync(lockFile, { force: true });
+}
+
 function createDockerSpec(containerName, image) {
   const specDir = fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-docker-'));
   const specPath = path.join(specDir, `${containerName}.spec`);
@@ -184,37 +340,25 @@ ALERT_EMAIL='yes'
   }
 }
 
-function listContainers(owner) {
-  const output = runVestaCommand('v-list-docker-containers', [owner, 'json']);
-  const parsed = JSON.parse(output || '{}');
-
-  return Object.values(parsed).map((record) => ({
-    ctnName: record.CTN_NAME || '',
-    name: record.NAME || '',
-  }));
-}
-
-function cleanupContainersWithPrefix(owner, prefix = 'pw-') {
-  for (const container of listContainers(owner)) {
-    if (container.name && container.name.startsWith(prefix)) {
-      deleteContainer(owner, container.name);
-    }
-  }
-}
-
 function deleteContainer(owner, containerName) {
+  let projectExists = true;
   try {
-    runVestaCommand('v-list-docker-container', [owner, containerName, 'json']);
+    runVestaCommand('v-list-docker-project', [owner, containerName, 'json']);
   } catch (error) {
     if (error && error.status === 3) {
-      return false;
+      projectExists = false;
+    } else {
+      throw error;
     }
-
-    throw error;
   }
 
-  runVestaCommand('v-delete-docker-container', [owner, containerName]);
-  return true;
+  if (projectExists) {
+    runVestaCommand('v-delete-docker-project', [owner, containerName, 'keep-data']);
+  }
+  if (/^pw-[a-z0-9-]+$/.test(containerName)) {
+    cleanupRetainedFixturePaths(owner, containerName);
+  }
+  return projectExists;
 }
 
 function withSeededAlert(owner, containerName) {
@@ -287,12 +431,17 @@ function withSeededAlert(owner, containerName) {
 }
 
 module.exports = {
-  cleanupContainersWithPrefix,
+  addComposeProjectSecret,
+  cleanupRetainedFixturePaths,
+  composeProjectDefinition,
+  createComposeProject,
   createDisposableContainer,
   deleteContainer,
   hasExplicitLocalRuntimeTarget,
   hasLocalVestaRuntime,
   hasRemoteVestaRuntime,
   isLocalPanelTarget,
+  managedSecretPath,
+  runVestaCommand,
   withSeededAlert,
 };
