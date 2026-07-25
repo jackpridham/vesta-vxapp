@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+test_root="$(mktemp -d)"
+trap 'rm -rf -- "$test_root"' EXIT
+
+export VESTA="$test_root/vesta"
+export HOMEDIR="$test_root/home"
+mkdir -p "$VESTA/data/users/alice" "$HOMEDIR/alice"
+
+fail() {
+    echo "FAIL: $1" >&2
+    exit 1
+}
+
+# shellcheck source=func/vx/compose/common.sh
+source "$repo_root/func/vx/compose/common.sh"
+# shellcheck source=func/vx/compose/canonicalize.sh
+source "$repo_root/func/vx/compose/canonicalize.sh"
+
+candidate="$test_root/candidate"
+export VX_HTTP_PORT=19999
+vx_compose_prepare_candidate \
+    alice \
+    web \
+    "$repo_root/test/compose/fixtures/basic-http.compose.yaml" \
+    "$candidate"
+
+jq -e '.name == "vx-alice-web"' "$candidate/canonical.json" >/dev/null \
+    || fail "canonical project name is wrong"
+jq -e '.services.web.labels["vx.managed"] == "yes"' \
+    "$candidate/canonical.json" >/dev/null \
+    || fail "managed label was not injected"
+jq -e '.services.web.labels["vx.user"] == "alice"' \
+    "$candidate/canonical.json" >/dev/null \
+    || fail "owner label was not injected"
+jq -e '.services.web.labels["vx.project"] == "web"' \
+    "$candidate/canonical.json" >/dev/null \
+    || fail "project label was not injected"
+jq -e '.services.web.ports[0].host_ip == "127.0.0.1"' \
+    "$candidate/canonical.json" >/dev/null \
+    || fail "localhost port binding was not canonicalized"
+jq -e '.services.web.ports[0].published == "18081"' \
+    "$candidate/canonical.json" >/dev/null \
+    || fail "caller interpolation environment leaked into canonicalization"
+unset VX_HTTP_PORT
+(
+    cd "$candidate"
+    sha256sum -c canonical.sha256 >/dev/null 2>&1
+) || fail "canonical digest does not verify"
+
+second="$test_root/candidate-second"
+vx_compose_prepare_candidate \
+    alice \
+    web \
+    "$repo_root/test/compose/fixtures/basic-http.compose.yaml" \
+    "$second"
+cmp -s "$candidate/canonical.json" "$second/canonical.json" \
+    || fail "canonical JSON is not deterministic"
+
+unsafe="$test_root/unsafe.yaml"
+printf '%s\n' \
+    'services:' \
+    '  bad:' \
+    '    image: alpine:3.20' \
+    '    privileged: true' >"$unsafe"
+if vx_compose_prepare_candidate alice unsafe "$unsafe" "$test_root/unsafe-out" 2>/dev/null; then
+    fail "privileged Compose input was accepted"
+fi
+
+unbounded="$test_root/unbounded.yaml"
+printf '%s\n' \
+    'services:' \
+    '  bad:' \
+    '    image: alpine:3.20' >"$unbounded"
+if vx_compose_prepare_candidate alice unbounded "$unbounded" "$test_root/unbounded-out" 2>/dev/null; then
+    fail "unbounded Compose input was accepted"
+fi
+
+unsafe_security="$test_root/unsafe-security.yaml"
+printf '%s\n' \
+    'services:' \
+    '  bad:' \
+    '    image: alpine:3.20' \
+    '    init: true' \
+    '    cap_drop: [ALL]' \
+    '    security_opt: [no-new-privileges:true, apparmor:unconfined]' \
+    '    cpus: 0.25' \
+    '    mem_limit: 64m' \
+    '    pids_limit: 32' >"$unsafe_security"
+if vx_compose_prepare_candidate alice unsafe-security "$unsafe_security" "$test_root/unsafe-security-out" 2>/dev/null; then
+    fail "unsafe security option was accepted"
+fi
+
+environment_input="$test_root/environment.yaml"
+printf '%s\n' \
+    'services:' \
+    '  bad:' \
+    '    image: alpine:3.20' \
+    '    init: true' \
+    '    cap_drop: [ALL]' \
+    '    security_opt: [no-new-privileges:true]' \
+    '    cpus: 0.25' \
+    '    mem_limit: 64m' \
+    '    pids_limit: 32' \
+    '    environment:' \
+    '      VALUE: must-not-persist' >"$environment_input"
+if vx_compose_prepare_candidate alice environment "$environment_input" "$test_root/environment-out" 2>/dev/null; then
+    fail "environment values were accepted before secret policy exists"
+fi
+
+ln -s "$repo_root/test/compose/fixtures/basic-http.compose.yaml" "$test_root/link.yaml"
+if vx_compose_prepare_candidate alice linked "$test_root/link.yaml" "$test_root/link-out" 2>/dev/null; then
+    fail "symlink Compose input was accepted"
+fi
+
+echo "Compose canonicalization tests passed."

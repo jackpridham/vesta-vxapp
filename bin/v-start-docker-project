@@ -1,0 +1,24 @@
+#!/bin/bash
+# info: start Docker Compose project
+# options: USER PROJECT
+
+user=$1
+compose_project=$2
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+if [ -f "$VESTA/conf/vesta.conf" ]; then
+    source "$VESTA/conf/vesta.conf"
+fi
+
+check_args '2' "$#" 'USER PROJECT'
+[ "$#" -le 2 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+vx_compose_start "$user" "$compose_project" \
+    || check_result "$E_RESTART" 'Docker Compose project start failed'
+
+log_history "started Docker Compose project $compose_project"
+log_event "$OK" "$ARGUMENTS"
+exit

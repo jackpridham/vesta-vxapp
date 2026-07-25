@@ -1,0 +1,28 @@
+#!/bin/bash
+# info: delete Docker Compose project
+# options: USER PROJECT [keep-data]
+#
+# Removes project runtime and control metadata while retaining durable data.
+
+user=$1
+compose_project=$2
+data_mode=${3-keep-data}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+if [ -f "$VESTA/conf/vesta.conf" ]; then
+    source "$VESTA/conf/vesta.conf"
+fi
+
+check_args '2' "$#" 'USER PROJECT [keep-data]'
+[ "$#" -le 3 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+[ "$data_mode" = 'keep-data' ] \
+    || check_result "$E_INVALID" 'Checkpoint 2 removal always retains project data'
+vx_compose_remove "$user" "$compose_project" \
+    || check_result "$E_UPDATE" 'Docker Compose project removal failed'
+
+log_history "deleted Docker Compose project $compose_project and retained data"
+log_event "$OK" "$ARGUMENTS"
+exit

@@ -1,0 +1,25 @@
+#!/bin/bash
+# info: recreate Docker Compose project
+# options: USER PROJECT [SERVICE]
+
+user=$1
+compose_project=$2
+service=${3-}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+if [ -f "$VESTA/conf/vesta.conf" ]; then
+    source "$VESTA/conf/vesta.conf"
+fi
+
+check_args '2' "$#" 'USER PROJECT [SERVICE]'
+[ "$#" -le 3 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+vx_compose_recreate "$user" "$compose_project" "$service" \
+    || check_result "$E_RESTART" 'Docker Compose project recreation failed'
+
+log_history "recreated Docker Compose project $compose_project"
+log_event "$OK" "$ARGUMENTS"
+exit

@@ -1,0 +1,29 @@
+services:
+  web:
+    image: nginxinc/nginx-unprivileged:1.27-alpine
+    restart: unless-stopped
+    init: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    cpus: 0.25
+    mem_limit: 128m
+    pids_limit: 64
+    ports:
+      - "127.0.0.1:${VX_HTTP_PORT:-18081}:8080"
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -qO-
+        - http://127.0.0.1:8080/
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"

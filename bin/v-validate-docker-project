@@ -1,0 +1,30 @@
+#!/bin/bash
+# info: validate Docker Compose project
+# options: USER PROJECT [FORMAT]
+#
+# Re-renders the stored project with Docker Compose without runtime mutation.
+
+user=$1
+compose_project=$2
+format=${3-shell}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+if [ -f "$VESTA/conf/vesta.conf" ]; then
+    source "$VESTA/conf/vesta.conf"
+fi
+
+check_args '2' "$#" 'USER PROJECT [FORMAT]'
+[ "$#" -le 3 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+
+validation_json="$(vx_compose_validate_existing "$user" "$compose_project")" \
+    || check_result "$E_INVALID" 'Compose project validation failed'
+case "$format" in
+    json) printf '%s\n' "$validation_json" ;;
+    shell|plain) printf 'Compose project %s/%s is valid.\n' "$user" "$compose_project" ;;
+    *) check_result "$E_INVALID" "invalid format :: $format" ;;
+esac
+
+exit
