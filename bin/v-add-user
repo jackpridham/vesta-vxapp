@@ -19,6 +19,7 @@ lname=$6
 
 # Includes
 source $VESTA/func/main.sh
+source $VESTA/func/vx/compose/main.sh
 source $VESTA/conf/vesta.conf
 
 is_user_free() {
@@ -53,6 +54,7 @@ if [ -z "$(echo "$pkg_data" | grep "^DOCKER_CONTAINERS=")" ]; then
     pkg_data="$pkg_data
 DOCKER_CONTAINERS='0'"
 fi
+pkg_data=$(vx_compose_package_data_with_defaults "$pkg_data")
 
 # Checking shell
 shell_conf=$(echo "$pkg_data" | grep 'SHELL' | cut -f 2 -d \')
@@ -186,6 +188,15 @@ U_MAIL_ACCOUNTS='0'
 U_DATABASES='0'
 U_CRON_JOBS='0'
 U_DOCKER_CONTAINERS='0'
+U_DOCKER_PROJECTS='0'
+U_DOCKER_SERVICES='0'
+U_DOCKER_CPUS='0.000'
+U_DOCKER_MEMORY_MB='0'
+U_DOCKER_PIDS='0'
+U_DOCKER_STORAGE_MB='0'
+U_DOCKER_PORTS='0'
+U_DOCKER_SECRETS='0'
+U_DOCKER_VOLUMES='0'
 U_BACKUPS='0'
 LANGUAGE=''
 NOTIFICATIONS='no'

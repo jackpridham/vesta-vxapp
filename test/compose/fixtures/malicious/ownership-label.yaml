@@ -1,0 +1,4 @@
+services:
+  web:
+    labels:
+      vx.user: attacker

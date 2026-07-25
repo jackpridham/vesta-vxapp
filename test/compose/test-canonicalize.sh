@@ -16,6 +16,8 @@ fail() {
 
 # shellcheck source=func/vx/compose/common.sh
 source "$repo_root/func/vx/compose/common.sh"
+# shellcheck source=func/vx/compose/policy.sh
+source "$repo_root/func/vx/compose/policy.sh"
 # shellcheck source=func/vx/compose/canonicalize.sh
 source "$repo_root/func/vx/compose/canonicalize.sh"
 
@@ -58,6 +60,12 @@ vx_compose_prepare_candidate \
     "$second"
 cmp -s "$candidate/canonical.json" "$second/canonical.json" \
     || fail "canonical JSON is not deterministic"
+
+existing="$test_root/candidate-existing"
+vx_compose_prepare_candidate \
+    alice web "$candidate/compose.yaml" "$existing" standard yes
+cmp -s "$candidate/canonical.json" "$existing/canonical.json" \
+    || fail "stored canonical Compose input does not revalidate deterministically"
 
 unsafe="$test_root/unsafe.yaml"
 printf '%s\n' \

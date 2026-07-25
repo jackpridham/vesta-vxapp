@@ -1,0 +1,3 @@
+services:
+  web:
+    cpus: 0

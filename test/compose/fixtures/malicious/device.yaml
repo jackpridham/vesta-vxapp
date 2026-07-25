@@ -1,0 +1,4 @@
+services:
+  web:
+    devices:
+      - /dev/null:/dev/x

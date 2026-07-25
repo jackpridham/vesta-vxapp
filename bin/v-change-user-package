@@ -17,6 +17,7 @@ force=$3
 # Includes
 source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
+source $VESTA/func/vx/compose/main.sh
 source $VESTA/conf/vesta.conf
 
 is_package_avalable() {
@@ -38,7 +39,9 @@ is_package_avalable() {
 
     pkg_data=$(cat $VESTA/data/packages/$package.pkg |grep -v TIME |\
         grep -v DATE)
+    pkg_data=$(vx_compose_package_data_with_defaults "$pkg_data")
     parse_object_kv_list_non_eval $pkg_data
+    vx_compose_package_apply_defaults
 
     # Checking usage agains package limits
     if [ "$WEB_DOMAINS" != 'unlimited' ]; then
@@ -81,6 +84,11 @@ is_package_avalable() {
             check_result $E_LIMIT "Package doesn't cover DOCKER usage"
         fi
     fi
+    if ! vx_compose_package_usage_is_covered; then
+        check_result \
+            $E_LIMIT \
+            "Package doesn't cover $VX_COMPOSE_PACKAGE_OVERAGE_FIELD usage"
+    fi
 
     is_web_template_valid $WEB_TEMPLATE
     is_dns_template_valid $DNS_TEMPLATE
@@ -89,9 +97,12 @@ is_package_avalable() {
 
 change_user_package() {
     parse_object_kv_list_non_eval $(cat $USER_DATA/user.conf)
-    parse_object_kv_list_non_eval $(cat $VESTA/data/packages/$package.pkg |egrep -v "TIME|DATE")
+    pkg_data=$(cat $VESTA/data/packages/$package.pkg |egrep -v "TIME|DATE")
+    pkg_data=$(vx_compose_package_data_with_defaults "$pkg_data")
+    parse_object_kv_list_non_eval $pkg_data
     DOCKER_CONTAINERS=${DOCKER_CONTAINERS-0}
     U_DOCKER_CONTAINERS=${U_DOCKER_CONTAINERS-0}
+    vx_compose_package_apply_defaults
     echo "FNAME='$FNAME'
 LNAME='$LNAME'
 PACKAGE='$package'
@@ -107,6 +118,15 @@ MAIL_ACCOUNTS='$MAIL_ACCOUNTS'
 DATABASES='$DATABASES'
 CRON_JOBS='$CRON_JOBS'
 DOCKER_CONTAINERS='$DOCKER_CONTAINERS'
+DOCKER_PROJECTS='$DOCKER_PROJECTS'
+DOCKER_SERVICES='$DOCKER_SERVICES'
+DOCKER_CPUS='$DOCKER_CPUS'
+DOCKER_MEMORY_MB='$DOCKER_MEMORY_MB'
+DOCKER_PIDS='$DOCKER_PIDS'
+DOCKER_STORAGE_MB='$DOCKER_STORAGE_MB'
+DOCKER_PORTS='$DOCKER_PORTS'
+DOCKER_SECRETS='$DOCKER_SECRETS'
+DOCKER_VOLUMES='$DOCKER_VOLUMES'
 DISK_QUOTA='$DISK_QUOTA'
 BANDWIDTH='$BANDWIDTH'
 NS='$NS'
@@ -143,6 +163,15 @@ U_MAIL_ACCOUNTS='$U_MAIL_ACCOUNTS'
 U_DATABASES='$U_DATABASES'
 U_CRON_JOBS='$U_CRON_JOBS'
 U_DOCKER_CONTAINERS='$U_DOCKER_CONTAINERS'
+U_DOCKER_PROJECTS='$U_DOCKER_PROJECTS'
+U_DOCKER_SERVICES='$U_DOCKER_SERVICES'
+U_DOCKER_CPUS='$U_DOCKER_CPUS'
+U_DOCKER_MEMORY_MB='$U_DOCKER_MEMORY_MB'
+U_DOCKER_PIDS='$U_DOCKER_PIDS'
+U_DOCKER_STORAGE_MB='$U_DOCKER_STORAGE_MB'
+U_DOCKER_PORTS='$U_DOCKER_PORTS'
+U_DOCKER_SECRETS='$U_DOCKER_SECRETS'
+U_DOCKER_VOLUMES='$U_DOCKER_VOLUMES'
 U_BACKUPS='$U_BACKUPS'
 LANGUAGE='$LANGUAGE'
 NOTIFICATIONS='$NOTIFICATIONS'

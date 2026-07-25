@@ -16,6 +16,7 @@ restart=$2
 # Includes
 source $VESTA/func/main.sh
 source $VESTA/func/rebuild.sh
+source $VESTA/func/vx/compose/main.sh
 source $VESTA/conf/vesta.conf
 
 # Export sbin
@@ -47,6 +48,11 @@ rebuild_user_conf
 if [ -s "$USER_DATA/docker.conf" ]; then
     $BIN/v-rebuild-docker-containers "$user"
     check_result $? "docker container rebuild failed"
+fi
+
+if [ -d "$(vx_compose_projects_root "$user")" ]; then
+    vx_compose_rebuild_owner "$user"
+    check_result $? "Compose project rebuild failed"
 fi
 
 

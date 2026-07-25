@@ -15,6 +15,7 @@ format=${2-shell}
 
 # Includes
 source $VESTA/func/main.sh
+source $VESTA/func/vx/compose/main.sh
 
 # JSON list function
 json_list() {
@@ -36,6 +37,15 @@ json_list() {
         "DATABASES": "'$DATABASES'",
         "CRON_JOBS": "'$CRON_JOBS'",
         "DOCKER_CONTAINERS": "'$DOCKER_CONTAINERS'",
+        "DOCKER_PROJECTS": "'$DOCKER_PROJECTS'",
+        "DOCKER_SERVICES": "'$DOCKER_SERVICES'",
+        "DOCKER_CPUS": "'$DOCKER_CPUS'",
+        "DOCKER_MEMORY_MB": "'$DOCKER_MEMORY_MB'",
+        "DOCKER_PIDS": "'$DOCKER_PIDS'",
+        "DOCKER_STORAGE_MB": "'$DOCKER_STORAGE_MB'",
+        "DOCKER_PORTS": "'$DOCKER_PORTS'",
+        "DOCKER_SECRETS": "'$DOCKER_SECRETS'",
+        "DOCKER_VOLUMES": "'$DOCKER_VOLUMES'",
         "DISK_QUOTA": "'$DISK_QUOTA'",
         "BANDWIDTH": "'$BANDWIDTH'",
         "HOME": "'$HOME'",
@@ -71,6 +81,15 @@ json_list() {
         "U_MAIL_ACCOUNTS": "'$U_MAIL_ACCOUNTS'",
         "U_DATABASES": "'$U_DATABASES'",
         "U_DOCKER_CONTAINERS": "'$U_DOCKER_CONTAINERS'",
+        "U_DOCKER_PROJECTS": "'$U_DOCKER_PROJECTS'",
+        "U_DOCKER_SERVICES": "'$U_DOCKER_SERVICES'",
+        "U_DOCKER_CPUS": "'$U_DOCKER_CPUS'",
+        "U_DOCKER_MEMORY_MB": "'$U_DOCKER_MEMORY_MB'",
+        "U_DOCKER_PIDS": "'$U_DOCKER_PIDS'",
+        "U_DOCKER_STORAGE_MB": "'$U_DOCKER_STORAGE_MB'",
+        "U_DOCKER_PORTS": "'$U_DOCKER_PORTS'",
+        "U_DOCKER_SECRETS": "'$U_DOCKER_SECRETS'",
+        "U_DOCKER_VOLUMES": "'$U_DOCKER_VOLUMES'",
         "U_CRON_JOBS": "'$U_CRON_JOBS'",
         "U_BACKUPS": "'$U_BACKUPS'",
         "LANGUAGE": "'$LANGUAGE'",
@@ -99,6 +118,15 @@ shell_list() {
     echo "DATABASES:      $U_DATABASES/$DATABASES"
     echo "CRON_JOBS:      $U_CRON_JOBS/$CRON_JOBS"
     echo "DOCKER:         $U_DOCKER_CONTAINERS/$DOCKER_CONTAINERS"
+    echo "DOCKER PROJECTS: $U_DOCKER_PROJECTS/$DOCKER_PROJECTS"
+    echo "DOCKER SERVICES: $U_DOCKER_SERVICES/$DOCKER_SERVICES"
+    echo "DOCKER CPUS:     $U_DOCKER_CPUS/$DOCKER_CPUS"
+    echo "DOCKER MEMORY:   $U_DOCKER_MEMORY_MB/$DOCKER_MEMORY_MB MB"
+    echo "DOCKER PIDS:     $U_DOCKER_PIDS/$DOCKER_PIDS"
+    echo "DOCKER STORAGE:  $U_DOCKER_STORAGE_MB/$DOCKER_STORAGE_MB MB"
+    echo "DOCKER PORTS:    $U_DOCKER_PORTS/$DOCKER_PORTS"
+    echo "DOCKER SECRETS:  $U_DOCKER_SECRETS/$DOCKER_SECRETS"
+    echo "DOCKER VOLUMES:  $U_DOCKER_VOLUMES/$DOCKER_VOLUMES"
     echo "DISK:           $U_DISK/$DISK_QUOTA"
     echo "BANDWIDTH:      $U_BANDWIDTH/$BANDWIDTH"
     echo "IP ADDRESSES    $IP_AVAIL/$IP_OWNED"
@@ -171,6 +199,7 @@ HOME=$HOMEDIR/$user
 source $VESTA/data/users/$user/user.conf
 DOCKER_CONTAINERS=${DOCKER_CONTAINERS-0}
 U_DOCKER_CONTAINERS=${U_DOCKER_CONTAINERS-0}
+vx_compose_package_apply_defaults
 
 # Listing data
 case $format in

@@ -14,6 +14,7 @@ user=$1
 
 # Includes
 source $VESTA/func/main.sh
+source $VESTA/func/vx/compose/main.sh
 source $VESTA/conf/vesta.conf
 
 
@@ -211,6 +212,7 @@ for user in $user_list; do
     update_user_value "$user" '$U_CRON_JOBS' "$U_CRON_JOBS"
     update_user_value "$user" '$U_DOCKER_CONTAINERS' "$U_DOCKER_CONTAINERS"
     update_user_value "$user" '$U_BACKUPS' "$U_BACKUPS"
+    vx_compose_refresh_counters "$user"
 done
 
 

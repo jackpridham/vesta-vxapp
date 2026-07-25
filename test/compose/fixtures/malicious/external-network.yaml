@@ -1,0 +1,7 @@
+services:
+  web:
+    networks:
+      - shared
+networks:
+  shared:
+    external: true

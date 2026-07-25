@@ -16,6 +16,7 @@ restart=$2
 # Includes
 source $VESTA/func/main.sh
 source $VESTA/func/docker.sh
+source $VESTA/func/vx/compose/main.sh
 source $VESTA/conf/vesta.conf
 
 
@@ -28,6 +29,12 @@ is_format_valid 'user'
 is_object_valid 'user' 'USER' "$user"
 if [ "$user" = 'admin' ]; then
     exit
+fi
+
+# Restoring only Compose projects that were running before suspension
+if [ -d "$(vx_compose_projects_root "$user")" ]; then
+    vx_compose_unsuspend_owner "$user"
+    check_result $? "Compose project restoration failed"
 fi
 
 

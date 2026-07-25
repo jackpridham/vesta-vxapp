@@ -28,7 +28,8 @@ vx_compose_profile_is_available "$profile" \
 candidate_parent="$(mktemp -d)"
 candidate="$candidate_parent/candidate"
 trap 'rm -rf -- "$candidate_parent"' EXIT
-vx_compose_prepare_candidate "$user" "$compose_project" "$compose_file" "$candidate" \
+vx_compose_prepare_candidate \
+    "$user" "$compose_project" "$compose_file" "$candidate" "$profile" \
     || check_result "$E_INVALID" 'Compose project validation failed'
 vx_compose_store_new "$user" "$compose_project" "$profile" "$candidate" \
     || check_result "$E_INVALID" 'Compose project persistence failed'

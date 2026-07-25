@@ -25,7 +25,11 @@ vx_compose_require_project "$user" "$compose_project" \
 candidate_parent="$(mktemp -d)"
 candidate="$candidate_parent/candidate"
 trap 'rm -rf -- "$candidate_parent"' EXIT
-vx_compose_prepare_candidate "$user" "$compose_project" "$compose_file" "$candidate" \
+profile="$(vx_compose_meta_get \
+    "$(vx_compose_project_root "$user" "$compose_project")/project.conf" \
+    PROFILE)"
+vx_compose_prepare_candidate \
+    "$user" "$compose_project" "$compose_file" "$candidate" "$profile" \
     || check_result "$E_INVALID" 'Compose project validation failed'
 vx_compose_store_revision "$user" "$compose_project" "$candidate" validated \
     || check_result "$E_INVALID" 'Compose project update failed'

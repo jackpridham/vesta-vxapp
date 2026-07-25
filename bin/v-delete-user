@@ -19,6 +19,7 @@ source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
 source $VESTA/func/db.sh
 source $VESTA/func/docker.sh
+source $VESTA/func/vx/compose/main.sh
 source $VESTA/func/ip.sh
 source $VESTA/conf/vesta.conf
 
@@ -40,6 +41,10 @@ fi
 #----------------------------------------------------------#
 
 # Deleting docker containers and managed data
+if [ -d "$(vx_compose_projects_root "$user")" ]; then
+    vx_compose_remove_owner_runtime "$user"
+    check_result $? "Compose project deletion failed"
+fi
 if [ -f "$USER_DATA/docker.conf" ]; then
     while IFS= read -r line; do
         [ -n "$line" ] || continue

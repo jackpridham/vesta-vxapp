@@ -54,39 +54,7 @@ vx_compose_write_ownership_override() {
 vx_compose_baseline_policy_check() {
     local canonical_json="$1"
 
-    jq -e '
-        (.services | type == "object" and length > 0)
-        and ((.volumes // {}) | length == 0)
-        and ((.secrets // {}) | length == 0)
-        and ((.configs // {}) | length == 0)
-        and all((.networks // {})[]; (.external // false) == false)
-        and all(.services[];
-            (.image | type == "string" and length > 0)
-            and ((.build // null) == null)
-            and ((.privileged // false) == false)
-            and ((.network_mode // "") == "")
-            and ((.pid // "") == "")
-            and ((.ipc // "") == "")
-            and ((.devices // []) | length == 0)
-            and ((.cap_add // []) | length == 0)
-            and ((.volumes // []) | length == 0)
-            and ((.tmpfs // []) | length == 0)
-            and ((.secrets // []) | length == 0)
-            and ((.configs // []) | length == 0)
-            and ((.sysctls // {}) | length == 0)
-            and ((.environment // {}) | length == 0)
-            and ((.cap_drop // []) | map(ascii_upcase) | index("ALL") != null)
-            and ((.security_opt // []) == ["no-new-privileges:true"])
-            and ((.init // false) == true)
-            and ((.cpus // 0) > 0)
-            and ((.mem_limit // 0) > 0)
-            and ((.pids_limit // 0) > 0)
-            and all((.ports // [])[];
-                (.host_ip // "") == "127.0.0.1"
-            )
-        )
-    ' "$canonical_json" >/dev/null \
-        || vx_compose_error 'Compose input exceeds the Checkpoint 2 standard profile'
+    vx_compose_policy_evaluate "$canonical_json" "$VX_COMPOSE_DEFAULT_PROFILE"
 }
 
 vx_compose_prepare_candidate() {
@@ -94,6 +62,8 @@ vx_compose_prepare_candidate() {
     local project="$2"
     local input_file="$3"
     local output_root="$4"
+    local profile="${5:-$VX_COMPOSE_DEFAULT_PROFILE}"
+    local allow_existing_labels="${6:-no}"
     local work_root raw_json override_file
 
     vx_compose_require_owner "$owner" || return 1
@@ -134,6 +104,12 @@ vx_compose_prepare_candidate() {
         || vx_compose_error 'docker compose config failed'
     jq -e '.services | type == "object" and length > 0' "$raw_json" >/dev/null \
         || vx_compose_error 'Compose input must define at least one service'
+    if [[ "$allow_existing_labels" == yes ]]; then
+        vx_compose_policy_check_existing_labels \
+            "$raw_json" "$owner" "$project" || return 1
+    else
+        vx_compose_policy_check_reserved_labels "$raw_json" || return 1
+    fi
     vx_compose_write_ownership_override "$owner" "$project" "$raw_json" "$override_file"
 
     mkdir -m 0750 "$output_root"
@@ -144,14 +120,22 @@ vx_compose_prepare_candidate() {
         config --format json \
         | jq -S . >"$output_root/canonical.json" \
         || vx_compose_error 'canonical Compose JSON generation failed'
-    vx_compose_baseline_policy_check "$output_root/canonical.json" || return 1
+    vx_compose_policy_check_existing_labels \
+        "$output_root/canonical.json" "$owner" "$project" || return 1
+    vx_compose_policy_evaluate "$output_root/canonical.json" "$profile" || return 1
+    vx_compose_write_policy_facts \
+        "$output_root/canonical.json" "$profile" "$output_root/policy.conf" \
+        || return 1
     vx_compose_config_command \
         "$owner" "$project" "$work_root" \
         --file "$work_root/input.compose.yaml" \
         --file "$override_file" \
         config >"$output_root/compose.yaml" \
         || vx_compose_error 'canonical Compose YAML generation failed'
-    chmod 0640 "$output_root/compose.yaml" "$output_root/canonical.json"
+    chmod 0640 \
+        "$output_root/compose.yaml" \
+        "$output_root/canonical.json" \
+        "$output_root/policy.conf"
     (
         cd "$output_root" || exit 1
         sha256sum canonical.json >canonical.sha256
@@ -164,13 +148,15 @@ vx_compose_prepare_candidate() {
 vx_compose_validate_existing() {
     local owner="$1"
     local project="$2"
-    local root candidate
+    local root candidate profile
 
     vx_compose_require_project "$owner" "$project" || return 1
     root="$(vx_compose_project_root "$owner" "$project")"
+    profile="$(vx_compose_meta_get "$root/project.conf" PROFILE)" || return 1
     candidate="$(mktemp -d)"
     rmdir "$candidate"
-    if ! vx_compose_prepare_candidate "$owner" "$project" "$root/compose.yaml" "$candidate"; then
+    if ! vx_compose_prepare_candidate \
+        "$owner" "$project" "$root/compose.yaml" "$candidate" "$profile" yes; then
         rm -rf -- "$candidate"
         return 1
     fi

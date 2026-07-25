@@ -16,6 +16,7 @@ format=${2-shell}
 
 # Includes
 source $VESTA/func/main.sh
+source $VESTA/func/vx/compose/main.sh
 
 # JSON list function
 json_list() {
@@ -33,6 +34,15 @@ json_list() {
         "DATABASES": "'$DATABASES'",
         "CRON_JOBS": "'$CRON_JOBS'",
         "DOCKER_CONTAINERS": "'$DOCKER_CONTAINERS'",
+        "DOCKER_PROJECTS": "'$DOCKER_PROJECTS'",
+        "DOCKER_SERVICES": "'$DOCKER_SERVICES'",
+        "DOCKER_CPUS": "'$DOCKER_CPUS'",
+        "DOCKER_MEMORY_MB": "'$DOCKER_MEMORY_MB'",
+        "DOCKER_PIDS": "'$DOCKER_PIDS'",
+        "DOCKER_STORAGE_MB": "'$DOCKER_STORAGE_MB'",
+        "DOCKER_PORTS": "'$DOCKER_PORTS'",
+        "DOCKER_SECRETS": "'$DOCKER_SECRETS'",
+        "DOCKER_VOLUMES": "'$DOCKER_VOLUMES'",
         "DISK_QUOTA": "'$DISK_QUOTA'",
         "BANDWIDTH": "'$BANDWIDTH'",
         "NS": "'$NS'",
@@ -59,6 +69,15 @@ shell_list() {
     echo "DATABASES:      $DATABASES"
     echo "CRON JOBS:      $CRON_JOBS"
     echo "DOCKER:         $DOCKER_CONTAINERS"
+    echo "DOCKER PROJECTS: $DOCKER_PROJECTS"
+    echo "DOCKER SERVICES: $DOCKER_SERVICES"
+    echo "DOCKER CPUS:     $DOCKER_CPUS"
+    echo "DOCKER MEMORY:   $DOCKER_MEMORY_MB MB"
+    echo "DOCKER PIDS:     $DOCKER_PIDS"
+    echo "DOCKER STORAGE:  $DOCKER_STORAGE_MB MB"
+    echo "DOCKER PORTS:    $DOCKER_PORTS"
+    echo "DOCKER SECRETS:  $DOCKER_SECRETS"
+    echo "DOCKER VOLUMES:  $DOCKER_VOLUMES"
     echo "DISK QUOTA:     $DISK_QUOTA"
     echo "BANDWIDTH:      $BANDWIDTH"
     echo "NS:             $NS"
@@ -106,6 +125,7 @@ is_package_valid
 # Parsing package
 source $VESTA/data/packages/$PACKAGE.pkg
 DOCKER_CONTAINERS=${DOCKER_CONTAINERS-0}
+vx_compose_package_apply_defaults
 
 # Listing data
 case $format in

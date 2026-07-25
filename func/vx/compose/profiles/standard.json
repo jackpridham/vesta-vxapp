@@ -1,0 +1,11 @@
+{
+  "name": "standard",
+  "version": 1,
+  "enabled": true,
+  "admin_only": false,
+  "allow_build": false,
+  "allow_bind_mounts": false,
+  "allow_external_networks": false,
+  "allow_host_namespaces": false,
+  "allowed_cap_add": []
+}

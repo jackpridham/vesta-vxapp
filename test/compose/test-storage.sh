@@ -8,16 +8,27 @@ trap 'rm -rf -- "$test_root"' EXIT
 export VESTA="$test_root/vesta"
 export HOMEDIR="$test_root/home"
 mkdir -p "$VESTA/data/users/alice" "$VESTA/data/users/bob" "$HOMEDIR/alice" "$HOMEDIR/bob"
+for owner in alice bob; do
+    {
+        printf "DOCKER_PROJECTS='4'\n"
+        printf "DOCKER_SERVICES='8'\n"
+        printf "DOCKER_CPUS='4.000'\n"
+        printf "DOCKER_MEMORY_MB='4096'\n"
+        printf "DOCKER_PIDS='512'\n"
+        printf "DOCKER_STORAGE_MB='128'\n"
+        printf "DOCKER_PORTS='8'\n"
+        printf "DOCKER_SECRETS='0'\n"
+        printf "DOCKER_VOLUMES='0'\n"
+    } >"$VESTA/data/users/$owner/user.conf"
+done
 
 fail() {
     echo "FAIL: $1" >&2
     exit 1
 }
 
-# shellcheck source=func/vx/compose/common.sh
-source "$repo_root/func/vx/compose/common.sh"
-# shellcheck source=func/vx/compose/storage.sh
-source "$repo_root/func/vx/compose/storage.sh"
+# shellcheck source=func/vx/compose/main.sh
+source "$repo_root/func/vx/compose/main.sh"
 
 [[ "$(vx_compose_runtime_name alice app)" == "vx-alice-app" ]] \
     || fail "stable runtime project name is wrong"
@@ -31,6 +42,20 @@ mkdir -p "$candidate"
 printf '%s\n' 'services: {}' >"$candidate/compose.yaml"
 printf '%s\n' '{"name":"vx-alice-app","services":{}}' >"$candidate/canonical.json"
 printf '%s\n' 'abc123' >"$candidate/canonical.sha256"
+{
+    printf "POLICY_SCHEMA='1'\n"
+    printf "VALIDATOR_VERSION='1'\n"
+    printf "PROFILE='standard'\n"
+    printf "PROFILE_VERSION='1'\n"
+    printf "SERVICES='0'\n"
+    printf "CPUS_MILLI='0'\n"
+    printf "MEMORY_MB='0'\n"
+    printf "PIDS='0'\n"
+    printf "STORAGE_MB='0'\n"
+    printf "PORTS='0'\n"
+    printf "SECRETS='0'\n"
+    printf "VOLUMES='0'\n"
+} >"$candidate/policy.conf"
 
 vx_compose_store_new alice app standard "$candidate"
 project_root="$(vx_compose_project_root alice app)"

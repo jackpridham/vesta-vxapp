@@ -12,6 +12,9 @@
 # Argument definition
 format=${1-shell}
 
+# Includes
+source $VESTA/func/vx/compose/main.sh
+
 # JSON list function
 json_list() {
     echo '{'
@@ -23,9 +26,12 @@ json_list() {
         if [ $i -gt 1 ]; then
             echo ","
         fi
+        vx_compose_package_unset_values
         source $VESTA/data/users/$USER/user.conf
         DOCKER_CONTAINERS=${DOCKER_CONTAINERS-0}
         U_DOCKER_CONTAINERS=${U_DOCKER_CONTAINERS-0}
+        vx_compose_package_apply_defaults
+        vx_compose_package_apply_defaults
         echo -n '    "'$USER'": {
         "FNAME": "'$FNAME'",
         "LNAME": "'$LNAME'",
@@ -43,6 +49,15 @@ json_list() {
         "DATABASES": "'$DATABASES'",
         "CRON_JOBS": "'$CRON_JOBS'",
         "DOCKER_CONTAINERS": "'$DOCKER_CONTAINERS'",
+        "DOCKER_PROJECTS": "'$DOCKER_PROJECTS'",
+        "DOCKER_SERVICES": "'$DOCKER_SERVICES'",
+        "DOCKER_CPUS": "'$DOCKER_CPUS'",
+        "DOCKER_MEMORY_MB": "'$DOCKER_MEMORY_MB'",
+        "DOCKER_PIDS": "'$DOCKER_PIDS'",
+        "DOCKER_STORAGE_MB": "'$DOCKER_STORAGE_MB'",
+        "DOCKER_PORTS": "'$DOCKER_PORTS'",
+        "DOCKER_SECRETS": "'$DOCKER_SECRETS'",
+        "DOCKER_VOLUMES": "'$DOCKER_VOLUMES'",
         "DISK_QUOTA": "'$DISK_QUOTA'",
         "BANDWIDTH": "'$BANDWIDTH'",
         "NS": "'$NS'",
@@ -77,6 +92,15 @@ json_list() {
         "U_MAIL_ACCOUNTS": "'$U_MAIL_ACCOUNTS'",
         "U_DATABASES": "'$U_DATABASES'",
         "U_DOCKER_CONTAINERS": "'$U_DOCKER_CONTAINERS'",
+        "U_DOCKER_PROJECTS": "'$U_DOCKER_PROJECTS'",
+        "U_DOCKER_SERVICES": "'$U_DOCKER_SERVICES'",
+        "U_DOCKER_CPUS": "'$U_DOCKER_CPUS'",
+        "U_DOCKER_MEMORY_MB": "'$U_DOCKER_MEMORY_MB'",
+        "U_DOCKER_PIDS": "'$U_DOCKER_PIDS'",
+        "U_DOCKER_STORAGE_MB": "'$U_DOCKER_STORAGE_MB'",
+        "U_DOCKER_PORTS": "'$U_DOCKER_PORTS'",
+        "U_DOCKER_SECRETS": "'$U_DOCKER_SECRETS'",
+        "U_DOCKER_VOLUMES": "'$U_DOCKER_VOLUMES'",
         "U_CRON_JOBS": "'$U_CRON_JOBS'",
         "U_BACKUPS": "'$U_BACKUPS'",
         "LANGUAGE": "'$LANGUAGE'",
@@ -96,9 +120,11 @@ shell_list() {
         if [ ! -f "$VESTA/data/users/$USER/user.conf" ]; then
             continue;
         fi
+        vx_compose_package_unset_values
         source $VESTA/data/users/$USER/user.conf
         DOCKER_CONTAINERS=${DOCKER_CONTAINERS-0}
         U_DOCKER_CONTAINERS=${U_DOCKER_CONTAINERS-0}
+        vx_compose_package_apply_defaults
         echo -n "$USER $PACKAGE $U_WEB_DOMAINS $U_DNS_DOMAINS $U_MAIL_DOMAINS"
         echo " $U_DATABASES $U_DOCKER_CONTAINERS $U_DISK $U_BANDWIDTH $SUSPENDED $DATE"
     done < <(grep '@' /etc/passwd |cut -f1 -d:)
@@ -110,9 +136,11 @@ plain_list() {
         if [ ! -f "$VESTA/data/users/$USER/user.conf" ]; then
             continue;
         fi
+        vx_compose_package_unset_values
         source $VESTA/data/users/$USER/user.conf
         DOCKER_CONTAINERS=${DOCKER_CONTAINERS-0}
         U_DOCKER_CONTAINERS=${U_DOCKER_CONTAINERS-0}
+        vx_compose_package_apply_defaults
         echo -ne "$USER\t$FNAME\t$LNAME\t$PACKAGE\t$WEB_TEMPLATE\t"
         echo -ne "$BACKEND_TEMPLATE\t$PROXY_TEMPLATE\t$DNS_TEMPLATE\t"
         echo -ne "$WEB_DOMAINS\t$WEB_ALIASES\t$DNS_DOMAINS\t$DNS_RECORDS\t"
@@ -147,6 +175,7 @@ csv_list() {
         if [ ! -f "$VESTA/data/users/$USER/user.conf" ]; then
             continue;
         fi
+        vx_compose_package_unset_values
         source $VESTA/data/users/$USER/user.conf
         DOCKER_CONTAINERS=${DOCKER_CONTAINERS-0}
         U_DOCKER_CONTAINERS=${U_DOCKER_CONTAINERS-0}
