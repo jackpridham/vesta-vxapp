@@ -3434,6 +3434,7 @@ b, strong {
   margin-top: unset;
 }
 .l-content .l-center .l-stat .l-stat__col a .l-stat__col-title {
+  position: relative;
   min-height: unset !important;
   color: #869fb2;
   font-size: 20px;
@@ -4188,12 +4189,16 @@ b, strong {
 .body-web-log .l-header > .l-center {
   margin-left: 0;
 }
-.l-stat__col span {
-    padding: 4px 0;
-    font-size: 15px;
-    position: fixed;
+.l-content .l-center .l-stat .l-stat__col a .l-stat__col-title > span {
+    position: absolute;
+    top: 50%;
+    right: 50px;
+    left: auto;
     display: inline-block;
-    left: 159px;
+    padding: 0;
+    font-size: 15px;
+    line-height: 1;
+    transform: translateY(-50%);
 }
 .l-sort__create-btn2 {
     background-image: url("/images/sprite.png?1446554103");
