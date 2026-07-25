@@ -1,0 +1,24 @@
+#!/bin/bash
+# info: add or rotate an owner Docker registry login
+# options: USER REGISTRY USERNAME PASSWORD_FILE
+
+user=$1
+registry=$2
+username=$3
+password_file=$4
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '4' "$#" 'USER REGISTRY USERNAME PASSWORD_FILE'
+[ "$#" -le 4 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+
+vx_compose_registry_add "$user" "$registry" "$username" "$password_file" \
+    || check_result "$E_INVALID" 'Docker registry validation failed'
+
+log_history "changed Docker registry metadata for $user"
+log_event "$OK" "$ARGUMENTS"
+exit

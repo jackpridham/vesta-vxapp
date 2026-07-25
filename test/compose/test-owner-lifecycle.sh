@@ -33,6 +33,10 @@ docker_log="$test_root/docker.log"
     # The generated helper must expand these values when it runs.
     # shellcheck disable=SC2016
     printf '%s\n' 'printf "%s\n" "$*" >>"$(dirname -- "$0")/docker.log"'
+    printf '%s\n' 'if [[ " $* " == *" image inspect "* ]]; then'
+    printf '%s\n' \
+        '  printf "%s\n" '"'"'{"Id":"sha256:feedface","RepoTags":["alpine:3.20"],"RepoDigests":["alpine@sha256:feedface"],"Architecture":"amd64","Os":"linux"}'"'"
+    printf '%s\n' 'fi'
 } >"$fake_docker"
 chmod 0755 "$fake_docker"
 export VX_COMPOSE_DOCKER_BIN="$fake_docker"

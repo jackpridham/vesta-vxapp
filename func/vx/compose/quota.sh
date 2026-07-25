@@ -202,6 +202,10 @@ vx_compose_quota_check_candidate() {
     ports=$((ports + value))
     value="$(vx_compose_policy_value "$candidate_policy" SECRETS)" || return 1
     secrets=$((secrets + value))
+    if declare -F vx_compose_secret_count >/dev/null 2>&1; then
+        value="$(vx_compose_secret_count "$owner")" || return 1
+        (( value > secrets )) && secrets="$value"
+    fi
     value="$(vx_compose_policy_value "$candidate_policy" VOLUMES)" || return 1
     volumes=$((volumes + value))
     measured="$(vx_compose_measured_storage_mb "$owner")" || return 1
@@ -222,6 +226,9 @@ vx_compose_quota_check_current() {
         <<<"$usage"
     measured="$(vx_compose_measured_storage_mb "$owner")" || return 1
     (( measured > storage )) && storage="$measured"
+    if declare -F vx_compose_secret_count >/dev/null 2>&1; then
+        secrets="$(vx_compose_secret_count "$owner")" || return 1
+    fi
     vx_compose_quota_check_values \
         "$owner" "$projects" "$services" "$cpus" "$memory" "$pids" \
         "$storage" "$ports" "$secrets" "$volumes"
@@ -268,6 +275,9 @@ vx_compose_refresh_counters() {
         <<<"$usage"
     measured="$(vx_compose_measured_storage_mb "$owner")" || return 1
     (( measured > storage )) && storage="$measured"
+    if declare -F vx_compose_secret_count >/dev/null 2>&1; then
+        secrets="$(vx_compose_secret_count "$owner")" || return 1
+    fi
     printf -v cpu_display '%d.%03d' "$((cpus / 1000))" "$((cpus % 1000))"
 
     vx_compose_user_conf_set "$user_conf" U_DOCKER_PROJECTS "$projects"

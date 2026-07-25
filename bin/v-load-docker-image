@@ -1,0 +1,23 @@
+#!/bin/bash
+# info: checksum-verify and load a staged Docker image archive
+# options: USER ARCHIVE CHECKSUM
+
+user=$1
+archive=$2
+checksum=$3
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '3' "$#" 'USER ARCHIVE CHECKSUM'
+[ "$#" -le 3 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+
+vx_compose_image_load "$user" "$archive" "$checksum" \
+    || check_result "$E_INVALID" 'Docker image archive verification failed'
+
+log_history "loaded verified Docker image archive for $user"
+log_event "$OK" "$ARGUMENTS"
+exit

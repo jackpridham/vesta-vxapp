@@ -122,7 +122,8 @@ vx_compose_prepare_candidate() {
         || vx_compose_error 'canonical Compose JSON generation failed'
     vx_compose_policy_check_existing_labels \
         "$output_root/canonical.json" "$owner" "$project" || return 1
-    vx_compose_policy_evaluate "$output_root/canonical.json" "$profile" || return 1
+    vx_compose_policy_evaluate \
+        "$output_root/canonical.json" "$profile" "$owner" "$project" || return 1
     vx_compose_write_policy_facts \
         "$output_root/canonical.json" "$profile" "$output_root/policy.conf" \
         || return 1

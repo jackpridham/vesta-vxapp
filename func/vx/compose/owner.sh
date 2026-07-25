@@ -77,6 +77,7 @@ vx_compose_rebuild_owner() {
         vx_compose_policy_evaluate \
             "$root/runtime/canonical.json" \
             "$(vx_compose_meta_get "$root/project.conf" PROFILE)" \
+            "$owner" "$project" \
             || return 1
         state="$(vx_compose_meta_get "$root/project.conf" STATE)" || return 1
         [[ "$state" == running ]] || continue

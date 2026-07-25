@@ -31,7 +31,8 @@ if [ "$release" -eq 13 ]; then
         flex whois git idn zip sudo bc ftp lsof ntpsec-ntpdate rrdtool quota
         e2fslibs bsdutils e2fsprogs curl imagemagick fail2ban dnsutils
         bsdmainutils cron vesta vesta-nginx vesta-php expect libmail-dkim-perl
-        unrar-free vim-common net-tools unzip iptables xxd spamd"
+        unrar-free vim-common net-tools unzip iptables xxd spamd
+        docker-compose jq age"
 elif [ "$release" -eq 12 ]; then
     software="nginx apache2 apache2-utils
         libapache2-mod-fcgid php-fpm php
@@ -43,7 +44,8 @@ elif [ "$release" -eq 12 ]; then
         flex whois git idn zip sudo bc ftp lsof ntpdate rrdtool quota
         e2fslibs bsdutils e2fsprogs curl imagemagick fail2ban dnsutils
         bsdmainutils cron vesta vesta-nginx vesta-php expect libmail-dkim-perl
-        unrar-free vim-common net-tools unzip iptables xxd spamd rsyslog"
+        unrar-free vim-common net-tools unzip iptables xxd spamd rsyslog
+        docker-compose jq age"
 elif [ "$release" -eq 11 ]; then
     software="nginx apache2 apache2-utils
         libapache2-mod-fcgid php-fpm php
@@ -55,7 +57,7 @@ elif [ "$release" -eq 11 ]; then
         flex whois git idn zip sudo bc ftp lsof ntpdate rrdtool quota
         e2fslibs bsdutils e2fsprogs curl imagemagick fail2ban dnsutils
         bsdmainutils cron vesta vesta-nginx vesta-php expect libmail-dkim-perl
-        unrar-free vim-common net-tools unzip iptables"
+        unrar-free vim-common net-tools unzip iptables docker-compose jq age"
 elif [ "$release" -eq 10 ]; then
     software="nginx apache2 apache2-utils
         libapache2-mod-fcgid php-fpm php
@@ -67,7 +69,7 @@ elif [ "$release" -eq 10 ]; then
         flex whois git idn zip sudo bc ftp lsof ntpdate rrdtool quota
         e2fslibs bsdutils e2fsprogs curl imagemagick fail2ban dnsutils
         bsdmainutils cron vesta vesta-nginx vesta-php expect libmail-dkim-perl
-        unrar-free vim-common net-tools unzip"
+        unrar-free vim-common net-tools unzip docker-compose jq age"
 elif [ "$release" -eq 9 ]; then
     echo "==================================================="
     echo "Important message:"

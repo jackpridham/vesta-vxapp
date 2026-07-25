@@ -1,0 +1,21 @@
+#!/bin/bash
+# info: delete an owner Docker registry login
+# options: USER REGISTRY
+
+user=$1
+registry=$2
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '2' "$#" 'USER REGISTRY'
+[ "$#" -le 2 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+
+vx_compose_registry_delete "$user" "$registry" \
+    || check_result "$E_INVALID" 'Docker registry deletion failed'
+
+log_history "deleted Docker registry metadata for $user"
+log_event "$OK" "$ARGUMENTS"
+exit

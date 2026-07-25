@@ -1,0 +1,22 @@
+#!/bin/bash
+# info: pull and verify a Docker image for one owner
+# options: USER IMAGE
+
+user=$1
+image=$2
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '2' "$#" 'USER IMAGE'
+[ "$#" -le 2 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+
+vx_compose_image_pull "$user" "$image" \
+    || check_result "$E_INVALID" 'Docker image pull or verification failed'
+
+log_history "pulled verified Docker image for $user"
+log_event "$OK" "$ARGUMENTS"
+exit

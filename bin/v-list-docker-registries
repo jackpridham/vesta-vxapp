@@ -1,0 +1,27 @@
+#!/bin/bash
+# info: list redacted owner Docker registry metadata
+# options: USER [FORMAT]
+
+user=$1
+format=${2-shell}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '1' "$#" 'USER [FORMAT]'
+[ "$#" -le 2 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+
+registry_json="$(vx_compose_registry_list_json "$user")" \
+    || check_result "$E_INVALID" 'Docker registry listing failed'
+case "$format" in
+    json) printf '%s\n' "$registry_json" ;;
+    shell|plain)
+        jq -r 'to_entries[] |
+            "\(.key) USERNAME=\(.value.USERNAME) VALIDATION=\(.value.LAST_VALIDATION)"' \
+            <<<"$registry_json"
+        ;;
+    *) check_result "$E_INVALID" "invalid format :: $format" ;;
+esac
+exit
