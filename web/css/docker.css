@@ -11,14 +11,19 @@
   padding-bottom: 56px;
 }
 
-.body-docker .l-content .l-center {
-  max-width: 1200px;
+.body-docker .docker-shell {
+  box-sizing: border-box;
+  margin: 0 240px 0 200px;
+  max-width: none;
+  min-width: 0;
+  padding: 24px 24px 0;
+  width: auto;
 }
 
-.body-docker .docker-shell {
-  margin: 0 auto;
-  max-width: 1180px;
-  padding: 24px 0 0;
+.body-docker .docker-shell *,
+.body-docker .docker-shell *::before,
+.body-docker .docker-shell *::after {
+  box-sizing: border-box;
 }
 
 .body-docker .docker-shell--list {
@@ -45,10 +50,16 @@
 .body-docker .docker-hero {
   align-items: flex-end;
   display: flex;
+  flex-wrap: wrap;
   gap: 24px;
   justify-content: space-between;
   margin-bottom: 18px;
   padding: 28px 30px;
+}
+
+.body-docker .docker-hero > div:first-child {
+  flex: 1 1 420px;
+  min-width: 0;
 }
 
 .body-docker .docker-hero--compact {
@@ -91,9 +102,12 @@
 .body-docker .docker-hero__actions {
   align-items: flex-end;
   display: flex;
+  flex: 0 1 auto;
   flex-wrap: wrap;
   gap: 12px;
   justify-content: flex-end;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .body-docker .docker-scope-form {
@@ -152,12 +166,12 @@
 .body-docker .docker-metric-grid {
   display: grid;
   gap: 16px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
   margin-bottom: 18px;
 }
 
 .body-docker .docker-metric-grid {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr));
 }
 
 .body-docker .docker-metric-grid--compact {
@@ -521,6 +535,11 @@
   padding: 12px 16px;
 }
 
+.body-docker form#docker-create-form,
+.body-docker form#docker-edit-form {
+  padding-top: 0;
+}
+
 .body-docker .docker-form-grid {
   display: grid;
   gap: 18px;
@@ -633,7 +652,7 @@
 
 @media (max-width: 760px) {
   .body-docker .docker-shell {
-    padding-top: 14px;
+    padding: 14px 14px 0;
   }
 
   .body-docker .docker-hero,

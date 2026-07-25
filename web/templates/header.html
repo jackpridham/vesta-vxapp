@@ -51,7 +51,8 @@
     GLOBAL.TOKEN = '<?php if (isset($_SESSION['token'])) echo $_SESSION['token']; else echo ''; ?>';
   </script>
   <style>
-    .l-content .l-center {margin-right: <?=$content_margin_right?>px}
+    .l-content .l-center,
+    .l-content > .docker-shell {margin-right: <?=$content_margin_right?>px}
   </style>
 </head>
 <body class="body-<?=strtolower($TAB)?> lang-<?php if (isset($_SESSION['language'])) echo $_SESSION['language']; else echo 'en'; ?>">
