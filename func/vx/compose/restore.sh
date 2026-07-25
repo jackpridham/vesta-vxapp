@@ -515,6 +515,7 @@ vx_compose_restore_install_active() {
             rm -f -- "$root/$name"
         fi
     done
+    rm -f -- "$root/runtime/routes.pending.json"
     rm -f -- "$root/images.json"
     vx_compose_restore_install_secrets \
         "$root" "$extracted/restore-secrets" \
@@ -559,6 +560,9 @@ vx_compose_restore_project_existing() {
         "$snapshot_root/control/"
     [[ -f "$root/routes.conf" ]] \
         && cp -a -- "$root/routes.conf" "$snapshot_root/control/"
+    [[ -f "$root/runtime/routes.pending.json" ]] \
+        && cp -a -- "$root/runtime/routes.pending.json" \
+            "$snapshot_root/control/"
     [[ -f "$root/images.json" ]] \
         && cp -a -- "$root/images.json" "$snapshot_root/control/"
     [[ -f "$root/simple.json" ]] \
@@ -638,8 +642,12 @@ vx_compose_restore_project_existing() {
         cp -a -- \
             "$snapshot_root/control/canonical.json" "$root/runtime/canonical.json"
         rm -f -- "$root/routes.conf" "$root/images.json"
+        rm -f -- "$root/runtime/routes.pending.json"
         [[ -f "$snapshot_root/control/routes.conf" ]] \
             && cp -a -- "$snapshot_root/control/routes.conf" "$root/routes.conf"
+        [[ -f "$snapshot_root/control/routes.pending.json" ]] \
+            && cp -a -- "$snapshot_root/control/routes.pending.json" \
+                "$root/runtime/routes.pending.json"
         [[ -f "$snapshot_root/control/images.json" ]] \
             && cp -a -- "$snapshot_root/control/images.json" "$root/images.json"
         rm -f -- "$root/simple.json"

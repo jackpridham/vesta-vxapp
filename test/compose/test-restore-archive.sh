@@ -19,6 +19,9 @@ source "$repo_root/func/vx/compose/main.sh"
 
 declare -F vx_compose_restore_archive_validate >/dev/null \
     || fail "restore archive validator is missing"
+grep -Fq 'runtime/routes.pending.json' \
+    "$repo_root/func/vx/compose/restore.sh" \
+    || fail 'restore does not clear stale pending route state'
 
 expect_invalid_archive() {
     local name="$1"

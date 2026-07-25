@@ -125,12 +125,19 @@ vx_docker_list_all_records() {
 vx_docker_count_owner_records() {
     local owner="$1"
     local count=0
-    local line
+    local line project_root
 
     while IFS= read -r line; do
         [ -n "$line" ] || continue
         count=$((count + 1))
     done < <(vx_docker_list_owner_records "$owner")
+
+    for project_root in \
+        "$VESTA/data/users/$owner/docker-projects"/*; do
+        [ -d "$project_root" ] || continue
+        [ -f "$project_root/project.conf" ] || continue
+        count=$((count + 1))
+    done
 
     echo "$count"
 }

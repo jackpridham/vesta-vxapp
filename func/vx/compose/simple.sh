@@ -51,6 +51,126 @@ vx_compose_simple_metadata_write_candidate() {
     chmod 0600 "$candidate/simple.json"
 }
 
+# Legacy command adapters consume the populated record globals after return.
+# shellcheck disable=SC2034
+vx_compose_simple_load_legacy_record() {
+    local owner="$1"
+    local project="$2"
+    local root metadata simple_file canonical containers runtime_name
+    local routes_file domain route
+
+    vx_compose_require_project "$owner" "$project" || return 1
+    root="$(vx_compose_project_root "$owner" "$project")"
+    metadata="$root/project.conf"
+    simple_file="$root/simple.json"
+    canonical="$root/runtime/canonical.json"
+    [[ -f "$simple_file" && ! -L "$simple_file"
+        && "$(stat -c '%a' "$simple_file")" == 600 ]] \
+        || {
+            vx_compose_error 'simple Compose provenance metadata is unavailable'
+            return 1
+        }
+    jq -e \
+        --arg owner "$owner" \
+        --arg project "$project" \
+        --slurpfile canonical "$canonical" '
+        .IMAGE as $image
+        | .GENERATED == true
+        and .OWNER == $owner
+        and .NAME == $project
+        and (.IMAGE | type == "string" and length > 0)
+        and ($canonical[0].services | length) == 1
+        and any($canonical[0].services[]; .image == $image)
+        and all(
+            .COMMAND, .ENV, .MOUNTS, .HOST_PORT, .CONTAINER_PORT,
+            .DOMAIN, .ROUTE_PATH, .AUTO_START, .RESTART_POLICY,
+            .HEALTHCHECK_TYPE, .HEALTHCHECK_TARGET,
+            .HEALTHCHECK_INTERVAL, .CPU_ALERT_PCT, .MEM_ALERT_MB,
+            .NET_ALERT_MBPS, .ALERT_EMAIL;
+            type == "string"
+        )
+    ' "$simple_file" >/dev/null \
+        || {
+            vx_compose_error 'simple Compose provenance metadata is invalid'
+            return 1
+        }
+
+    NAME="$(jq -r '.NAME' "$simple_file")"
+    OWNER="$owner"
+    IMAGE="$(jq -r '.IMAGE' "$simple_file")"
+    COMMAND="$(jq -r '.COMMAND' "$simple_file")"
+    ENV="$(jq -r '.ENV' "$simple_file")"
+    MOUNTS="$(jq -r '.MOUNTS' "$simple_file")"
+    HOST_PORT="$(jq -r '.HOST_PORT' "$simple_file")"
+    CONTAINER_PORT="$(jq -r '.CONTAINER_PORT' "$simple_file")"
+    DOMAIN="$(jq -r '.DOMAIN' "$simple_file")"
+    ROUTE_PATH="$(jq -r '.ROUTE_PATH' "$simple_file")"
+    AUTO_START="$(jq -r '.AUTO_START' "$simple_file")"
+    RESTART_POLICY="$(jq -r '.RESTART_POLICY' "$simple_file")"
+    HEALTHCHECK_TYPE="$(jq -r '.HEALTHCHECK_TYPE' "$simple_file")"
+    HEALTHCHECK_TARGET="$(jq -r '.HEALTHCHECK_TARGET' "$simple_file")"
+    HEALTHCHECK_INTERVAL="$(jq -r '.HEALTHCHECK_INTERVAL' "$simple_file")"
+    CPU_ALERT_PCT="$(jq -r '.CPU_ALERT_PCT' "$simple_file")"
+    MEM_ALERT_MB="$(jq -r '.MEM_ALERT_MB' "$simple_file")"
+    NET_ALERT_MBPS="$(jq -r '.NET_ALERT_MBPS' "$simple_file")"
+    ALERT_EMAIL="$(jq -r '.ALERT_EMAIL' "$simple_file")"
+    STATUS="$(vx_compose_meta_get "$metadata" STATE)" || return 1
+    CREATED="$(vx_compose_meta_get "$metadata" CREATED)" || return 1
+    UPDATED="$(vx_compose_meta_get "$metadata" UPDATED)" || return 1
+
+    runtime_name="$(vx_compose_meta_get "$metadata" COMPOSE_PROJECT)" \
+        || return 1
+    containers="$(vx_compose_runtime_containers_json "$owner" "$project")" \
+        || {
+            vx_compose_error 'simple Compose runtime ownership is invalid'
+            return 1
+        }
+    [[ "$(jq -r 'length' <<<"$containers")" -le 1 ]] \
+        || {
+            vx_compose_error 'simple Compose runtime has multiple containers'
+            return 1
+        }
+    CTN_NAME="$(jq -r '.[0].Name // empty | ltrimstr("/")' \
+        <<<"$containers")"
+    [[ -n "$CTN_NAME" ]] || CTN_NAME="$runtime_name-$project-1"
+
+    HEALTH_STATUS=unknown
+    LAST_HEALTH_AT=''
+    if [[ -f "$root/runtime/last-health.json"
+        && ! -L "$root/runtime/last-health.json" ]]; then
+        HEALTH_STATUS="$(jq -r '.STATUS // "unknown"' \
+            "$root/runtime/last-health.json")" || return 1
+        LAST_HEALTH_AT="$(jq -r '.UPDATED // ""' \
+            "$root/runtime/last-health.json")" || return 1
+    fi
+
+    PROXY_MODE=''
+    PROXY_TARGET=''
+    routes_file="$(vx_compose_routes_desired_path "$owner" "$project")"
+    domain="$DOMAIN"
+    if [[ -n "$domain" && -f "$routes_file" && ! -L "$routes_file" ]]; then
+        route="$(jq -ce --arg domain "$domain" '
+            .[$domain]
+            | select(
+                (.SCHEME == "http" or .SCHEME == "https")
+                and (
+                    (.HOST_PORT | tostring)
+                    | test("^[1-9][0-9]{0,4}$")
+                )
+            )
+        ' "$routes_file")" \
+            || {
+                vx_compose_error \
+                    "simple Compose route metadata is invalid for $domain"
+                return 1
+            }
+        PROXY_MODE=proxy
+        PROXY_TARGET="$(jq -r \
+            '.SCHEME + "://127.0.0.1:" + (.HOST_PORT | tostring)' \
+            <<<"$route")"
+    fi
+}
+
 vx_compose_simple_render_loaded() {
     local owner="$1"
     local host_port="$2"
@@ -138,9 +258,12 @@ vx_compose_simple_add_loaded() {
         vx_compose_update_state "$owner" "$NAME" stopped || result=1
     fi
     if [[ "$result" -eq 0 && -n "${DOMAIN:-}" ]]; then
-        vx_compose_route_add \
-            "$owner" "$NAME" "$DOMAIN" "$NAME" "$CONTAINER_PORT" \
-            http "${ROUTE_PATH:-/}" || result=1
+        if ! vx_compose_route_add \
+                "$owner" "$NAME" "$DOMAIN" "$NAME" "$CONTAINER_PORT" \
+                http "${ROUTE_PATH:-/}" \
+            || ! vx_compose_routes_apply "$owner" "$NAME"; then
+            result=1
+        fi
     fi
     if [[ "$result" -ne 0 ]]; then
         vx_compose_remove "$owner" "$NAME" >/dev/null 2>&1 || true
@@ -181,9 +304,12 @@ vx_compose_simple_change_loaded() {
     rm -rf -- "$temp_root"
     vx_compose_routes_clear "$owner" "$project" || route_ok=no
     if [[ "$route_ok" == yes && -n "${DOMAIN:-}" ]]; then
-        vx_compose_route_add \
-            "$owner" "$project" "$DOMAIN" "$project" \
-            "$CONTAINER_PORT" http "${ROUTE_PATH:-/}" || route_ok=no
+        if ! vx_compose_route_add \
+                "$owner" "$project" "$DOMAIN" "$project" \
+                "$CONTAINER_PORT" http "${ROUTE_PATH:-/}" \
+            || ! vx_compose_routes_apply "$owner" "$project"; then
+            route_ok=no
+        fi
     fi
     if [[ "$route_ok" != yes ]]; then
         vx_compose_rollback "$owner" "$project" "$old_revision" || true

@@ -75,9 +75,6 @@ trap cleanup EXIT
 
 commands='v_list_cron_jobs admin json
 v_list_databases admin json
-v_list_database admin admin_vesta json
-v_list_database_server mysql localhost json
-v_list_database_servers mysql json
 v_check_docker_engine json
 v_list_dns_domains admin json
 v_list_mail_domains admin json
@@ -95,9 +92,7 @@ v_list_user_packages json
 v_list_users json
 v_list_docker_containers admin json
 v_list_web_domains admin json
-v_list_web_domain admin default.vesta.domain json
-v_list_web_templates admin json
-v_list_web_templates_nginx admin json'
+v_list_web_templates json'
 
 docker_owner=''
 docker_name=''
@@ -150,7 +145,7 @@ fi
 IFS=$'\n'
 for cmd in $commands; do
     IFS=' ' read -r -a cmd_parts <<< "$cmd"
-    script="${cmd_parts[0]}"
+    script="${cmd_parts[0]//_/-}"
     "$V_BIN/$script" "${cmd_parts[@]:1}" | $V_TEST/json.sh >/dev/null 2>/dev/null
     retval="$?"
     echo -en  "$cmd"

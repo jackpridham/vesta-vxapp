@@ -57,7 +57,7 @@ json_field() {
     local file="$1"
     local key="$2"
 
-    php -r '
+    php -n -r '
         $payload = json_decode(file_get_contents($argv[1]), true);
         $key = $argv[2];
         $value = null;
@@ -89,9 +89,15 @@ run_cmd() {
 expect_ok() {
     local label="$1"
     local cmd="$2"
+    local rc
 
     run_cmd "$cmd" "$stdout_file" "$stderr_file"
-    echo_result "$label" "$?" "$stderr_file" "$cmd"
+    rc=$?
+    if [ "$rc" -ne 0 ] && [ -s "$stdout_file" ]; then
+        printf '%s\n' '--- stdout ---' >>"$stderr_file"
+        cat "$stdout_file" >>"$stderr_file"
+    fi
+    echo_result "$label" "$rc" "$stderr_file" "$cmd"
 }
 
 expect_code() {
@@ -107,6 +113,10 @@ expect_code() {
     fi
     printf 'Expected exit code %s\nActual exit code %s\n' "$expected" "$rc" >"$tmpfile"
     cat "$stderr_file" >>"$tmpfile"
+    if [ "$rc" -ne "$expected" ] && [ -s "$stdout_file" ]; then
+        printf '%s\n' '--- stdout ---' >>"$tmpfile"
+        cat "$stdout_file" >>"$tmpfile"
+    fi
     echo_result "$label" "$verdict" "$tmpfile" "$cmd"
 }
 
@@ -119,7 +129,7 @@ write_spec() {
     cat >"$path" <<EOF
 NAME='$name'
 IMAGE='$DOCKER_TEST_IMAGE'
-COMMAND='sleep 3600'
+COMMAND='mkdir -p /tmp/www; echo ok > /tmp/www/index.html; exec httpd -f -p 8080 -h /tmp/www'
 ENV='MODE=test'
 MOUNTS='data:/data'
 CONTAINER_PORT='8080'
@@ -141,7 +151,7 @@ cleanup() {
     local backup_file_path=''
 
     if [ -n "${backup_name:-}" ]; then
-        backup_file_path="/backup/${backup_name}"
+        backup_file_path="${backup_root}/${backup_name}"
         [ -f "$backup_file_path" ] && rm -f "$backup_file_path"
     fi
 
@@ -177,14 +187,23 @@ mail_one="${user_one}@local.test"
 mail_two="${user_two}@local.test"
 container_one="app${suffix}"
 container_two="other${suffix}"
+container_quota="quota${suffix}"
 domain_one="${container_one}.local.test"
 domain_two="${container_two}.local.test"
 spec_one="${tmpdir}/${container_one}.spec"
 spec_two="${tmpdir}/${container_two}.spec"
+spec_quota="${tmpdir}/${container_quota}.spec"
 restore_marker_path="/home/${user_one}/docker/${container_one}/data/restore-marker.txt"
+backup_root="$(awk -F"'" '/^BACKUP=/{print $2; exit}' \
+    "$VESTA/conf/vesta.conf")"
+[ -n "$backup_root" ] || backup_root='/backup'
+limit_exit_code="$(
+    bash -c 'source "$VESTA/func/main.sh"; printf "%s" "$E_LIMIT"'
+)"
 
 write_spec "$spec_one" "$container_one" "$domain_one" 'yes'
 write_spec "$spec_two" "$container_two" "$domain_two" 'yes'
+write_spec "$spec_quota" "$container_quota" '' 'no'
 
 if ! "$V_BIN/v-check-docker-engine" >/dev/null 2>&1; then
     echo "SKIP: Docker engine is unavailable on this host."
@@ -211,19 +230,19 @@ expect_ok "DOCKER: Adding routed web domain ${domain_one}" "$V_BIN/v-add-web-dom
 expect_ok "DOCKER: Adding routed web domain ${domain_two}" "$V_BIN/v-add-web-domain $user_two $domain_two $ip_two no none no"
 
 expect_ok "DOCKER: User creates first managed container within quota" "$V_BIN/v-add-docker-container $user_one $spec_one"
-expect_code "DOCKER: User create blocked when package limit is exhausted" 11 "$V_BIN/v-add-docker-container $user_one $spec_one"
+expect_code "DOCKER: User create blocked when package limit is exhausted" "$limit_exit_code" "$V_BIN/v-add-docker-container $user_one $spec_quota"
 
 expect_ok "DOCKER: Second user creates owned container" "$V_BIN/v-add-docker-container $user_two $spec_two"
 
 expect_code "DOCKER: Wrong owner lookup fails for foreign container record" 3 "$V_BIN/v-list-docker-container $user_one $container_two json"
-expect_code "DOCKER: Wrong owner inspect fails for foreign container record" 3 "$V_BIN/v-list-docker-container-inspect $user_one $container_two >/dev/null"
+expect_code "DOCKER: Wrong owner inspect fails for foreign container record" 3 "$V_BIN/v-list-docker-container-inspect $user_one $container_two"
 expect_code "DOCKER: Wrong owner start fails for foreign container record" 3 "$V_BIN/v-start-docker-container $user_one $container_two"
 expect_code "DOCKER: Wrong owner stop fails for foreign container record" 3 "$V_BIN/v-stop-docker-container $user_one $container_two"
 expect_code "DOCKER: Wrong owner delete fails for foreign container record" 3 "$V_BIN/v-delete-docker-container $user_one $container_two"
 
 expect_code "DOCKER: Non-admin actor helper blocks foreign owner scope" 10 "source $VESTA/func/main.sh; source $VESTA/func/vx/docker.sh; vx_docker_assert_actor_can_access_owner $user_one $user_two"
 expect_ok "DOCKER: Admin actor helper allows foreign owner scope" "source $VESTA/func/main.sh; source $VESTA/func/vx/docker.sh; vx_docker_assert_actor_can_access_owner admin $user_two"
-expect_ok "DOCKER: Admin shell can inspect another user's container" "$V_BIN/v-list-docker-container-inspect $user_two $container_two >/dev/null"
+expect_ok "DOCKER: Admin shell can inspect another user's container" "$V_BIN/v-list-docker-container-inspect $user_two $container_two"
 expect_ok "DOCKER: Admin shell can stop another user's container" "$V_BIN/v-stop-docker-container $user_two $container_two"
 expect_ok "DOCKER: Admin shell can start another user's container" "$V_BIN/v-start-docker-container $user_two $container_two"
 
@@ -271,39 +290,44 @@ chown -R "$user_one:$user_one" "/home/${user_one}/docker"
 expect_ok "DOCKER: User backup completes with Docker data" "$V_BIN/v-backup-user $user_one no"
 backup_name="$(awk -F"'" '/^BACKUP=/{print $2; exit}' "$VESTA/data/users/$user_one/backup.conf")"
 
-if [ -z "$backup_name" ] || [ ! -f "/backup/${backup_name}" ]; then
+if [ -z "$backup_name" ] || [ ! -f "${backup_root}/${backup_name}" ]; then
     printf 'Unable to locate backup tarball for %s\n' "$user_one" >"$tmpfile"
     echo_result "DOCKER: Backup artifact created" 1 "$tmpfile" "backup lookup"
     exit 1
 fi
 echo_result "DOCKER: Backup artifact created" 0 "$tmpfile" "backup lookup"
 
-if tar -tf "/backup/${backup_name}" | grep -q '^./docker/vesta/docker.conf$' \
-    && tar -tf "/backup/${backup_name}" | grep -q '^./docker/vesta/docker-alerts.conf$' \
-    && tar -tf "/backup/${backup_name}" | grep -q '^./docker/home/docker/' \
-    && tar -tf "/backup/${backup_name}" | grep -q "^./web/${domain_one}/vesta/web.conf$"; then
-    echo_result "DOCKER: Backup archive includes Docker metadata, alerts, bind root, and route data" 0 "$tmpfile" "tar -tf /backup/${backup_name}"
+if tar -tf "${backup_root}/${backup_name}" \
+        | grep -q "^./docker/compose/${container_one}.tar.gz$" \
+    && tar -tf "${backup_root}/${backup_name}" \
+        | grep -q '^./docker/vesta/docker-alerts.conf$' \
+    && tar -tf "${backup_root}/${backup_name}" \
+        | grep -q '^./docker/home/docker/' \
+    && tar -tf "${backup_root}/${backup_name}" \
+        | grep -q "^./web/${domain_one}/vesta/web.conf$"; then
+    echo_result "DOCKER: Backup archive includes Compose metadata, alerts, bind root, and route data" 0 "$tmpfile" "tar -tf ${backup_root}/${backup_name}"
 else
-    tar -tf "/backup/${backup_name}" >"$tmpfile"
-    echo_result "DOCKER: Backup archive includes Docker metadata, alerts, bind root, and route data" 1 "$tmpfile" "tar -tf /backup/${backup_name}"
+    tar -tf "${backup_root}/${backup_name}" >"$tmpfile"
+    echo_result "DOCKER: Backup archive includes Compose metadata, alerts, bind root, and route data" 1 "$tmpfile" "tar -tf ${backup_root}/${backup_name}"
 fi
 
-expect_ok "DOCKER: Remove routed proxy before restore" "$V_BIN/v-delete-web-domain-proxy $user_one $domain_one no"
+expect_ok "DOCKER: Remove routed proxy before restore" "$V_BIN/v-delete-docker-project-route $user_one $container_one $domain_one"
 rm -f "$VESTA/data/users/$user_one/docker.conf" "$VESTA/data/users/$user_one/docker-alerts.conf"
 rm -rf "/home/${user_one}/docker"
 
 expect_ok "DOCKER: Restore repopulates Docker metadata" "$V_BIN/v-restore-user $user_one $backup_name no no no no no no yes no"
+expect_ok "DOCKER: Restored Compose route converges" "$V_BIN/v-deploy-docker-project $user_one $container_one"
 
-if [ -f "$VESTA/data/users/$user_one/docker.conf" ] \
+if [ -f "$VESTA/data/users/$user_one/docker-projects/$container_one/simple.json" ] \
     && [ -f "$VESTA/data/users/$user_one/docker-alerts.conf" ] \
     && [ -f "$restore_marker_path" ]; then
-    echo_result "DOCKER: Restore returns docker.conf, alert data, and bind-root files" 0 "$tmpfile" "restore file checks"
+    echo_result "DOCKER: Restore returns Compose control, alert data, and bind-root files" 0 "$tmpfile" "restore file checks"
 else
-    printf 'docker.conf exists: %s\ndocker-alerts.conf exists: %s\nbind file exists: %s\n' \
-        "$(test -f "$VESTA/data/users/$user_one/docker.conf" && echo yes || echo no)" \
+    printf 'Compose control exists: %s\ndocker-alerts.conf exists: %s\nbind file exists: %s\n' \
+        "$(test -f "$VESTA/data/users/$user_one/docker-projects/$container_one/simple.json" && echo yes || echo no)" \
         "$(test -f "$VESTA/data/users/$user_one/docker-alerts.conf" && echo yes || echo no)" \
         "$(test -f "$restore_marker_path" && echo yes || echo no)" >"$tmpfile"
-    echo_result "DOCKER: Restore returns docker.conf, alert data, and bind-root files" 1 "$tmpfile" "restore file checks"
+    echo_result "DOCKER: Restore returns Compose control, alert data, and bind-root files" 1 "$tmpfile" "restore file checks"
 fi
 
 run_cmd "$V_BIN/v-list-web-domain $user_one $domain_one json" "$stdout_file" "$stderr_file"

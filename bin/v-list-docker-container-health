@@ -17,6 +17,7 @@ format=${3-json}
 # Includes
 source $VESTA/func/main.sh
 source $VESTA/func/docker.sh
+source "$VESTA/func/vx/compose/main.sh"
 source $VESTA/conf/vesta.conf
 
 json_list() {
@@ -52,7 +53,14 @@ is_object_format_valid "$name" 'container name'
 #                       Action                             #
 #----------------------------------------------------------#
 
-vx_docker_load_record "$user" "$name" || check_result "$E_NOTEXIST" "docker container $name doesn't exist"
+if vx_compose_require_project "$user" "$name" >/dev/null 2>&1; then
+    vx_compose_simple_load_legacy_record "$user" "$name" \
+        || check_result "$E_NOTEXIST" \
+            "simple Docker Compose project $name doesn't exist"
+else
+    vx_docker_load_record "$user" "$name" \
+        || check_result "$E_NOTEXIST" "docker container $name doesn't exist"
+fi
 
 case "$format" in
     json)  json_list ;;

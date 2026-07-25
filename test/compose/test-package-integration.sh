@@ -8,6 +8,22 @@ fail() {
     exit 1
 }
 
+test_root="$(mktemp -d)"
+trap 'rm -rf -- "$test_root"' EXIT
+export VESTA="$test_root/vesta"
+mkdir -p \
+    "$VESTA/data/users/alice/docker-projects/compose-one" \
+    "$VESTA/data/users/alice/docker-projects/compose-two"
+printf '%s\n' "NAME='legacy-one'" \
+    >"$VESTA/data/users/alice/docker.conf"
+touch \
+    "$VESTA/data/users/alice/docker-projects/compose-one/project.conf" \
+    "$VESTA/data/users/alice/docker-projects/compose-two/project.conf"
+# shellcheck source=func/vx/docker.sh
+source "$repo_root/func/vx/docker.sh"
+[[ "$(vx_docker_count_owner_records alice)" == 3 ]] \
+    || fail 'legacy container quota does not include Compose projects'
+
 quota_fields=(
     DOCKER_PROJECTS
     DOCKER_SERVICES

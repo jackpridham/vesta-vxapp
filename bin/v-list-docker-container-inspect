@@ -16,6 +16,7 @@ name=$2
 # Includes
 source $VESTA/func/main.sh
 source $VESTA/func/docker.sh
+source "$VESTA/func/vx/compose/main.sh"
 if [ -f "$VESTA/conf/vesta.conf" ]; then
     source $VESTA/conf/vesta.conf
 fi
@@ -29,6 +30,19 @@ check_args '2' "$#" 'USER NAME'
 is_format_valid 'user'
 is_object_valid 'user' 'USER' "$user"
 ensure_docker_engine_available
+if vx_compose_require_project "$user" "$name" >/dev/null 2>&1; then
+    vx_compose_simple_load_legacy_record "$user" "$name" \
+        || check_result "$E_NOTEXIST" \
+            "simple Docker Compose project $name doesn't exist"
+    containers="$(vx_compose_runtime_containers_json "$user" "$name")" \
+        || check_result "$E_FORBIDEN" \
+            'Docker Compose runtime ownership validation failed'
+    [ "$(jq -r 'length' <<<"$containers")" -eq 1 ] \
+        || check_result "$E_NOTEXIST" \
+            "Docker Compose runtime container $name doesn't exist"
+    printf '%s\n' "$containers"
+    exit
+fi
 vx_docker_load_record "$user" "$name" || check_result "$E_NOTEXIST" "docker container $name doesn't exist"
 vx_docker_assert_runtime_labels_match "$user" "$name" "$CTN_NAME"
 
