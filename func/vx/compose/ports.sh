@@ -169,6 +169,9 @@ vx_compose_ports_check_live_conflicts() {
     } | sort -u >"$listeners"
     while IFS=$'\t' read -r protocol published; do
         key="$protocol:$published"
+        if [[ "$key" == "${VX_COMPOSE_ALLOWED_LIVE_PORT_KEY:-}" ]]; then
+            continue
+        fi
         if grep -Fxq "$key" "$listeners" \
             && ! grep -Fxq "$key" "$current_keys"; then
             rm -f -- "$listeners" "$current_keys"

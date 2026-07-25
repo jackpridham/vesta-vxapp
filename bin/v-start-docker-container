@@ -1,4 +1,6 @@
 #!/bin/bash
+# Vesta record helpers consume these globals across sourced functions.
+# shellcheck disable=SC2034
 # info: start docker container
 # options: USER NAME
 #
@@ -16,6 +18,7 @@ name=$2
 # Includes
 source $VESTA/func/main.sh
 source $VESTA/func/docker.sh
+source "$VESTA/func/vx/compose/main.sh"
 if [ -f "$VESTA/conf/vesta.conf" ]; then
     source $VESTA/conf/vesta.conf
 fi
@@ -30,6 +33,13 @@ is_format_valid 'user'
 is_object_valid 'user' 'USER' "$user"
 is_object_unsuspended 'user' 'USER' "$user"
 ensure_docker_engine_available
+if vx_compose_require_project "$user" "$name" >/dev/null 2>&1; then
+    vx_compose_start "$user" "$name" \
+        || check_result "$E_RESTART" 'Docker Compose project start failed'
+    log_history "started Docker Compose simple project $name"
+    log_event "$OK" "$ARGUMENTS"
+    exit
+fi
 vx_docker_load_record "$user" "$name" || check_result "$E_NOTEXIST" "docker container $name doesn't exist"
 vx_docker_assert_runtime_labels_match "$user" "$name" "$CTN_NAME"
 

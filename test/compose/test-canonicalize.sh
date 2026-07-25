@@ -161,11 +161,16 @@ printf '%s\n' \
     '    cpus: 0.25' \
     '    mem_limit: 64m' \
     '    pids_limit: 32' \
+    '    logging:' \
+    '      driver: json-file' \
+    '      options: {max-size: 10m, max-file: "3"}' \
     '    environment:' \
-    '      VALUE: must-not-persist' >"$environment_input"
-if vx_compose_prepare_candidate alice environment "$environment_input" "$test_root/environment-out" 2>/dev/null; then
-    fail "environment values were accepted before secret policy exists"
-fi
+    '      APP_MODE: production' >"$environment_input"
+vx_compose_prepare_candidate \
+    alice environment "$environment_input" "$test_root/environment-out"
+jq -e '.services.bad.environment.APP_MODE == "production"' \
+    "$test_root/environment-out/canonical.json" >/dev/null \
+    || fail "literal non-secret environment data was not canonicalized"
 
 ln -s "$repo_root/test/compose/fixtures/basic-http.compose.yaml" "$test_root/link.yaml"
 if vx_compose_prepare_candidate alice linked "$test_root/link.yaml" "$test_root/link-out" 2>/dev/null; then

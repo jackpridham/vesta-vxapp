@@ -1,4 +1,6 @@
 #!/bin/bash
+# Vesta record helpers consume these globals across sourced functions.
+# shellcheck disable=SC2034
 # info: change docker container
 # options: USER NAME SPEC
 #
@@ -17,6 +19,7 @@ spec_file=$3
 # Includes
 source $VESTA/func/main.sh
 source $VESTA/func/docker.sh
+source "$VESTA/func/vx/compose/main.sh"
 if [ -f "$VESTA/conf/vesta.conf" ]; then
     source $VESTA/conf/vesta.conf
 fi
@@ -31,6 +34,24 @@ is_format_valid 'user'
 is_object_valid 'user' 'USER' "$user"
 is_object_unsuspended 'user' 'USER' "$user"
 ensure_docker_engine_available
+if vx_compose_require_project "$user" "$name" >/dev/null 2>&1; then
+    vx_docker_load_spec "$spec_file"
+    [ "$NAME" = "$name" ] \
+        || check_result "$E_INVALID" "docker spec NAME must match $name"
+    HOST_PORT="$(jq -r '
+        [.services[] | (.ports // [])[] | .published] | first // empty
+    ' "$(vx_compose_project_root "$user" "$name")/runtime/canonical.json")"
+    [ -n "$HOST_PORT" ] \
+        || check_result "$E_INVALID" 'simple Compose project has no published port'
+    if [ -n "$DOMAIN" ] && ! vx_docker_owner_domain_exists "$user" "$DOMAIN"; then
+        check_result "$E_FORBIDEN" "web domain $DOMAIN is not owned by $user"
+    fi
+    vx_compose_simple_change_loaded "$user" "$name" "$HOST_PORT"
+    check_result $? "Docker Compose simple project update failed"
+    log_history "changed Docker Compose simple project $NAME"
+    log_event "$OK" "$ARGUMENTS"
+    exit
+fi
 vx_docker_load_record "$user" "$name" || check_result "$E_NOTEXIST" "docker container $name doesn't exist"
 OLD_CTN_NAME="$CTN_NAME"
 OLD_HOST_PORT="$HOST_PORT"

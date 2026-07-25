@@ -22,12 +22,29 @@ vx_compose_package_unset_values() {
 
 vx_compose_package_data_with_defaults() {
     local package_data="$1"
-    local field
+    local field legacy_limit default_value
+
+    legacy_limit="$(sed -n "s/^DOCKER_CONTAINERS='\\([^']*\\)'$/\\1/p" \
+        <<<"$package_data")"
 
     for field in "${VX_COMPOSE_PACKAGE_FIELDS[@]}"; do
         if ! grep -q "^${field}=" <<<"$package_data"; then
+            default_value=0
+            if [[ "$legacy_limit" == unlimited ]]; then
+                default_value=unlimited
+            elif [[ "$legacy_limit" =~ ^[1-9][0-9]*$ ]]; then
+                case "$field" in
+                    DOCKER_PROJECTS|DOCKER_SERVICES|DOCKER_PORTS)
+                        default_value="$legacy_limit"
+                        ;;
+                    DOCKER_CPUS) default_value="$legacy_limit.000" ;;
+                    DOCKER_MEMORY_MB) default_value=$((legacy_limit * 1024)) ;;
+                    DOCKER_PIDS) default_value=$((legacy_limit * 128)) ;;
+                    DOCKER_STORAGE_MB) default_value=$((legacy_limit * 1024)) ;;
+                esac
+            fi
             package_data="${package_data}
-${field}='0'"
+${field}='${default_value}'"
         fi
     done
     printf '%s\n' "$package_data"

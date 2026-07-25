@@ -31,8 +31,9 @@ profile="$(vx_compose_meta_get \
 vx_compose_prepare_candidate \
     "$user" "$compose_project" "$compose_file" "$candidate" "$profile" \
     || check_result "$E_INVALID" 'Compose project validation failed'
-vx_compose_store_revision "$user" "$compose_project" "$candidate" validated \
-    || check_result "$E_INVALID" 'Compose project update failed'
+vx_compose_transaction_update "$user" "$compose_project" "$candidate" \
+    || check_result "$E_INVALID" \
+        'Compose project update failed and the prior revision was restored'
 
 log_history "changed Docker Compose project $compose_project"
 log_event "$OK" "$ARGUMENTS"

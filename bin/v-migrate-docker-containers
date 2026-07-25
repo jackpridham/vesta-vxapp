@@ -1,0 +1,17 @@
+#!/bin/bash
+# info: validate or migrate legacy managed Docker containers to Compose
+# options: USER [dry-run|apply]
+
+user=$1
+mode=${2-dry-run}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '1' "$#" 'USER [dry-run|apply]'
+[ "$#" -le 2 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+vx_compose_migrate_owner "$user" "$mode" \
+    || check_result "$E_INVALID" 'Docker container migration failed'
+exit

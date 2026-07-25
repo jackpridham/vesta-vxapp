@@ -82,7 +82,13 @@ vx_compose_health_collect() {
                     .Config.Labels["com.docker.compose.service"] == $service
                 )
             ] as $matches
-            | ($canonical.services[$service].healthcheck != null) as $has_check
+            | (
+                $canonical.services[$service].healthcheck != null
+                and (
+                    $canonical.services[$service].healthcheck.disable
+                    // false
+                ) != true
+            ) as $has_check
             | if ($matches | length) != 1 then
                 {
                     RUNTIME_STATE: "missing",
