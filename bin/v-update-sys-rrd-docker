@@ -15,6 +15,7 @@ period=${1-daily}
 # Includes
 source $VESTA/func/main.sh
 source $VESTA/func/docker.sh
+source "$VESTA/func/vx/compose/main.sh"
 source $VESTA/conf/vesta.conf
 
 
@@ -53,6 +54,9 @@ while IFS= read -r line; do
     vx_docker_graph_rrd "$OWNER" "$NAME" "$period"
 done < <(vx_docker_list_all_records)
 
+if [ "$period" = 'daily' ]; then
+    vx_compose_monitor_all
+fi
 
 #----------------------------------------------------------#
 #                       Vesta                              #

@@ -1,0 +1,36 @@
+#!/bin/bash
+# info: list Docker Compose project audit events
+# options: USER PROJECT [FORMAT]
+
+user=$1
+compose_project=$2
+format=${3-json}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '2' "$#" 'USER PROJECT [FORMAT]'
+[ "$#" -le 3 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+audit_json="$(vx_compose_audit_list_json "$user" "$compose_project")" \
+    || check_result "$E_INVALID" 'Docker Compose audit listing failed'
+case "$format" in
+    json) printf '%s\n' "$audit_json" ;;
+    plain)
+        jq -r '
+            .[]
+            | [
+                .TIMESTAMP,
+                .ACTOR,
+                .ACTION,
+                .RESULT,
+                (.DURATION_MS | tostring),
+                .DETAILS
+            ]
+            | @tsv
+        ' <<<"$audit_json"
+        ;;
+    *) check_result "$E_INVALID" 'format must be json or plain' ;;
+esac
+exit

@@ -1,0 +1,38 @@
+#!/bin/bash
+# info: list Docker Compose project resource metrics
+# options: USER PROJECT [PERIOD] [FORMAT]
+
+user=$1
+compose_project=$2
+period=${3-5m}
+format=${4-json}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '2' "$#" 'USER PROJECT [PERIOD] [FORMAT]'
+[ "$#" -le 4 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+stats="$(vx_compose_metrics_history "$user" "$compose_project" "$period")" \
+    || check_result "$E_INVALID" 'Docker Compose metric listing failed'
+case "$format" in
+    json) printf '%s\n' "$stats" ;;
+    plain)
+        jq -r '
+            .SAMPLES[]
+            | [
+                .TIMESTAMP,
+                (.CPU_PCT | tostring),
+                (.MEMORY_MB | tostring),
+                (.PIDS | tostring),
+                (.RX_MBPS | tostring),
+                (.TX_MBPS | tostring),
+                (.STORAGE_MB | tostring)
+            ]
+            | @tsv
+        ' <<<"$stats"
+        ;;
+    *) check_result "$E_INVALID" 'format must be json or plain' ;;
+esac
+exit

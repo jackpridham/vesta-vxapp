@@ -126,6 +126,12 @@ vx_compose_registry_add() {
         vx_compose_registry_lock_release
         return 1
     fi
+    vx_compose_owner_audit "$owner" registry-add succeeded \
+        "registry_sha256=$(printf '%s' "$registry" | sha256sum | awk '{print $1}')" \
+        || {
+            vx_compose_registry_lock_release
+            return 1
+        }
     vx_compose_registry_lock_release
 }
 
@@ -156,6 +162,12 @@ vx_compose_registry_delete() {
         "$metadata" >"$temp_file"
     chmod 0600 "$temp_file"
     mv -f -- "$temp_file" "$metadata"
+    vx_compose_owner_audit "$owner" registry-delete succeeded \
+        "registry_sha256=$(printf '%s' "$registry" | sha256sum | awk '{print $1}')" \
+        || {
+            vx_compose_registry_lock_release
+            return 1
+        }
     vx_compose_registry_lock_release
 }
 

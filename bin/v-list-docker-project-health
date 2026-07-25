@@ -1,0 +1,30 @@
+#!/bin/bash
+# info: list Docker Compose project health
+# options: USER PROJECT [FORMAT]
+
+user=$1
+compose_project=$2
+format=${3-json}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '2' "$#" 'USER PROJECT [FORMAT]'
+[ "$#" -le 3 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+health="$(vx_compose_health_collect "$user" "$compose_project")" \
+    || check_result "$E_INVALID" 'Docker Compose health collection failed'
+case "$format" in
+    json) printf '%s\n' "$health" ;;
+    plain)
+        jq -r '
+            .SERVICES
+            | to_entries[]
+            | [.key, .value.RUNTIME_STATE, .value.HEALTH]
+            | @tsv
+        ' <<<"$health"
+        ;;
+    *) check_result "$E_INVALID" 'format must be json or plain' ;;
+esac
+exit

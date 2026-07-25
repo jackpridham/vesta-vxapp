@@ -1,0 +1,19 @@
+#!/bin/bash
+# info: acknowledge Docker Compose project alert
+# options: USER PROJECT ALERT
+
+user=$1
+compose_project=$2
+alert=$3
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '3' "$#" 'USER PROJECT ALERT'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+vx_compose_alert_acknowledge "$user" "$compose_project" "$alert" \
+    || check_result "$E_INVALID" 'Docker Compose alert acknowledgement failed'
+log_history "acknowledged Docker Compose project alert $compose_project/$alert"
+log_event "$OK" "$ARGUMENTS"
+exit
