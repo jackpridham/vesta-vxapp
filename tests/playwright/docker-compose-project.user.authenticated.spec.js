@@ -91,6 +91,8 @@ test('Compose list and project detail expose multi-service and revision context'
 
   await expect(card).toContainText(/Services/i);
   await expect(card).toContainText(/Revision/i);
+  await card.hover();
+  await expect(card.getByRole('link', { name: /details/i })).toBeVisible();
   await card.getByRole('link', { name: /details/i }).click();
 
   await expect(page).toHaveURL(/\/list\/docker\/project\/\?project=/);
@@ -105,6 +107,8 @@ test('Compose project actions expose redacted inspection and guarded lifecycle w
   const card = page.locator('#docker-list-cards article[id^="docker-card-"]').first();
   test.skip((await card.count()) === 0, 'Compose modal coverage requires a seeded project.');
 
+  await card.hover();
+  await expect(card.getByRole('link', { name: /Project actions/i })).toBeVisible();
   await card.getByRole('link', { name: /Project actions/i }).click();
   const modal = page.locator('#floating-center-div-content');
   await expect(modal).toContainText(/Project summary/i);

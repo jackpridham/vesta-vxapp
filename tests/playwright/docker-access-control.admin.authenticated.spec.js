@@ -33,17 +33,23 @@ test('admin docker list shows owner-aware rows and can pivot by owner when multi
   await expect(firstCard).toHaveAttribute('data-owner', /.+/);
   await expect(firstCard).toContainText(/Owner/i);
 
+  const visibleOwners = await Promise.all(
+    (await page.locator('#docker-list-cards article[id^="docker-card-"]').all())
+      .map(async (card) => (await card.getAttribute('data-owner')) || '')
+  );
   const preferredOwner = getOptionalEnv('PLAYWRIGHT_DOCKER_OWNER_FILTER_USER');
-  const pivotOwner = optionValues.find((value) => value === preferredOwner && value !== currentOwner)
-    || optionValues.find((value) => value !== currentOwner)
+  const projectOwners = [...new Set(visibleOwners.filter((owner) => optionValues.includes(owner)))];
+  const pivotOwner = projectOwners.find((owner) => owner === preferredOwner && owner !== currentOwner)
+    || projectOwners.find((owner) => owner !== currentOwner)
     || '';
-  test.skip(!pivotOwner, 'Admin owner-filter coverage requires a second owner distinct from the current scope.');
+  test.skip(!pivotOwner, 'Admin owner-filter coverage requires a project owned by a second user.');
 
   await ownerSelect.selectOption(pivotOwner);
   await expect(page).toHaveURL(new RegExp(`/list/docker/\\?user=${encodeURIComponent(pivotOwner)}`));
   await expect(page.locator('#docker-owner-filter')).toContainText(new RegExp(`Owner scope.*${pivotOwner}`, 'i'));
 
   const filteredCards = page.locator('#docker-list-cards article[id^="docker-card-"]');
+  await expect(filteredCards.first()).toBeVisible();
   const owners = await Promise.all(
     (await filteredCards.all()).map(async (card) => (await card.getAttribute('data-owner')) || '')
   );

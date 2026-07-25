@@ -58,6 +58,8 @@ test('docker logs and inspect modals open and Escape closes the active modal', a
   const floatingContent = page.locator('#floating-center-div-content').first();
   await openDockerActions(page, preferredContainer);
   await page.getByRole('button', { name: /View project logs/i }).click();
+  await floatingContent.locator('select[name="service"]').selectOption({ index: 0 });
+  await floatingContent.getByRole('button', { name: /^View logs$/i }).click();
   await expect(floatingContent).toContainText(/Compose project logs/i);
   await expect(floatingContent.locator('textarea')).toBeVisible();
 
@@ -85,24 +87,10 @@ test('docker remove modal supports cancel and confirm flows', async ({ page }) =
   try {
     await page.goto('/list/docker/');
     test.skip(await page.locator('#docker-unavailable-state').isVisible().catch(() => false), 'Remove-confirm coverage requires a host with Docker available.');
-    const existingDisposable = page.locator('#docker-list-cards article[data-name^="pw-"]').first();
-    if (await existingDisposable.count()) {
-      removableContainer = (await existingDisposable.getAttribute('data-name')) || removableContainer;
-    } else {
-      test.skip(await page.locator('#docker-quota-reached-state').isVisible().catch(() => false), 'Remove-confirm coverage requires quota headroom for a disposable container.');
-      try {
-        createDisposableContainer(owner, removableContainer, image);
-        createdDisposable = true;
-      } catch (error) {
-        await page.goto('/list/docker/');
-        const fallbackDisposable = page.locator('#docker-list-cards article[data-name^="pw-"]').first();
-        if ((await fallbackDisposable.count()) === 0) {
-          throw error;
-        }
-        removableContainer = (await fallbackDisposable.getAttribute('data-name')) || removableContainer;
-      }
-      await page.goto('/list/docker/');
-    }
+    test.skip(await page.locator('#docker-quota-reached-state').isVisible().catch(() => false), 'Remove-confirm coverage requires quota headroom for a disposable container.');
+    createDisposableContainer(owner, removableContainer, image);
+    createdDisposable = true;
+    await page.goto('/list/docker/');
 
     await expect(page.locator(`#docker-list-cards article[data-name="${removableContainer}"]`)).toHaveCount(1);
     await openDockerActions(page, removableContainer);
