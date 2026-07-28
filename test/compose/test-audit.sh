@@ -65,4 +65,42 @@ jq -e 'select(.ACTION == "start") | .ACTOR == "root"' \
     "$project_root/audit.log" >/dev/null \
     || fail "untrusted public/private actor injection was not reduced to root"
 
+# Invoke an ordinary public command through a minimal Vesta harness. Both
+# caller-controlled actor variables must be cleared by the public helper
+# loader before the real audit writer observes them.
+public_vesta="$test_root/public-vesta"
+public_root="$public_vesta/data/users/alice/docker-projects/app"
+mkdir -p "$public_vesta/func/vx/compose" "$public_root/runtime"
+printf "OWNER='alice'\nPROJECT='app'\nREVISION='1'\n" \
+    >"$public_root/project.conf"
+printf '%s\n' '#!/usr/bin/env bash
+E_ARGS=1
+E_RESTART=2
+OK=0
+check_args() { :; }
+check_result() { return "$1"; }
+is_format_valid() { :; }
+is_object_valid() { :; }
+is_object_unsuspended() { :; }
+log_history() { :; }
+log_event() { :; }' >"$public_vesta/func/main.sh"
+printf '%s\n' '#!/usr/bin/env bash
+unset _VX_COMPOSE_AUDIT_ACTOR
+source "$PUBLIC_REPO_ROOT/func/vx/compose/storage.sh"
+source "$PUBLIC_REPO_ROOT/func/vx/compose/audit.sh"
+vx_compose_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+vx_compose_start() {
+    vx_compose_audit \
+        "$VESTA/data/users/$1/docker-projects/$2" start succeeded
+}' >"$public_vesta/func/vx/compose/main.sh"
+export PUBLIC_REPO_ROOT="$repo_root"
+export VX_COMPOSE_AUDIT_ACTOR='admin'
+export _VX_COMPOSE_AUDIT_ACTOR='admin'
+VESTA="$public_vesta" HOMEDIR="$test_root/public-home" \
+    bash "$repo_root/bin/v-start-docker-project" alice app
+unset VX_COMPOSE_AUDIT_ACTOR _VX_COMPOSE_AUDIT_ACTOR PUBLIC_REPO_ROOT
+jq -e '.ACTOR == "root" and .OWNER == "alice" and .ACTION == "start"' \
+    "$public_root/audit.log" >/dev/null \
+    || fail "ordinary public command accepted injected audit actor"
+
 echo "Compose audit tests passed."
