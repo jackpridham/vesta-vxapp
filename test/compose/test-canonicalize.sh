@@ -61,6 +61,19 @@ jq -e '
     and .networks.default.labels["vx.network"] == "default"
 ' "$candidate/canonical.json" >/dev/null \
     || fail "network ownership was not canonicalized"
+docker compose --project-name vx-alice-web \
+    --project-directory "$candidate" \
+    --file "$candidate/canonical.json" config --format json \
+    | jq -e '
+        .name == "vx-alice-web"
+        and .networks.default.name == "vx-alice-web_default"
+        and .networks.default.labels["vx.managed"] == "yes"
+        and .networks.default.labels["vx.user"] == "alice"
+        and .networks.default.labels["vx.project"] == "web"
+        and .networks.default.labels["vx.network"] == "default"
+        and .services.web.labels["vx.managed"] == "yes"
+    ' >/dev/null \
+    || fail "Docker Compose did not accept the canonical runtime definition"
 jq -e '.services.web.ports[0].host_ip == "127.0.0.1"' \
     "$candidate/canonical.json" >/dev/null \
     || fail "localhost port binding was not canonicalized"
