@@ -143,7 +143,7 @@ vx_compose_prepare_candidate() {
     vx_compose_require_runtime_tools || return 1
 
     work_root="$(mktemp -d)"
-    trap 'rm -rf -- "$work_root"' RETURN
+    trap '[[ -n "${work_root:-}" ]] && rm -rf -- "$work_root"' RETURN
     install -d -m 0700 "$work_root/home" "$work_root/docker-config"
     : >"$work_root/variables.env"
     chmod 0600 "$work_root/variables.env"
@@ -177,6 +177,9 @@ vx_compose_prepare_candidate() {
     if [[ "$allow_existing_labels" != yes ]]; then
         vx_compose_write_ownership_override \
             "$owner" "$project" "$raw_json" "$override_file"
+        if [[ "$EUID" -eq 0 ]] && id -u "$owner" >/dev/null 2>&1; then
+            chown "$owner:$owner" "$override_file"
+        fi
         canonical_files+=(--file "$override_file")
     fi
 

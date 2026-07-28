@@ -113,4 +113,19 @@ vx_compose_store_revision alice app "$candidate" validated
     && ! -e "$project_root/revisions/000002/simple.json" ]] \
     || fail "advanced revision retained stale simple-form provenance"
 
+created="$(vx_compose_meta_get "$project_root/project.conf" CREATED)"
+vx_compose_write_metadata \
+    "$project_root" alice app standard rolling-back 1 \
+    "$created" "$(vx_compose_now)" rollback-sha
+printf '%s\n' 'services: {web: {image: example.test/web:v3}}' \
+    >"$candidate/compose.yaml"
+printf '%s\n' \
+    '{"name":"vx-alice-app","services":{"web":{"image":"example.test/web:v3"}}}' \
+    >"$candidate/canonical.json"
+printf '%s\n' 'ghi789' >"$candidate/canonical.sha256"
+vx_compose_store_revision alice app "$candidate" validated
+[[ "$(vx_compose_meta_get "$project_root/project.conf" REVISION)" == 3
+    && -f "$project_root/revisions/000003/compose.yaml" ]] \
+    || fail "post-rollback update did not preserve immutable revision history"
+
 echo "Compose storage tests passed."
