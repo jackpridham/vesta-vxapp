@@ -1,0 +1,58 @@
+#!/bin/bash
+# info: preview the impact of a Docker Compose project source
+# options: USER PROJECT SOURCE PROFILE MODE
+
+user=$1
+compose_project=$2
+source_file=$3
+profile=$4
+mode=$5
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+check_args '5' "$#" 'USER PROJECT SOURCE PROFILE MODE'
+[ "$#" -le 5 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+vx_compose_require_project_key "$compose_project" \
+    || check_result "$E_INVALID" "invalid Compose project :: $compose_project"
+vx_compose_profile_is_available "$profile" \
+    || check_result "$E_INVALID" \
+        "Compose profile is not available :: $profile"
+[[ -f "$source_file" && ! -L "$source_file" ]] \
+    || check_result "$E_INVALID" \
+        'Compose plan source must be a regular non-symlink file'
+[[ "$mode" == add || "$mode" == change ]] \
+    || check_result "$E_INVALID" 'invalid Compose plan mode'
+if [[ "$mode" == add ]]; then
+    ! vx_compose_require_project \
+        "$user" "$compose_project" >/dev/null 2>&1 \
+        || check_result "$E_EXISTS" \
+            "Docker Compose project already exists :: $compose_project"
+else
+    vx_compose_require_project "$user" "$compose_project" \
+        || check_result "$E_NOTEXIST" \
+            "Compose project does not exist :: $compose_project"
+    stored_profile="$(vx_compose_meta_get \
+        "$(vx_compose_project_root "$user" "$compose_project")/project.conf" \
+        PROFILE)"
+    [[ "$stored_profile" == "$profile" ]] \
+        || check_result "$E_INVALID" \
+            'Compose profile does not match stored authority'
+fi
+
+candidate_parent="$(mktemp -d)"
+snapshot="$candidate_parent/compose.yaml"
+candidate="$candidate_parent/candidate"
+trap 'rm -rf -- "$candidate_parent"' EXIT
+install -m 0600 "$source_file" "$snapshot" \
+    || check_result "$E_INVALID" 'Compose source snapshot failed'
+source_sha="$(sha256sum "$snapshot" | awk '{print $1}')" \
+    || check_result "$E_INVALID" 'Compose source digest failed'
+vx_compose_prepare_candidate \
+    "$user" "$compose_project" "$snapshot" "$candidate" "$profile" \
+    no '' '' preview \
+    || check_result "$E_INVALID" 'Compose plan validation failed'
+vx_compose_candidate_deployment_plan_json \
+    "$user" "$compose_project" "$profile" "$candidate" "$mode" "$source_sha" \
+    || check_result "$E_INVALID" 'Compose plan generation failed'
