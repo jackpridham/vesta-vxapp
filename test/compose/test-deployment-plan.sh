@@ -127,8 +127,13 @@ real_prepare_candidate="$(declare -f vx_compose_prepare_candidate)"
 vx_compose_prepare_candidate() {
     local input_file="$3"
     local output_root="$4"
+    local expected_uid="$EUID"
 
     grep -Fq 'policy-stale: true' "$input_file" && return 1
+    [[ "$(stat -c '%a' "$input_file")" == 600 ]] \
+        || fail 'definition export temporary copy is not mode 0600'
+    [[ "$(stat -c '%u' "$input_file")" == "$expected_uid" ]] \
+        || fail 'definition export temporary copy has the wrong owner'
     mkdir -p "$output_root"
     printf '{}\n' >"$output_root/canonical.json"
 }
@@ -144,17 +149,16 @@ for export_size in "${export_sizes[@]}"; do
     for trailing_newline in "${trailing_newlines[@]}"; do
         export_source="$test_root/export-$export_size-$trailing_newline.yaml"
         export_decoded="$test_root/export-$export_size-$trailing_newline.decoded"
-        {
-            printf '%s\n' 'services:' '  web:' '    image: example/web:latest'
-            head -c "$export_size" /dev/zero | tr '\0' '#'
-            printf '\n'
-        } >"$export_source"
-        while [[ "$(tail -c 1 "$export_source" | wc -l)" -gt 0 ]]; do
-            truncate -s -1 "$export_source"
-        done
+        printf '%s' $'services: {}\n#' >"$export_source"
+        export_prefix_size="$(stat -c '%s' "$export_source")"
+        export_fill_size="$((export_size - export_prefix_size - trailing_newline))"
+        head -c "$export_fill_size" /dev/zero | tr '\0' x \
+            >>"$export_source"
         for ((newline=0; newline<trailing_newline; newline++)); do
             printf '\n' >>"$export_source"
         done
+        [[ "$(stat -c '%s' "$export_source")" -eq "$export_size" ]] \
+            || fail "definition export fixture is not exactly $export_size bytes"
         cp "$export_source" "$root/compose.yaml"
         chmod 0640 "$root/compose.yaml"
         export_json="$(vx_compose_definition_export_json alice shop)"
