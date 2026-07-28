@@ -137,6 +137,9 @@ if (!empty($_POST['validate_preview'])) {
                 );
                 vx_compose_web_source_discard($source);
                 $record = vx_compose_preview_record($payload, $user);
+                if (!vx_compose_preview_payload_matches_contract($payload)) {
+                    $record = array();
+                }
             } else {
                 $payload = vx_compose_command_json(
                     'v-validate-docker-project-source',
@@ -180,7 +183,7 @@ if (!empty($_POST['validate_preview'])) {
                 || $record['mode'] !== 'add') {
                 $_SESSION['error_msg'] = __('Compose project validation failed.');
             } else {
-                $compose_validation_preview = $payload;
+                $compose_validation_preview = $record['preview'];
                 $compose_preview_key = vx_compose_preview_store($record);
                 $preview = $record;
                 if ($compose_preview_key === '') {

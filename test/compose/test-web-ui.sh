@@ -60,6 +60,16 @@ expect_pattern web/templates/docker_list_shared.php 'REVISION' \
 
 expect_pattern web/add/docker/project/index.php "myvesta_logged_user|\\\$user" \
     'advanced page is tied to the authenticated actor'
+expect_pattern web/add/docker/project/index.php 'inc/main\.php' \
+    'add loads the production authenticated panel bootstrap'
+expect_pattern web/edit/docker/project/index.php 'inc/main\.php' \
+    'edit loads the production authenticated panel bootstrap'
+expect_pattern web/add/docker/project/index.php \
+    "\\\$user === 'admin'.*|\\? vx_docker_resolve_owner_from_request" \
+    'add derives owner scope from the authenticated panel actor'
+expect_pattern web/edit/docker/project/index.php \
+    "\\\$user === 'admin'.*|\\? vx_docker_resolve_owner_from_request" \
+    'edit derives owner scope from the authenticated panel actor'
 expect_pattern web/add/docker/project/index.php "SESSION\\['token'\\]" \
     'project editor validates CSRF'
 expect_pattern web/add/docker/project/index.php 'v-stage-docker-project-preview' \
@@ -103,6 +113,15 @@ expect_pattern web/inc/vx_compose.php "mkdir\\(\\\$directory, 0700\\)" \
     'web source directories are mode 0700'
 expect_pattern web/inc/vx_compose.php "chmod\\(\\\$source, 0600\\)" \
     'web source files are mode 0600'
+expect_pattern web/inc/vx_compose.php \
+    "defined\\('VX_COMPOSE_CONTROLLER_TEST'\\)" \
+    'controller test hook requires a fixed code-defined constant'
+expect_pattern web/inc/vx_compose.php \
+    "function_exists\\('vx_compose_test_(command_json|spawn_command)'\\)" \
+    'controller test hook requires an explicit callback'
+expect_absent web/inc/vx_compose.php \
+    "\\\$_(GET|POST|REQUEST)|getenv\\(" \
+    'controller test hook is not request or environment controlled'
 expect_absent web/add/docker/project/index.php \
     "preview.*\\['source'\\]" 'PHP add session does not retain a source path'
 expect_absent web/edit/docker/project/index.php \

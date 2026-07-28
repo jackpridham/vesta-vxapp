@@ -149,6 +149,9 @@ if (!empty($_POST['validate_preview'])) {
             );
             vx_compose_web_source_discard($source);
             $record = vx_compose_preview_record($payload, $user);
+            if (!vx_compose_preview_payload_matches_contract($payload)) {
+                $record = array();
+            }
             if (empty($record)
                 || $record['owner'] !== $compose_project_owner
                 || $record['project'] !== $compose_project_name
@@ -158,7 +161,7 @@ if (!empty($_POST['validate_preview'])) {
                     !== (int) $compose_project['REVISION']) {
                 $_SESSION['error_msg'] = __('Compose project validation failed.');
             } else {
-                $compose_validation_preview = $payload;
+                $compose_validation_preview = $record['preview'];
                 $compose_preview_key = vx_compose_preview_store($record);
                 $preview = $record;
             }
@@ -201,7 +204,7 @@ if (!empty($_POST['validate_preview'])) {
             if (empty($record)) {
                 $_SESSION['error_msg'] = __('Compose project validation failed.');
             } else {
-                $compose_validation_preview = $payload;
+                $compose_validation_preview = $record['preview'];
                 $compose_preview_key = vx_compose_preview_store($record);
                 $preview = $record;
             }

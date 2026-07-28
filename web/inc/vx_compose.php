@@ -129,7 +129,7 @@ function vx_compose_web_source_discard($source)
     return !is_dir($directory) || @rmdir($directory);
 }
 
-function vx_compose_preview_forget($key, $discard = true)
+function vx_compose_preview_forget($key)
 {
     if (isset($_SESSION['vx_compose_previews'][$key])) {
         unset($_SESSION['vx_compose_previews'][$key]);
@@ -412,7 +412,7 @@ function vx_compose_preview_value_is_source_path($value)
         return false;
     }
     return preg_match(
-        '#(?:^|/)(?:tmp/)?vx-compose-web\.[a-f0-9]{32}/compose\.yaml$#D',
+        '#(?:^|/)(?:tmp/)?vx-compose-web\.[a-f0-9]{32}/(?:compose\.yaml|simple\.spec)$#D',
         $value
     ) === 1
         || stripos($value, 'upload-path-canary') !== false
@@ -541,7 +541,36 @@ function vx_compose_preview_payload_sanitize($payload)
                 isset($payload['IMAGES']['CANDIDATE_REFERENCES'])
                     ? $payload['IMAGES']['CANDIDATE_REFERENCES'] : array()
             ),
+            'CURRENT_IDENTITIES' => array(),
         );
+        $identities = isset($payload['IMAGES']['CURRENT_IDENTITIES'])
+            && is_array($payload['IMAGES']['CURRENT_IDENTITIES'])
+            ? $payload['IMAGES']['CURRENT_IDENTITIES'] : array();
+        foreach ($identities as $reference => $identity) {
+            if (is_string($reference)
+                && is_array($identity)
+                && strcasecmp($reference, 'source') !== 0
+                && !vx_compose_preview_value_is_source_path($reference)) {
+                $safe_identity = array();
+                foreach (array('REFERENCE', 'IMAGE_ID') as $key) {
+                    if (isset($identity[$key])
+                        && is_string($identity[$key])
+                        && !vx_compose_preview_value_is_source_path(
+                            $identity[$key]
+                        )) {
+                        $safe_identity[$key] = $identity[$key];
+                    }
+                }
+                if (isset($identity['REPO_DIGESTS'])) {
+                    $safe_identity['REPO_DIGESTS'] =
+                        vx_compose_preview_scalar_list(
+                            $identity['REPO_DIGESTS']
+                        );
+                }
+                $safe['IMAGES']['CURRENT_IDENTITIES'][$reference] =
+                    $safe_identity;
+            }
+        }
     }
     if (isset($payload['PORTS']) && is_array($payload['PORTS'])) {
         $safe['PORTS'] = array();
@@ -563,6 +592,36 @@ function vx_compose_preview_payload_sanitize($payload)
         }
     }
     return vx_compose_preview_payload_is_source_free($safe) ? $safe : array();
+}
+
+function vx_compose_preview_payload_normalize($value)
+{
+    if (!is_array($value)) {
+        return $value;
+    }
+    $keys = array_keys($value);
+    $is_list = $value === array()
+        || $keys === range(0, count($value) - 1);
+    $normalized = array();
+    foreach ($value as $key => $item) {
+        $normalized[$key] = vx_compose_preview_payload_normalize($item);
+    }
+    if (!$is_list) {
+        ksort($normalized, SORT_STRING);
+    }
+    return $normalized;
+}
+
+function vx_compose_preview_payload_matches_contract($payload)
+{
+    if (!is_array($payload)
+        || !vx_compose_preview_payload_is_source_free($payload)) {
+        return false;
+    }
+    $sanitized = vx_compose_preview_payload_sanitize($payload);
+    return !empty($sanitized)
+        && vx_compose_preview_payload_normalize($payload)
+            === vx_compose_preview_payload_normalize($sanitized);
 }
 
 function vx_compose_preview_post_matches($preview, $post)
