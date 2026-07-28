@@ -6,6 +6,8 @@ test_root="$(mktemp -d)"
 trap 'rm -rf -- "$test_root"' EXIT
 export VESTA="$test_root/vesta"
 export HOMEDIR="$test_root/home"
+export TMPDIR="$test_root/tmp"
+mkdir -p "$TMPDIR"
 mkdir -p "$VESTA/data/users/alice/docker-projects/shop/runtime" \
     "$VESTA/data/users/alice/docker-secrets/shop" \
     "$VESTA/data/users/alice/docker-registries"
@@ -122,6 +124,21 @@ source "$repo_root/func/vx/compose/main.sh"
 
 [[ "$(vx_compose_preview_root)" == "$VESTA/data/tmp/compose-previews" ]] \
     || fail 'preview root is incorrect'
+
+safe_source="$test_root/source.compose.yaml"
+attacker_source="$test_root/attacker.compose.yaml"
+source_snapshot="$test_root/source.snapshot.yaml"
+printf 'services: {}\n' >"$safe_source"
+printf '%s\n' "$canary" >"$attacker_source"
+[[ -f "$safe_source" && ! -L "$safe_source" ]] \
+    || fail 'source-swap fixture did not begin as a regular file'
+rm -f -- "$safe_source"
+ln -s "$attacker_source" "$safe_source"
+if vx_compose_snapshot_source_file "$safe_source" "$source_snapshot"; then
+    fail 'source snapshot followed a swapped symlink'
+fi
+[[ ! -e "$source_snapshot" ]] \
+    || fail 'rejected source snapshot was not cleaned up'
 
 for case_name in "${cases[@]}"; do
     case "$case_name" in
@@ -260,6 +277,57 @@ jq -e '
 ' <<<"$plan" >/dev/null || fail 'current immutable image evidence is absent'
 if grep -Fq "$canary" <<<"$plan" || grep -Fq "$canary" "$diagnostics"; then
     fail 'plan or diagnostics leaked a protected canary'
+fi
+
+coherent_current='{
+  "services": {
+    "web": {
+      "image": "example/web:revision4",
+      "ports": [{
+        "host_ip": "127.0.0.1",
+        "published": "18082",
+        "target": 8080,
+        "protocol": "tcp"
+      }]
+    }
+  }
+}'
+coherent_path="$(candidate coherent "$coherent_current" 1 512)"
+vx_compose_lock_acquire() {
+    printf "OWNER='alice'\nPROJECT='shop'\nPROFILE='standard'\nREVISION='4'\n" \
+        >"$root/project.conf"
+    printf '%s\n' "$coherent_current" | jq -S . \
+        >"$root/runtime/canonical.json"
+    policy "$root/policy.conf" 1 512
+    jq '.["shop.example.test"].HOST_PORT = 18082' \
+        "$root/routes.conf" >"$root/routes.next"
+    mv "$root/routes.next" "$root/routes.conf"
+    printf '{"web":{"IMAGE_ID":"sha256:revision4"}}\n' >"$root/images.json"
+}
+vx_compose_lock_release() {
+    :
+}
+plan="$(plan_candidate "$coherent_path" change)"
+jq -e '
+    .CURRENT_REVISION == 4
+    and .SERVICES.UNCHANGED == ["web"]
+    and .ROUTES.UNCHANGED == ["shop.example.test"]
+    and .RESOURCES.CURRENT.MEMORY_MB == 512
+    and .IMAGES.CURRENT_IDENTITIES.web.IMAGE_ID == "sha256:revision4"
+' <<<"$plan" >/dev/null || fail 'current-state snapshot was not coherent'
+if compgen -G "$TMPDIR/vx-compose-plan-current.*" >/dev/null; then
+    fail 'successful current-state snapshot was not cleaned up'
+fi
+
+# Restore the real lock helpers and prove parse failures also clean snapshots.
+# shellcheck source=func/vx/compose/storage.sh
+source "$repo_root/func/vx/compose/storage.sh"
+printf "CPUS_MILLI='invalid'\n" >"$root/policy.conf"
+if plan_candidate "$coherent_path" change >/dev/null 2>&1; then
+    fail 'malformed current policy unexpectedly produced a plan'
+fi
+if compgen -G "$TMPDIR/vx-compose-plan-current.*" >/dev/null; then
+    fail 'failed current-state snapshot was not cleaned up'
 fi
 
 echo "Compose deployment plan tests passed."

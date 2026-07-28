@@ -45,7 +45,7 @@ candidate_parent="$(mktemp -d)"
 snapshot="$candidate_parent/compose.yaml"
 candidate="$candidate_parent/candidate"
 trap 'rm -rf -- "$candidate_parent"' EXIT
-install -m 0600 "$source_file" "$snapshot" \
+vx_compose_snapshot_source_file "$source_file" "$snapshot" \
     || check_result "$E_INVALID" 'Compose source snapshot failed'
 source_sha="$(sha256sum "$snapshot" | awk '{print $1}')" \
     || check_result "$E_INVALID" 'Compose source digest failed'
