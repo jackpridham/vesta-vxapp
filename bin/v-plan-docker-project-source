@@ -49,7 +49,7 @@ vx_compose_snapshot_source_file "$source_file" "$snapshot" \
     || check_result "$E_INVALID" 'Compose source snapshot failed'
 source_sha="$(sha256sum "$snapshot" | awk '{print $1}')" \
     || check_result "$E_INVALID" 'Compose source digest failed'
-vx_compose_prepare_candidate \
+vx_compose_prepare_candidate_quiet \
     "$user" "$compose_project" "$snapshot" "$candidate" "$profile" \
     no '' '' preview \
     || check_result "$E_INVALID" 'Compose plan validation failed'

@@ -152,6 +152,10 @@ vx_compose_definition_export_expected_uid() {
     || fail 'definition export test owner seam is not active'
 
 real_prepare_candidate="$(declare -f vx_compose_prepare_candidate)"
+validator_secret_canary='VX_VALIDATOR_SECRET_CANARY_37f2'
+validator_registry_canary='VX_VALIDATOR_REGISTRY_CANARY_91ac'
+validator_path_canary='/protected/source/path-canary.compose.yaml'
+validator_raw_error='docker compose raw parser failure'
 vx_compose_prepare_candidate() {
     local input_file="$3"
     local output_root="$4"
@@ -159,7 +163,12 @@ vx_compose_prepare_candidate() {
 
     expected_uid="$(vx_compose_definition_export_expected_uid)"
 
-    grep -Fq 'policy-stale: true' "$input_file" && return 1
+    if grep -Fq 'policy-stale: true' "$input_file"; then
+        printf '%s\n' "$validator_secret_canary" \
+            "$validator_registry_canary" "$validator_path_canary" \
+            "$validator_raw_error" >&2
+        return 1
+    fi
     [[ "$(stat -c '%a' "$input_file")" == 600 ]] \
         || fail 'definition export temporary copy is not mode 0600'
     [[ "$(stat -c '%u' "$input_file")" == "$expected_uid" ]] \
@@ -236,6 +245,22 @@ if vx_compose_definition_export_json alice shop \
     >"$test_root/export.out" 2>"$export_diagnostics"; then
     fail 'definition export accepted policy-stale source'
 fi
+export_failure_output="$(
+    <"$test_root/export.out"
+)"$'\n'"$(<"$export_diagnostics")"
+for validator_canary in "$validator_secret_canary" \
+    "$validator_registry_canary" "$validator_path_canary" \
+    "$validator_raw_error"; do
+    [[ "$export_failure_output" != *"$validator_canary"* ]] \
+        || fail 'definition export leaked raw validator diagnostics'
+done
+[[ "$export_failure_output" == *'stored Compose definition fails current policy'* ]] \
+    || fail 'definition export omitted its fixed validation failure'
+[[ -z "${VX_COMPOSE_LOCK_FD:-}" ]] \
+    || fail 'definition export validation failure retained the project lock'
+if compgen -G "$TMPDIR/vx-compose-validation.*" >/dev/null; then
+    fail 'definition export validation diagnostics were not cleaned up'
+fi
 
 printf 'services: {}\n' >"$root/compose.yaml"
 chmod 0640 "$root/compose.yaml"
@@ -272,6 +297,41 @@ if compgen -G "$TMPDIR/vx-compose-secret-patterns.*" >/dev/null; then
 fi
 unset -f grep
 eval "$real_prepare_candidate"
+
+ln -s "$repo_root/func" "$VESTA/func"
+public_plan_source="$test_root/public-plan-source.compose.yaml"
+printf 'services: {}\n' >"$public_plan_source"
+fake_docker="$test_root/fake-docker"
+cat >"$fake_docker" <<EOF
+#!/usr/bin/env bash
+if [[ "\${1:-}" == compose && "\${2:-}" == version ]]; then
+    exit 0
+fi
+printf '%s\n' '$validator_secret_canary' '$validator_registry_canary' \
+    '$validator_path_canary' '$validator_raw_error' >&2
+exit 42
+EOF
+chmod 0700 "$fake_docker"
+if VX_COMPOSE_DOCKER_BIN="$fake_docker" \
+    "$repo_root/bin/v-plan-docker-project-source" \
+    alice public-plan "$public_plan_source" standard add \
+    >"$test_root/public-plan.out" 2>"$test_root/public-plan.err"; then
+    fail 'public Compose plan accepted validator failure'
+fi
+public_plan_failure="$(
+    <"$test_root/public-plan.out"
+)"$'\n'"$(<"$test_root/public-plan.err")"
+for validator_canary in "$validator_secret_canary" \
+    "$validator_registry_canary" "$validator_path_canary" \
+    "$validator_raw_error"; do
+    [[ "$public_plan_failure" != *"$validator_canary"* ]] \
+        || fail 'public Compose plan leaked raw validator diagnostics'
+done
+[[ "$public_plan_failure" == *'Compose plan validation failed'* ]] \
+    || fail 'public Compose plan omitted its fixed validation failure'
+if compgen -G "$TMPDIR/vx-compose-validation.*" >/dev/null; then
+    fail 'public Compose plan validation diagnostics were not cleaned up'
+fi
 
 [[ "$(vx_compose_preview_root)" == "$VESTA/data/tmp/compose-previews" ]] \
     || fail 'preview root is incorrect'
