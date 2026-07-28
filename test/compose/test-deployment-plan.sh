@@ -80,9 +80,12 @@ current_json='{
     },
     "worker": {"image": "example/worker@sha256:old"}
   },
-  "networks": {"default": {}},
-  "volumes": {"cache": {}},
-  "secrets": {"api_key": {"file": "/managed/api_key"}}
+  "networks": {"default": {}, "present_null": null},
+  "volumes": {"cache": {}, "present_null": null},
+  "secrets": {
+    "api_key": {"file": "/managed/api_key"},
+    "present_null": null
+  }
 }'
 printf '%s\n' "$current_json" | jq -S . >"$root/runtime/canonical.json"
 printf "OWNER='alice'\nPROJECT='shop'\nPROFILE='standard'\nREVISION='3'\n" \
@@ -141,6 +144,9 @@ for case_name in "${cases[@]}"; do
                 and .SERVICES.ADDED == []
                 and .SERVICES.REMOVED == []
                 and .SERVICES.CHANGED == []
+                and .NETWORKS.UNCHANGED == ["default", "present_null"]
+                and .VOLUMES.UNCHANGED == ["cache", "present_null"]
+                and .SECRETS.UNCHANGED == ["api_key", "present_null"]
             ' <<<"$plan" >/dev/null || fail "$case_name"
             ;;
         add_remove_change_service)
@@ -198,6 +204,7 @@ for case_name in "${cases[@]}"; do
             jq -e '
                 .SECRETS.ADDED == ["new_key"]
                 and .SECRETS.UNCHANGED == ["api_key"]
+                and .SECRETS.REMOVED == ["present_null"]
             ' <<<"$plan" >/dev/null || fail "$case_name"
             if grep -Fq "$canary" <<<"$plan" \
                 || grep -Fq "$canary" "$diagnostics"; then
@@ -222,9 +229,12 @@ combined='{
     "cron": {"image": "example/cron@sha256:new"},
     "web": {"image": "example/web:latest", "command": ["serve"]}
   },
-  "networks": {"default": {}},
-  "volumes": {"cache": {}},
-  "secrets": {"api_key": {"file": "/managed/api_key"}}
+  "networks": {"default": {}, "present_null": null},
+  "volumes": {"cache": {}, "present_null": null},
+  "secrets": {
+    "api_key": {"file": "/managed/api_key"},
+    "present_null": null
+  }
 }'
 path="$(candidate combined "$combined" 2 256)"
 diagnostics="$test_root/combined.err"
