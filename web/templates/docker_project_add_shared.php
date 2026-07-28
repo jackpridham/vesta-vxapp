@@ -16,12 +16,15 @@
     <div class="docker-panel__header">
       <h2 class="docker-panel__title"><?=__('Deployment started')?></h2>
     </div>
-    <textarea disabled id="confirm-div-content-textarea-variable" class="vst-textinput ajax-newline" style="width:100%;height:420px;font-family:monospace;"></textarea>
+    <textarea disabled id="compose-spawn-output-textarea" class="vst-textinput ajax-newline" style="width:100%;height:420px;font-family:monospace;"></textarea>
     <script>
-      startWatchingSpawnedAjaxProcess(
-        '<?=htmlspecialchars($user, ENT_QUOTES)?>',
-        '<?=htmlspecialchars($compose_spawn_hash, ENT_QUOTES)?>'
-      );
+      document.addEventListener('DOMContentLoaded', function() {
+        startWatchingSpawnedAjaxProcess(
+          <?=json_encode($user)?>,
+          <?=json_encode($compose_spawn_hash)?>,
+          '#compose-spawn-output-textarea'
+        );
+      });
     </script>
   </section>
   <?php } elseif (!empty($compose_validation_preview) && $compose_preview_key !== '') { ?>

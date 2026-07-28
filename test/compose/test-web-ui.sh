@@ -106,6 +106,18 @@ expect_pattern web/templates/docker_project_edit_shared.php \
     'advanced updates render canonical preview'
 expect_pattern web/templates/docker_project_edit_shared.php 'confirm_update' \
     'advanced updates require explicit confirmation'
+expect_pattern web/templates/docker_project_add_shared.php \
+    "DOMContentLoaded.*|DOMContentLoaded" \
+    'advanced deployment defers its watcher until shared scripts are loaded'
+expect_pattern web/templates/docker_project_edit_shared.php \
+    "DOMContentLoaded.*|DOMContentLoaded" \
+    'advanced update defers its watcher until shared scripts are loaded'
+expect_pattern web/templates/docker_project_add_shared.php \
+    "startWatchingSpawnedAjaxProcess[[:space:]]*\\(|compose-spawn-output-textarea" \
+    'advanced deployment targets its page output instead of the hidden modal'
+expect_pattern web/templates/docker_project_edit_shared.php \
+    "startWatchingSpawnedAjaxProcess[[:space:]]*\\(|compose-spawn-output-textarea" \
+    'advanced update targets its page output instead of the hidden modal'
 
 expect_pattern web/inc/vx_compose.php 'random_bytes\(16\)' \
     'web sources use cryptographic directory names'

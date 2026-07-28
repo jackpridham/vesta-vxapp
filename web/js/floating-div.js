@@ -173,10 +173,13 @@ function send_ajax_request() {
 
 
 var myvesta_interval_id = null;
-function startWatchingSpawnedAjaxProcess(user, hash) {
+function startWatchingSpawnedAjaxProcess(user, hash, output_selector) {
+    if (typeof output_selector == 'undefined') {
+        output_selector = '#confirm-div-content-textarea-variable';
+    }
     console.log('= starting ajax interval'); //: user: '+user+', hash: '+hash);
     myvesta_interval_id = setInterval(function() {
-        run_ajax_call_for_spawned_ajax_process(user, hash);
+        run_ajax_call_for_spawned_ajax_process(user, hash, output_selector);
     }, 1000); 
     return myvesta_interval_id;
 }
@@ -185,7 +188,10 @@ var myvesta_ajax_original_output = '';
 var myvesta_ajax_exit_code = '';
 var myvesta_ajax_code = '';
 
-function clearSpawnedAjaxProcessInterval(code, exit_code, output) {
+function clearSpawnedAjaxProcessInterval(code, exit_code, output, output_selector) {
+    if (typeof output_selector == 'undefined') {
+        output_selector = '#confirm-div-content-textarea-variable';
+    }
     if (myvesta_interval_id != null) {
         if (typeof code == 'undefined') code = 8;
         if (typeof exit_code == 'undefined') exit_code = '';
@@ -206,7 +212,7 @@ function clearSpawnedAjaxProcessInterval(code, exit_code, output) {
 
         if (startPos !== -1 && endPos !== -1 && endPos > startPos) {
             var cleaned = text.substring(startPos + startTag.length, endPos).trim();
-            $('#confirm-div-content-textarea-variable').val(cleaned);
+            $(output_selector).val(cleaned);
             $('#show-full-output-button').show();
         }
 
@@ -219,7 +225,10 @@ function is_ajax_process_running() {
     return false;
 }
 
-function run_ajax_call_for_spawned_ajax_process(user, hash) {
+function run_ajax_call_for_spawned_ajax_process(user, hash, output_selector) {
+    if (typeof output_selector == 'undefined') {
+        output_selector = '#confirm-div-content-textarea-variable';
+    }
     $.ajax({
         url: '/ajax/watch-spawned-ajax-process.php',
         type: 'POST',
@@ -232,20 +241,20 @@ function run_ajax_call_for_spawned_ajax_process(user, hash) {
                 if (typeof response.output != 'undefined') myvesta_ajax_original_output = response.output;
                 if (typeof response.exit_code != 'undefined') myvesta_ajax_exit_code = response.exit_code;
                 if (typeof response.code != 'undefined') myvesta_ajax_code = response.code;
-                $('#confirm-div-content-textarea-variable').val(myvesta_ajax_original_output);
-                $('#confirm-div-content-textarea-variable').scrollTop($('#confirm-div-content-textarea-variable').prop('scrollHeight'));
-                $('#confirm-div-content-textarea-variable').focus();
-                if (response.code > 0) clearSpawnedAjaxProcessInterval(response.code, response.exit_code, response.output);
+                $(output_selector).val(myvesta_ajax_original_output);
+                $(output_selector).scrollTop($(output_selector).prop('scrollHeight'));
+                $(output_selector).focus();
+                if (response.code > 0) clearSpawnedAjaxProcessInterval(response.code, response.exit_code, response.output, output_selector);
             } else {
-                $('#confirm-div-content-textarea-variable').val(response);
-                $('#confirm-div-content-textarea-variable').focus();
-                clearSpawnedAjaxProcessInterval(6, '', response);
+                $(output_selector).val(response);
+                $(output_selector).focus();
+                clearSpawnedAjaxProcessInterval(6, '', response, output_selector);
             }
         },
         error: function(xhr, status, error) {
-            $('#confirm-div-content-textarea-variable').val(error);
-            $('#confirm-div-content-textarea-variable').focus();
-            clearSpawnedAjaxProcessInterval(7, '', error);
+            $(output_selector).val(error);
+            $(output_selector).focus();
+            clearSpawnedAjaxProcessInterval(7, '', error, output_selector);
         }
     });
 }
