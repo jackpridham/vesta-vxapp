@@ -181,12 +181,29 @@ ${serviceBlocks.join('\n')}${secretDefinition}
 `;
 }
 
-function readComposeProject(owner, project) {
-  try {
-    return JSON.parse(runVestaCommand('v-list-docker-project', [owner, project, 'json']));
-  } catch {
-    return null;
+function isComposeProjectNotFound(error, project) {
+  if (!error || error.status !== 3) {
+    return false;
   }
+
+  const expected = `Error: Compose project does not exist :: ${project}`;
+  return [error.stdout, error.stderr].some((stream) => {
+    const text = Buffer.isBuffer(stream) ? stream.toString('utf8') : String(stream || '');
+    return text.split(/\r?\n/).some((line) => line.trim() === expected);
+  });
+}
+
+function readComposeProject(owner, project, commandRunner = runVestaCommand) {
+  let output;
+  try {
+    output = commandRunner('v-list-docker-project', [owner, project, 'json']);
+  } catch (error) {
+    if (isComposeProjectNotFound(error, project)) {
+      return null;
+    }
+    throw error;
+  }
+  return JSON.parse(output);
 }
 
 function changeComposeProject(owner, project, definition) {
