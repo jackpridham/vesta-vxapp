@@ -120,14 +120,44 @@ printf '%s\n' "$canary" >"$VESTA/data/users/alice/docker-secrets/shop/api_key"
 printf '{"PASSWORD":"%s"}\n' "$canary" \
     >"$VESTA/data/users/alice/docker-registries/private.json"
 
+vx_compose_definition_export_expected_uid() {
+    printf '%s\n' "$EUID"
+}
 # shellcheck source=func/vx/compose/main.sh
 source "$repo_root/func/vx/compose/main.sh"
+
+VX_COMPOSE_DEFINITION_EXPORT_EXPECTED_UID="$EUID"
+export VX_COMPOSE_DEFINITION_EXPORT_EXPECTED_UID
+[[ "$(vx_compose_definition_export_expected_uid)" == 0 ]] \
+    || fail 'definition export production owner is not root'
+unset VX_COMPOSE_DEFINITION_EXPORT_EXPECTED_UID
+real_lock_acquire="$(declare -f vx_compose_lock_acquire)"
+definition_lock_attempted=no
+vx_compose_lock_acquire() {
+    definition_lock_attempted=yes
+    return 1
+}
+if vx_compose_definition_export_json '../alice' shop >/dev/null 2>&1 \
+    || vx_compose_definition_export_json alice '../shop' >/dev/null 2>&1; then
+    fail 'definition export accepted a malicious lock-path identifier'
+fi
+[[ "$definition_lock_attempted" == no ]] \
+    || fail 'definition export constructed a lock path from an invalid identifier'
+eval "$real_lock_acquire"
+
+vx_compose_definition_export_expected_uid() {
+    printf '%s\n' "$EUID"
+}
+[[ "$(vx_compose_definition_export_expected_uid)" == "$EUID" ]] \
+    || fail 'definition export test owner seam is not active'
 
 real_prepare_candidate="$(declare -f vx_compose_prepare_candidate)"
 vx_compose_prepare_candidate() {
     local input_file="$3"
     local output_root="$4"
-    local expected_uid="$EUID"
+    local expected_uid
+
+    expected_uid="$(vx_compose_definition_export_expected_uid)"
 
     grep -Fq 'policy-stale: true' "$input_file" && return 1
     [[ "$(stat -c '%a' "$input_file")" == 600 ]] \
