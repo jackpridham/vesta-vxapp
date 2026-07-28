@@ -110,7 +110,7 @@ vx_compose_secret_install() {
         vx_compose_error "Compose secret does not exist: $name"
         return 1
     fi
-    vx_compose_lock_acquire "$owner" "$project"
+    vx_compose_lock_acquire "$owner" "$project" || return 1
     vx_compose_owner_quota_lock_acquire "$owner"
     if [[ "$action" == add && -e "$secret_file" ]]; then
         vx_compose_error "Compose secret already exists: $name"
@@ -199,7 +199,7 @@ vx_compose_secret_delete() {
             return 1
         }
     root="$(vx_compose_project_root "$owner" "$project")"
-    vx_compose_lock_acquire "$owner" "$project"
+    vx_compose_lock_acquire "$owner" "$project" || return 1
     referenced="$(jq -r --arg name "$name" \
         '((.secrets // {})[$name] != null)' \
         "$root/runtime/canonical.json")" \

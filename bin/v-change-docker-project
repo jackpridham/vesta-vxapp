@@ -28,10 +28,14 @@ trap 'rm -rf -- "$candidate_parent"' EXIT
 profile="$(vx_compose_meta_get \
     "$(vx_compose_project_root "$user" "$compose_project")/project.conf" \
     PROFILE)"
+expected_revision="$(vx_compose_meta_get \
+    "$(vx_compose_project_root "$user" "$compose_project")/project.conf" \
+    REVISION)"
 vx_compose_prepare_candidate \
     "$user" "$compose_project" "$compose_file" "$candidate" "$profile" \
     || check_result "$E_INVALID" 'Compose project validation failed'
-vx_compose_transaction_update "$user" "$compose_project" "$candidate" \
+vx_compose_transaction_update \
+    "$user" "$compose_project" "$candidate" "$expected_revision" \
     || check_result "$E_INVALID" \
         'Compose project update failed and the prior revision was restored'
 

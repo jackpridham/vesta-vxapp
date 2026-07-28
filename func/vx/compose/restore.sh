@@ -547,7 +547,7 @@ vx_compose_restore_project_existing() {
         "$snapshot_root/control" "$snapshot_root/volumes" "$new_binds"
     cp -a -- "$extracted/binds/." "$new_binds/"
 
-    vx_compose_lock_acquire "$owner" "$project"
+    vx_compose_lock_acquire "$owner" "$project" || return 1
     previous_state="$(vx_compose_meta_get "$root/project.conf" STATE)" || {
         vx_compose_lock_release
         rm -rf -- "$transaction_root"

@@ -49,4 +49,20 @@ fi
 [[ "$(stat -c '%a' "$project_root/audit.log")" == 640 ]] \
     || fail "audit log mode is wrong"
 
+vx_compose_audit_actor_push alice
+vx_compose_audit "$project_root" update succeeded
+vx_compose_audit_actor_pop
+[[ -z "${_VX_COMPOSE_AUDIT_ACTOR:-}" ]] \
+    || fail "private audit actor context was not cleared"
+jq -e 'select(.ACTION == "update") | .ACTOR == "alice"' \
+    "$project_root/audit.log" >/dev/null \
+    || fail "validated owner actor was not recorded"
+export VX_COMPOSE_AUDIT_ACTOR='admin'
+export _VX_COMPOSE_AUDIT_ACTOR='intruder'
+vx_compose_audit "$project_root" start succeeded
+unset VX_COMPOSE_AUDIT_ACTOR _VX_COMPOSE_AUDIT_ACTOR
+jq -e 'select(.ACTION == "start") | .ACTOR == "root"' \
+    "$project_root/audit.log" >/dev/null \
+    || fail "untrusted public/private actor injection was not reduced to root"
+
 echo "Compose audit tests passed."

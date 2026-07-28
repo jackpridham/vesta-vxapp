@@ -1,0 +1,23 @@
+#!/bin/bash
+# info: apply an exact staged Docker Compose deployment preview
+# options: ACTOR OWNER PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 EXPECTED_CURRENT_REVISION
+
+actor=$1
+owner=$2
+compose_project=$3
+preview_id=$4
+source_sha=$5
+candidate_sha=$6
+expected_revision=$7
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '7' "$#" \
+    'ACTOR OWNER PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 EXPECTED_CURRENT_REVISION'
+[ "$#" -le 7 ] || check_result "$E_ARGS" 'too many arguments'
+unset VX_COMPOSE_AUDIT_ACTOR _VX_COMPOSE_AUDIT_ACTOR
+vx_compose_preview_apply \
+    "$actor" "$owner" "$compose_project" "$preview_id" \
+    "$source_sha" "$candidate_sha" "$expected_revision" \
+    || check_result "$E_UPDATE" 'Compose preview apply failed'

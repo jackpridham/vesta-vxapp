@@ -42,6 +42,7 @@ vx_compose_audit() {
     local details="${4:-}"
     local duration_ms="${5:-0}"
     local services="${6:-[]}"
+    local actor="${7:-${_VX_COMPOSE_AUDIT_ACTOR:-root}}"
     local metadata="$root/project.conf"
     local owner project revision event owner_audit
 
@@ -49,6 +50,9 @@ vx_compose_audit() {
         && "$result" =~ ^(started|succeeded|failed|opened|closed)$ ]] \
         || return 1
     [[ "$duration_ms" =~ ^[0-9]+$ ]] || duration_ms=0
+    if [[ "$actor" != root && "$actor" != admin ]]; then
+        vx_compose_require_owner "$actor" >/dev/null 2>&1 || actor=root
+    fi
     jq -e 'type == "array" and all(.[]; type == "string")' \
         <<<"$services" >/dev/null 2>&1 || services='[]'
     owner="$(vx_compose_meta_get "$metadata" OWNER)" || return 1
@@ -58,7 +62,7 @@ vx_compose_audit() {
     details="$(vx_compose_redact_text "$root" "$details")"
     event="$(jq -cn \
         --arg timestamp "$(vx_compose_now)" \
-        --arg actor root \
+        --arg actor "$actor" \
         --arg owner "$owner" \
         --arg project "$project" \
         --arg action "$action" \
@@ -81,6 +85,20 @@ vx_compose_audit() {
     vx_compose_audit_append "$root/audit.log" 0640 "$event" || return 1
     owner_audit="$VESTA/data/users/$owner/docker-audit.log"
     vx_compose_audit_append "$owner_audit" 0600 "$event"
+}
+
+vx_compose_audit_actor_push() {
+    local actor="$1"
+
+    [[ -z "${_VX_COMPOSE_AUDIT_ACTOR:-}" ]] || return 1
+    if [[ "$actor" != admin ]]; then
+        vx_compose_require_owner "$actor" || return 1
+    fi
+    _VX_COMPOSE_AUDIT_ACTOR="$actor"
+}
+
+vx_compose_audit_actor_pop() {
+    unset _VX_COMPOSE_AUDIT_ACTOR
 }
 
 vx_compose_audit_list_json() {

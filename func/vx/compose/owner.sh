@@ -92,7 +92,7 @@ vx_compose_remove_owner_runtime() {
     vx_compose_require_owner "$owner" || return 1
     while IFS= read -r project; do
         root="$(vx_compose_project_root "$owner" "$project")"
-        vx_compose_lock_acquire "$owner" "$project"
+        vx_compose_lock_acquire "$owner" "$project" || return 1
         vx_compose_audit "$root" owner-delete started
         if vx_compose_invoke "$owner" "$project" down --remove-orphans; then
             vx_compose_audit "$root" owner-delete succeeded

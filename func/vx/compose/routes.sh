@@ -292,7 +292,7 @@ vx_compose_route_add() {
             vx_compose_error 'invalid Compose HTTP route path'
             return 1
         }
-    vx_compose_lock_acquire "$owner" "$project"
+    vx_compose_lock_acquire "$owner" "$project" || return 1
     vx_compose_routes_lock_acquire "$owner"
     linked_project="$(
         vx_compose_domain_desired_route_project "$owner" "$domain" 2>/dev/null
@@ -355,7 +355,7 @@ vx_compose_route_delete() {
 
     vx_compose_require_project "$owner" "$project" || return 1
     vx_compose_route_domain_is_valid "$domain" || return 1
-    vx_compose_lock_acquire "$owner" "$project"
+    vx_compose_lock_acquire "$owner" "$project" || return 1
     vx_compose_routes_lock_acquire "$owner"
     root="$(vx_compose_project_root "$owner" "$project")"
     routes_file="$(vx_compose_routes_desired_path "$owner" "$project")"
