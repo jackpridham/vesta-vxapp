@@ -112,7 +112,7 @@
     <section class="docker-form-card docker-form-card--wide">
       <label class="docker-field-label" for="compose-update-definition"><?=__('Complete replacement Compose YAML')?></label>
       <textarea id="compose-update-definition" class="vst-textinput docker-compose-editor" name="definition" rows="24" required><?=htmlspecialchars($compose_update_definition, ENT_QUOTES)?></textarea>
-      <p><?=__('The stored raw definition is never returned. Paste the complete desired definition, using managed secret references only.')?></p>
+      <p><?=__('The stored standard definition is revalidated and safely preloaded. Review the complete desired definition, using managed secret references only.')?></p>
     </section>
     <div class="docker-form-actions">
       <button class="button docker-button docker-button--primary" name="validate_preview" value="1"><?=__('Validate and preview')?></button>
