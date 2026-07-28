@@ -65,15 +65,22 @@ expect_rejection custom_ipam \
 # Exercise the runtime inspection seam used by lifecycle/preview convergence.
 runtime_root="$(vx_compose_project_root vxsscp12 selfservice)"
 mkdir -p "$runtime_root/runtime/home" "$runtime_root/runtime/docker-config"
-printf '{"networks":{"default":{}},"services":{}}\n' \
+printf '{"networks":{"default":{"name":"vx-vxsscp12-selfservice_default"}},"services":{}}\n' \
     >"$runtime_root/runtime/canonical.json"
 runtime_docker="$test_root/runtime-docker"
 cat >"$runtime_docker" <<'EOF'
 #!/usr/bin/env bash
 set -Eeuo pipefail
-[[ "$*" == 'network inspect vx-vxsscp12-selfservice_default' ]] || exit 9
+if [[ "$1 $2" == 'network rm' ]]; then
+    printf 'rm:%s\n' "$3" >>"$(dirname -- "$0")/network-rm.log"
+    exit 0
+fi
+[[ "$1 $2" == 'network inspect' ]] || exit 9
+network_name="$3"
+[[ "$network_name" == vx-vxsscp12-selfservice_default \
+    || "$network_name" == vx_vxsscp12_selfservice_default ]] || exit 9
 printf '%s\n' '[{
-  "Name":"vx-vxsscp12-selfservice_default",
+  "Name":"'"$network_name"'",
   "Driver":"bridge",
   "Labels":{
     "com.docker.compose.project":"vx-vxsscp12-selfservice",
@@ -88,5 +95,33 @@ chmod 0755 "$runtime_docker"
 VX_COMPOSE_DOCKER_BIN="$runtime_docker" \
     vx_compose_network_verify_runtime vxsscp12 selfservice \
     || fail "lifecycle convergence rejected Compose's hyphenated network"
+
+sed -i 's/vx-vxsscp12-selfservice_default/vx_vxsscp12_selfservice_default/' \
+    "$runtime_root/runtime/canonical.json"
+VX_COMPOSE_DOCKER_BIN="$runtime_docker" \
+    vx_compose_network_verify_runtime vxsscp12 selfservice \
+    || fail "existing legacy stored network was rejected"
+sed -i 's/vx_vxsscp12_selfservice_default/shared-host-network/' \
+    "$runtime_root/runtime/canonical.json"
+if VX_COMPOSE_DOCKER_BIN="$runtime_docker" \
+    vx_compose_network_verify_runtime vxsscp12 selfservice 2>/dev/null; then
+    fail "arbitrary explicit stored network name was accepted"
+fi
+sed -i 's/shared-host-network/vx_vxsscp12_selfservice_default/' \
+    "$runtime_root/runtime/canonical.json"
+
+prior_canonical="$test_root/prior-network.json"
+current_canonical="$test_root/current-network.json"
+cp "$runtime_root/runtime/canonical.json" "$prior_canonical"
+sed 's/vx_vxsscp12_selfservice_default/vx-vxsscp12-selfservice_default/' \
+    "$prior_canonical" >"$current_canonical"
+: >"$test_root/network-rm.log"
+VX_COMPOSE_DOCKER_BIN="$runtime_docker" \
+    vx_compose_network_cleanup_replaced \
+        vxsscp12 selfservice "$prior_canonical" "$current_canonical" \
+    || fail "legacy-to-new managed network cleanup failed"
+[[ "$(cat "$test_root/network-rm.log")" \
+    == rm:vx_vxsscp12_selfservice_default ]] \
+    || fail "legacy cleanup did not remove the exact owned old network"
 
 echo "Compose network policy tests passed."

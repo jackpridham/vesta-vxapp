@@ -9,6 +9,28 @@ vx_compose_network_runtime_name() {
     printf '%s_%s\n' "$(vx_compose_runtime_name "$owner" "$project")" "$network"
 }
 
+vx_compose_network_legacy_runtime_name() {
+    local owner="$1" project="$2" network="$3"
+
+    [[ "$network" =~ ^[a-z][a-z0-9_-]{0,62}$ ]] || return 1
+    printf 'vx_%s_%s_%s\n' "$owner" "$project" "$network"
+}
+
+vx_compose_network_canonical_runtime_name() {
+    local owner="$1" project="$2" network="$3" canonical="$4"
+    local stored fresh legacy
+
+    stored="$(jq -er --arg network "$network" \
+        '.networks[$network].name | select(type == "string")' \
+        "$canonical")" || return 1
+    fresh="$(vx_compose_network_runtime_name "$owner" "$project" "$network")" \
+        || return 1
+    legacy="$(vx_compose_network_legacy_runtime_name \
+        "$owner" "$project" "$network")" || return 1
+    [[ "$stored" == "$fresh" || "$stored" == "$legacy" ]] || return 1
+    printf '%s\n' "$stored"
+}
+
 vx_compose_policy_check_reserved_network_labels() {
     local canonical_json="$1"
 
@@ -31,17 +53,21 @@ vx_compose_policy_check_existing_network_labels() {
     local canonical_json="$1"
     local owner="$2"
     local project="$3"
-    local network expected_name
+    local network expected_name legacy_name
 
     while IFS= read -r network; do
         expected_name="$(vx_compose_network_runtime_name \
             "$owner" "$project" "$network")" || return 1
+        legacy_name="$(vx_compose_network_legacy_runtime_name \
+            "$owner" "$project" "$network")" || return 1
         jq -e \
             --arg network "$network" \
             --arg expected "$expected_name" \
+            --arg legacy "$legacy_name" \
             --arg owner "$owner" \
             --arg project "$project" '
-                .networks[$network].name == $expected
+                (.networks[$network].name == $expected
+                    or .networks[$network].name == $legacy)
                 and .networks[$network].labels["vx.managed"] == "yes"
                 and .networks[$network].labels["vx.user"] == $owner
                 and .networks[$network].labels["vx.project"] == $project
@@ -97,10 +123,14 @@ vx_compose_network_inspect() {
     local network="$3"
     local runtime_name docker_bin inspection root
 
-    runtime_name="$(vx_compose_network_runtime_name \
-        "$owner" "$project" "$network")" || return 1
-    docker_bin="$(vx_compose_docker_bin)" || return 1
     root="$(vx_compose_project_root "$owner" "$project")"
+    runtime_name="$(vx_compose_network_canonical_runtime_name \
+        "$owner" "$project" "$network" "$root/runtime/canonical.json")" \
+        || {
+            vx_compose_error 'stored managed project network name is invalid'
+            return 1
+        }
+    docker_bin="$(vx_compose_docker_bin)" || return 1
     inspection="$(
         env -i \
             PATH="$VX_COMPOSE_SAFE_PATH" \
@@ -131,6 +161,45 @@ vx_compose_network_inspect() {
             return 1
         }
     printf '%s\n' "$inspection"
+}
+
+vx_compose_network_cleanup_replaced() {
+    local owner="$1" project="$2" prior_canonical="$3" current_canonical="$4"
+    local network prior_name current_name docker_bin root inspection
+
+    [[ -f "$prior_canonical" && ! -L "$prior_canonical"
+        && -f "$current_canonical" && ! -L "$current_canonical" ]] || return 1
+    root="$(vx_compose_project_root "$owner" "$project")"
+    while IFS= read -r network; do
+        prior_name="$(vx_compose_network_canonical_runtime_name \
+            "$owner" "$project" "$network" "$prior_canonical")" || return 1
+        current_name="$(jq -r --arg network "$network" \
+            '.networks[$network].name // empty' "$current_canonical")" \
+            || return 1
+        [[ "$prior_name" != "$current_name" ]] || continue
+        docker_bin="$(vx_compose_docker_bin)" || return 1
+        inspection="$(
+            env -i PATH="$VX_COMPOSE_SAFE_PATH" \
+                HOME="$root/runtime/home" \
+                DOCKER_CONFIG="$root/runtime/docker-config" \
+                "$docker_bin" network inspect "$prior_name"
+        )" || continue
+        jq -e --arg runtime "$prior_name" \
+            --arg compose_project "$(vx_compose_runtime_name "$owner" "$project")" \
+            --arg owner "$owner" --arg project "$project" \
+            --arg network "$network" '
+                .[0].Name == $runtime
+                and .[0].Labels["com.docker.compose.project"] == $compose_project
+                and .[0].Labels["vx.managed"] == "yes"
+                and .[0].Labels["vx.user"] == $owner
+                and .[0].Labels["vx.project"] == $project
+                and .[0].Labels["vx.network"] == $network
+            ' <<<"$inspection" >/dev/null || return 1
+        env -i PATH="$VX_COMPOSE_SAFE_PATH" \
+            HOME="$root/runtime/home" \
+            DOCKER_CONFIG="$root/runtime/docker-config" \
+            "$docker_bin" network rm "$prior_name" >/dev/null || return 1
+    done < <(jq -r '(.networks // {}) | keys[]' "$prior_canonical")
 }
 
 vx_compose_network_verify_runtime() {
