@@ -54,7 +54,7 @@ jq -e '.services.web.labels["vx.project"] == "web"' \
     "$candidate/canonical.json" >/dev/null \
     || fail "project label was not injected"
 jq -e '
-    .networks.default.name == "vx_alice_web_default"
+    .networks.default.name == "vx-alice-web_default"
     and .networks.default.labels["vx.managed"] == "yes"
     and .networks.default.labels["vx.user"] == "alice"
     and .networks.default.labels["vx.project"] == "web"

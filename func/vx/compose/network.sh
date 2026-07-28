@@ -6,7 +6,7 @@ vx_compose_network_runtime_name() {
     local network="$3"
 
     [[ "$network" =~ ^[a-z][a-z0-9_-]{0,62}$ ]] || return 1
-    printf 'vx_%s_%s_%s\n' "$owner" "$project" "$network"
+    printf '%s_%s\n' "$(vx_compose_runtime_name "$owner" "$project")" "$network"
 }
 
 vx_compose_policy_check_reserved_network_labels() {

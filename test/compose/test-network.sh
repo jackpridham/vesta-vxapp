@@ -21,7 +21,7 @@ model="$test_root/network.json"
 jq -n '{
     networks: {
         default: {
-            name: "vx_alice_app_default",
+            name: "vx-alice-app_default",
             driver: "bridge",
             labels: {
                 "vx.managed": "yes",
@@ -56,7 +56,37 @@ expect_rejection unmanaged_reference \
 expect_rejection custom_ipam \
     '.networks.default.ipam = {config: [{subnet: "172.30.0.0/16"}]}'
 
-[[ "$(vx_compose_network_runtime_name alice app default)" == vx_alice_app_default ]] \
+[[ "$(vx_compose_network_runtime_name alice app default)" == vx-alice-app_default ]] \
     || fail "stable network name is wrong"
+[[ "$(vx_compose_network_runtime_name vxsscp12 selfservice default)" \
+    == vx-vxsscp12-selfservice_default ]] \
+    || fail "self-service default network does not match Compose naming"
+
+# Exercise the runtime inspection seam used by lifecycle/preview convergence.
+runtime_root="$(vx_compose_project_root vxsscp12 selfservice)"
+mkdir -p "$runtime_root/runtime/home" "$runtime_root/runtime/docker-config"
+printf '{"networks":{"default":{}},"services":{}}\n' \
+    >"$runtime_root/runtime/canonical.json"
+runtime_docker="$test_root/runtime-docker"
+cat >"$runtime_docker" <<'EOF'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+[[ "$*" == 'network inspect vx-vxsscp12-selfservice_default' ]] || exit 9
+printf '%s\n' '[{
+  "Name":"vx-vxsscp12-selfservice_default",
+  "Driver":"bridge",
+  "Labels":{
+    "com.docker.compose.project":"vx-vxsscp12-selfservice",
+    "vx.managed":"yes",
+    "vx.user":"vxsscp12",
+    "vx.project":"selfservice",
+    "vx.network":"default"
+  }
+}]'
+EOF
+chmod 0755 "$runtime_docker"
+VX_COMPOSE_DOCKER_BIN="$runtime_docker" \
+    vx_compose_network_verify_runtime vxsscp12 selfservice \
+    || fail "lifecycle convergence rejected Compose's hyphenated network"
 
 echo "Compose network policy tests passed."
