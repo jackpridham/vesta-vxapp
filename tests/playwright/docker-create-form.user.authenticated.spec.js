@@ -63,6 +63,17 @@ test('successful create streams the spawned job and reaches the docker list', as
   test.setTimeout(120_000);
   const image = getOptionalEnv('PLAYWRIGHT_DOCKER_TEST_IMAGE', 'busybox:1.36.1');
   const name = `pw-${Date.now().toString(36)}`;
+  const pageErrors = [];
+  const watcherResponses = [];
+  page.on('pageerror', (error) => pageErrors.push(error.message));
+  page.on('response', (response) => {
+    if (new URL(response.url()).pathname === '/ajax/watch-spawned-ajax-process.php') {
+      watcherResponses.push(response.json().then(
+        (body) => ({ body, status: response.status() }),
+        () => ({ body: null, status: response.status() })
+      ));
+    }
+  });
 
   try {
     await loginAsRole(page, 'dockerUser');
@@ -110,7 +121,18 @@ test('successful create streams the spawned job and reaches the docker list', as
     await page.getByRole('button', { name: /^Add$/i }).click();
     await expect(page).toHaveURL(/\/add\/docker\/?$/);
     await expect(page.locator('#docker-simple-spawn-output')).toBeVisible();
-    await expect(page.locator('#docker-simple-spawn-output textarea')).toBeVisible();
+    const output = page.locator('#docker-simple-spawn-output textarea');
+    await expect(output).toBeVisible();
+    await expect.poll(
+      () => watcherResponses.length,
+      { message: `spawn watcher did not poll; page errors: ${pageErrors.join('; ')}` }
+    ).toBeGreaterThan(0);
+    await expect.poll(async () => {
+      const responses = await Promise.all(watcherResponses);
+      return responses.some(({ body, status }) =>
+        status === 200 && body && Number(body.code) > 0
+      );
+    }, { timeout: 120_000 }).toBe(true);
     await expect.poll(() => {
       try {
         const project = JSON.parse(
@@ -128,6 +150,7 @@ test('successful create streams the spawned job and reaches the docker list', as
     await page.goto('/list/docker/');
     await expect(page.locator(`#docker-list-cards article[data-name="${name}"]`)).toHaveCount(1);
     await expect(page.locator(`#docker-list-cards article[data-name="${name}"]`).first()).toBeVisible();
+    expect(pageErrors).toEqual([]);
   } finally {
     if ((hasLocalVestaRuntime() || hasRemoteVestaRuntime()) && isLocalPanelTarget()) {
       deleteContainer(getPanelCredentials('dockerUser').username, name);

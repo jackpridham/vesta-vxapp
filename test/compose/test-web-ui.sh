@@ -118,6 +118,24 @@ expect_pattern web/templates/docker_project_add_shared.php \
 expect_pattern web/templates/docker_project_edit_shared.php \
     "startWatchingSpawnedAjaxProcess[[:space:]]*\\(|compose-spawn-output-textarea" \
     'advanced update targets its page output instead of the hidden modal'
+expect_pattern web/templates/docker_add_shared.php \
+    'DOMContentLoaded' \
+    'simple deployment waits for shared scripts'
+expect_pattern web/templates/docker_add_shared.php \
+    'docker-simple-spawn-output-textarea' \
+    'simple deployment targets its visible output'
+expect_pattern web/templates/docker_edit_shared.php \
+    'DOMContentLoaded' \
+    'simple update waits for shared scripts'
+expect_pattern web/templates/docker_edit_shared.php \
+    'docker-simple-spawn-output-textarea' \
+    'simple update targets its visible output'
+expect_pattern web/js/floating-div.js \
+    'parseSpawnedAjaxProcessResponse' \
+    'spawn watcher validates JSON responses before rendering'
+expect_pattern web/js/floating-div.js \
+    'Unable to read spawned process output' \
+    'spawn watcher reports a fixed safe malformed-response error'
 
 expect_pattern web/inc/vx_compose.php 'random_bytes\(16\)' \
     'web sources use cryptographic directory names'

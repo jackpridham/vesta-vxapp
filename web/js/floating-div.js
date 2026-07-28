@@ -187,6 +187,22 @@ function startWatchingSpawnedAjaxProcess(user, hash, output_selector) {
 var myvesta_ajax_original_output = '';
 var myvesta_ajax_exit_code = '';
 var myvesta_ajax_code = '';
+var myvesta_ajax_invalid_response = 'Unable to read spawned process output.';
+
+function parseSpawnedAjaxProcessResponse(response) {
+    var parsed = JSON.parse(response);
+    if (parsed === null
+        || typeof parsed != 'object'
+        || Array.isArray(parsed)
+        || typeof parsed.code != 'number'
+        || !Number.isFinite(parsed.code)
+        || parsed.code < 0
+        || typeof parsed.output != 'string'
+        || (typeof parsed.exit_code != 'string' && typeof parsed.exit_code != 'number')) {
+        throw new Error('Invalid spawned process response');
+    }
+    return parsed;
+}
 
 function clearSpawnedAjaxProcessInterval(code, exit_code, output, output_selector) {
     if (typeof output_selector == 'undefined') {
@@ -234,21 +250,31 @@ function run_ajax_call_for_spawned_ajax_process(user, hash, output_selector) {
         type: 'POST',
         data: { user: user, hash: hash, token: GLOBAL.TOKEN },
         success: function(response) {
-            //console.log('= response: ', response);
-            response = JSON.parse(response);
-            if (typeof response == 'object') {
-                //console.log('= response.code: ', response.code);
-                if (typeof response.output != 'undefined') myvesta_ajax_original_output = response.output;
-                if (typeof response.exit_code != 'undefined') myvesta_ajax_exit_code = response.exit_code;
-                if (typeof response.code != 'undefined') myvesta_ajax_code = response.code;
-                $(output_selector).val(myvesta_ajax_original_output);
+            try {
+                response = parseSpawnedAjaxProcessResponse(response);
+                myvesta_ajax_original_output = response.output;
+                myvesta_ajax_exit_code = response.exit_code;
+                myvesta_ajax_code = response.code;
+                $(output_selector).val(response.output);
                 $(output_selector).scrollTop($(output_selector).prop('scrollHeight'));
                 $(output_selector).focus();
-                if (response.code > 0) clearSpawnedAjaxProcessInterval(response.code, response.exit_code, response.output, output_selector);
-            } else {
-                $(output_selector).val(response);
+                if (response.code > 0) {
+                    clearSpawnedAjaxProcessInterval(
+                        response.code,
+                        response.exit_code,
+                        response.output,
+                        output_selector
+                    );
+                }
+            } catch (error) {
+                $(output_selector).val(myvesta_ajax_invalid_response);
                 $(output_selector).focus();
-                clearSpawnedAjaxProcessInterval(6, '', response, output_selector);
+                clearSpawnedAjaxProcessInterval(
+                    6,
+                    '',
+                    myvesta_ajax_invalid_response,
+                    output_selector
+                );
             }
         },
         error: function(xhr, status, error) {
