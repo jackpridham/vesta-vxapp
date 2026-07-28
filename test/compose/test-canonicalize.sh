@@ -61,6 +61,73 @@ jq -e '
     and .networks.default.labels["vx.network"] == "default"
 ' "$candidate/canonical.json" >/dev/null \
     || fail "network ownership was not canonicalized"
+docker compose --project-name vx-alice-web \
+    --file "$candidate/compose.yaml" config --format json \
+    | jq -e '
+        .networks.default.name == "vx-alice-web_default"
+        and .networks.default.labels["vx.managed"] == "yes"
+        and .networks.default.labels["vx.user"] == "alice"
+        and .networks.default.labels["vx.project"] == "web"
+        and .networks.default.labels["vx.network"] == "default"
+    ' >/dev/null \
+    || fail "rendered implicit network omitted Docker ownership labels"
+
+declared_source="$test_root/declared-network.yaml"
+printf '%s\n' \
+    'services:' \
+    '  app:' \
+    '    image: nginxinc/nginx-unprivileged:1.27-alpine' \
+    '    restart: unless-stopped' \
+    '    init: true' \
+    '    cap_drop: [ALL]' \
+    '    security_opt: [no-new-privileges:true]' \
+    '    cpus: "0.25"' \
+    '    mem_limit: 64m' \
+    '    pids_limit: 32' \
+    '    logging:' \
+    '      driver: json-file' \
+    '      options: {max-size: 10m, max-file: "3"}' \
+    '    networks: [backend]' \
+    'networks:' \
+    '  backend: {}' >"$declared_source"
+declared_candidate="$test_root/candidate-declared-network"
+vx_compose_prepare_candidate \
+    alice declared "$declared_source" "$declared_candidate"
+docker compose --project-name vx-alice-declared \
+    --file "$declared_candidate/compose.yaml" config --format json \
+    | jq -e '
+        .networks.backend.name == "vx-alice-declared_backend"
+        and .networks.backend.labels["vx.managed"] == "yes"
+        and .networks.backend.labels["vx.user"] == "alice"
+        and .networks.backend.labels["vx.project"] == "declared"
+        and .networks.backend.labels["vx.network"] == "backend"
+    ' >/dev/null \
+    || fail "rendered declared network omitted Docker ownership labels"
+
+spoofed_network="$test_root/spoofed-network.yaml"
+printf '%s\n' \
+    'services:' \
+    '  app:' \
+    '    image: nginxinc/nginx-unprivileged:1.27-alpine' \
+    '    restart: unless-stopped' \
+    '    init: true' \
+    '    cap_drop: [ALL]' \
+    '    security_opt: [no-new-privileges:true]' \
+    '    cpus: "0.25"' \
+    '    mem_limit: 64m' \
+    '    pids_limit: 32' \
+    '    logging:' \
+    '      driver: json-file' \
+    '      options: {max-size: 10m, max-file: "3"}' \
+    'networks:' \
+    '  default:' \
+    '    labels:' \
+    '      vx.user: attacker' >"$spoofed_network"
+if vx_compose_prepare_candidate \
+    alice spoofed "$spoofed_network" "$test_root/spoofed-network-out" \
+    2>/dev/null; then
+    fail "user-supplied managed network ownership label was accepted"
+fi
 jq -e '.services.web.ports[0].host_ip == "127.0.0.1"' \
     "$candidate/canonical.json" >/dev/null \
     || fail "localhost port binding was not canonicalized"
