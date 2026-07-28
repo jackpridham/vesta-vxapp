@@ -60,14 +60,18 @@ expect_pattern web/templates/docker_list_shared.php 'REVISION' \
 
 expect_pattern web/add/docker/project/index.php "myvesta_logged_user|\\\$user" \
     'advanced page is tied to the authenticated actor'
-expect_pattern web/add/docker/project/index.php "!== 'admin'|!= 'admin'" \
-    'advanced project editor is admin-only'
 expect_pattern web/add/docker/project/index.php "SESSION\\['token'\\]" \
-    'advanced project editor validates CSRF'
-expect_pattern web/add/docker/project/index.php 'v-validate-docker-project-source' \
-    'advanced definitions use non-mutating source validation'
-expect_pattern web/add/docker/project/index.php 'v-web-add-docker-project' \
-    'confirmed advanced definitions use the consuming web wrapper'
+    'project editor validates CSRF'
+expect_pattern web/add/docker/project/index.php 'v-stage-docker-project-preview' \
+    'add uses root-owned preview staging'
+expect_pattern web/edit/docker/project/index.php 'v-stage-docker-project-preview' \
+    'edit uses root-owned preview staging'
+expect_pattern web/add/docker/project/index.php 'v-apply-docker-project-preview' \
+    'add consumes an immutable preview'
+expect_pattern web/edit/docker/project/index.php 'v-apply-docker-project-preview' \
+    'edit consumes an immutable preview'
+expect_pattern web/edit/docker/project/index.php 'v-list-docker-project-definition' \
+    'edit loads revalidated desired state'
 expect_pattern web/add/docker/project/index.php 'vx_compose_get_project' \
     'advanced add refuses an existing project before staging'
 expect_pattern web/add/docker/project/index.php 'v-spawn-ajax-process' \
@@ -83,10 +87,10 @@ expect_pattern web/templates/docker_project_add_shared.php 'compose-validation-p
     'canonical validation preview is rendered before deployment'
 expect_pattern web/templates/docker_project_add_shared.php 'confirm_deploy' \
     'advanced deployment requires explicit confirmation'
-expect_pattern web/edit/docker/project/index.php 'v-validate-docker-project-source' \
-    'advanced updates use non-mutating validation'
-expect_pattern web/edit/docker/project/index.php 'v-web-change-docker-project' \
-    'confirmed advanced updates use the consuming wrapper'
+expect_pattern web/add/docker/project/index.php 'vx_compose_actor_can_manage_profile' \
+    'add confirmation rechecks profile authority'
+expect_pattern web/edit/docker/project/index.php 'vx_compose_actor_can_manage_profile' \
+    'edit checks stored profile authority'
 expect_pattern web/templates/docker_project_edit_shared.php \
     'compose-update-validation-preview' \
     'advanced updates render canonical preview'
@@ -99,6 +103,10 @@ expect_pattern web/inc/vx_compose.php "mkdir\\(\\\$directory, 0700\\)" \
     'web source directories are mode 0700'
 expect_pattern web/inc/vx_compose.php "chmod\\(\\\$source, 0600\\)" \
     'web source files are mode 0600'
+expect_absent web/add/docker/project/index.php \
+    "preview.*\\['source'\\]" 'PHP add session does not retain a source path'
+expect_absent web/edit/docker/project/index.php \
+    "preview.*\\['source'\\]" 'PHP edit session does not retain a source path'
 expect_pattern web/add/docker/index.php 'v-web-add-docker-container' \
     'simple create uses the consuming web wrapper'
 expect_absent web/add/docker/index.php 'vx_docker_build_spec_payload' \

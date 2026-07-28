@@ -13,6 +13,8 @@ function vx_compose_command_json($command, $arguments, $default = array())
         'v-list-docker-secrets',
         'v-list-docker-project-backups',
         'v-validate-docker-project-source',
+        'v-list-docker-project-definition',
+        'v-stage-docker-project-preview',
     );
     if (!in_array($command, $allowed, true) || !is_array($arguments)) {
         return $default;
@@ -113,27 +115,24 @@ function vx_compose_web_source_discard($source)
 
 function vx_compose_preview_forget($key, $discard = true)
 {
-    if (!isset($_SESSION['vx_compose_previews'])
-        || !is_array($_SESSION['vx_compose_previews'])
-        || !isset($_SESSION['vx_compose_previews'][$key])) {
-        return;
-    }
-    $preview = $_SESSION['vx_compose_previews'][$key];
-    unset($_SESSION['vx_compose_previews'][$key]);
-    if ($discard && !empty($preview['source'])) {
-        vx_compose_web_source_discard($preview['source']);
+    if (isset($_SESSION['vx_compose_previews'][$key])) {
+        unset($_SESSION['vx_compose_previews'][$key]);
     }
 }
 
 function vx_compose_preview_store($preview)
 {
-    if (!is_array($preview) || empty($preview['source'])) {
+    if (!is_array($preview)
+        || empty($preview['preview_id'])
+        || preg_match(
+            '/^[a-f0-9]{32}$/D',
+            (string) $preview['preview_id']
+        ) !== 1) {
         return '';
     }
     try {
         $key = bin2hex(random_bytes(16));
     } catch (Exception $exception) {
-        vx_compose_web_source_discard($preview['source']);
         return '';
     }
     if (!isset($_SESSION['vx_compose_previews'])
@@ -154,17 +153,35 @@ function vx_compose_preview_get($key, $actor, $mode)
         return array();
     }
     $preview = $_SESSION['vx_compose_previews'][$key];
-    if (empty($preview['source'])
-        || !vx_compose_web_source_is_valid_path($preview['source'])
-        || empty($preview['actor'])
+    if (empty($preview['actor'])
         || $preview['actor'] !== $actor
         || empty($preview['mode'])
         || $preview['mode'] !== $mode
+        || empty($preview['preview_id'])
+        || preg_match(
+            '/^[a-f0-9]{32}$/D',
+            (string) $preview['preview_id']
+        ) !== 1
+        || empty($preview['source_sha'])
+        || preg_match(
+            '/^[a-f0-9]{64}$/D',
+            (string) $preview['source_sha']
+        ) !== 1
+        || empty($preview['candidate_sha'])
+        || preg_match(
+            '/^[a-f0-9]{64}$/D',
+            (string) $preview['candidate_sha']
+        ) !== 1
+        || !array_key_exists('expected_revision', $preview)
+        || !is_int($preview['expected_revision'])
+        || $preview['expected_revision'] < 0
+        || ($mode === 'add' && $preview['expected_revision'] !== 0)
+        || ($mode === 'change' && $preview['expected_revision'] < 1)
         || empty($preview['created'])
-        || (time() - (int) $preview['created']) > 900
-        || !is_file($preview['source'])
-        || is_link($preview['source'])) {
-        vx_compose_preview_forget($key, true);
+        || !is_int($preview['created'])
+        || $preview['created'] > time()
+        || (time() - $preview['created']) > 900) {
+        vx_compose_preview_forget($key);
         return array();
     }
     return $preview;
@@ -181,7 +198,7 @@ function vx_compose_preview_forget_actor_mode($actor, $mode)
             && isset($preview['actor'], $preview['mode'])
             && $preview['actor'] === $actor
             && $preview['mode'] === $mode) {
-            vx_compose_preview_forget($key, true);
+            vx_compose_preview_forget($key);
         }
     }
 }
@@ -189,6 +206,88 @@ function vx_compose_preview_forget_actor_mode($actor, $mode)
 function vx_compose_actor_can_access_owner($owner, $actor)
 {
     return $actor === 'admin' || $owner === $actor;
+}
+
+function vx_compose_actor_can_manage_profile($actor, $owner, $profile)
+{
+    return $profile === 'standard'
+        && ($actor === 'admin' || $actor === $owner);
+}
+
+function vx_compose_stage_preview(
+    $actor,
+    $owner,
+    $project,
+    $source,
+    $profile,
+    $mode
+) {
+    return vx_compose_command_json(
+        'v-stage-docker-project-preview',
+        array($actor, $owner, $project, $source, $profile, $mode),
+        array()
+    );
+}
+
+function vx_compose_preview_record($payload, $actor)
+{
+    $required = array(
+        'OWNER',
+        'PROJECT',
+        'PROFILE',
+        'MODE',
+        'PREVIEW_ID',
+        'SOURCE_SHA256',
+        'CANDIDATE_SHA256',
+        'EXPECTED_CURRENT_REVISION',
+        'EXPIRES_AT',
+    );
+    if (!is_array($payload)) {
+        return array();
+    }
+    foreach ($required as $field) {
+        if (!array_key_exists($field, $payload)) {
+            return array();
+        }
+    }
+    return array(
+        'actor' => (string) $actor,
+        'owner' => (string) $payload['OWNER'],
+        'project' => (string) $payload['PROJECT'],
+        'profile' => (string) $payload['PROFILE'],
+        'mode' => (string) $payload['MODE'],
+        'preview_id' => (string) $payload['PREVIEW_ID'],
+        'source_sha' => (string) $payload['SOURCE_SHA256'],
+        'candidate_sha' => (string) $payload['CANDIDATE_SHA256'],
+        'expected_revision' => $payload['EXPECTED_CURRENT_REVISION'],
+        'expires_at' => (string) $payload['EXPIRES_AT'],
+        'preview' => $payload,
+    );
+}
+
+function vx_compose_preview_post_matches($preview, $post)
+{
+    if (!is_array($preview) || !is_array($post)) {
+        return false;
+    }
+    $fields = array(
+        'owner',
+        'project',
+        'profile',
+        'preview_id',
+        'source_sha',
+        'candidate_sha',
+        'expected_revision',
+    );
+    foreach ($fields as $field) {
+        if (!isset($post[$field])
+            || is_array($post[$field])
+            || !array_key_exists($field, $preview)
+            || (string) $post[$field] !== (string) $preview[$field]) {
+            return false;
+        }
+    }
+    return true;
 }
 
 function vx_compose_project_key_is_valid($project)

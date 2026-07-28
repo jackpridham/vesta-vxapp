@@ -648,6 +648,48 @@
   margin-top: 18px;
 }
 
+.body-docker .docker-impact-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 18px 0;
+}
+
+.body-docker .docker-impact-card {
+  background: #f8f8f6;
+  border: 1px solid #dfdfda;
+  border-radius: 6px;
+  padding: 14px;
+}
+
+.body-docker .docker-impact-card h3,
+.body-docker .docker-impact-card p {
+  margin: 0;
+}
+
+.body-docker .docker-impact-card p + p {
+  margin-top: 8px;
+}
+
+.body-docker .docker-impact-card--warning {
+  background: #fff8e6;
+  border-color: #e7c96d;
+  grid-column: span 2;
+}
+
+.body-docker .docker-preview-details {
+  margin: 14px 0 18px;
+}
+
+.body-docker .docker-readonly-value {
+  background: #f5f5f5;
+  border: 1px solid #dfdfda;
+  border-radius: 6px;
+  box-sizing: border-box;
+  min-height: 44px;
+  padding: 11px 12px;
+}
+
 .body-docker .docker-footer-meta {
   align-items: center;
   color: #666666;
@@ -662,6 +704,10 @@
   .body-docker .docker-metric-grid,
   .body-docker .docker-form-grid,
   .body-docker .docker-field-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .body-docker .docker-impact-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -696,6 +742,14 @@
   .body-docker .docker-field-grid,
   .body-docker .docker-card__stats {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .body-docker .docker-impact-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .body-docker .docker-impact-card--warning {
+    grid-column: auto;
   }
 
   .body-docker .docker-form-card--wide,
