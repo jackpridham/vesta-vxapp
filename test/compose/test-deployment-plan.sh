@@ -172,6 +172,22 @@ mkdir -p "$root/secrets"
 printf '%s' 'VX_EXPORT_SECRET_ONE_LINE' >"$root/secrets/one-line"
 printf '%s\n\n%s\n' 'VX_EXPORT_SECRET_LINE_ONE' 'VX_EXPORT_SECRET_LINE_TWO' \
     >"$root/secrets/multi-line"
+secret_argv_marker="$test_root/secret-argv-leak"
+grep() {
+    local argument
+
+    for argument in "$@"; do
+        case "$argument" in
+            *VX_EXPORT_SECRET_ONE_LINE*|\
+            *VX_EXPORT_SECRET_LINE_ONE*|\
+            *VX_EXPORT_SECRET_LINE_TWO*)
+                : >"$secret_argv_marker"
+                return 97
+                ;;
+        esac
+    done
+    command grep "$@"
+}
 
 export_sizes=(4096 262144)
 trailing_newlines=(0 1 2)
@@ -244,11 +260,17 @@ for export_canary in \
         >"$test_root/export.out" 2>"$export_diagnostics"; then
         fail "definition export accepted managed secret canary"
     fi
-    if grep -Fq "$export_canary" "$test_root/export.out" \
-        || grep -Fq "$export_canary" "$export_diagnostics"; then
+    if [[ "$(<"$test_root/export.out")" == *"$export_canary"*
+        || "$(<"$export_diagnostics")" == *"$export_canary"* ]]; then
         fail 'managed secret canary leaked during refused export'
     fi
 done
+[[ ! -e "$secret_argv_marker" ]] \
+    || fail 'managed secret canary appeared in process arguments'
+if compgen -G "$TMPDIR/vx-compose-secret-patterns.*" >/dev/null; then
+    fail 'managed secret scan pattern file was not cleaned up'
+fi
+unset -f grep
 eval "$real_prepare_candidate"
 
 [[ "$(vx_compose_preview_root)" == "$VESTA/data/tmp/compose-previews" ]] \
