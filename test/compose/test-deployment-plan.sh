@@ -93,6 +93,7 @@ printf '%s\n' "$current_json" | jq -S . >"$root/runtime/canonical.json"
 printf "OWNER='alice'\nPROJECT='shop'\nPROFILE='standard'\nREVISION='3'\n" \
     >"$root/project.conf"
 printf 'services: {}\n' >"$root/compose.yaml"
+chmod 0640 "$root/compose.yaml"
 policy "$root/policy.conf" 2 384
 cat >"$root/routes.conf" <<'EOF'
 {
@@ -121,6 +122,100 @@ printf '{"PASSWORD":"%s"}\n' "$canary" \
 
 # shellcheck source=func/vx/compose/main.sh
 source "$repo_root/func/vx/compose/main.sh"
+
+real_prepare_candidate="$(declare -f vx_compose_prepare_candidate)"
+vx_compose_prepare_candidate() {
+    local input_file="$3"
+    local output_root="$4"
+
+    grep -Fq 'policy-stale: true' "$input_file" && return 1
+    mkdir -p "$output_root"
+    printf '{}\n' >"$output_root/canonical.json"
+}
+
+mkdir -p "$root/secrets"
+printf '%s' 'VX_EXPORT_SECRET_ONE_LINE' >"$root/secrets/one-line"
+printf '%s\n\n%s\n' 'VX_EXPORT_SECRET_LINE_ONE' 'VX_EXPORT_SECRET_LINE_TWO' \
+    >"$root/secrets/multi-line"
+
+export_sizes=(4096 262144)
+trailing_newlines=(0 1 2)
+for export_size in "${export_sizes[@]}"; do
+    for trailing_newline in "${trailing_newlines[@]}"; do
+        export_source="$test_root/export-$export_size-$trailing_newline.yaml"
+        export_decoded="$test_root/export-$export_size-$trailing_newline.decoded"
+        {
+            printf '%s\n' 'services:' '  web:' '    image: example/web:latest'
+            head -c "$export_size" /dev/zero | tr '\0' '#'
+            printf '\n'
+        } >"$export_source"
+        while [[ "$(tail -c 1 "$export_source" | wc -l)" -gt 0 ]]; do
+            truncate -s -1 "$export_source"
+        done
+        for ((newline=0; newline<trailing_newline; newline++)); do
+            printf '\n' >>"$export_source"
+        done
+        cp "$export_source" "$root/compose.yaml"
+        chmod 0640 "$root/compose.yaml"
+        export_json="$(vx_compose_definition_export_json alice shop)"
+        jq -rj '.DEFINITION' <<<"$export_json" >"$export_decoded"
+        cmp "$export_source" "$export_decoded" \
+            || fail "definition export changed $export_size-byte source with $trailing_newline trailing newlines"
+        jq -e --arg sha "$(sha256sum "$export_source" | awk '{print $1}')" '
+            .OWNER == "alice"
+            and .PROJECT == "shop"
+            and .PROFILE == "standard"
+            and .REVISION == 3
+            and .SOURCE_SHA256 == $sha
+        ' <<<"$export_json" >/dev/null || fail 'definition export metadata is invalid'
+    done
+done
+
+export_diagnostics="$test_root/export.err"
+rm -f "$root/compose.yaml"
+ln -s "$export_source" "$root/compose.yaml"
+if vx_compose_definition_export_json alice shop \
+    >"$test_root/export.out" 2>"$export_diagnostics"; then
+    fail 'definition export accepted a symlink'
+fi
+
+rm -f "$root/compose.yaml"
+printf '%s\n' 'services: {}' 'policy-stale: true' >"$root/compose.yaml"
+chmod 0640 "$root/compose.yaml"
+if vx_compose_definition_export_json alice shop \
+    >"$test_root/export.out" 2>"$export_diagnostics"; then
+    fail 'definition export accepted policy-stale source'
+fi
+
+printf 'services: {}\n' >"$root/compose.yaml"
+chmod 0640 "$root/compose.yaml"
+real_snapshot_source_file="$(declare -f vx_compose_snapshot_source_file)"
+vx_compose_snapshot_source_file() {
+    command cp --no-dereference -- "$1" "$2"
+    printf '# changed\n' >>"$1"
+    chmod 0600 "$2"
+}
+if vx_compose_definition_export_json alice shop \
+    >"$test_root/export.out" 2>"$export_diagnostics"; then
+    fail 'definition export accepted source changed during export'
+fi
+eval "$real_snapshot_source_file"
+
+for export_canary in \
+    VX_EXPORT_SECRET_ONE_LINE VX_EXPORT_SECRET_LINE_ONE VX_EXPORT_SECRET_LINE_TWO; do
+    printf 'services:\n  web:\n    command: ["%s"]\n' "$export_canary" \
+        >"$root/compose.yaml"
+    chmod 0640 "$root/compose.yaml"
+    if vx_compose_definition_export_json alice shop \
+        >"$test_root/export.out" 2>"$export_diagnostics"; then
+        fail "definition export accepted managed secret canary"
+    fi
+    if grep -Fq "$export_canary" "$test_root/export.out" \
+        || grep -Fq "$export_canary" "$export_diagnostics"; then
+        fail 'managed secret canary leaked during refused export'
+    fi
+done
+eval "$real_prepare_candidate"
 
 [[ "$(vx_compose_preview_root)" == "$VESTA/data/tmp/compose-previews" ]] \
     || fail 'preview root is incorrect'

@@ -1,0 +1,28 @@
+#!/bin/bash
+# info: list a validated Docker Compose project definition
+# options: USER PROJECT [FORMAT]
+
+user=$1
+compose_project=$2
+format=${3-json}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+if [ -f "$VESTA/conf/vesta.conf" ]; then
+    source "$VESTA/conf/vesta.conf"
+fi
+
+check_args '2' "$#" 'USER PROJECT [FORMAT]'
+[ "$#" -le 3 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+[ "$format" = json ] || check_result "$E_INVALID" "invalid format :: $format"
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+vx_compose_require_project_key "$compose_project" \
+    || check_result "$E_INVALID" "invalid Compose project :: $compose_project"
+
+vx_compose_definition_export_json "$user" "$compose_project" \
+    || check_result "$E_INVALID" \
+        "unable to export Compose project definition :: $compose_project"
+
+exit
