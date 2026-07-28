@@ -552,7 +552,10 @@ function vx_compose_preview_payload_sanitize($payload)
                 && strcasecmp($reference, 'source') !== 0
                 && !vx_compose_preview_value_is_source_path($reference)) {
                 $safe_identity = array();
-                foreach (array('REFERENCE', 'IMAGE_ID') as $key) {
+                foreach (
+                    array('REFERENCE', 'IMAGE_ID', 'OS', 'ARCHITECTURE')
+                    as $key
+                ) {
                     if (isset($identity[$key])
                         && is_string($identity[$key])
                         && !vx_compose_preview_value_is_source_path(

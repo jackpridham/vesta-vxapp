@@ -11,8 +11,44 @@ function hasLocalVestaRuntime() {
   return fs.existsSync('/etc/profile.d/vesta.sh');
 }
 
+function sshDestination(value, variable) {
+  if (value === '') {
+    return '';
+  }
+  if (!/^(?:[A-Za-z0-9][A-Za-z0-9._-]*@)?(?:[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?|\[[0-9A-Fa-f:]+\])$/.test(value)) {
+    throw new Error(`${variable} must be a single SSH destination without options or whitespace.`);
+  }
+  return value;
+}
+
 function getRemoteVestaSshTarget() {
-  return (process.env.PLAYWRIGHT_REMOTE_VESTA_SSH || '').trim();
+  return sshDestination(
+    process.env.PLAYWRIGHT_REMOTE_VESTA_SSH || '',
+    'PLAYWRIGHT_REMOTE_VESTA_SSH'
+  );
+}
+
+function getRemoteVestaSshJump() {
+  return sshDestination(
+    process.env.PLAYWRIGHT_REMOTE_VESTA_SSH_JUMP || '',
+    'PLAYWRIGHT_REMOTE_VESTA_SSH_JUMP'
+  );
+}
+
+function remoteVestaSshArgs(remoteCommand) {
+  const target = getRemoteVestaSshTarget();
+  const jump = getRemoteVestaSshJump();
+  return jump
+    ? ['-J', jump, target, remoteCommand]
+    : [target, remoteCommand];
+}
+
+function remoteVestaSshExecution(script) {
+  const remoteCommand = 'if [ "$(id -u)" -eq 0 ]; then exec bash -se; fi; if command -v sudo >/dev/null 2>&1; then exec sudo -n bash -se; fi; echo "Remote Vesta runtime access requires root or passwordless sudo." >&2; exit 1';
+  return {
+    args: remoteVestaSshArgs(remoteCommand),
+    input: script,
+  };
 }
 
 function hasRemoteVestaRuntime() {
@@ -68,11 +104,11 @@ function isLocalPanelTarget() {
 let cachedVestaRoot = null;
 
 function runRemoteBash(script) {
-  const remoteCommand = 'if [ "$(id -u)" -eq 0 ]; then exec bash -se; fi; if command -v sudo >/dev/null 2>&1; then exec sudo -n bash -se; fi; echo "Remote Vesta runtime access requires root or passwordless sudo." >&2; exit 1';
+  const execution = remoteVestaSshExecution(script);
 
-  return execFileSync('ssh', [getRemoteVestaSshTarget(), remoteCommand], {
+  return execFileSync('ssh', execution.args, {
     encoding: 'utf8',
-    input: script,
+    input: execution.input,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
 }
@@ -509,6 +545,8 @@ module.exports = {
   isLocalPanelTarget,
   managedSecretPath,
   readComposeProject,
+  remoteVestaSshArgs,
+  remoteVestaSshExecution,
   runVestaCommand,
   withSeededAlert,
 };
