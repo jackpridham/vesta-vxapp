@@ -19,6 +19,12 @@ function vx_compose_command_json($command, $arguments, $default = array())
     if (!in_array($command, $allowed, true) || !is_array($arguments)) {
         return $default;
     }
+    if (defined('VX_COMPOSE_CONTROLLER_TEST')
+        && VX_COMPOSE_CONTROLLER_TEST === true
+        && function_exists('vx_compose_test_command_json')) {
+        $result = vx_compose_test_command_json($command, $arguments, $default);
+        return is_array($result) ? $result : $default;
+    }
 
     $parts = array(VESTA_CMD.$command);
     foreach ($arguments as $argument) {
@@ -34,6 +40,16 @@ function vx_compose_command_json($command, $arguments, $default = array())
 
     $decoded = json_decode(implode('', $output), true);
     return is_array($decoded) ? $decoded : $default;
+}
+
+function vx_compose_spawn_command($command)
+{
+    if (defined('VX_COMPOSE_CONTROLLER_TEST')
+        && VX_COMPOSE_CONTROLLER_TEST === true
+        && function_exists('vx_compose_test_spawn_command')) {
+        return (string) vx_compose_test_spawn_command($command);
+    }
+    return (string) shell_exec($command);
 }
 
 function vx_compose_web_source_is_valid_path($source)
@@ -122,7 +138,22 @@ function vx_compose_preview_forget($key, $discard = true)
 
 function vx_compose_preview_store($preview)
 {
+    $allowed_keys = array(
+        'actor',
+        'owner',
+        'project',
+        'profile',
+        'mode',
+        'preview_id',
+        'source_sha',
+        'candidate_sha',
+        'expected_revision',
+        'expires_at',
+        'preview',
+    );
     if (!is_array($preview)
+        || !vx_compose_array_has_exact_keys($preview, $allowed_keys)
+        || !vx_compose_preview_payload_is_source_free($preview)
         || empty($preview['preview_id'])
         || preg_match(
             '/^[a-f0-9]{32}$/D',
@@ -139,7 +170,6 @@ function vx_compose_preview_store($preview)
         || !is_array($_SESSION['vx_compose_previews'])) {
         $_SESSION['vx_compose_previews'] = array();
     }
-    $preview['created'] = time();
     $_SESSION['vx_compose_previews'][$key] = $preview;
     return $key;
 }
@@ -153,7 +183,21 @@ function vx_compose_preview_get($key, $actor, $mode)
         return array();
     }
     $preview = $_SESSION['vx_compose_previews'][$key];
-    if (empty($preview['actor'])
+    if (!vx_compose_array_has_exact_keys($preview, array(
+            'actor',
+            'owner',
+            'project',
+            'profile',
+            'mode',
+            'preview_id',
+            'source_sha',
+            'candidate_sha',
+            'expected_revision',
+            'expires_at',
+            'preview',
+        ))
+        || !vx_compose_preview_payload_is_source_free($preview)
+        || empty($preview['actor'])
         || $preview['actor'] !== $actor
         || empty($preview['mode'])
         || $preview['mode'] !== $mode
@@ -177,10 +221,11 @@ function vx_compose_preview_get($key, $actor, $mode)
         || $preview['expected_revision'] < 0
         || ($mode === 'add' && $preview['expected_revision'] !== 0)
         || ($mode === 'change' && $preview['expected_revision'] < 1)
-        || empty($preview['created'])
-        || !is_int($preview['created'])
-        || $preview['created'] > time()
-        || (time() - $preview['created']) > 900) {
+        || empty($preview['expires_at'])
+        || !is_string($preview['expires_at'])
+        || strtotime($preview['expires_at']) === false
+        || strtotime($preview['expires_at']) <= time()
+        || (strtotime($preview['expires_at']) - time()) > 900) {
         vx_compose_preview_forget($key);
         return array();
     }
@@ -250,6 +295,10 @@ function vx_compose_preview_record($payload, $actor)
             return array();
         }
     }
+    $safe_payload = vx_compose_preview_payload_sanitize($payload);
+    if (empty($safe_payload)) {
+        return array();
+    }
     return array(
         'actor' => (string) $actor,
         'owner' => (string) $payload['OWNER'],
@@ -261,8 +310,178 @@ function vx_compose_preview_record($payload, $actor)
         'candidate_sha' => (string) $payload['CANDIDATE_SHA256'],
         'expected_revision' => $payload['EXPECTED_CURRENT_REVISION'],
         'expires_at' => (string) $payload['EXPIRES_AT'],
-        'preview' => $payload,
+        'preview' => $safe_payload,
     );
+}
+
+function vx_compose_array_has_exact_keys($value, $expected)
+{
+    if (!is_array($value)) {
+        return false;
+    }
+    $actual = array_keys($value);
+    sort($actual, SORT_STRING);
+    sort($expected, SORT_STRING);
+    return $actual === $expected;
+}
+
+function vx_compose_preview_value_is_source_path($value)
+{
+    if (!is_string($value)) {
+        return false;
+    }
+    return preg_match(
+        '#(?:^|/)(?:tmp/)?vx-compose-web\.[a-f0-9]{32}/compose\.yaml$#D',
+        $value
+    ) === 1
+        || stripos($value, 'upload-path-canary') !== false
+        || stripos($value, 'source-path-sentinel') !== false;
+}
+
+function vx_compose_preview_payload_is_source_free($value)
+{
+    if (!is_array($value)) {
+        return !vx_compose_preview_value_is_source_path($value);
+    }
+    foreach ($value as $key => $item) {
+        if (is_string($key) && strcasecmp($key, 'source') === 0) {
+            return false;
+        }
+        if (!vx_compose_preview_payload_is_source_free($item)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function vx_compose_preview_scalar_list($value)
+{
+    if (!is_array($value)) {
+        return array();
+    }
+    $result = array();
+    foreach ($value as $item) {
+        if ((is_string($item) || is_int($item) || is_float($item))
+            && !vx_compose_preview_value_is_source_path($item)) {
+            $result[] = $item;
+        }
+    }
+    return $result;
+}
+
+function vx_compose_preview_change_set($value)
+{
+    $result = array();
+    foreach (array('ADDED', 'REMOVED', 'CHANGED', 'UNCHANGED') as $key) {
+        $result[$key] = isset($value[$key])
+            ? vx_compose_preview_scalar_list($value[$key])
+            : array();
+    }
+    return $result;
+}
+
+function vx_compose_preview_payload_sanitize($payload)
+{
+    if (!is_array($payload)) {
+        return array();
+    }
+    $safe = array();
+    $scalar_fields = array(
+        'VALID',
+        'PREVIEW_ID',
+        'OWNER',
+        'PROJECT',
+        'PROFILE',
+        'MODE',
+        'SOURCE_SHA256',
+        'CANDIDATE_SHA256',
+        'CURRENT_REVISION',
+        'EXPECTED_CURRENT_REVISION',
+        'EXPIRES_AT',
+        'DATA_ROLLBACK',
+    );
+    foreach ($scalar_fields as $field) {
+        if (array_key_exists($field, $payload)
+            && (is_string($payload[$field])
+                || is_int($payload[$field])
+                || is_float($payload[$field])
+                || is_bool($payload[$field])
+                || $payload[$field] === null)
+            && !vx_compose_preview_value_is_source_path($payload[$field])) {
+            $safe[$field] = $payload[$field];
+        }
+    }
+    foreach (array('SERVICES', 'NETWORKS', 'VOLUMES', 'SECRETS') as $field) {
+        if (isset($payload[$field]) && is_array($payload[$field])) {
+            $safe[$field] = vx_compose_preview_change_set($payload[$field]);
+        }
+    }
+    if (isset($payload['ROUTES']) && is_array($payload['ROUTES'])) {
+        $safe['ROUTES'] = array();
+        foreach (
+            array('UNCHANGED', 'INVALIDATED', 'RETARGET_REQUIRED')
+            as $key
+        ) {
+            $safe['ROUTES'][$key] = isset($payload['ROUTES'][$key])
+                ? vx_compose_preview_scalar_list($payload['ROUTES'][$key])
+                : array();
+        }
+    }
+    foreach (array('RECREATE_SERVICES', 'REMOVE_SERVICES', 'WARNINGS') as $field) {
+        if (isset($payload[$field])) {
+            $safe[$field] = vx_compose_preview_scalar_list($payload[$field]);
+        }
+    }
+    if (isset($payload['RESOURCES']) && is_array($payload['RESOURCES'])) {
+        $safe['RESOURCES'] = array();
+        foreach (array('CURRENT', 'CANDIDATE', 'DELTA') as $scope) {
+            $safe['RESOURCES'][$scope] = array();
+            $resource = isset($payload['RESOURCES'][$scope])
+                && is_array($payload['RESOURCES'][$scope])
+                ? $payload['RESOURCES'][$scope]
+                : array();
+            foreach (
+                array('CPUS_MILLI', 'MEMORY_MB', 'PIDS', 'STORAGE_MB')
+                as $key
+            ) {
+                if (isset($resource[$key]) && is_numeric($resource[$key])) {
+                    $safe['RESOURCES'][$scope][$key] = $resource[$key] + 0;
+                }
+            }
+        }
+    }
+    if (isset($payload['IMAGES']) && is_array($payload['IMAGES'])) {
+        $safe['IMAGES'] = array(
+            'CURRENT_REFERENCES' => vx_compose_preview_scalar_list(
+                isset($payload['IMAGES']['CURRENT_REFERENCES'])
+                    ? $payload['IMAGES']['CURRENT_REFERENCES'] : array()
+            ),
+            'CANDIDATE_REFERENCES' => vx_compose_preview_scalar_list(
+                isset($payload['IMAGES']['CANDIDATE_REFERENCES'])
+                    ? $payload['IMAGES']['CANDIDATE_REFERENCES'] : array()
+            ),
+        );
+    }
+    if (isset($payload['PORTS']) && is_array($payload['PORTS'])) {
+        $safe['PORTS'] = array();
+        foreach ($payload['PORTS'] as $port) {
+            if (!is_array($port)) {
+                continue;
+            }
+            $item = array();
+            foreach (array('SERVICE', 'BEFORE', 'AFTER') as $key) {
+                if (isset($port[$key])
+                    && (is_string($port[$key]) || is_numeric($port[$key]))
+                    && !vx_compose_preview_value_is_source_path($port[$key])) {
+                    $item[$key] = $port[$key];
+                }
+            }
+            if (!empty($item)) {
+                $safe['PORTS'][] = $item;
+            }
+        }
+    }
+    return vx_compose_preview_payload_is_source_free($safe) ? $safe : array();
 }
 
 function vx_compose_preview_post_matches($preview, $post)

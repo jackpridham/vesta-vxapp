@@ -7,6 +7,14 @@ include($_SERVER['DOCUMENT_ROOT']."/inc/main.php");
 include($_SERVER['DOCUMENT_ROOT']."/inc/vx_docker.php");
 include($_SERVER['DOCUMENT_ROOT']."/inc/vx_compose.php");
 
+if ($user !== 'admin'
+    && isset($_REQUEST['user'])
+    && (is_array($_REQUEST['user'])
+        || (string) $_REQUEST['user'] !== (string) $user)) {
+    $_SESSION['error_msg'] = __('Compose owner scope is not accessible.');
+    header('Location: /list/docker/');
+    exit;
+}
 $docker_owner_users = vx_docker_list_users();
 $docker_form_owner = $user === 'admin'
     ? vx_docker_resolve_owner_from_request('')
@@ -56,6 +64,12 @@ if (!empty($_POST['validate_preview'])) {
         header('Location: /login/');
         exit;
     }
+    if ($user !== 'admin'
+        && isset($_POST['profile'])
+        && (is_array($_POST['profile'])
+            || (string) $_POST['profile'] !== 'standard')) {
+        $_SESSION['error_msg'] = __('Invalid Compose profile authority.');
+    }
     foreach ($compose_form as $field => $default) {
         if (isset($_POST[$field]) && !is_array($_POST[$field])) {
             $compose_form[$field] = (string) $_POST[$field];
@@ -69,19 +83,23 @@ if (!empty($_POST['validate_preview'])) {
         $compose_form['expires'] = '';
     }
 
-    if (!vx_compose_project_key_is_valid($compose_form['project'])) {
+    if (empty($_SESSION['error_msg'])
+        && !vx_compose_project_key_is_valid($compose_form['project'])) {
         $_SESSION['error_msg'] = __(
             'Project names use lowercase letters, numbers, and hyphens.'
         );
-    } elseif (!in_array($compose_form['profile'], $allowed_profiles, true)) {
+    } elseif (empty($_SESSION['error_msg'])
+        && !in_array($compose_form['profile'], $allowed_profiles, true)) {
         $_SESSION['error_msg'] = __('Invalid Compose profile.');
-    } elseif ($compose_form['profile'] === 'admin-approved'
+    } elseif (empty($_SESSION['error_msg'])
+        && $compose_form['profile'] === 'admin-approved'
         && !vx_compose_profile_expiry_is_valid($compose_form['expires'])) {
         $_SESSION['error_msg'] = __(
             'Admin-approved profile expiry must be a future UTC timestamp within one year.'
         );
-    } elseif (trim($compose_form['definition']) === ''
-        || strlen($compose_form['definition']) > 262144) {
+    } elseif (empty($_SESSION['error_msg'])
+        && (trim($compose_form['definition']) === ''
+        || strlen($compose_form['definition']) > 262144)) {
         $_SESSION['error_msg'] = __(
             'Compose definition must be between 1 and 262144 bytes.'
         );
@@ -148,8 +166,10 @@ if (!empty($_POST['validate_preview'])) {
                         $payload['CANDIDATE_SHA256']
                     ) ? $payload['CANDIDATE_SHA256'] : $source_sha;
                     $payload['EXPECTED_CURRENT_REVISION'] = 0;
-                    $payload['EXPIRES_AT'] = $compose_form['expires'];
-                    $payload['ADMIN_EXPIRES'] = $compose_form['expires'];
+                    $payload['EXPIRES_AT'] = gmdate(
+                        'Y-m-d\TH:i:s\Z',
+                        time() + 900
+                    );
                 }
                 $record = vx_compose_preview_record($payload, $user);
             }
@@ -207,7 +227,7 @@ if (!empty($_POST['confirm_deploy'])) {
             .escapeshellarg($preview['source_sha'])." "
             .escapeshellarg($preview['candidate_sha'])." "
             .escapeshellarg((string) $preview['expected_revision']);
-        $compose_spawn_hash = trim((string) shell_exec($cmd));
+        $compose_spawn_hash = trim(vx_compose_spawn_command($cmd));
     } elseif ($user === 'admin' && $preview['profile'] === 'admin-approved') {
         $definition = isset($_POST['definition'])
             && !is_array($_POST['definition'])
@@ -216,11 +236,7 @@ if (!empty($_POST['confirm_deploy'])) {
         $expires = isset($_POST['expires']) && !is_array($_POST['expires'])
             ? (string) $_POST['expires']
             : '';
-        $expected_expires = isset($preview['preview']['ADMIN_EXPIRES'])
-            ? (string) $preview['preview']['ADMIN_EXPIRES']
-            : '';
         if (!hash_equals($preview['source_sha'], hash('sha256', $definition))
-            || $expires !== $expected_expires
             || !vx_compose_profile_expiry_is_valid($expires)) {
             $_SESSION['error_msg'] = __('The Compose preview was altered.');
         } else {
@@ -234,7 +250,7 @@ if (!empty($_POST['confirm_deploy'])) {
                     .escapeshellarg($source)." "
                     .escapeshellarg('admin-approved')." "
                     .escapeshellarg($expires);
-                $compose_spawn_hash = trim((string) shell_exec($cmd));
+                $compose_spawn_hash = trim(vx_compose_spawn_command($cmd));
                 if ($compose_spawn_hash === '') {
                     vx_compose_web_source_discard($source);
                 }

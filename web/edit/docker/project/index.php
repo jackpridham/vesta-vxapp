@@ -7,6 +7,14 @@ include($_SERVER['DOCUMENT_ROOT']."/inc/main.php");
 include($_SERVER['DOCUMENT_ROOT']."/inc/vx_docker.php");
 include($_SERVER['DOCUMENT_ROOT']."/inc/vx_compose.php");
 
+if ($user !== 'admin'
+    && isset($_REQUEST['user'])
+    && (is_array($_REQUEST['user'])
+        || (string) $_REQUEST['user'] !== (string) $user)) {
+    $_SESSION['error_msg'] = __('Compose owner scope is not accessible.');
+    header('Location: /list/docker/');
+    exit;
+}
 $compose_project_name = isset($_GET['project']) && !is_array($_GET['project'])
     ? trim((string) $_GET['project'])
     : '';
@@ -102,6 +110,12 @@ if (!empty($_POST['validate_preview'])) {
     if (!isset($_POST['token']) || $_SESSION['token'] != $_POST['token']) {
         header('Location: /login/');
         exit;
+    }
+    if ($user !== 'admin'
+        && isset($_POST['profile'])
+        && (is_array($_POST['profile'])
+            || (string) $_POST['profile'] !== 'standard')) {
+        $_SESSION['error_msg'] = __('Invalid Compose profile authority.');
     }
     $compose_update_definition = isset($_POST['definition'])
         && !is_array($_POST['definition'])
@@ -235,7 +249,7 @@ if (!empty($_POST['confirm_update'])) {
             .escapeshellarg($preview['source_sha'])." "
             .escapeshellarg($preview['candidate_sha'])." "
             .escapeshellarg((string) $preview['expected_revision']);
-        $compose_spawn_hash = trim((string) shell_exec($cmd));
+        $compose_spawn_hash = trim(vx_compose_spawn_command($cmd));
     } elseif ($user === 'admin') {
         $definition = isset($_POST['definition'])
             && !is_array($_POST['definition'])
@@ -252,7 +266,7 @@ if (!empty($_POST['confirm_update'])) {
                     .escapeshellarg($preview['owner'])." "
                     .escapeshellarg($preview['project'])." "
                     .escapeshellarg($source);
-                $compose_spawn_hash = trim((string) shell_exec($cmd));
+                $compose_spawn_hash = trim(vx_compose_spawn_command($cmd));
                 if ($compose_spawn_hash === '') {
                     vx_compose_web_source_discard($source);
                 }
