@@ -1,0 +1,25 @@
+#!/bin/bash
+# info: stage an immutable Docker Compose deployment preview
+# options: ACTOR OWNER PROJECT SOURCE PROFILE MODE
+
+actor=$1
+owner=$2
+compose_project=$3
+source_file=$4
+profile=$5
+mode=$6
+
+# shellcheck source=func/main.sh
+source "$VESTA/func/main.sh"
+# shellcheck source=func/vx/compose/main.sh
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '6' "$#" 'ACTOR OWNER PROJECT SOURCE PROFILE MODE'
+[ "$#" -le 6 ] || check_result "$E_ARGS" 'too many arguments'
+is_object_valid 'user' 'USER' "$owner"
+is_object_unsuspended 'user' 'USER' "$owner"
+[[ "$actor" == admin ]] || is_object_valid 'user' 'USER' "$actor"
+
+vx_compose_preview_stage \
+    "$actor" "$owner" "$compose_project" "$source_file" "$profile" "$mode" \
+    || check_result "$E_INVALID" 'Compose preview staging failed'
