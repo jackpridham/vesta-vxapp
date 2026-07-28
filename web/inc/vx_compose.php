@@ -134,6 +134,7 @@ function vx_compose_preview_forget($key, $discard = true)
     if (isset($_SESSION['vx_compose_previews'][$key])) {
         unset($_SESSION['vx_compose_previews'][$key]);
     }
+    vx_compose_admin_expiry_forget($key);
 }
 
 function vx_compose_preview_store($preview)
@@ -234,6 +235,7 @@ function vx_compose_preview_get($key, $actor, $mode)
 
 function vx_compose_preview_forget_actor_mode($actor, $mode)
 {
+    vx_compose_admin_expiry_forget_actor_mode($actor, $mode);
     if (empty($_SESSION['vx_compose_previews'])
         || !is_array($_SESSION['vx_compose_previews'])) {
         return;
@@ -244,6 +246,85 @@ function vx_compose_preview_forget_actor_mode($actor, $mode)
             && $preview['actor'] === $actor
             && $preview['mode'] === $mode) {
             vx_compose_preview_forget($key);
+        }
+    }
+}
+
+function vx_compose_admin_expiry_store($key, $record)
+{
+    $expected = array(
+        'actor',
+        'owner',
+        'project',
+        'profile',
+        'mode',
+        'admin_expires',
+    );
+    if (!is_string($key)
+        || preg_match('/^[a-f0-9]{32}$/D', $key) !== 1
+        || !vx_compose_array_has_exact_keys($record, $expected)
+        || $record['actor'] !== 'admin'
+        || $record['profile'] !== 'admin-approved'
+        || !in_array($record['mode'], array('add', 'change'), true)
+        || !vx_compose_owner_key_is_valid($record['owner'])
+        || !vx_compose_project_key_is_valid($record['project'])
+        || !vx_compose_profile_expiry_is_valid($record['admin_expires'])) {
+        return false;
+    }
+    if (!isset($_SESSION['vx_compose_admin_expiry'])
+        || !is_array($_SESSION['vx_compose_admin_expiry'])) {
+        $_SESSION['vx_compose_admin_expiry'] = array();
+    }
+    $_SESSION['vx_compose_admin_expiry'][$key] = $record;
+    return true;
+}
+
+function vx_compose_admin_expiry_get($key, $actor, $mode)
+{
+    if (!is_string($key)
+        || preg_match('/^[a-f0-9]{32}$/D', $key) !== 1
+        || empty($_SESSION['vx_compose_admin_expiry'][$key])
+        || !is_array($_SESSION['vx_compose_admin_expiry'][$key])) {
+        return array();
+    }
+    $record = $_SESSION['vx_compose_admin_expiry'][$key];
+    if (!vx_compose_array_has_exact_keys($record, array(
+            'actor',
+            'owner',
+            'project',
+            'profile',
+            'mode',
+            'admin_expires',
+        ))
+        || $record['actor'] !== $actor
+        || $record['mode'] !== $mode
+        || $record['profile'] !== 'admin-approved'
+        || !vx_compose_profile_expiry_is_valid($record['admin_expires'])) {
+        vx_compose_admin_expiry_forget($key);
+        return array();
+    }
+    return $record;
+}
+
+function vx_compose_admin_expiry_forget($key)
+{
+    if (isset($_SESSION['vx_compose_admin_expiry'][$key])) {
+        unset($_SESSION['vx_compose_admin_expiry'][$key]);
+    }
+}
+
+function vx_compose_admin_expiry_forget_actor_mode($actor, $mode)
+{
+    if (empty($_SESSION['vx_compose_admin_expiry'])
+        || !is_array($_SESSION['vx_compose_admin_expiry'])) {
+        return;
+    }
+    foreach ($_SESSION['vx_compose_admin_expiry'] as $key => $record) {
+        if (is_array($record)
+            && isset($record['actor'], $record['mode'])
+            && $record['actor'] === $actor
+            && $record['mode'] === $mode) {
+            vx_compose_admin_expiry_forget($key);
         }
     }
 }

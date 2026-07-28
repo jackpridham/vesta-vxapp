@@ -187,6 +187,23 @@ if (!empty($_POST['validate_preview'])) {
                     $_SESSION['error_msg'] = __(
                         'Unable to retain the validated Compose candidate.'
                     );
+                } elseif ($record['profile'] === 'admin-approved'
+                    && !vx_compose_admin_expiry_store(
+                        $compose_preview_key,
+                        array(
+                            'actor' => $user,
+                            'owner' => $record['owner'],
+                            'project' => $record['project'],
+                            'profile' => $record['profile'],
+                            'mode' => 'add',
+                            'admin_expires' => $compose_form['expires'],
+                        )
+                    )) {
+                    vx_compose_preview_forget($compose_preview_key);
+                    $compose_preview_key = '';
+                    $_SESSION['error_msg'] = __(
+                        'Unable to bind the administrator profile expiry.'
+                    );
                 }
             }
         }
@@ -229,6 +246,11 @@ if (!empty($_POST['confirm_deploy'])) {
             .escapeshellarg((string) $preview['expected_revision']);
         $compose_spawn_hash = trim(vx_compose_spawn_command($cmd));
     } elseif ($user === 'admin' && $preview['profile'] === 'admin-approved') {
+        $admin_expiry = vx_compose_admin_expiry_get(
+            $compose_preview_key,
+            $user,
+            'add'
+        );
         $definition = isset($_POST['definition'])
             && !is_array($_POST['definition'])
             ? (string) $_POST['definition']
@@ -236,7 +258,12 @@ if (!empty($_POST['confirm_deploy'])) {
         $expires = isset($_POST['expires']) && !is_array($_POST['expires'])
             ? (string) $_POST['expires']
             : '';
-        if (!hash_equals($preview['source_sha'], hash('sha256', $definition))
+        if (empty($admin_expiry)
+            || $admin_expiry['owner'] !== $preview['owner']
+            || $admin_expiry['project'] !== $preview['project']
+            || $admin_expiry['profile'] !== $preview['profile']
+            || $expires !== $admin_expiry['admin_expires']
+            || !hash_equals($preview['source_sha'], hash('sha256', $definition))
             || !vx_compose_profile_expiry_is_valid($expires)) {
             $_SESSION['error_msg'] = __('The Compose preview was altered.');
         } else {
