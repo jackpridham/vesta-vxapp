@@ -13,17 +13,17 @@ const {
   isLocalPanelTarget,
 } = require('./helpers/docker-runtime-fixtures');
 
-test('non-admin cannot open either advanced Compose editor', async ({ page }) => {
+test('non-admin can open standard Compose editors but cannot select privileged profiles', async ({ page }) => {
   const owner = getPanelCredentials('dockerUser').username;
 
   await page.goto(`/add/docker/project/?user=${encodeURIComponent(owner)}`);
-  await expect(page).toHaveURL(/\/list\/docker\/?$/);
-  await expect(page.locator('body')).toContainText(/Advanced Compose definitions are admin-only/i);
-  await expect(page.locator('#compose-advanced-add-form')).toHaveCount(0);
+  await expect(page.locator('#compose-advanced-add-form')).toBeVisible();
+  await expect(page.locator('#compose-profile')).toHaveText('standard');
+  await expect(page.locator('select[name="profile"]')).toHaveCount(0);
 
   await page.goto(`/edit/docker/project/?project=pw-denied&user=${encodeURIComponent(owner)}`);
   await expect(page).toHaveURL(/\/list\/docker\/?$/);
-  await expect(page.locator('body')).toContainText(/Advanced Compose updates are admin-only/i);
+  await expect(page.locator('body')).toContainText(/does not exist or is not accessible/i);
   await expect(page.locator('#compose-advanced-update-form')).toHaveCount(0);
 });
 

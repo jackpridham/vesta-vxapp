@@ -122,6 +122,7 @@ function composeProjectDefinition({
   image = 'busybox:1.36.1',
   secretPath = '',
   services = ['web', 'worker'],
+  unhealthy = false,
 } = {}) {
   const serviceBlocks = services.map((service) => {
     const readsSecret = service === 'worker' && secretPath;
@@ -134,6 +135,17 @@ function composeProjectDefinition({
       - source: ui_canary
         target: /run/secrets/ui_canary
         mode: 0444`
+      : '';
+    const healthcheck = unhealthy
+      ? `
+    healthcheck:
+      test:
+        - CMD
+        - "false"
+      interval: 2s
+      timeout: 1s
+      retries: 2
+      start_period: 1s`
       : '';
 
     return `  ${service}:
@@ -155,7 +167,7 @@ function composeProjectDefinition({
       driver: json-file
       options:
         max-size: 10m
-        max-file: "3"${secretMount}`;
+        max-file: "3"${secretMount}${healthcheck}`;
   });
   const secretDefinition = secretPath
     ? `
@@ -167,6 +179,42 @@ secrets:
   return `services:
 ${serviceBlocks.join('\n')}${secretDefinition}
 `;
+}
+
+function readComposeProject(owner, project) {
+  try {
+    return JSON.parse(runVestaCommand('v-list-docker-project', [owner, project, 'json']));
+  } catch {
+    return null;
+  }
+}
+
+function changeComposeProject(owner, project, definition) {
+  if (!hasRemoteVestaRuntime()) {
+    const fixtureDir = fs.mkdtempSync(path.join(os.tmpdir(), 'playwright-compose-change-'));
+    const fixtureFile = path.join(fixtureDir, 'compose.yaml');
+    try {
+      fs.writeFileSync(fixtureFile, definition, { mode: 0o600 });
+      runVestaCommand('v-change-docker-project', [owner, project, fixtureFile]);
+    } finally {
+      fs.rmSync(fixtureDir, { recursive: true, force: true });
+    }
+    return;
+  }
+
+  const encoded = Buffer.from(definition, 'utf8').toString('base64');
+  const script = [
+    'set -euo pipefail',
+    'source /etc/profile.d/vesta.sh',
+    'fixture_dir="$(mktemp -d)"',
+    'fixture_file="$fixture_dir/compose.yaml"',
+    'cleanup() { rm -rf -- "$fixture_dir"; }',
+    'trap cleanup EXIT',
+    `printf %s ${shellEscape(encoded)} | base64 -d > "$fixture_file"`,
+    'chmod 0600 "$fixture_file"',
+    `"$VESTA/bin/v-change-docker-project" ${shellEscape(owner)} ${shellEscape(project)} "$fixture_file"`,
+  ].join('\n');
+  runRemoteBash(script);
 }
 
 function createComposeProject(owner, project, definition, { deploy = true } = {}) {
@@ -432,6 +480,7 @@ function withSeededAlert(owner, containerName) {
 
 module.exports = {
   addComposeProjectSecret,
+  changeComposeProject,
   cleanupRetainedFixturePaths,
   composeProjectDefinition,
   createComposeProject,
@@ -442,6 +491,7 @@ module.exports = {
   hasRemoteVestaRuntime,
   isLocalPanelTarget,
   managedSecretPath,
+  readComposeProject,
   runVestaCommand,
   withSeededAlert,
 };
