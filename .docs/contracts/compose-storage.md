@@ -68,8 +68,8 @@ vx_<user>_<project>_<volume>
 
 and carry the four ownership labels above plus `vx.volume=<volume>`.
 Anonymous volumes are rejected. Bind sources are resolved with symlinks
-removed and must stay below the project bind root, except for a host path
-explicitly named by the selected administrator profile.
+removed and must stay below the project bind root. Administrator authority
+does not permit arbitrary host paths.
 
 ## Revisions and atomicity
 

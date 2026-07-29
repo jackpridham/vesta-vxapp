@@ -90,6 +90,9 @@ $cmd = VESTA_CMD."v-spawn-ajax-process "
 Compose add/update confirmation is a page workflow rather than a generic modal,
 but follows the same trust boundary:
 
+- render Compose actions only when `vx_docker_orchestration_ready()` is true;
+- resolve mutating actions through `vx_compose_resolve_mutable_project()` and
+  use the accessible-project helper only for redacted read-only views;
 - the PHP session stores the short-lived preview record;
 - hidden fields repeat only validated owner/project/profile, preview ID,
   source/candidate digests, and expected revision;

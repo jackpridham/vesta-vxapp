@@ -35,6 +35,12 @@
   `/usr/local/vesta/data/users/<user>/docker-projects/<project>/`
 - `data/tmp/compose-previews/<preview-id>/` ->
   `/usr/local/vesta/data/tmp/compose-previews/<preview-id>/`
+- `data/users/<user>/docker-project-backups/<project>/` ->
+  `/usr/local/vesta/data/users/<user>/docker-project-backups/<project>/`
+- `data/users/<user>/docker-registry/` ->
+  `/usr/local/vesta/data/users/<user>/docker-registry/`
+- `data/users/<user>/docker-profile-approvals/` ->
+  `/usr/local/vesta/data/users/<user>/docker-profile-approvals/`
 - Host durable binds are outside the Vesta root at
   `/home/<user>/docker/<project>/binds/`.
 - Generated route configs are still per-domain files under

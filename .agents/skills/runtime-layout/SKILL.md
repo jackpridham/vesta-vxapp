@@ -34,11 +34,16 @@ Use this skill before editing files when the main question is "where does this l
   `/usr/local/vesta/data/users/<user>/docker-projects/<project>/compose.yaml`.
 - Protected revisions, metadata, routes, audit, secrets, and operation state
   live under the same project control root.
+- Managed Compose backups live under
+  `/usr/local/vesta/data/users/<user>/docker-project-backups/<project>/`;
+  registry state lives under `docker-registry/`, and expiring privileged
+  assignments live under `docker-profile-approvals/`.
 - Durable bind data lives under
   `/home/<user>/docker/<project>/binds/`; named volumes use
   `vx_<user>_<project>_<volume>`.
 - Immutable self-service previews live temporarily under
-  `/usr/local/vesta/data/tmp/compose-previews/<preview-id>/`.
+  `/usr/local/vesta/data/tmp/compose-previews/<preview-id>/` and must remain
+  root-owned with the contracted modes and 15-minute lifetime.
 - Docker objects and inspect output are runtime evidence, not persistence.
 - HTTP routes remain Vesta state and render through the dedicated `vx-proxy`
   web template; projects without routes receive no nginx configuration.
@@ -46,7 +51,8 @@ Use this skill before editing files when the main question is "where does this l
 Before Compose path changes, read
 `.docs/contracts/compose-storage.md`,
 `.docs/contracts/compose-networking.md`, and
-`.docs/contracts/compose-self-service-deployment.md`.
+`.docs/contracts/compose-self-service-deployment.md`; read
+`.docs/contracts/compose-backup-restore.md` for backup or restore placement.
 
 ## When To Check Multiple Locations
 
