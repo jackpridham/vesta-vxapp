@@ -19,7 +19,7 @@ source "$repo_root/func/vx/compose/main.sh"
 
 cases=(
     privileged:PRIVILEGED
-    docker-socket:'(MOUNT|PATH)'
+    docker-socket:'(MOUNT|PATH|UNSUPPORTED_KEY)'
     root-mount:MOUNT
     host-pid:HOST_PID
     host-ipc:HOST_IPC
