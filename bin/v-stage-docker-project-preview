@@ -8,6 +8,8 @@ compose_project=$3
 source_file=$4
 profile=$5
 mode=$6
+# func/main.sh derives USER_DATA from the conventional user variable.
+user=$owner
 
 # shellcheck source=func/main.sh
 source "$VESTA/func/main.sh"

@@ -563,6 +563,17 @@ vx_compose_restore_install_active() {
     [[ "$own_transaction" != yes ]] || rm -rf -- "$transaction_root"
 }
 
+vx_compose_restore_candidate_binds_secure() {
+    local owner="$1"
+    local project="$2"
+    local candidate="$3"
+
+    vx_compose_bind_root_secure "$owner" "$project" || return 1
+    [[ ! -f "$candidate/simple.json" ]] \
+        || vx_compose_simple_bind_leaves_normalize \
+            "$owner" "$project" "$candidate/canonical.json"
+}
+
 vx_compose_restore_project_existing() {
     local owner="$1"
     local project="$2"
@@ -701,12 +712,8 @@ vx_compose_restore_project_existing() {
         [[ "$setup_failed" == yes ]] || binds_swapped=yes
     fi
     if [[ "$setup_failed" != yes ]] \
-        && { ! vx_compose_bind_root_secure "$owner" "$project" \
-            || {
-                [[ ! -f "$candidate/simple.json" ]] \
-                    || ! vx_compose_simple_bind_leaves_normalize \
-                        "$owner" "$project" "$candidate/canonical.json"
-            }; }; then
+        && ! vx_compose_restore_candidate_binds_secure \
+            "$owner" "$project" "$candidate"; then
         setup_failed=yes
     fi
     if [[ "$setup_failed" != yes ]]; then
