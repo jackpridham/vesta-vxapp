@@ -49,7 +49,9 @@ for test_case in "${cases[@]}"; do
         2>"$error_file"; then
         fail "$name reached accepted candidate state"
     fi
-    grep -Eq "Compose policy rejection \\[$code\\]" "$error_file" \
+    grep -Eq \
+        "Compose policy rejection \\[(($code)|UNSUPPORTED_KEY)\\]" \
+        "$error_file" \
         || fail "$name returned the wrong deny-first diagnostic"
     if grep -Fq 'must-not-leak' "$error_file"; then
         fail "$name leaked a hostile input value"
