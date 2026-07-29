@@ -47,6 +47,20 @@ jq -n --arg bind "$HOMEDIR/alice/docker/app/binds/config" '{
 vx_compose_policy_check_storage "$model" alice app \
     || fail "managed bind and named volume were rejected"
 
+# Validation is not a durable capability: replacing a declared bind after the
+# policy pass must be detected by the immediate pre-mutation verifier.
+mv "$HOMEDIR/alice/docker/app/binds/config" \
+    "$HOMEDIR/alice/docker/app/binds/config.real"
+ln -s "$test_root/outside" "$HOMEDIR/alice/docker/app/binds/config"
+if vx_compose_managed_binds_verify "$model" alice app 2>/dev/null; then
+    fail "post-validation managed bind swap was accepted"
+fi
+rm "$HOMEDIR/alice/docker/app/binds/config"
+mv "$HOMEDIR/alice/docker/app/binds/config.real" \
+    "$HOMEDIR/alice/docker/app/binds/config"
+vx_compose_managed_binds_verify "$model" alice app \
+    || fail "unchanged managed bind traversal was rejected"
+
 expect_storage_rejection() {
     local name="$1"
     local fixture="$test_root/$name.json"
@@ -69,6 +83,10 @@ expect_storage_rejection host_bind \
 # shellcheck disable=SC2016
 expect_storage_rejection symlink_escape \
     --arg path "$HOMEDIR/alice/docker/app/binds/escape" \
+    '.services.app.volumes[1].source = $path'
+mkdir -p "$HOMEDIR/alice/docker/app/binds/nested/config"
+expect_storage_rejection nested_bind \
+    --arg path "$HOMEDIR/alice/docker/app/binds/nested/config" \
     '.services.app.volumes[1].source = $path'
 expect_storage_rejection unsafe_target \
     '.services.app.volumes[1].target = "/etc/passwd"'
@@ -93,6 +111,7 @@ printf '%s\n' \
     'root="$(dirname -- "$0")"' \
     'printf "ARG=%s\n" "$@" >>"$root/docker.log"' \
     'if [[ " $* " == *" volume inspect "* ]]; then' \
+    '  [[ "${*: -1}" != vx_alice_app_cache ]] || exit 1' \
     '  cat "$root/volume.json"' \
     'elif [[ " $* " == *" run "* ]]; then' \
     '  for argument in "$@"; do' \
@@ -110,6 +129,7 @@ cat >"$test_root/volume.json" <<'EOF'
   "Name": "vx_alice_app_state",
   "Labels": {
     "com.docker.compose.project": "vx-alice-app",
+    "com.docker.compose.volume": "state",
     "vx.managed": "yes",
     "vx.user": "alice",
     "vx.project": "app",
@@ -120,6 +140,34 @@ EOF
 export VX_COMPOSE_DOCKER_BIN="$fake_docker"
 vx_compose_volume_inspect alice app state >/dev/null \
     || fail "managed volume inspection failed"
+
+# Candidate volume checks use candidate authority. An absent newly declared
+# volume is valid only before Compose, while a deterministic foreign object is
+# rejected before any lifecycle mutation.
+candidate_model="$test_root/candidate-volume.json"
+jq '.volumes.cache = {
+    name: "vx_alice_app_cache",
+    labels: {
+        "vx.managed": "yes",
+        "vx.user": "alice",
+        "vx.project": "app",
+        "vx.volume": "cache"
+    }
+}' "$model" >"$candidate_model"
+vx_compose_volume_verify_runtime alice app "$candidate_model" no \
+    || fail "absent candidate-added volume failed pre-mutation verification"
+if vx_compose_volume_verify_runtime \
+    alice app "$candidate_model" yes 2>/dev/null; then
+    fail "absent candidate volume passed post-convergence verification"
+fi
+cp "$test_root/volume.json" "$test_root/volume.owned.json"
+jq '.[0].Labels["vx.user"] = "mallory"' \
+    "$test_root/volume.owned.json" >"$test_root/volume.json"
+if vx_compose_volume_verify_runtime alice app "$model" no 2>/dev/null; then
+    fail "foreign deterministic managed volume passed preflight"
+fi
+mv -- "$test_root/volume.owned.json" "$test_root/volume.json"
+
 vx_compose_volume_export alice app state "$test_root/state.tar.gz"
 [[ -s "$test_root/state.tar.gz" ]] || fail "managed volume export was not created"
 grep -Fq 'ARG=--network' "$docker_log" || fail "volume helper network was not disabled"

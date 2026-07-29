@@ -6,10 +6,15 @@ include($_SERVER['DOCUMENT_ROOT']."/ajax/include_authentication_check.php");
 include_once($_SERVER['DOCUMENT_ROOT']."/inc/vx_docker.php");
 include_once($_SERVER['DOCUMENT_ROOT']."/inc/vx_compose.php");
 
+if (!vx_docker_is_orchestration_ready()) {
+    echo __('Docker orchestration prerequisites are unavailable.');
+    exit;
+}
+
 $container_name = trim((string) $_POST['dataset']['container_name']);
 $container_owner = !empty($_POST['dataset']['owner']) ? trim((string) $_POST['dataset']['owner']) : $myvesta_logged_user;
 
-if (empty(vx_compose_resolve_accessible_project($container_owner, $container_name, $myvesta_logged_user))) {
+if (empty(vx_compose_resolve_mutable_project($container_owner, $container_name, $myvesta_logged_user))) {
     echo __('You do not have access to this Compose project.');
     exit;
 }

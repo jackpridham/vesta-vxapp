@@ -1,0 +1,13 @@
+services:
+  web:
+    stop_grace_period: 24h
+    ulimits:
+      core: -1
+      nofile:
+        soft: -1
+        hard: -1
+    logging:
+      driver: json-file
+      options:
+        max-size: 999g
+        max-file: "999"

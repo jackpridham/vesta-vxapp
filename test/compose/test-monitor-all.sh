@@ -25,4 +25,32 @@ vx_compose_monitor_project() {
 vx_compose_monitor_all
 diff -u <(printf '%s\n' alice/app bob/site) "$test_root/monitored"
 
+rrd_vesta="$test_root/rrd-vesta"
+mkdir -p "$rrd_vesta/func/vx/compose" "$rrd_vesta/conf"
+cat >"$rrd_vesta/func/main.sh" <<'EOF'
+E_RRD=8
+vx_docker_rrd_period_graph_window() { return 0; }
+vx_docker_ensure_rrd_dir() { return 0; }
+vx_docker_list_all_records() { return 0; }
+EOF
+touch "$rrd_vesta/func/docker.sh" "$rrd_vesta/conf/vesta.conf"
+cat >"$rrd_vesta/func/vx/compose/main.sh" <<'EOF'
+vx_compose_preview_gc() {
+    echo preview-gc >>"$VX_MONITOR_TEST_LOG"
+    return 1
+}
+vx_compose_monitor_all() {
+    echo monitor-all >>"$VX_MONITOR_TEST_LOG"
+}
+EOF
+
+export VX_MONITOR_TEST_LOG="$test_root/daily-actions"
+VESTA="$rrd_vesta" \
+HOMEDIR="$test_root/rrd-home" \
+BIN="$rrd_vesta/bin" \
+    "$repo_root/bin/v-update-sys-rrd-docker" daily
+diff -u \
+    <(printf '%s\n' preview-gc monitor-all) \
+    "$VX_MONITOR_TEST_LOG"
+
 echo "Compose monitor-all tests passed."

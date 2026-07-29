@@ -6,6 +6,112 @@ vx_compose_bind_root() {
     printf '%s/binds\n' "$(vx_compose_project_data_root "$1" "$2")"
 }
 
+vx_compose_bind_root_secure() {
+    local owner="$1"
+    local project="$2"
+    local bind_root
+
+    bind_root="$(vx_compose_bind_root "$owner" "$project")"
+    [[ -d "$bind_root" && ! -L "$bind_root" ]] || return 1
+    if (( EUID == 0 )) && id -u "$owner" >/dev/null 2>&1; then
+        chown "root:$owner" "$bind_root" || return 1
+    fi
+    chmod 0750 "$bind_root"
+}
+
+vx_compose_managed_binds_verify() {
+    local canonical_json="$1"
+    local owner="$2"
+    local project="$3"
+    local bind_root resolved_root source resolved_source traversal mode uid
+    local relative_source
+    local authority_uid=0
+
+    (( EUID == 0 )) || authority_uid="$EUID"
+
+    [[ -f "$canonical_json" && ! -L "$canonical_json" ]] || return 1
+    bind_root="$(vx_compose_bind_root "$owner" "$project")"
+    [[ -d "$bind_root" && ! -L "$bind_root" ]] || {
+        vx_compose_error 'managed bind root is unavailable'
+        return 1
+    }
+    resolved_root="$(realpath -e -- "$bind_root")" || return 1
+    [[ "$resolved_root" == "$bind_root" ]] || {
+        vx_compose_error 'managed bind traversal contains a symlink'
+        return 1
+    }
+    for traversal in \
+        "$(vx_compose_project_data_root "$owner" "$project")" "$bind_root"; do
+        [[ -d "$traversal" && ! -L "$traversal" ]] || return 1
+        uid="$(stat -c '%u' "$traversal")" || return 1
+        mode="$(stat -c '%a' "$traversal")" || return 1
+        [[ "$uid" -eq "$authority_uid" && $((8#$mode & 0022)) -eq 0 ]] || {
+            vx_compose_error \
+                'managed bind traversal must be root-owned and non-renamable'
+            return 1
+        }
+    done
+    while IFS= read -r source; do
+        case "$source" in
+            "$bind_root"/*) ;;
+            *)
+                vx_compose_error 'managed bind source is outside its root'
+                return 1
+                ;;
+        esac
+        relative_source="${source#"$bind_root"/}"
+        [[ "$relative_source" != */* ]] || {
+            vx_compose_error \
+                'managed bind sources must be direct children of the authority-owned bind root'
+            return 1
+        }
+        [[ -e "$source" && ! -L "$source" ]] || {
+            vx_compose_error 'managed bind source changed after validation'
+            return 1
+        }
+        resolved_source="$(realpath -e -- "$source")" || return 1
+        case "$resolved_source" in
+            "$resolved_root"/*) ;;
+            *)
+                vx_compose_error 'managed bind source escaped after validation'
+                return 1
+                ;;
+        esac
+    done < <(jq -r '
+        .services[]
+        | (.volumes // [])[]
+        | select(.type == "bind")
+        | .source
+    ' "$canonical_json")
+}
+
+vx_compose_simple_bind_leaves_normalize() {
+    local owner="$1"
+    local project="$2"
+    local canonical_json="$3"
+    local bind_root source relative_source
+
+    (( EUID == 0 )) || return 0
+    id -u "$owner" >/dev/null 2>&1 || return 0
+    bind_root="$(vx_compose_bind_root "$owner" "$project")"
+    while IFS= read -r source; do
+        relative_source="${source#"$bind_root"/}"
+        [[ "$source" == "$bind_root"/* && "$relative_source" != */*
+            && -e "$source" && ! -L "$source" ]] || return 1
+        chown "$owner:$owner" "$source" || return 1
+        if [[ -d "$source" ]]; then
+            chmod 0750 "$source" || return 1
+        else
+            chmod 0640 "$source" || return 1
+        fi
+    done < <(jq -r '
+        .services[]
+        | (.volumes // [])[]
+        | select(.type == "bind")
+        | .source
+    ' "$canonical_json")
+}
+
 vx_compose_volume_runtime_name() {
     local owner="$1"
     local project="$2"
@@ -23,7 +129,10 @@ vx_compose_policy_check_reserved_volume_labels() {
             ((.labels // {}) | type == "object")
             and (
                 (.labels // {})
-                | with_entries(select(.key | startswith("vx.")))
+                | with_entries(select(
+                    (.key | startswith("vx."))
+                    or (.key | startswith("com.docker.compose."))
+                ))
                 | length == 0
             )
         )
@@ -53,6 +162,17 @@ vx_compose_policy_check_existing_volume_labels() {
                 and .volumes[$volume].labels["vx.project"] == $project
                 and .volumes[$volume].labels["vx.volume"] == $volume
                 and ((.volumes[$volume].external // false) == false)
+                and all(
+                    (.volumes[$volume].labels // {}) | to_entries[];
+                    if (.key | startswith("vx.")) then
+                        (.key == "vx.managed" and .value == "yes")
+                        or (.key == "vx.user" and .value == $owner)
+                        or (.key == "vx.project" and .value == $project)
+                        or (.key == "vx.volume" and .value == $volume)
+                    else
+                        (.key | startswith("com.docker.compose.") | not)
+                    end
+                )
             ' "$canonical_json" >/dev/null \
             || {
                 vx_compose_policy_reject \
@@ -147,8 +267,15 @@ vx_compose_policy_check_storage() {
                 ;;
         esac
         validation_source="$source_path"
+        relative_source="${source_path#"$bind_root"/}"
+        [[ "$relative_source" != */* ]] \
+            || {
+                vx_compose_policy_reject \
+                    BIND \
+                    'managed bind sources must be direct children of their root'
+                return 1
+            }
         if [[ -n "$validation_bind_root" ]]; then
-            relative_source="${source_path#"$bind_root"/}"
             validation_source="$validation_bind_root/$relative_source"
         else
             [[ -d "$bind_root" && ! -L "$bind_root" ]] \
@@ -217,6 +344,7 @@ vx_compose_volume_inspect() {
     local owner="$1"
     local project="$2"
     local volume="$3"
+    local canonical="${4:-}"
     local root runtime_name docker_bin inspection
 
     vx_compose_require_project "$owner" "$project" || return 1
@@ -226,8 +354,10 @@ vx_compose_volume_inspect() {
             return 1
         }
     root="$(vx_compose_project_root "$owner" "$project")"
+    [[ -n "$canonical" ]] \
+        || canonical="${VX_COMPOSE_INVOKE_CANONICAL_OVERRIDE:-$root/runtime/canonical.json}"
     jq -e --arg volume "$volume" '.volumes[$volume] != null' \
-        "$root/runtime/canonical.json" >/dev/null \
+        "$canonical" >/dev/null \
         || {
             vx_compose_error 'volume is not declared by the managed project'
             return 1
@@ -246,6 +376,7 @@ vx_compose_volume_inspect() {
         --arg volume "$volume" '
             .[0].Name == $runtime
             and .[0].Labels["com.docker.compose.project"] == $compose_project
+            and .[0].Labels["com.docker.compose.volume"] == $volume
             and .[0].Labels["vx.managed"] == "yes"
             and .[0].Labels["vx.user"] == $owner
             and .[0].Labels["vx.project"] == $project
@@ -256,6 +387,35 @@ vx_compose_volume_inspect() {
             return 1
         }
     printf '%s\n' "$inspection"
+}
+
+vx_compose_volume_verify_runtime() {
+    local owner="$1"
+    local project="$2"
+    local canonical="${3:-}"
+    local require_present="${4:-yes}"
+    local root docker_bin volume runtime_name
+
+    root="$(vx_compose_project_root "$owner" "$project")"
+    [[ -n "$canonical" ]] || canonical="$root/runtime/canonical.json"
+    [[ -f "$canonical" && ! -L "$canonical"
+        && ( "$require_present" == yes || "$require_present" == no ) ]] \
+        || return 1
+    docker_bin="$(vx_compose_docker_bin)" || return 1
+    while IFS= read -r volume; do
+        runtime_name="$(vx_compose_volume_runtime_name \
+            "$owner" "$project" "$volume")" || return 1
+        if ! "$docker_bin" volume inspect "$runtime_name" >/dev/null 2>&1; then
+            if [[ "$require_present" == yes ]]; then
+                vx_compose_error 'managed project volume does not exist'
+                return 1
+            fi
+            continue
+        fi
+        vx_compose_volume_inspect \
+            "$owner" "$project" "$volume" "$canonical" >/dev/null \
+            || return 1
+    done < <(jq -r '(.volumes // {}) | keys[]' "$canonical")
 }
 
 vx_compose_volume_export() {
@@ -383,6 +543,21 @@ vx_compose_volume_clear() {
             vx_compose_error 'managed volume clear failed'
             return 1
         }
+}
+
+vx_compose_volume_remove() {
+    local owner="$1"
+    local project="$2"
+    local volume="$3"
+    local canonical="${4:-}"
+    local runtime_name docker_bin
+
+    vx_compose_volume_inspect \
+        "$owner" "$project" "$volume" "$canonical" >/dev/null || return 1
+    runtime_name="$(vx_compose_volume_runtime_name "$owner" "$project" "$volume")" \
+        || return 1
+    docker_bin="$(vx_compose_docker_bin)" || return 1
+    "$docker_bin" volume rm "$runtime_name" >/dev/null
 }
 
 vx_compose_project_volume_storage_mb() {

@@ -340,6 +340,21 @@ function vx_compose_actor_can_manage_profile($actor, $owner, $profile)
         && ($actor === 'admin' || $actor === $owner);
 }
 
+function vx_compose_actor_can_mutate_project($project, $actor, $owner)
+{
+    if (!is_array($project)
+        || empty($project['OWNER'])
+        || empty($project['PROFILE'])
+        || (string) $project['OWNER'] !== (string) $owner) {
+        return false;
+    }
+    if ($actor === 'admin') {
+        return true;
+    }
+    return $actor === $owner
+        && (string) $project['PROFILE'] === 'standard';
+}
+
 function vx_compose_stage_preview(
     $actor,
     $owner,
@@ -889,6 +904,19 @@ function vx_compose_resolve_accessible_project($owner, $project, $actor)
         return array();
     }
     return vx_compose_get_project($owner, $project);
+}
+
+function vx_compose_resolve_mutable_project($owner, $project, $actor)
+{
+    $resolved = vx_compose_resolve_accessible_project(
+        $owner,
+        $project,
+        $actor
+    );
+    if (!vx_compose_actor_can_mutate_project($resolved, $actor, $owner)) {
+        return array();
+    }
+    return $resolved;
 }
 
 function vx_compose_health_payload($owner, $project)

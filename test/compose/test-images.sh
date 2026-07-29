@@ -83,4 +83,24 @@ calls_after="$(grep -c '^CALL$' "$test_root/docker.log")"
 (( calls_after == calls_before + 2 )) \
     || fail "checksum failure reached Docker"
 
+# Resolving image evidence for a pending candidate writes only the nominated
+# protected output and never mutates an already-finalized revision.
+project_root="$(vx_compose_project_root alice app)"
+mkdir -p "$project_root/runtime" "$project_root/revisions/000001"
+printf "OWNER='alice'\nPROJECT='app'\nPROFILE='standard'\nREVISION='1'\n" \
+    >"$project_root/project.conf"
+printf 'services: {}\n' >"$project_root/compose.yaml"
+printf "POLICY_SCHEMA='1'\n" >"$project_root/policy.conf"
+printf '{"services":{"web":{"image":"example.test/app:1"}}}\n' \
+    >"$project_root/runtime/canonical.json"
+printf 'frozen\n' >"$project_root/revisions/000001/images.json"
+vx_compose_resolve_images_to_file \
+    alice "$project_root/runtime/canonical.json" standard \
+    "$test_root/pending-images.json"
+jq -e '.web.IMAGE_ID == "sha256:1234567890abcdef"' \
+    "$test_root/pending-images.json" >/dev/null \
+    || fail "pending candidate image evidence is incomplete"
+[[ "$(cat "$project_root/revisions/000001/images.json")" == frozen ]] \
+    || fail "candidate image resolution mutated a finalized revision"
+
 echo "Compose image source tests passed."

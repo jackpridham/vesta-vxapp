@@ -207,12 +207,12 @@ vx_compose_simple_prepare_binds() {
     done <<<"${MOUNTS//||/$'\n'}"
 }
 
-vx_compose_simple_alerts_write() {
-    local owner="$1"
-    local project="$2"
-    local root notify
+vx_compose_simple_alerts_write_candidate() {
+    local candidate="$1"
+    local notify temp_file
 
-    root="$(vx_compose_project_root "$owner" "$project")"
+    [[ -d "$candidate" && ! -L "$candidate" ]] || return 1
+    temp_file="$candidate/.alerts.conf.new"
     notify=false
     [[ "${ALERT_EMAIL:-yes}" != yes ]] || notify=true
     jq -n \
@@ -224,19 +224,24 @@ vx_compose_simple_alerts_write() {
             MEMORY_PCT: ($memory_mb * 100 / 128),
             NETWORK_MBPS: $network,
             NOTIFY: $notify
-        }' >"$root/.alerts.conf.new" || return 1
-    chmod 0640 "$root/.alerts.conf.new"
-    mv -f -- "$root/.alerts.conf.new" "$root/alerts.conf"
+        }' >"$temp_file" || return 1
+    chmod 0640 "$temp_file" || return 1
+    mv -f -- "$temp_file" "$candidate/alerts.conf"
 }
 
 vx_compose_simple_add_loaded() {
     local owner="$1"
     local host_port="$2"
     local temp_root compose_file candidate root result=0
+    local ports_locked=no quota_locked=no routes_locked=no
 
     temp_root="$(mktemp -d)"
     compose_file="$temp_root/compose.yaml"
     candidate="$temp_root/candidate"
+    vx_compose_lock_acquire "$owner" "$NAME" || {
+        rm -rf -- "$temp_root"
+        return 1
+    }
     if ! {
         vx_compose_simple_prepare_binds "$owner" "$NAME" \
         && vx_compose_simple_render_loaded "$owner" "$host_port" "$compose_file" \
@@ -244,47 +249,83 @@ vx_compose_simple_add_loaded() {
             "$owner" "$NAME" "$compose_file" "$candidate" standard \
         && vx_compose_simple_metadata_write_candidate \
             "$owner" "$host_port" "$candidate" \
-        && vx_compose_store_new "$owner" "$NAME" standard "$candidate"
+        && vx_compose_simple_alerts_write_candidate "$candidate" \
+        && vx_compose_routes_stage_simple \
+            "$owner" "$NAME" "$candidate/canonical.json" "${DOMAIN:-}" \
+            "$NAME" "$CONTAINER_PORT" "${ROUTE_PATH:-/}" \
+            "$candidate/routes.conf"
     }; then
         rm -rf -- "$temp_root"
+        vx_compose_lock_release
+        return 1
+    fi
+    vx_compose_ports_lock_acquire || {
+        rm -rf -- "$temp_root"
+        vx_compose_lock_release
+        return 1
+    }
+    ports_locked=yes
+    vx_compose_owner_quota_lock_acquire "$owner" || {
+        rm -rf -- "$temp_root"
+        vx_compose_ports_lock_release
+        vx_compose_lock_release
+        return 1
+    }
+    quota_locked=yes
+    vx_compose_routes_lock_acquire "$owner" || {
+        rm -rf -- "$temp_root"
+        vx_compose_owner_quota_lock_release
+        vx_compose_ports_lock_release
+        vx_compose_lock_release
+        return 1
+    }
+    routes_locked=yes
+    if ! vx_compose_routes_validate_reservations \
+        "$owner" "$NAME" "$candidate/routes.conf" \
+        || ! vx_compose_store_new "$owner" "$NAME" standard "$candidate"; then
+        rm -rf -- "$temp_root"
+        vx_compose_routes_lock_release
+        vx_compose_owner_quota_lock_release
+        vx_compose_ports_lock_release
+        vx_compose_lock_release
         return 1
     fi
     rm -rf -- "$temp_root"
     root="$(vx_compose_project_root "$owner" "$NAME")"
-    vx_compose_simple_alerts_write "$owner" "$NAME" || return 1
     if [[ "${AUTO_START:-yes}" == yes ]]; then
         vx_compose_deploy "$owner" "$NAME" || result=1
     else
         vx_compose_update_state "$owner" "$NAME" stopped || result=1
     fi
-    if [[ "$result" -eq 0 && -n "${DOMAIN:-}" ]]; then
-        if ! vx_compose_route_add \
-                "$owner" "$NAME" "$DOMAIN" "$NAME" "$CONTAINER_PORT" \
-                http "${ROUTE_PATH:-/}" \
-            || ! vx_compose_routes_apply "$owner" "$NAME"; then
-            result=1
-        fi
-    fi
     if [[ "$result" -ne 0 ]]; then
         vx_compose_remove "$owner" "$NAME" >/dev/null 2>&1 || true
+        [[ "$routes_locked" != yes ]] || vx_compose_routes_lock_release
+        [[ "$quota_locked" != yes ]] || vx_compose_owner_quota_lock_release
+        [[ "$ports_locked" != yes ]] || vx_compose_ports_lock_release
+        vx_compose_lock_release
         return 1
     fi
-    vx_compose_audit "$root" simple-add succeeded
+    if ! vx_compose_audit "$root" simple-add succeeded; then
+        vx_compose_routes_lock_release
+        vx_compose_owner_quota_lock_release
+        vx_compose_ports_lock_release
+        vx_compose_lock_release
+        return 1
+    fi
+    vx_compose_routes_lock_release
+    vx_compose_owner_quota_lock_release
+    vx_compose_ports_lock_release
+    vx_compose_lock_release
 }
 
 vx_compose_simple_change_loaded() {
     local owner="$1"
     local project="$2"
     local host_port="$3"
-    local root old_revision old_routes temp_root compose_file candidate
-    local route_ok=yes
+    local root temp_root compose_file candidate final_state=running
 
     vx_compose_require_project "$owner" "$project" || return 1
     root="$(vx_compose_project_root "$owner" "$project")"
-    old_revision="$(vx_compose_meta_get "$root/project.conf" REVISION)" \
-        || return 1
-    old_routes="$(mktemp)"
-    install -m 0600 "$root/routes.conf" "$old_routes"
     temp_root="$(mktemp -d)"
     compose_file="$temp_root/compose.yaml"
     candidate="$temp_root/candidate"
@@ -295,32 +336,20 @@ vx_compose_simple_change_loaded() {
             "$owner" "$project" "$compose_file" "$candidate" standard \
         && vx_compose_simple_metadata_write_candidate \
             "$owner" "$host_port" "$candidate" \
+        && vx_compose_simple_alerts_write_candidate "$candidate" \
+        && vx_compose_routes_stage_simple \
+            "$owner" "$project" "$candidate/canonical.json" "${DOMAIN:-}" \
+            "$project" "$CONTAINER_PORT" "${ROUTE_PATH:-/}" \
+            "$candidate/routes.conf" \
+        && {
+            [[ "${AUTO_START:-yes}" == yes ]] || final_state=stopped
+        } \
         && vx_compose_transaction_update \
-            "$owner" "$project" "$candidate"
+            "$owner" "$project" "$candidate" '' "$final_state"
     }; then
-        rm -rf -- "$temp_root" "$old_routes"
+        rm -rf -- "$temp_root"
         return 1
     fi
     rm -rf -- "$temp_root"
-    vx_compose_routes_clear "$owner" "$project" || route_ok=no
-    if [[ "$route_ok" == yes && -n "${DOMAIN:-}" ]]; then
-        if ! vx_compose_route_add \
-                "$owner" "$project" "$DOMAIN" "$project" \
-                "$CONTAINER_PORT" http "${ROUTE_PATH:-/}" \
-            || ! vx_compose_routes_apply "$owner" "$project"; then
-            route_ok=no
-        fi
-    fi
-    if [[ "$route_ok" != yes ]]; then
-        vx_compose_rollback "$owner" "$project" "$old_revision" || true
-        install -m 0640 "$old_routes" "$root/routes.conf"
-        vx_compose_routes_apply "$owner" "$project" || true
-        rm -f -- "$old_routes"
-        return 1
-    fi
-    rm -f -- "$old_routes"
-    vx_compose_simple_alerts_write "$owner" "$project" || return 1
-    [[ "${AUTO_START:-yes}" == yes ]] \
-        || vx_compose_stop "$owner" "$project" || return 1
     vx_compose_audit "$root" simple-change succeeded
 }

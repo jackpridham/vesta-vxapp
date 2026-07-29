@@ -13,12 +13,18 @@ This repo uses a repo-local Playwright harness for validating Vesta web-panel ch
 
 ## Environment
 
-Copy `.env.playwright.example` to `.env.playwright` or point Playwright at a different file:
+Install the example as a private local file, then fill in only the values
+required for the selected projects:
 
 ```bash
-cp .env.playwright.example .env.playwright
+install -m 0600 .env.playwright.example .env.playwright.local
 PLAYWRIGHT_ENV_FILE=.env.playwright.local npm run playwright:test -- --list
 ```
+
+The default file is `.env.playwright.local`. An absent default is allowed for
+anonymous test discovery. A path selected with `PLAYWRIGHT_ENV_FILE` must
+exist. The loader rejects symlinks, non-regular files, files owned by another
+user, and any mode other than `0600`.
 
 Supported variables:
 

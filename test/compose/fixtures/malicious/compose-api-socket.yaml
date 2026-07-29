@@ -1,0 +1,3 @@
+services:
+  web:
+    use_api_socket: true

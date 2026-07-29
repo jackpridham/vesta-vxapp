@@ -19,7 +19,25 @@
   $docker_scope_label = $docker_actor_is_admin ? ($docker_owner !== '' ? $docker_owner : __('All Users')) : $user;
   $docker_quota_limit = (isset($docker_quota['limit']) && $docker_quota['limit'] !== null && $docker_quota['limit'] !== '') ? $docker_quota['limit'] : __('Unlimited');
   $docker_total_containers = count($data);
-  $docker_render_card = function ($docker_key, $container) use (&$i, $docker_actor_is_admin) {
+  $docker_all_visible_projects_mutable = true;
+  foreach ($data as $docker_visible_project) {
+      $docker_visible_owner = isset($docker_visible_project['OWNER'])
+          ? (string) $docker_visible_project['OWNER']
+          : '';
+      if (!vx_compose_actor_can_mutate_project(
+          $docker_visible_project,
+          $user,
+          $docker_visible_owner
+      )) {
+          $docker_all_visible_projects_mutable = false;
+          break;
+      }
+  }
+  $docker_render_card = function ($docker_key, $container) use (
+      &$i,
+      $docker_actor_is_admin,
+      $user
+  ) {
       ++$i;
       $docker_card_owner = isset($container['OWNER']) ? $container['OWNER'] : '';
       $docker_card_name = isset($container['NAME']) ? $container['NAME'] : $docker_key;
@@ -33,6 +51,11 @@
       $docker_host_port = isset($container['HOST_PORT']) && $container['HOST_PORT'] !== '' ? $container['HOST_PORT'] : __('No port');
       $docker_query_owner = $docker_actor_is_admin ? '&user='.urlencode($docker_card_owner) : '';
       $docker_action = ($docker_card_status === 'running') ? 'stop' : 'start';
+      $docker_card_can_mutate = vx_compose_actor_can_mutate_project(
+          $container,
+          $user,
+          $docker_card_owner
+      );
 ?>
           <script>
             dataset_values[<?=$i?>] = {
@@ -68,8 +91,10 @@
               <div class="l-unit-toolbar__col l-unit-toolbar__col--right noselect">
                 <div class="actions-panel clearfix docker-actions">
                   <div class="actions-panel__col actions-panel__edit shortcut-enter" key-action="href"><a href="/list/docker/project/?project=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>"><?=__('details')?></a><span class="shortcut enter">&nbsp;&#8629;</span></div>
+                  <?php if ($docker_card_can_mutate) { ?>
                   <div class="actions-panel__col actions-panel__<?=$docker_action?> shortcut-s" key-action="href"><a href="/<?=$docker_action?>/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>&token=<?=$_SESSION['token']?>"><?=__($docker_action)?></a><span class="shortcut">&nbsp;S</span></div>
                   <div class="actions-panel__col actions-panel__restart shortcut-r" key-action="href"><a href="/restart/docker/?container=<?=urlencode($docker_card_name)?><?=$docker_query_owner?>&token=<?=$_SESSION['token']?>"><?=__('restart')?></a><span class="shortcut">&nbsp;R</span></div>
+                  <?php } ?>
                   <div class="actions-panel__col actions-panel__logs shortcut-more"><a href="javascript:void(0)" onclick="more_button_click(<?=$i?>)"><?=__('Project actions')?></a><span class="shortcut more">&nbsp;&#8629;</span></div>
                 </div>
               </div>
@@ -174,7 +199,7 @@
           <?php if ($docker_available && empty($docker_quota['reached']) && $docker_can_add_from_scope) { ?>
           <a href="<?=$docker_add_href?>" class="button docker-button docker-button--primary" title="<?=__('Add simple Compose project')?>"><?=__('Add simple project')?></a>
           <?php } ?>
-          <?php if ($docker_actor_is_admin && $docker_can_add_from_scope) { ?>
+          <?php if ($docker_available && empty($docker_quota['reached']) && $docker_can_add_from_scope) { ?>
           <a href="/add/docker/project/<?=$docker_query?>" class="button docker-button docker-button--secondary"><?=__('Advanced Compose')?></a>
           <?php } ?>
           <a href="/list/docker/<?=$docker_query?>" class="button docker-button docker-button--secondary"><?=__('refresh')?></a>
@@ -307,7 +332,9 @@
           <p class="docker-alerts-empty"><?=__('No Docker alerts are active in this scope.')?></p>
         </div>
         <div class="docker-alert-actions">
+          <?php if ($docker_all_visible_projects_mutable) { ?>
           <button id="docker-alert-acknowledge" class="button docker-button docker-button--secondary" style="display:none;"><?=__('Acknowledge alert')?></button>
+          <?php } ?>
         </div>
       </section>
 

@@ -1,10 +1,9 @@
 const path = require('path');
 const fs = require('fs');
+const { loadPlaywrightEnv } = require('./env-file');
 const repoRoot = path.resolve(__dirname, '..', '..', '..');
 
-require('dotenv').config({
-  path: process.env.PLAYWRIGHT_ENV_FILE || path.resolve(process.cwd(), '.env.playwright'),
-});
+loadPlaywrightEnv({ cwd: repoRoot });
 
 function requireEnv(name) {
   const value = process.env[name];

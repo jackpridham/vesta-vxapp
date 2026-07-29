@@ -10,6 +10,11 @@
       && is_array($docker_project['IMAGES'])
       ? $docker_project['IMAGES']
       : array();
+  $docker_project_can_mutate = vx_compose_actor_can_mutate_project(
+      $docker_project,
+      $user,
+      $docker_project_owner
+  );
 ?>
 <script>
   var dataset_values = [];
@@ -39,13 +44,13 @@
 
   <div class="docker-hero__actions">
     <a class="button docker-button docker-button--secondary" href="/list/docker/?user=<?=urlencode($docker_project_owner)?>"><?=__('Back to projects')?></a>
-    <?php if (!empty($docker_project['IS_SIMPLE'])) { ?>
+    <?php if ($docker_project_can_mutate && !empty($docker_project['IS_SIMPLE'])) { ?>
     <a class="button docker-button docker-button--secondary" href="/edit/docker/?container=<?=urlencode($docker_project_name)?><?=$project_query_owner?>"><?=__('Simple settings')?></a>
     <?php } ?>
-    <?php if (vx_docker_is_admin_actor()) { ?>
+    <?php if ($docker_project_can_mutate) { ?>
     <a class="button docker-button docker-button--secondary" href="/edit/docker/project/?project=<?=urlencode($docker_project_name)?>&user=<?=urlencode($docker_project_owner)?>"><?=__('Advanced update')?></a>
-    <?php } ?>
     <a class="button docker-button docker-button--secondary" href="/restart/docker/?container=<?=urlencode($docker_project_name)?><?=$project_query_owner?>&token=<?=$_SESSION['token']?>"><?=__('Restart')?></a>
+    <?php } ?>
     <a class="button docker-button docker-button--primary" href="javascript:void(0)" onclick="more_button_click(1)"><?=__('Project actions')?></a>
   </div>
 

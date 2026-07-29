@@ -49,14 +49,31 @@ expect_pattern web/list/docker/index.php 'inc/vx_compose\.php' \
     'Compose list adapter is loaded'
 expect_pattern web/list/docker/index.php 'vx_compose_list_projects_for_actor' \
     'Compose projects are the list source'
-expect_pattern web/edit/docker/index.php 'vx_compose_resolve_accessible_project' \
-    'simple edit resolves a Compose project'
+expect_pattern web/edit/docker/index.php 'vx_compose_resolve_mutable_project' \
+    'simple edit resolves a mutable Compose project'
+expect_pattern web/add/docker/index.php \
+    'if \(!\$docker_available\)' \
+    'simple add rejects POST when orchestration is unavailable'
+expect_pattern web/edit/docker/index.php \
+    'if \(!\$docker_available\)' \
+    'simple edit rejects POST when orchestration is unavailable'
 expect_pattern web/edit/docker/index.php "SIMPLE.*GENERATED|SIMPLE'\\]\\['GENERATED" \
     'advanced projects do not enter the simple editor'
 expect_pattern web/templates/docker_list_shared.php 'SERVICE_COUNT' \
     'project cards expose service counts'
 expect_pattern web/templates/docker_list_shared.php 'REVISION' \
     'project cards expose revisions'
+expect_pattern web/templates/docker_list_shared.php \
+    'vx_compose_actor_can_mutate_project' \
+    'project cards derive mutation controls from project profile authority'
+expect_pattern web/templates/docker_project_shared.php \
+    'vx_compose_actor_can_mutate_project' \
+    'project details derive mutation controls from project profile authority'
+expect_pattern web/templates/docker_list_shared.php \
+    "docker_available.*docker_quota.*docker_can_add_from_scope|docker_available.*reached.*docker_can_add_from_scope" \
+    'advanced add follows Docker readiness, quota, and explicit owner scope'
+expect_pattern web/templates/docker_project_shared.php 'Advanced update' \
+    'standard owners can discover advanced update'
 
 expect_pattern web/add/docker/project/index.php "myvesta_logged_user|\\\$user" \
     'advanced page is tied to the authenticated actor'
@@ -64,6 +81,12 @@ expect_pattern web/add/docker/project/index.php 'inc/main\.php' \
     'add loads the production authenticated panel bootstrap'
 expect_pattern web/edit/docker/project/index.php 'inc/main\.php' \
     'edit loads the production authenticated panel bootstrap'
+expect_pattern web/add/docker/project/index.php \
+    'vx_docker_is_orchestration_ready' \
+    'advanced add checks orchestration readiness server-side'
+expect_pattern web/edit/docker/project/index.php \
+    'vx_docker_is_orchestration_ready' \
+    'advanced edit checks orchestration readiness server-side'
 expect_pattern web/add/docker/project/index.php \
     "\\\$user === 'admin'.*|\\? vx_docker_resolve_owner_from_request" \
     'add derives owner scope from the authenticated panel actor'
@@ -184,6 +207,65 @@ for action in deploy rollback backup restore remove recreate; do
     expect_pattern "$file" 'myvesta_logged_user' \
         "$action uses the authenticated actor"
 done
+
+for page in start stop restart; do
+    expect_pattern "web/${page}/docker/index.php" \
+        'vx_compose_resolve_mutable_project' \
+        "$page requires project mutation authority"
+done
+
+for action in acknowledge_alert backup deploy recreate remove restore rollback; do
+    expect_pattern "web/ajax/docker/actions/${action}.php" \
+        'vx_compose_resolve_mutable_project' \
+        "$action requires project mutation authority"
+    expect_pattern "web/ajax/docker/actions/${action}.php" \
+        'vx_docker_is_orchestration_ready' \
+        "$action rejects mutation while orchestration is unavailable"
+done
+
+for action in logs inspect audit routes secrets images; do
+    expect_pattern "web/ajax/docker/actions/${action}.php" \
+        'vx_compose_resolve_accessible_project' \
+        "$action remains available through read-only project access"
+done
+
+for page in start stop restart; do
+    expect_pattern "web/${page}/docker/index.php" \
+        'vx_docker_is_orchestration_ready' \
+        "$page rejects mutation while orchestration is unavailable"
+done
+
+for action in logs inspect audit routes secrets images health stats alerts; do
+    expect_absent "web/ajax/docker/actions/${action}.php" \
+        'vx_docker_is_orchestration_ready' \
+        "$action remains readable while orchestration is unavailable"
+done
+
+for action in acknowledge_alert backup deploy recreate remove restore rollback; do
+    if command -v php >/dev/null 2>&1; then
+        response="$(php -n "$ROOT/test/test_compose_php_helpers.php" \
+            mutation-readiness "$action")"
+    else
+        response="$(docker run --rm \
+            -v "$ROOT:/workspace:ro" -w /workspace \
+            php:8.2-cli php -n test/test_compose_php_helpers.php \
+            mutation-readiness "$action")"
+    fi
+    jq -e '
+        .output | contains(
+            "Docker orchestration prerequisites are unavailable."
+        )
+    ' <<<"$response" >/dev/null \
+        || {
+            printf 'FAIL: %s dynamically accepted unavailable orchestration\n' \
+                "$action" >&2
+            failures=$((failures + 1))
+        }
+done
+
+expect_pattern web/ajax/docker/index.php \
+    'vx_compose_actor_can_mutate_project' \
+    'project action modal hides mutation controls without hiding read views'
 
 expect_pattern web/ajax/docker/actions/remove.php "isset\\(\\\$_POST\\['Yes'\\]\\)" \
     'destructive removal asks for confirmation'

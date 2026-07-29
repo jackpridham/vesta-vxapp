@@ -13,6 +13,11 @@ vx_compose_routes_candidate_path() {
 vx_compose_routes_desired_path() {
     local candidate
 
+    if [[ -n "${VX_COMPOSE_ROUTES_FILE_OVERRIDE:-}" ]]; then
+        printf '%s\n' "$VX_COMPOSE_ROUTES_FILE_OVERRIDE"
+        return
+    fi
+
     candidate="$(vx_compose_routes_candidate_path "$1" "$2")"
     if [[ -f "$candidate" ]]; then
         printf '%s\n' "$candidate"
@@ -23,22 +28,90 @@ vx_compose_routes_desired_path() {
 
 vx_compose_routes_lock_acquire() {
     local owner="$1"
-    local lock_root lock_path
+    local lock_root lock_path lock_target
 
+    vx_compose_require_owner "$owner" || return 1
     lock_root="$(vx_compose_projects_root "$owner")/.locks"
     lock_path="$lock_root/.routes.lock"
-    install -d -m 0750 "$lock_root"
-    exec {VX_COMPOSE_ROUTES_LOCK_FD}>"$lock_path"
-    chmod 0640 "$lock_path"
-    flock -x "$VX_COMPOSE_ROUTES_LOCK_FD"
+    if [[ -n "${VX_COMPOSE_ROUTES_LOCK_FD:-}"
+        || -n "${VX_COMPOSE_ROUTES_LOCK_OWNER:-}"
+        || -n "${VX_COMPOSE_ROUTES_LOCK_DEPTH:-}" ]]; then
+        if [[ "${VX_COMPOSE_ROUTES_LOCK_FD:-}" =~ ^[0-9]+$
+            && "$VX_COMPOSE_ROUTES_LOCK_FD" -gt 2
+            && "${VX_COMPOSE_ROUTES_LOCK_OWNER:-}" == "$owner"
+            && "${VX_COMPOSE_ROUTES_LOCK_DEPTH:-}" =~ ^[1-9][0-9]*$
+            && "$(declare -p VX_COMPOSE_ROUTES_LOCK_FD 2>/dev/null)" \
+                != declare\ -x*
+            && -e "/proc/$BASHPID/fd/$VX_COMPOSE_ROUTES_LOCK_FD" ]]; then
+            lock_target="$(
+                readlink "/proc/$BASHPID/fd/$VX_COMPOSE_ROUTES_LOCK_FD" \
+                    2>/dev/null
+            )"
+            [[ -f "$lock_path" && ! -L "$lock_path"
+                && "$lock_target" == "$(readlink -f -- "$lock_path")" ]] \
+                || {
+                    vx_compose_error \
+                        'nested Compose route lock metadata is invalid'
+                    return 1
+                }
+            VX_COMPOSE_ROUTES_LOCK_DEPTH=$((VX_COMPOSE_ROUTES_LOCK_DEPTH + 1))
+            return 0
+        fi
+        vx_compose_error 'nested Compose route lock metadata is invalid'
+        return 1
+    fi
+    install -d -m 0750 "$lock_root" || return 1
+    exec {VX_COMPOSE_ROUTES_LOCK_FD}>"$lock_path" || return 1
+    chmod 0640 "$lock_path" || {
+        exec {VX_COMPOSE_ROUTES_LOCK_FD}>&-
+        unset VX_COMPOSE_ROUTES_LOCK_FD
+        return 1
+    }
+    flock -x "$VX_COMPOSE_ROUTES_LOCK_FD" || {
+        exec {VX_COMPOSE_ROUTES_LOCK_FD}>&-
+        unset VX_COMPOSE_ROUTES_LOCK_FD
+        return 1
+    }
+    VX_COMPOSE_ROUTES_LOCK_OWNER="$owner"
+    VX_COMPOSE_ROUTES_LOCK_DEPTH=1
 }
 
 vx_compose_routes_lock_release() {
-    if [[ -n "${VX_COMPOSE_ROUTES_LOCK_FD:-}" ]]; then
-        flock -u "$VX_COMPOSE_ROUTES_LOCK_FD"
-        exec {VX_COMPOSE_ROUTES_LOCK_FD}>&-
-        unset VX_COMPOSE_ROUTES_LOCK_FD
+    local lock_path lock_target
+
+    [[ -n "${VX_COMPOSE_ROUTES_LOCK_FD:-}"
+        || -n "${VX_COMPOSE_ROUTES_LOCK_OWNER:-}"
+        || -n "${VX_COMPOSE_ROUTES_LOCK_DEPTH:-}" ]] || return 0
+    [[ "${VX_COMPOSE_ROUTES_LOCK_FD:-}" =~ ^[0-9]+$
+        && "$VX_COMPOSE_ROUTES_LOCK_FD" -gt 2
+        && -n "${VX_COMPOSE_ROUTES_LOCK_OWNER:-}"
+        && "${VX_COMPOSE_ROUTES_LOCK_DEPTH:-}" =~ ^[1-9][0-9]*$
+        && -e "/proc/$BASHPID/fd/$VX_COMPOSE_ROUTES_LOCK_FD" ]] \
+        || {
+            vx_compose_error 'Compose route lock metadata is invalid'
+            return 1
+        }
+    lock_path="$(
+        vx_compose_projects_root "$VX_COMPOSE_ROUTES_LOCK_OWNER"
+    )/.locks/.routes.lock"
+    lock_target="$(
+        readlink "/proc/$BASHPID/fd/$VX_COMPOSE_ROUTES_LOCK_FD" \
+            2>/dev/null
+    )"
+    [[ -f "$lock_path" && ! -L "$lock_path"
+        && "$lock_target" == "$(readlink -f -- "$lock_path")" ]] \
+        || {
+            vx_compose_error 'Compose route lock descriptor is invalid'
+            return 1
+        }
+    if (( VX_COMPOSE_ROUTES_LOCK_DEPTH > 1 )); then
+        VX_COMPOSE_ROUTES_LOCK_DEPTH=$((VX_COMPOSE_ROUTES_LOCK_DEPTH - 1))
+        return 0
     fi
+    flock -u "$VX_COMPOSE_ROUTES_LOCK_FD" || return 1
+    exec {VX_COMPOSE_ROUTES_LOCK_FD}>&-
+    unset VX_COMPOSE_ROUTES_LOCK_FD VX_COMPOSE_ROUTES_LOCK_OWNER \
+        VX_COMPOSE_ROUTES_LOCK_DEPTH
 }
 
 vx_compose_route_domain_is_valid() {
@@ -138,6 +211,53 @@ vx_compose_domain_desired_route_project() {
     return 1
 }
 
+vx_compose_route_domain_other_project() {
+    local owner="$1"
+    local project="$2"
+    local domain="$3"
+    local projects_root project_root routes_file linked_project
+
+    projects_root="$VESTA/data/users/$owner/docker-projects"
+    [[ -d "$projects_root" ]] || return 1
+    for project_root in "$projects_root"/*; do
+        [[ -d "$project_root" ]] || continue
+        linked_project="$(basename -- "$project_root")"
+        [[ "$linked_project" != "$project" ]] || continue
+        for routes_file in \
+            "$project_root/routes.conf" \
+            "$project_root/runtime/routes.pending.json"; do
+            [[ -f "$routes_file" && ! -L "$routes_file" ]] || continue
+            if jq -e --arg domain "$domain" '.[$domain] != null' \
+                "$routes_file" >/dev/null; then
+                printf '%s\n' "$linked_project"
+                return 0
+            fi
+        done
+    done
+    return 1
+}
+
+vx_compose_routes_validate_reservations() {
+    local owner="$1"
+    local project="$2"
+    local routes_file="$3"
+    local domain linked_project
+
+    [[ -f "$routes_file" && ! -L "$routes_file" ]] || return 1
+    jq -e 'type == "object"' "$routes_file" >/dev/null || return 1
+    while IFS= read -r domain; do
+        linked_project="$(
+            vx_compose_route_domain_other_project \
+                "$owner" "$project" "$domain" 2>/dev/null
+        )" || true
+        if [[ -n "$linked_project" ]]; then
+            vx_compose_error \
+                "Compose route domain is already managed by project $linked_project"
+            return 1
+        fi
+    done < <(jq -er 'keys[]' "$routes_file")
+}
+
 vx_compose_domain_route_matches_proxy_options() {
     local owner="$1"
     local domain="$2"
@@ -188,6 +308,60 @@ vx_compose_route_resolve_host_port() {
             | select(length == 1)
             | .[0]
         ' "$canonical_json"
+}
+
+vx_compose_routes_stage_simple() {
+    local owner="$1"
+    local project="$2"
+    local canonical="$3"
+    local domain="$4"
+    local service="$5"
+    local container_port="$6"
+    local route_path="${7:-/}"
+    local output_file="$8"
+    local host_port linked_project
+
+    if [[ -z "$domain" ]]; then
+        printf '{}\n' >"$output_file"
+        chmod 0640 "$output_file"
+        return
+    fi
+    vx_compose_route_domain_is_valid "$domain" \
+        && vx_compose_route_domain_is_owned "$owner" "$domain" \
+        && vx_compose_route_path_is_valid "$route_path" \
+        || return 1
+    linked_project="$(
+        vx_compose_route_domain_other_project \
+            "$owner" "$project" "$domain" 2>/dev/null
+    )" || true
+    [[ -z "$linked_project" ]] \
+        || {
+            vx_compose_error \
+                "Compose route domain is already managed by project $linked_project"
+            return 1
+        }
+    host_port="$(vx_compose_route_resolve_host_port \
+        "$canonical" "$service" "$container_port")" || return 1
+    jq -n -S \
+        --arg owner "$owner" \
+        --arg project "$project" \
+        --arg domain "$domain" \
+        --arg service "$service" \
+        --argjson container_port "$container_port" \
+        --argjson host_port "$host_port" \
+        --arg path "$route_path" '{
+        ($domain): {
+            OWNER: $owner,
+            PROJECT: $project,
+            DOMAIN: $domain,
+            SERVICE: $service,
+            CONTAINER_PORT: $container_port,
+            HOST_PORT: $host_port,
+            SCHEME: "http",
+            PATH: $path
+        }
+    }' >"$output_file" || return 1
+    chmod 0640 "$output_file"
 }
 
 vx_compose_routes_validate_file() {
@@ -271,6 +445,7 @@ vx_compose_route_add() {
     local scheme="${6:-http}"
     local route_path="${7:-/}"
     local root canonical routes_file host_port temp_file linked_project
+    local result=0 release_result
 
     vx_compose_require_project "$owner" "$project" || return 1
     if ! vx_compose_route_domain_is_valid "$domain" \
@@ -293,7 +468,10 @@ vx_compose_route_add() {
             return 1
         }
     vx_compose_lock_acquire "$owner" "$project" || return 1
-    vx_compose_routes_lock_acquire "$owner"
+    vx_compose_routes_lock_acquire "$owner" || {
+        vx_compose_lock_release
+        return 1
+    }
     linked_project="$(
         vx_compose_domain_desired_route_project "$owner" "$domain" 2>/dev/null
     )" || true
@@ -316,35 +494,51 @@ vx_compose_route_add() {
             return 1
         }
     routes_file="$(vx_compose_routes_desired_path "$owner" "$project")"
-    [[ -f "$routes_file" ]] || printf '{}\n' >"$routes_file"
+    if [[ ! -f "$routes_file" ]]; then
+        printf '{}\n' >"$routes_file" || result=$?
+    fi
     local candidate_file
     candidate_file="$(vx_compose_routes_candidate_path "$owner" "$project")"
-    temp_file="$(mktemp "$root/.routes.XXXXXX")"
-    jq -S \
-        --arg owner "$owner" \
-        --arg project "$project" \
-        --arg domain "$domain" \
-        --arg service "$service" \
-        --argjson container_port "$container_port" \
-        --argjson host_port "$host_port" \
-        --arg scheme "$scheme" \
-        --arg path "$route_path" '
-            .[$domain] = {
-                OWNER: $owner,
-                PROJECT: $project,
-                DOMAIN: $domain,
-                SERVICE: $service,
-                CONTAINER_PORT: $container_port,
-                HOST_PORT: $host_port,
-                SCHEME: $scheme,
-                PATH: $path
-            }
-        ' "$routes_file" >"$temp_file"
-    chmod 0640 "$temp_file"
-    mv -f -- "$temp_file" "$candidate_file"
-    vx_compose_audit "$root" route-add succeeded
-    vx_compose_routes_lock_release
-    vx_compose_lock_release
+    if [[ "$result" -eq 0 ]]; then
+        temp_file="$(mktemp "$root/.routes.XXXXXX")" || result=$?
+    fi
+    if [[ "$result" -eq 0 ]]; then
+        jq -S \
+            --arg owner "$owner" \
+            --arg project "$project" \
+            --arg domain "$domain" \
+            --arg service "$service" \
+            --argjson container_port "$container_port" \
+            --argjson host_port "$host_port" \
+            --arg scheme "$scheme" \
+            --arg path "$route_path" '
+                .[$domain] = {
+                    OWNER: $owner,
+                    PROJECT: $project,
+                    DOMAIN: $domain,
+                    SERVICE: $service,
+                    CONTAINER_PORT: $container_port,
+                    HOST_PORT: $host_port,
+                    SCHEME: $scheme,
+                    PATH: $path
+                }
+            ' "$routes_file" >"$temp_file" || result=$?
+    fi
+    [[ "$result" -ne 0 ]] || chmod 0640 "$temp_file" || result=$?
+    [[ "$result" -ne 0 ]] \
+        || mv -f -- "$temp_file" "$candidate_file" || result=$?
+    [[ "$result" -ne 0 ]] \
+        || vx_compose_audit "$root" route-add succeeded || result=$?
+    [[ -z "${temp_file:-}" ]] || rm -f -- "$temp_file"
+    release_result=0
+    vx_compose_routes_lock_release || release_result=$?
+    [[ "$result" -ne 0 || "$release_result" -eq 0 ]] \
+        || result="$release_result"
+    release_result=0
+    vx_compose_lock_release || release_result=$?
+    [[ "$result" -ne 0 || "$release_result" -eq 0 ]] \
+        || result="$release_result"
+    return "$result"
 }
 
 vx_compose_route_delete() {
@@ -352,11 +546,15 @@ vx_compose_route_delete() {
     local project="$2"
     local domain="$3"
     local root routes_file temp_file
+    local result=0 release_result
 
     vx_compose_require_project "$owner" "$project" || return 1
     vx_compose_route_domain_is_valid "$domain" || return 1
     vx_compose_lock_acquire "$owner" "$project" || return 1
-    vx_compose_routes_lock_acquire "$owner"
+    vx_compose_routes_lock_acquire "$owner" || {
+        vx_compose_lock_release
+        return 1
+    }
     root="$(vx_compose_project_root "$owner" "$project")"
     routes_file="$(vx_compose_routes_desired_path "$owner" "$project")"
     if [[ ! -f "$routes_file" ]]; then
@@ -366,14 +564,26 @@ vx_compose_route_delete() {
     fi
     local candidate_file
     candidate_file="$(vx_compose_routes_candidate_path "$owner" "$project")"
-    temp_file="$(mktemp "$root/.routes.XXXXXX")"
-    jq -S --arg domain "$domain" 'del(.[$domain])' \
-        "$routes_file" >"$temp_file"
-    chmod 0640 "$temp_file"
-    mv -f -- "$temp_file" "$candidate_file"
-    vx_compose_audit "$root" route-delete succeeded
-    vx_compose_routes_lock_release
-    vx_compose_lock_release
+    temp_file="$(mktemp "$root/.routes.XXXXXX")" || result=$?
+    if [[ "$result" -eq 0 ]]; then
+        jq -S --arg domain "$domain" 'del(.[$domain])' \
+            "$routes_file" >"$temp_file" || result=$?
+    fi
+    [[ "$result" -ne 0 ]] || chmod 0640 "$temp_file" || result=$?
+    [[ "$result" -ne 0 ]] \
+        || mv -f -- "$temp_file" "$candidate_file" || result=$?
+    [[ "$result" -ne 0 ]] \
+        || vx_compose_audit "$root" route-delete succeeded || result=$?
+    [[ -z "${temp_file:-}" ]] || rm -f -- "$temp_file"
+    release_result=0
+    vx_compose_routes_lock_release || release_result=$?
+    [[ "$result" -ne 0 || "$release_result" -eq 0 ]] \
+        || result="$release_result"
+    release_result=0
+    vx_compose_lock_release || release_result=$?
+    [[ "$result" -ne 0 || "$release_result" -eq 0 ]] \
+        || result="$release_result"
+    return "$result"
 }
 
 vx_compose_route_list_json() {
@@ -427,14 +637,15 @@ vx_compose_routes_apply_unlocked() {
     [[ -f "$routes_file" ]] || return 0
     vx_compose_routes_validate_file \
         "$owner" "$project" \
-        "$(vx_compose_project_root "$owner" "$project")/runtime/canonical.json" \
+        "${VX_COMPOSE_INVOKE_CANONICAL_OVERRIDE:-$(vx_compose_project_root "$owner" "$project")/runtime/canonical.json}" \
         "$routes_file" || return 1
     if jq -e 'length == 0' "$routes_file" >/dev/null \
         && {
             [[ ! -f "$active_file" ]] \
                 || jq -e 'length == 0' "$active_file" >/dev/null
         }; then
-        if [[ -f "$candidate_file" ]]; then
+        if [[ -f "$candidate_file"
+            && "${VX_COMPOSE_ROUTES_DEFER_COMMIT:-no}" != yes ]]; then
             install -m 0640 "$candidate_file" "$active_file"
             rm -f -- "$candidate_file"
         fi
@@ -540,7 +751,8 @@ vx_compose_routes_apply_unlocked() {
         vx_compose_error 'Compose route rendering, reload, or Host-header probe failed'
         return 1
     fi
-    if [[ -f "$candidate_file" ]]; then
+    if [[ -f "$candidate_file"
+        && "${VX_COMPOSE_ROUTES_DEFER_COMMIT:-no}" != yes ]]; then
         install -m 0640 "$candidate_file" "$active_file"
         rm -f -- "$candidate_file"
     fi
@@ -552,7 +764,7 @@ vx_compose_routes_apply() {
     local project="$2"
     local result
 
-    vx_compose_routes_lock_acquire "$owner"
+    vx_compose_routes_lock_acquire "$owner" || return 1
     if vx_compose_routes_apply_unlocked "$owner" "$project"; then
         result=0
     else
@@ -613,7 +825,7 @@ vx_compose_routes_clear() {
     local project="$2"
     local result
 
-    vx_compose_routes_lock_acquire "$owner"
+    vx_compose_routes_lock_acquire "$owner" || return 1
     if vx_compose_routes_clear_unlocked "$owner" "$project"; then
         result=0
     else

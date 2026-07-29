@@ -53,6 +53,7 @@ printf '{"name":"vx-alice-app","services":{"app":{"image":"alpine:3.20"}}}\n' \
     printf "SECRETS='0'\n"
     printf "VOLUMES='0'\n"
 } >"$candidate/policy.conf"
+printf '{}\n' >"$candidate/images.json"
 vx_compose_store_new alice app standard "$candidate"
 
 value_file="$test_root/value"
@@ -155,10 +156,66 @@ grep -Fq 'Compose quota exceeded [DOCKER_SECRETS]' "$test_root/quota.error" \
 
 printf 'rotated-canary-must-not-leak\n' >"$value_file"
 chmod 0600 "$value_file"
+cp "$managed_model" "$(vx_compose_project_root alice app)/runtime/canonical.json"
+: >"$test_root/recreate.calls"
+vx_compose_recreate() {
+    printf '%s\n' "$3" >>"$test_root/recreate.calls"
+}
 vx_compose_secret_change alice app api_key "$value_file"
 [[ "$(cat "$secret_file")" == rotated-canary-must-not-leak ]] \
     || fail "secret rotation failed"
-cp "$managed_model" "$(vx_compose_project_root alice app)/runtime/canonical.json"
+[[ "$(cat "$test_root/recreate.calls")" == app ]] \
+    || fail "secret rotation did not recreate only the affected service"
+
+# A failed new-inode bind restores value+metadata, rebinds the old inode, keeps
+# caller input for retry, and redacts both generations.
+prior_metadata="$(cat "$(vx_compose_secret_metadata_path alice app)")"
+failed_value="$test_root/failed-rotation"
+printf 'failed-new-canary-must-not-leak\n' >"$failed_value"
+chmod 0600 "$failed_value"
+recreate_attempt=0
+vx_compose_recreate() {
+    recreate_attempt=$((recreate_attempt + 1))
+    [[ "$recreate_attempt" -gt 1 ]]
+}
+if vx_compose_secret_change alice app api_key "$failed_value" \
+    2>"$test_root/change-failed.stderr"; then
+    fail "failed secret runtime rebind reported success"
+fi
+[[ -f "$failed_value"
+    && "$(cat "$secret_file")" == rotated-canary-must-not-leak
+    && "$(cat "$(vx_compose_secret_metadata_path alice app)")" \
+        == "$prior_metadata"
+    && "$recreate_attempt" -eq 2 ]] \
+    || fail "failed secret rotation did not restore value/metadata/runtime"
+if grep -Fq -e 'rotated-canary-must-not-leak' \
+    -e 'failed-new-canary-must-not-leak' \
+    "$(vx_compose_project_root alice app)/audit.log" \
+    "$(vx_compose_project_root alice app)/runtime/last-operation.json" \
+    "$test_root/change-failed.stderr"; then
+    fail "secret rotation failure leaked old or new values"
+fi
+
+copy_fail_value="$test_root/copy-fail-rotation"
+printf 'copy-fail-new-canary\n' >"$copy_fail_value"
+chmod 0600 "$copy_fail_value"
+prior_metadata="$(cat "$(vx_compose_secret_metadata_path alice app)")"
+if VX_COMPOSE_TEST_SECRET_COPY_FAIL=old \
+    vx_compose_secret_change alice app api_key "$copy_fail_value" \
+    2>"$test_root/copy-fail.stderr"; then
+    fail "failed secret rollback-copy setup reported success"
+fi
+[[ -f "$copy_fail_value"
+    && "$(cat "$secret_file")" == rotated-canary-must-not-leak
+    && "$(cat "$(vx_compose_secret_metadata_path alice app)")" \
+        == "$prior_metadata" ]] \
+    || fail "setup-copy failure altered secret, metadata, or caller input"
+if grep -Fq copy-fail-new-canary \
+    "$(vx_compose_project_root alice app)/audit.log" \
+    "$(vx_compose_project_root alice app)/runtime/last-operation.json" \
+    "$test_root/copy-fail.stderr"; then
+    fail "setup-copy failure leaked the new secret"
+fi
 if vx_compose_secret_delete alice app api_key 2>"$test_root/referenced.error"; then
     fail "referenced secret deletion was accepted"
 fi

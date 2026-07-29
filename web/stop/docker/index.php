@@ -11,10 +11,18 @@ if ((!isset($_GET['token'])) || ($_SESSION['token'] != $_GET['token'])) {
     exit();
 }
 
+if (!vx_docker_is_orchestration_ready()) {
+    $_SESSION['error_msg'] = __(
+        'Docker orchestration prerequisites are unavailable.'
+    );
+    header('Location: /list/docker/');
+    exit;
+}
+
 $docker_owner = vx_docker_resolve_owner_from_request($user);
 
 if (!empty($_GET['container'])
-    && !empty(vx_compose_resolve_accessible_project(
+    && !empty(vx_compose_resolve_mutable_project(
         $docker_owner,
         trim((string) $_GET['container']),
         $user

@@ -69,6 +69,30 @@ chmod 0755 \
 # shellcheck source=func/vx/compose/main.sh
 source "$repo_root/func/vx/compose/main.sh"
 
+# Owner route locks nest only for the same owner and reject corrupt or
+# cross-owner caller metadata instead of silently using an unrelated FD.
+vx_compose_routes_lock_acquire alice
+[[ "$VX_COMPOSE_ROUTES_LOCK_DEPTH" == 1 ]]
+vx_compose_routes_lock_acquire alice
+[[ "$VX_COMPOSE_ROUTES_LOCK_DEPTH" == 2 ]]
+if vx_compose_routes_lock_acquire bob 2>/dev/null; then
+    fail "nested route lock accepted a different owner"
+fi
+vx_compose_routes_lock_release
+vx_compose_routes_lock_release
+[[ -z "${VX_COMPOSE_ROUTES_LOCK_FD:-}"
+    && -z "${VX_COMPOSE_ROUTES_LOCK_OWNER:-}"
+    && -z "${VX_COMPOSE_ROUTES_LOCK_DEPTH:-}" ]] \
+    || fail "nested route lock metadata was not released"
+VX_COMPOSE_ROUTES_LOCK_FD=1
+VX_COMPOSE_ROUTES_LOCK_OWNER=alice
+VX_COMPOSE_ROUTES_LOCK_DEPTH=1
+if vx_compose_routes_lock_acquire alice 2>/dev/null; then
+    fail "route lock trusted a caller-owned standard descriptor"
+fi
+unset VX_COMPOSE_ROUTES_LOCK_FD VX_COMPOSE_ROUTES_LOCK_OWNER \
+    VX_COMPOSE_ROUTES_LOCK_DEPTH
+
 [[ "$(VX_COMPOSE_ROUTE_PROBE_URL='' \
     vx_compose_route_probe_url alice app.example.test)" == \
     'http://192.0.2.10' ]] \
@@ -170,10 +194,53 @@ if vx_compose_route_add \
     alice other app.example.test web 8080 http / 2>/dev/null; then
     fail "domain was assigned to two Compose projects"
 fi
+if vx_compose_routes_stage_simple \
+    alice other "$other_root/runtime/canonical.json" \
+    app.example.test web 8080 / "$test_root/cross-project-routes.json" \
+    2>/dev/null; then
+    fail "simple route staging accepted a cross-project domain"
+fi
 
 vx_compose_route_delete alice app app.example.test
 jq -e 'length == 0' \
     <<<"$(vx_compose_route_list_json alice app)" >/dev/null \
     || fail "route deletion retained metadata"
+
+# A staged metadata/audit failure is returned after both locks are released;
+# it must never be converted into success by cleanup.
+vx_compose_audit() { return 42; }
+route_failure_status=0
+vx_compose_route_add \
+    alice app app.example.test web 8080 http / \
+    || route_failure_status=$?
+[[ "$route_failure_status" == 42
+    && -z "${VX_COMPOSE_LOCK_FD:-}"
+    && -z "${VX_COMPOSE_ROUTES_LOCK_FD:-}" ]] \
+    || fail "route metadata failure was swallowed or leaked locks"
+
+# Every public route mutation aborts if the owner route lock cannot be
+# acquired. No pending metadata, proxy command, or project lock may change.
+pending_file="$VESTA/data/users/alice/docker-projects/app/runtime/routes.pending.json"
+pending_before="$(cat "$pending_file")"
+route_log_lines_before="$(wc -l <"$route_log")"
+vx_compose_routes_lock_acquire() { return 1; }
+if vx_compose_route_add \
+    alice app app.example.test web 8080 http / 2>/dev/null; then
+    fail "route add ignored route lock acquisition failure"
+fi
+if vx_compose_route_delete \
+    alice app app.example.test 2>/dev/null; then
+    fail "route delete ignored route lock acquisition failure"
+fi
+if vx_compose_routes_apply alice app 2>/dev/null; then
+    fail "route apply ignored route lock acquisition failure"
+fi
+if vx_compose_routes_clear alice app 2>/dev/null; then
+    fail "route clear ignored route lock acquisition failure"
+fi
+[[ "$(cat "$pending_file")" == "$pending_before"
+    && "$(wc -l <"$route_log")" == "$route_log_lines_before"
+    && -z "${VX_COMPOSE_LOCK_FD:-}" ]] \
+    || fail "route lock failure allowed mutation or leaked project lock"
 
 echo "Compose route tests passed."

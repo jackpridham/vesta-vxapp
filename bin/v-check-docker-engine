@@ -36,11 +36,43 @@ else
     daemon_state='no'
 fi
 
+if [ "$state" = 'yes' ] && docker compose version >/dev/null 2>&1; then
+    compose_state='yes'
+else
+    compose_state='no'
+fi
+
+if command -v jq >/dev/null 2>&1 && jq --version >/dev/null 2>&1; then
+    jq_state='yes'
+else
+    jq_state='no'
+fi
+
+if command -v age >/dev/null 2>&1 && age --version >/dev/null 2>&1; then
+    age_state='yes'
+else
+    age_state='no'
+fi
+
+if [ "$state" = 'yes' ] \
+    && [ "$daemon_state" = 'yes' ] \
+    && [ "$compose_state" = 'yes' ] \
+    && [ "$jq_state" = 'yes' ] \
+    && [ "$age_state" = 'yes' ]; then
+    orchestration_state='yes'
+else
+    orchestration_state='no'
+fi
+
 case "$format" in
     json)
         echo '{'
         echo '    "DOCKER_AVAILABLE": "'$state'"'
         echo '    ,"DOCKER_DAEMON_AVAILABLE": "'$daemon_state'"'
+        echo '    ,"DOCKER_COMPOSE_AVAILABLE": "'$compose_state'"'
+        echo '    ,"JQ_AVAILABLE": "'$jq_state'"'
+        echo '    ,"AGE_AVAILABLE": "'$age_state'"'
+        echo '    ,"DOCKER_ORCHESTRATION_READY": "'$orchestration_state'"'
         echo '}'
         ;;
     shell|plain)

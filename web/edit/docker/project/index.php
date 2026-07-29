@@ -55,6 +55,8 @@ $compose_update_definition = '';
 $compose_validation_preview = array();
 $compose_preview_key = '';
 $compose_spawn_hash = '';
+$docker_state = vx_docker_get_engine_state();
+$docker_orchestration_ready = vx_docker_is_orchestration_ready($docker_state);
 if ($_SERVER['REQUEST_METHOD'] === 'GET') {
     vx_compose_preview_forget_actor_mode($user, 'change');
     if ($compose_standard_workflow) {
@@ -110,6 +112,11 @@ if (!empty($_POST['validate_preview'])) {
     if (!isset($_POST['token']) || $_SESSION['token'] != $_POST['token']) {
         header('Location: /login/');
         exit;
+    }
+    if (!$docker_orchestration_ready) {
+        $_SESSION['error_msg'] = __(
+            'Docker orchestration prerequisites are unavailable.'
+        );
     }
     if ($user !== 'admin'
         && isset($_POST['profile'])
@@ -227,7 +234,11 @@ if (!empty($_POST['confirm_update'])) {
         ? (string) $_POST['preview_token']
         : '';
     $preview = vx_compose_preview_get($compose_preview_key, $user, 'change');
-    if (empty($preview)
+    if (!$docker_orchestration_ready) {
+        $_SESSION['error_msg'] = __(
+            'Docker orchestration prerequisites are unavailable.'
+        );
+    } elseif (empty($preview)
         || !vx_compose_preview_post_matches($preview, $_POST)
         || $preview['owner'] !== $compose_project_owner
         || $preview['project'] !== $compose_project_name

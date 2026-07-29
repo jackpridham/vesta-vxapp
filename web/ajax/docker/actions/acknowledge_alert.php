@@ -10,11 +10,19 @@ include($_SERVER['DOCUMENT_ROOT']."/inc/vx_compose.php");
 
 header('Content-Type: application/json');
 
+if (!vx_docker_is_orchestration_ready()) {
+    echo json_encode(array(
+        'OK' => false,
+        'ERROR' => 'Docker orchestration prerequisites are unavailable.',
+    ));
+    exit;
+}
+
 $owner = trim((string) $_POST['owner']);
 $name = trim((string) $_POST['name']);
 $aid = trim((string) $_POST['aid']);
 
-if (empty(vx_compose_resolve_accessible_project(
+if (empty(vx_compose_resolve_mutable_project(
     $owner,
     $name,
     $myvesta_logged_user

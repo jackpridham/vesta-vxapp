@@ -588,7 +588,17 @@ function vx_docker_is_engine_available($docker_state = null)
         $docker_state = vx_docker_get_engine_state();
     }
 
-    return !empty($docker_state['DOCKER_AVAILABLE']) && $docker_state['DOCKER_AVAILABLE'] === 'yes';
+    return vx_docker_is_orchestration_ready($docker_state);
+}
+
+function vx_docker_is_orchestration_ready($docker_state = null)
+{
+    if (!is_array($docker_state)) {
+        $docker_state = vx_docker_get_engine_state();
+    }
+
+    return !empty($docker_state['DOCKER_ORCHESTRATION_READY'])
+        && $docker_state['DOCKER_ORCHESTRATION_READY'] === 'yes';
 }
 
 function vx_docker_is_daemon_available($docker_state = null)

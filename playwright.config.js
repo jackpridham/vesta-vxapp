@@ -1,9 +1,8 @@
 const path = require('path');
 const { defineConfig, devices } = require('@playwright/test');
+const { loadPlaywrightEnv } = require('./tests/playwright/helpers/env-file');
 
-require('dotenv').config({
-  path: process.env.PLAYWRIGHT_ENV_FILE || '.env.playwright',
-});
+loadPlaywrightEnv({ cwd: __dirname });
 
 const authDir = path.join(__dirname, 'playwright', '.auth');
 const adminAuthStatePath = path.join(authDir, 'admin.json');

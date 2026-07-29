@@ -33,6 +33,11 @@ if (!empty($_POST['ok'])) {
         header('location: /login/');
         exit();
     }
+    if (!$docker_available) {
+        $_SESSION['error_msg'] = __(
+            'Docker orchestration prerequisites are unavailable.'
+        );
+    }
 
     foreach ($docker_form_values as $field => $default_value) {
         $docker_form_values[$field] = isset($_POST[$field]) && !is_array($_POST[$field]) ? trim((string) $_POST[$field]) : $default_value;

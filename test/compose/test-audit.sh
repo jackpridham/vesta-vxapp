@@ -18,11 +18,13 @@ fail() {
 }
 
 project_root="$VESTA/data/users/alice/docker-projects/app"
-printf "OWNER='alice'\nPROJECT='app'\nSTATE='running'\nREVISION='1'\n" \
+printf "OWNER='alice'\nPROJECT='app'\nPROFILE='standard'\nSTATE='running'\nREVISION='1'\nCANONICAL_SHA256='abc123'\n" \
     >"$project_root/project.conf"
 printf 'services: {}\n' >"$project_root/compose.yaml"
-printf "POLICY_SCHEMA='1'\n" >"$project_root/policy.conf"
+printf "POLICY_SCHEMA='1'\nPROFILE_VERSION='2'\nVALIDATOR_VERSION='2'\n" \
+    >"$project_root/policy.conf"
 printf '{"services":{"web":{}}}\n' >"$project_root/runtime/canonical.json"
+printf '{"web":{"IMAGE_ID":"sha256:feedface"}}\n' >"$project_root/images.json"
 printf '%s\n' 'audit-secret-canary' >"$project_root/secrets/api_key"
 chmod 0600 "$project_root/secrets/api_key"
 
@@ -41,6 +43,12 @@ jq -e '
     and .[0].RESULT == "failed"
     and .[0].DURATION_MS == 125
     and .[0].SERVICES == ["web"]
+    and .[0].PROFILE == "standard"
+    and .[0].POLICY_SCHEMA == 1
+    and .[0].PROFILE_VERSION == 2
+    and .[0].VALIDATOR_VERSION == 2
+    and .[0].CANONICAL_SHA256 == "abc123"
+    and .[0].IMAGE_IDS.web == "sha256:feedface"
     and (. [0].DETAILS | contains("[REDACTED]"))
 ' <<<"$audit" >/dev/null || fail "structured audit event is incomplete"
 if grep -Fq 'audit-secret-canary' "$project_root/audit.log"; then
@@ -48,6 +56,45 @@ if grep -Fq 'audit-secret-canary' "$project_root/audit.log"; then
 fi
 [[ "$(stat -c '%a' "$project_root/audit.log")" == 640 ]] \
     || fail "audit log mode is wrong"
+jq -e '
+    .ACTION == "deploy"
+    and .RESULT == "failed"
+    and .DURATION_MS == 125
+    and .SERVICES == ["web"]
+    and .PROFILE == "standard"
+    and .IMAGE_IDS.web == "sha256:feedface"
+    and (.DETAILS | contains("[REDACTED]"))
+' "$project_root/runtime/last-operation.json" >/dev/null \
+    || fail "atomic last-operation evidence is incomplete"
+[[ "$(stat -c '%a' "$project_root/runtime/last-operation.json")" == 600 ]] \
+    || fail "last-operation mode is not 0600"
+
+transaction_root="$project_root/runtime/pending"
+mkdir -p "$transaction_root"
+printf '{"services":{"candidate":{"image":"example.test/new:1"}}}\n' \
+    >"$transaction_root/canonical.json"
+printf "POLICY_SCHEMA='9'\nPROFILE_VERSION='7'\nVALIDATOR_VERSION='6'\n" \
+    >"$transaction_root/policy.conf"
+printf '{"candidate":{"IMAGE_ID":"sha256:candidate"}}\n' \
+    >"$transaction_root/images.json"
+candidate_sha="$(sha256sum "$transaction_root/canonical.json" | awk '{print $1}')"
+VX_COMPOSE_INVOKE_CANONICAL_OVERRIDE="$transaction_root/canonical.json" \
+VX_COMPOSE_INVOKE_IMAGES_OVERRIDE="$transaction_root/images.json" \
+VX_COMPOSE_INVOKE_REVISION_OVERRIDE=2 \
+VX_COMPOSE_POLICY_OVERRIDE="$transaction_root/policy.conf" \
+    vx_compose_audit "$project_root" deploy started '' 0 '["candidate"]'
+jq -e \
+    --arg sha "$candidate_sha" '
+    select(.ACTION == "deploy" and .RESULT == "started")
+    | .REVISION == 2
+    and .SERVICES == ["candidate"]
+    and .POLICY_SCHEMA == 9
+    and .PROFILE_VERSION == 7
+    and .VALIDATOR_VERSION == 6
+    and .CANONICAL_SHA256 == $sha
+    and .IMAGE_IDS.candidate == "sha256:candidate"
+' "$project_root/audit.log" >/dev/null \
+    || fail "pending deployment audit used stale active authority facts"
 
 vx_compose_audit_actor_push alice
 vx_compose_audit "$project_root" update succeeded

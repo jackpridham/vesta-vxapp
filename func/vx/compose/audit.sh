@@ -3,17 +3,19 @@
 vx_compose_redact_text() {
     local root="$1"
     local text="$2"
-    local secret_file secret_line
+    local secret_file secret_line redaction_root
+    local -a redaction_roots=("$root/secrets" "$root/runtime/secret-redaction")
 
-    if [[ -d "$root/secrets" ]]; then
-        for secret_file in "$root"/secrets/*; do
+    for redaction_root in "${redaction_roots[@]}"; do
+        [[ -d "$redaction_root" && ! -L "$redaction_root" ]] || continue
+        for secret_file in "$redaction_root"/*; do
             [[ -f "$secret_file" && ! -L "$secret_file" ]] || continue
             while IFS= read -r secret_line || [[ -n "$secret_line" ]]; do
                 [[ -n "$secret_line" ]] || continue
                 text="${text//"$secret_line"/[REDACTED]}"
             done <"$secret_file"
         done
-    fi
+    done
     text="${text:0:4096}"
     printf '%s' "$text"
 }
@@ -25,14 +27,46 @@ vx_compose_audit_append() {
     local lock_path="${path}.lock"
     local lock_fd
 
-    install -d -m 0750 "$(dirname -- "$path")"
-    exec {lock_fd}>>"$lock_path"
-    chmod "$mode" "$lock_path"
-    flock -x "$lock_fd"
-    printf '%s\n' "$event" >>"$path"
-    chmod "$mode" "$path"
-    flock -u "$lock_fd"
+    install -d -m 0750 "$(dirname -- "$path")" || return 1
+    exec {lock_fd}>>"$lock_path" || return 1
+    chmod "$mode" "$lock_path" || {
+        exec {lock_fd}>&-
+        return 1
+    }
+    flock -x "$lock_fd" || {
+        exec {lock_fd}>&-
+        return 1
+    }
+    if ! printf '%s\n' "$event" >>"$path" \
+        || ! chmod "$mode" "$path"; then
+        flock -u "$lock_fd" || :
+        exec {lock_fd}>&-
+        return 1
+    fi
+    flock -u "$lock_fd" || {
+        exec {lock_fd}>&-
+        return 1
+    }
     exec {lock_fd}>&-
+}
+
+vx_compose_last_operation_write() {
+    local root="$1"
+    local event="$2"
+    local runtime="$root/runtime"
+    local temp_file
+
+    install -d -m 0750 "$runtime" || return 1
+    temp_file="$(mktemp "$runtime/.last-operation.XXXXXX")" || return 1
+    jq -S . <<<"$event" >"$temp_file" || {
+        rm -f -- "$temp_file"
+        return 1
+    }
+    chmod 0600 "$temp_file" || {
+        rm -f -- "$temp_file"
+        return 1
+    }
+    mv -f -- "$temp_file" "$runtime/last-operation.json"
 }
 
 vx_compose_audit() {
@@ -44,7 +78,11 @@ vx_compose_audit() {
     local services="${6:-[]}"
     local actor="${7:-${_VX_COMPOSE_AUDIT_ACTOR:-root}}"
     local metadata="$root/project.conf"
-    local owner project revision event owner_audit
+    local policy_file="${VX_COMPOSE_POLICY_OVERRIDE:-$root/policy.conf}"
+    local images_file="${VX_COMPOSE_INVOKE_IMAGES_OVERRIDE:-$root/images.json}"
+    local canonical_file="${VX_COMPOSE_INVOKE_CANONICAL_OVERRIDE:-$root/runtime/canonical.json}"
+    local owner project revision event owner_audit profile policy_schema
+    local profile_version validator_version canonical_sha image_ids
 
     [[ "$action" =~ ^[a-z][a-z0-9-]{0,63}$
         && "$result" =~ ^(started|succeeded|failed|opened|closed)$ ]] \
@@ -57,8 +95,34 @@ vx_compose_audit() {
         <<<"$services" >/dev/null 2>&1 || services='[]'
     owner="$(vx_compose_meta_get "$metadata" OWNER)" || return 1
     project="$(vx_compose_meta_get "$metadata" PROJECT)" || return 1
-    revision="$(vx_compose_meta_get "$metadata" REVISION 2>/dev/null)" \
+    revision="${VX_COMPOSE_INVOKE_REVISION_OVERRIDE:-}"
+    [[ -n "$revision" ]] \
+        || revision="$(vx_compose_meta_get "$metadata" REVISION 2>/dev/null)" \
         || revision=0
+    profile="$(vx_compose_meta_get "$metadata" PROFILE 2>/dev/null)" \
+        || profile=unknown
+    policy_schema="$(vx_compose_meta_get \
+        "$policy_file" POLICY_SCHEMA 2>/dev/null)" || policy_schema=0
+    profile_version="$(vx_compose_meta_get \
+        "$policy_file" PROFILE_VERSION 2>/dev/null)" || profile_version=0
+    validator_version="$(vx_compose_meta_get \
+        "$policy_file" VALIDATOR_VERSION 2>/dev/null)" \
+        || validator_version=0
+    if [[ -n "${VX_COMPOSE_INVOKE_CANONICAL_OVERRIDE:-}"
+        && -f "$canonical_file" && ! -L "$canonical_file" ]]; then
+        canonical_sha="$(sha256sum "$canonical_file" | awk '{print $1}')" \
+            || canonical_sha=''
+    else
+        canonical_sha="$(vx_compose_meta_get \
+            "$metadata" CANONICAL_SHA256 2>/dev/null)" || canonical_sha=''
+    fi
+    if [[ -f "$images_file" && ! -L "$images_file" ]]; then
+        image_ids="$(jq -c \
+            'with_entries(.value = (.value.IMAGE_ID // ""))' \
+            "$images_file" 2>/dev/null)" || image_ids='{}'
+    else
+        image_ids='{}'
+    fi
     details="$(vx_compose_redact_text "$root" "$details")"
     event="$(jq -cn \
         --arg timestamp "$(vx_compose_now)" \
@@ -68,7 +132,13 @@ vx_compose_audit() {
         --arg action "$action" \
         --arg result "$result" \
         --arg details "$details" \
+        --arg profile "$profile" \
+        --arg canonical_sha "$canonical_sha" \
         --argjson revision "$revision" \
+        --argjson policy_schema "$policy_schema" \
+        --argjson profile_version "$profile_version" \
+        --argjson validator_version "$validator_version" \
+        --argjson image_ids "$image_ids" \
         --argjson duration_ms "$duration_ms" \
         --argjson services "$services" '{
             TIMESTAMP: $timestamp,
@@ -76,6 +146,12 @@ vx_compose_audit() {
             OWNER: $owner,
             PROJECT: $project,
             REVISION: $revision,
+            PROFILE: $profile,
+            POLICY_SCHEMA: $policy_schema,
+            PROFILE_VERSION: $profile_version,
+            VALIDATOR_VERSION: $validator_version,
+            CANONICAL_SHA256: $canonical_sha,
+            IMAGE_IDS: $image_ids,
             ACTION: $action,
             RESULT: $result,
             DURATION_MS: $duration_ms,
@@ -84,7 +160,8 @@ vx_compose_audit() {
         }')" || return 1
     vx_compose_audit_append "$root/audit.log" 0640 "$event" || return 1
     owner_audit="$VESTA/data/users/$owner/docker-audit.log"
-    vx_compose_audit_append "$owner_audit" 0600 "$event"
+    vx_compose_audit_append "$owner_audit" 0600 "$event" || return 1
+    vx_compose_last_operation_write "$root" "$event"
 }
 
 vx_compose_audit_actor_push() {

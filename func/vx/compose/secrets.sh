@@ -88,8 +88,12 @@ vx_compose_secret_install() {
     local name="$3"
     local value_file="$4"
     local action="$5"
-    local root secrets_root secret_file temp_file sha
+    local root secrets_root secret_file temp_file sha metadata
     local current_size=0 new_size growth_mb measured_storage
+    local rollback_secret rollback_metadata redaction_root service
+    local result=0 recovery_result=0 had_metadata=no had_secret=no
+    local swapped=no
+    local affected_services='[]'
 
     vx_compose_require_project "$owner" "$project" || return 1
     vx_compose_secret_name_is_valid "$name" \
@@ -111,16 +115,26 @@ vx_compose_secret_install() {
         return 1
     fi
     vx_compose_lock_acquire "$owner" "$project" || return 1
-    vx_compose_owner_quota_lock_acquire "$owner"
+    vx_compose_ports_lock_acquire || {
+        vx_compose_lock_release
+        return 1
+    }
+    vx_compose_owner_quota_lock_acquire "$owner" || {
+        vx_compose_ports_lock_release
+        vx_compose_lock_release
+        return 1
+    }
     if [[ "$action" == add && -e "$secret_file" ]]; then
         vx_compose_error "Compose secret already exists: $name"
         vx_compose_owner_quota_lock_release
+        vx_compose_ports_lock_release
         vx_compose_lock_release
         return 1
     fi
     if [[ "$action" == change && ! -f "$secret_file" ]]; then
         vx_compose_error "Compose secret does not exist: $name"
         vx_compose_owner_quota_lock_release
+        vx_compose_ports_lock_release
         vx_compose_lock_release
         return 1
     fi
@@ -129,6 +143,7 @@ vx_compose_secret_install() {
             "$owner" DOCKER_SECRETS "$(( $(vx_compose_secret_count "$owner") + 1 ))" \
             || {
                 vx_compose_owner_quota_lock_release
+                vx_compose_ports_lock_release
                 vx_compose_lock_release
                 return 1
             }
@@ -141,6 +156,7 @@ vx_compose_secret_install() {
     fi
     measured_storage="$(vx_compose_measured_storage_mb "$owner")" || {
         vx_compose_owner_quota_lock_release
+        vx_compose_ports_lock_release
         vx_compose_lock_release
         return 1
     }
@@ -148,32 +164,133 @@ vx_compose_secret_install() {
         "$owner" DOCKER_STORAGE_MB "$((measured_storage + growth_mb))" \
         || {
             vx_compose_owner_quota_lock_release
+            vx_compose_ports_lock_release
             vx_compose_lock_release
             return 1
         }
     temp_file="$(mktemp "$secrets_root/.${name}.XXXXXX")" || {
         vx_compose_owner_quota_lock_release
+        vx_compose_ports_lock_release
         vx_compose_lock_release
         return 1
     }
     if ! install -m 0600 "$value_file" "$temp_file"; then
         rm -f -- "$temp_file"
         vx_compose_owner_quota_lock_release
+        vx_compose_ports_lock_release
         vx_compose_lock_release
         return 1
     fi
     sha="$(sha256sum "$temp_file" | awk '{print $1}')"
-    mv -f -- "$temp_file" "$secret_file"
-    chmod 0600 "$secret_file"
-    rm -f -- "$value_file"
-    if ! vx_compose_secret_metadata_update \
-        "$owner" "$project" "$name" "$sha"; then
+    metadata="$(vx_compose_secret_metadata_path "$owner" "$project")"
+    rollback_secret="$secrets_root/.${name}.rollback.$$"
+    rollback_metadata="$root/.secrets.rollback.$$"
+    redaction_root="$root/runtime/secret-redaction"
+    [[ ! -e "$rollback_secret" && ! -e "$rollback_metadata" ]] || result=1
+    if [[ "$result" -eq 0 ]]; then
+        if ! install -d -m 0700 "$redaction_root" \
+            || ! install -m 0600 "$value_file" "$redaction_root/new"; then
+            result=1
+        fi
+    fi
+    if [[ "$result" -eq 0 ]]; then
+        if [[ -f "$secret_file" ]]; then
+            had_secret=yes
+            if [[ "${VX_COMPOSE_TEST_SECRET_COPY_FAIL:-}" == old ]] \
+                || ! install -m 0600 "$secret_file" "$rollback_secret" \
+                || ! install -m 0600 "$secret_file" "$redaction_root/old"; then
+                result=1
+            fi
+        fi
+        if [[ "$result" -eq 0 && -f "$metadata" ]]; then
+            had_metadata=yes
+            if [[ "${VX_COMPOSE_TEST_SECRET_COPY_FAIL:-}" == metadata ]] \
+                || ! install -m 0600 "$metadata" "$rollback_metadata"; then
+                result=1
+            fi
+        fi
+    fi
+    if [[ "$action" == change && "$result" -eq 0 ]]; then
+        affected_services="$(jq -c --arg name "$name" '
+            [
+                .services
+                | to_entries[]
+                | select(any((.value.secrets // [])[];
+                    (.source // .) == $name
+                ))
+                | .key
+            ]
+        ' "$root/runtime/canonical.json")" || result=1
+    fi
+    if [[ "$result" -eq 0 ]] && ! mv -f -- "$temp_file" "$secret_file"; then
+        result=1
+    elif [[ "$result" -eq 0 ]]; then
+        swapped=yes
+    fi
+    [[ "$result" -ne 0 ]] || chmod 0600 "$secret_file" || result=1
+    if [[ "$result" -eq 0 ]] \
+        && ! vx_compose_secret_metadata_update \
+            "$owner" "$project" "$name" "$sha"; then
+        result=1
+    fi
+    if [[ "$result" -eq 0 && "$action" == change ]]; then
+        while IFS= read -r service; do
+            vx_compose_recreate "$owner" "$project" "$service" || {
+                result=1
+                break
+            }
+        done < <(jq -r '.[]' <<<"$affected_services")
+    fi
+    if [[ "$result" -eq 0 ]]; then
+        if ! vx_compose_audit "$root" "secret-$action" succeeded; then
+            result=1
+        elif ! rm -rf -- "$redaction_root"; then
+            result=1
+        elif ! rm -f -- "$rollback_secret" "$rollback_metadata"; then
+            result=1
+        fi
+    fi
+    if [[ "$result" -ne 0 ]]; then
+        rm -f -- "$temp_file"
+        if [[ "$swapped" == yes ]]; then
+            if [[ "$had_secret" == yes ]]; then
+                install -m 0600 "$rollback_secret" "$secret_file" \
+                    || recovery_result=1
+            else
+                rm -f -- "$secret_file"
+            fi
+            if [[ "$had_metadata" == yes ]]; then
+                install -m 0600 "$rollback_metadata" "$metadata" \
+                    || recovery_result=1
+            else
+                rm -f -- "$metadata"
+            fi
+        fi
+        if [[ "$action" == change && "$swapped" == yes ]]; then
+            while IFS= read -r service; do
+                vx_compose_recreate "$owner" "$project" "$service" \
+                    || recovery_result=1
+            done < <(jq -r '.[]' <<<"$affected_services")
+        fi
+        if [[ "$recovery_result" -ne 0 ]]; then
+            vx_compose_update_state "$owner" "$project" restore-required || :
+        fi
+        vx_compose_audit "$root" "secret-$action" failed \
+            'secret rotation failed; prior value restored' || :
+        if ! rm -f -- "$rollback_secret" "$rollback_metadata" \
+            || ! rm -rf -- "$redaction_root"; then
+            recovery_result=1
+            vx_compose_update_state \
+                "$owner" "$project" restore-required || :
+        fi
         vx_compose_owner_quota_lock_release
+        vx_compose_ports_lock_release
         vx_compose_lock_release
         return 1
     fi
-    vx_compose_audit "$root" "secret-$action" succeeded
+    rm -f -- "$value_file"
     vx_compose_owner_quota_lock_release
+    vx_compose_ports_lock_release
     vx_compose_lock_release
     vx_compose_refresh_counters "$owner"
 }

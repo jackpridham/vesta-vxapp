@@ -67,6 +67,8 @@ printf '{"name":"vx-alice-app","services":{"app":{"image":"alpine:3.20"}}}\n' \
     printf "SECRETS='0'\n"
     printf "VOLUMES='0'\n"
 } >"$candidate/policy.conf"
+printf '{"app":{"REFERENCE":"alpine:3.20","IMAGE_ID":"sha256:fixture","REPO_DIGESTS":["alpine@sha256:fixture"],"OS":"linux","ARCHITECTURE":"amd64"}}\n' \
+    >"$candidate/images.json"
 vx_compose_store_new alice app standard "$candidate"
 
 if vx_compose_start bob app 2>"$test_root/cross-owner.error"; then

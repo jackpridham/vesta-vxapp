@@ -78,16 +78,25 @@ fi
 [[ "$1 $2" == 'network inspect' ]] || exit 9
 network_name="$3"
 [[ "$network_name" == vx-vxsscp12-selfservice_default \
-    || "$network_name" == vx_vxsscp12_selfservice_default ]] || exit 9
+    || "$network_name" == vx_vxsscp12_selfservice_default \
+    || "$network_name" == vx-vxsscp12-selfservice_aux ]] || exit 9
+if [[ "$network_name" == *_aux \
+    && -f "$(dirname -- "$0")/network-absent" ]]; then
+    exit 1
+fi
+network="${network_name##*_}"
+owner=vxsscp12
+[[ ! -f "$(dirname -- "$0")/network-foreign" ]] || owner=mallory
 printf '%s\n' '[{
   "Name":"'"$network_name"'",
   "Driver":"bridge",
   "Labels":{
     "com.docker.compose.project":"vx-vxsscp12-selfservice",
+    "com.docker.compose.network":"'"$network"'",
     "vx.managed":"yes",
-    "vx.user":"vxsscp12",
+    "vx.user":"'"$owner"'",
     "vx.project":"selfservice",
-    "vx.network":"default"
+    "vx.network":"'"$network"'"
   }
 }]'
 EOF
@@ -109,6 +118,39 @@ if VX_COMPOSE_DOCKER_BIN="$runtime_docker" \
 fi
 sed -i 's/shared-host-network/vx_vxsscp12_selfservice_default/' \
     "$runtime_root/runtime/canonical.json"
+
+# Candidate verification must use the candidate declaration, including a
+# newly added deterministic network. Absence is permitted only before Compose;
+# an existing foreign object is never treated as candidate-owned.
+candidate_network="$test_root/candidate-network.json"
+jq '.networks.aux = {
+    name: "vx-vxsscp12-selfservice_aux",
+    driver: "bridge",
+    labels: {
+        "vx.managed": "yes",
+        "vx.user": "vxsscp12",
+        "vx.project": "selfservice",
+        "vx.network": "aux"
+    }
+}' "$runtime_root/runtime/canonical.json" >"$candidate_network"
+: >"$test_root/network-absent"
+VX_COMPOSE_DOCKER_BIN="$runtime_docker" \
+    vx_compose_network_verify_runtime \
+        vxsscp12 selfservice "$candidate_network" no \
+    || fail "absent candidate-added network failed pre-mutation verification"
+if VX_COMPOSE_DOCKER_BIN="$runtime_docker" \
+    vx_compose_network_verify_runtime \
+        vxsscp12 selfservice "$candidate_network" yes 2>/dev/null; then
+    fail "absent candidate network passed post-convergence verification"
+fi
+rm -f -- "$test_root/network-absent"
+: >"$test_root/network-foreign"
+if VX_COMPOSE_DOCKER_BIN="$runtime_docker" \
+    vx_compose_network_verify_runtime \
+        vxsscp12 selfservice "$candidate_network" no 2>/dev/null; then
+    fail "foreign deterministic candidate network passed preflight"
+fi
+rm -f -- "$test_root/network-foreign"
 
 prior_canonical="$test_root/prior-network.json"
 current_canonical="$test_root/current-network.json"

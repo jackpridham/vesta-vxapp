@@ -1,0 +1,7 @@
+services:
+  web:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]

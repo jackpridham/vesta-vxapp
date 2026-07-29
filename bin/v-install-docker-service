@@ -1,45 +1,202 @@
 #!/bin/bash
+# info: install and verify docker orchestration prerequisites
+# options: NONE
+#
+# The function installs Docker, Docker Compose, jq, and age when required.
 
-echo "= Checking for Docker..."
-if ! command -v docker &> /dev/null; then
-	echo "= Docker not found. Starting Docker installation."
-	apt-get update > /dev/null 2>&1
+set -Eeuo pipefail
 
-	release=$(cat /etc/debian_version | tr "." "\n" | head -n1)
-	if [ "$release" -gt 10 ]; then
-		# Debian > 10
-		apt-get install -y ca-certificates curl > /dev/null 2>&1
-		echo "= Installing docker repo"
-		install -m 0755 -d /etc/apt/keyrings
-		curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc
-		chmod a+r /etc/apt/keyrings/docker.asc
-		echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-		echo "= Installing docker"
-		apt-get update > /dev/null 2>&1
-		apt-get install -y docker-ce docker-ce-cli containerd.io
-		apt-get install -y docker-buildx-plugin docker-compose-plugin
-	else
-		# Debian < 11
-		apt install apt-transport-https ca-certificates curl gnupg2 software-properties-common lsb-release
-		curl -fsSL https://download.docker.com/linux/debian/gpg | sudo apt-key add -
-		echo "deb [arch=amd64] https://download.docker.com/linux/debian $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list
-		apt-get update > /dev/null 2>&1
-		apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-	fi
-	if ! command -v docker &> /dev/null; then
-		echo "- Error installing docker !!!";
-		exit 1;
-	fi
-	# echo "= Creating docker group"
-	# newgrp docker
-	echo "= Installing docker-compose"
-	curl -s https://api.github.com/repos/docker/compose/releases/latest | grep browser_download_url | grep docker-compose-linux-x86_64 | cut -d '"' -f 4 | wget -qi - && \
-	chmod +x docker-compose-linux-x86_64 && \
-	mv docker-compose-linux-x86_64 /usr/local/bin/docker-compose
-	# docker-compose version
-	systemctl restart docker
-	echo "= Docker installation completed."
-else
-	echo "= Docker is already installed."
+fail() {
+    echo "- Docker orchestration installation failed: $1" >&2
+    exit 1
+}
+
+has_docker() {
+    command -v docker >/dev/null 2>&1 \
+        && docker --version >/dev/null 2>&1
+}
+
+has_compose() {
+    has_docker \
+        && docker compose version >/dev/null 2>&1
+}
+
+has_jq() {
+    command -v jq >/dev/null 2>&1 \
+        && jq --version >/dev/null 2>&1
+}
+
+has_age() {
+    command -v age >/dev/null 2>&1 \
+        && age --version >/dev/null 2>&1
+}
+
+apt_install() {
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$@"
+}
+
+configure_docker_apt_repository() {
+    local architecture codename keyring_dir source_dir key_temp source_temp
+    local key_file source_file
+
+    apt_install ca-certificates curl
+    command -v curl >/dev/null 2>&1 \
+        || fail "curl is unavailable after installation"
+    command -v dpkg >/dev/null 2>&1 \
+        || fail "dpkg is required to configure the Docker apt repository"
+    [ -r /etc/os-release ] \
+        || fail "/etc/os-release is required to configure the Docker apt repository"
+
+    # shellcheck disable=SC1091
+    source /etc/os-release
+    codename="${VERSION_CODENAME:-}"
+    if [ -z "$codename" ] && command -v lsb_release >/dev/null 2>&1; then
+        codename="$(lsb_release -sc)"
+    fi
+    [[ "$codename" =~ ^[a-z0-9][a-z0-9.-]*$ ]] \
+        || fail "the Debian release codename is invalid"
+    architecture="$(dpkg --print-architecture)"
+    [[ "$architecture" =~ ^[a-z0-9][a-z0-9_-]*$ ]] \
+        || fail "the Debian package architecture is invalid"
+
+    keyring_dir=/etc/apt/keyrings
+    source_dir=/etc/apt/sources.list.d
+    key_file="$keyring_dir/docker.asc"
+    source_file="$source_dir/docker.list"
+    [[ ! -L "$keyring_dir" && ! -L "$source_dir" ]] \
+        || fail "Docker apt repository directories must not be symlinks"
+    install -o 0 -g 0 -m 0755 -d "$keyring_dir" "$source_dir"
+    [[ -d "$keyring_dir" && ! -L "$keyring_dir"
+        && "$(stat -c '%u:%g:%a' "$keyring_dir" 2>/dev/null)" == '0:0:755'
+        && -d "$source_dir" && ! -L "$source_dir"
+        && "$(stat -c '%u:%g:%a' "$source_dir" 2>/dev/null)" == '0:0:755' ]] \
+        || fail "Docker apt repository directories are unsafe"
+
+    key_temp="$(mktemp "$keyring_dir/.docker.asc.XXXXXX")" \
+        || fail "unable to create the Docker apt key temporary file"
+    curl -fsSL https://download.docker.com/linux/debian/gpg \
+        -o "$key_temp" \
+        || {
+            rm -f -- "$key_temp"
+            fail "unable to download the Docker apt signing key"
+        }
+    [[ -s "$key_temp" ]] \
+        || {
+            rm -f -- "$key_temp"
+            fail "the downloaded Docker apt signing key is empty"
+        }
+    chmod 0644 "$key_temp" \
+        || {
+            rm -f -- "$key_temp"
+            fail "unable to protect the Docker apt signing key"
+        }
+    mv -fT -- "$key_temp" "$key_file" \
+        || {
+            rm -f -- "$key_temp"
+            fail "unable to install the Docker apt signing key"
+        }
+    [[ -f "$key_file" && ! -L "$key_file"
+        && "$(stat -c '%u:%g:%a' "$key_file" 2>/dev/null)" == '0:0:644' ]] \
+        || fail "the installed Docker apt signing key is unsafe"
+
+    source_temp="$(mktemp "$source_dir/.docker.list.XXXXXX")" \
+        || fail "unable to create the Docker apt source temporary file"
+    printf '%s\n' \
+        "deb [arch=$architecture signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian $codename stable" \
+        >"$source_temp" \
+        || {
+            rm -f -- "$source_temp"
+            fail "unable to write the Docker apt source"
+        }
+    chmod 0644 "$source_temp" \
+        || {
+            rm -f -- "$source_temp"
+            fail "unable to protect the Docker apt source"
+        }
+    mv -fT -- "$source_temp" "$source_file" \
+        || {
+            rm -f -- "$source_temp"
+            fail "unable to install the Docker apt source"
+        }
+    [[ -f "$source_file" && ! -L "$source_file"
+        && "$(stat -c '%u:%g:%a' "$source_file" 2>/dev/null)" == '0:0:644' ]] \
+        || fail "the installed Docker apt source is unsafe"
+    apt-get update
+}
+
+if ! command -v apt-get >/dev/null 2>&1 \
+    || ! command -v apt-cache >/dev/null 2>&1; then
+    fail "apt-get and apt-cache are required"
 fi
-exit 0;
+
+if has_docker && has_compose && has_jq && has_age \
+    && docker info >/dev/null 2>&1; then
+    echo "= Docker orchestration prerequisites are already ready."
+    exit 0
+fi
+
+echo "= Installing missing Docker orchestration prerequisites..."
+if ! has_docker || ! has_compose || ! has_jq || ! has_age; then
+    apt-get update
+fi
+
+if ! has_docker; then
+    apt-cache show docker.io >/dev/null 2>&1 \
+        || fail "the Debian docker.io package is unavailable"
+    apt_install docker.io
+    hash -r
+    has_docker || fail "Docker CLI verification failed after installation"
+fi
+
+if ! has_compose; then
+    if apt-cache show docker-compose-plugin >/dev/null 2>&1; then
+        apt_install docker-compose-plugin || true
+        hash -r
+    fi
+    if ! has_compose \
+        && apt-cache show docker-compose >/dev/null 2>&1; then
+        apt_install docker-compose || true
+        hash -r
+    fi
+
+    if ! has_compose; then
+        configure_docker_apt_repository
+        apt-cache show docker-compose-plugin >/dev/null 2>&1 \
+            || fail "docker-compose-plugin is unavailable from the signed Docker repository"
+        apt_install docker-compose-plugin
+        hash -r
+    fi
+
+    has_compose || fail "docker compose verification failed after installation"
+fi
+
+if ! has_jq; then
+    apt-cache show jq >/dev/null 2>&1 \
+        || fail "the jq package is unavailable"
+    apt_install jq
+    hash -r
+    has_jq || fail "jq verification failed after installation"
+fi
+
+if ! has_age; then
+    apt-cache show age >/dev/null 2>&1 \
+        || fail "the age package is unavailable"
+    apt_install age
+    hash -r
+    has_age || fail "age verification failed after installation"
+fi
+
+if ! docker info >/dev/null 2>&1; then
+    command -v systemctl >/dev/null 2>&1 \
+        || fail "Docker daemon is unavailable and systemctl is missing"
+    systemctl enable --now docker
+fi
+
+has_docker || fail "Docker CLI is unavailable"
+has_compose || fail "Docker Compose is unavailable"
+has_jq || fail "jq is unavailable"
+has_age || fail "age is unavailable"
+docker info >/dev/null 2>&1 || fail "Docker daemon is unavailable"
+
+echo "= Docker orchestration installation completed."
+exit 0

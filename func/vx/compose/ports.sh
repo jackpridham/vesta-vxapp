@@ -64,22 +64,38 @@ vx_compose_ports_keys() {
 vx_compose_ports_lock_acquire() {
     local lock_path="$VESTA/data/.vx-compose-ports.lock"
 
+    if [[ -n "${VX_COMPOSE_PORTS_LOCK_FD:-}" ]]; then
+        VX_COMPOSE_PORTS_LOCK_DEPTH=$((VX_COMPOSE_PORTS_LOCK_DEPTH + 1))
+        return
+    fi
     [[ -d "$VESTA/data" && ! -L "$VESTA/data" ]] \
         || {
             vx_compose_error 'Vesta data root is unavailable'
             return 1
         }
-    exec {VX_COMPOSE_PORTS_LOCK_FD}>"$lock_path"
-    chmod 0640 "$lock_path"
-    flock -x "$VX_COMPOSE_PORTS_LOCK_FD"
+    exec {VX_COMPOSE_PORTS_LOCK_FD}>"$lock_path" || return 1
+    chmod 0640 "$lock_path" || {
+        exec {VX_COMPOSE_PORTS_LOCK_FD}>&-
+        unset VX_COMPOSE_PORTS_LOCK_FD
+        return 1
+    }
+    flock -x "$VX_COMPOSE_PORTS_LOCK_FD" || {
+        exec {VX_COMPOSE_PORTS_LOCK_FD}>&-
+        unset VX_COMPOSE_PORTS_LOCK_FD
+        return 1
+    }
+    VX_COMPOSE_PORTS_LOCK_DEPTH=1
 }
 
 vx_compose_ports_lock_release() {
-    if [[ -n "${VX_COMPOSE_PORTS_LOCK_FD:-}" ]]; then
-        flock -u "$VX_COMPOSE_PORTS_LOCK_FD"
-        exec {VX_COMPOSE_PORTS_LOCK_FD}>&-
-        unset VX_COMPOSE_PORTS_LOCK_FD
+    [[ -n "${VX_COMPOSE_PORTS_LOCK_FD:-}" ]] || return 0
+    if (( VX_COMPOSE_PORTS_LOCK_DEPTH > 1 )); then
+        VX_COMPOSE_PORTS_LOCK_DEPTH=$((VX_COMPOSE_PORTS_LOCK_DEPTH - 1))
+        return
     fi
+    flock -u "$VX_COMPOSE_PORTS_LOCK_FD"
+    exec {VX_COMPOSE_PORTS_LOCK_FD}>&-
+    unset VX_COMPOSE_PORTS_LOCK_FD VX_COMPOSE_PORTS_LOCK_DEPTH
 }
 
 vx_compose_ports_current_runtime_keys() {
