@@ -3,7 +3,7 @@
 > **Historical legacy screenshots:** These targets describe the direct-container
 > panel screenshot set. The current Vortex Docker panel is Compose-project
 > based and is documented in
-> [the operator guide](../../../../docs/container-orchestration.md).
+> [the Compose project guide](../../docker-compose-projects.md).
 
 ## `user-list-empty.png`
 

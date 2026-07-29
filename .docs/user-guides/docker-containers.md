@@ -5,8 +5,8 @@
 > Docker Compose projects, while the simple add/change compatibility path now
 > generates a constrained Compose project.
 > Follow the [authoritative status](../status/2026-07-25-compose-orchestration.md)
-> and [operator architecture guide](../../docs/container-orchestration.md) for
-> current operation.
+> and [current Compose project guide](docker-compose-projects.md) for current
+> operation.
 
 ## Prerequisites And Package Limits
 

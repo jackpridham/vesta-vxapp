@@ -80,6 +80,24 @@ $cmd = VESTA_CMD."v-spawn-ajax-process "
 - Using `$user` or request values instead of `$myvesta_logged_user`.
 - Forgetting to preserve hidden fields through a confirmation step.
 - Forgetting `exit;` after emitting modal output.
+- Starting a spawned-process watcher before its textarea exists or reusing one
+  DOM id for simple and advanced output.
+- Continuing to poll after malformed JSON, an invalid response schema, or a
+  terminal response.
+
+## Compose Confirmation
+
+Compose add/update confirmation is a page workflow rather than a generic modal,
+but follows the same trust boundary:
+
+- the PHP session stores the short-lived preview record;
+- hidden fields repeat only validated owner/project/profile, preview ID,
+  source/candidate digests, and expected revision;
+- POST values must match the session record exactly;
+- CSRF, actor/owner access, profile authority, and preview expiry are checked
+  again before starting the apply job;
+- standard apply consumes the root-owned immutable candidate; it does not
+  trust source text returned by the browser.
 
 ## Minimum Checklist
 

@@ -28,6 +28,18 @@
 - Nginx templates on a host live in `/usr/local/vesta/data/templates/web/nginx/`.
 - Generated per-domain Apache and nginx configs live in `/home/<user>/conf/web/`.
 
+## Docker Compose Paths
+
+- `func/vx/compose/` -> `/usr/local/vesta/func/vx/compose/`
+- `data/users/<user>/docker-projects/<project>/` ->
+  `/usr/local/vesta/data/users/<user>/docker-projects/<project>/`
+- `data/tmp/compose-previews/<preview-id>/` ->
+  `/usr/local/vesta/data/tmp/compose-previews/<preview-id>/`
+- Host durable binds are outside the Vesta root at
+  `/home/<user>/docker/<project>/binds/`.
+- Generated route configs are still per-domain files under
+  `/home/<user>/conf/web/`; `routes.conf` is the Vesta source of truth.
+
 ## phpMyAdmin And Roundcube Paths
 
 If the task touches `/webmail/` or `/phpmyadmin/`, inspect both the global server include files and the Vesta domain templates that expose those locations.

@@ -28,6 +28,26 @@ Use this skill before editing files when the main question is "where does this l
 - In the repo, shipped installer/default templates live under `install/debian/<version>/templates/web/...`.
 - If a change affects how domains are rendered, inspect both the source template and the generated config path it produces.
 
+## Compose Placement
+
+- Desired state:
+  `/usr/local/vesta/data/users/<user>/docker-projects/<project>/compose.yaml`.
+- Protected revisions, metadata, routes, audit, secrets, and operation state
+  live under the same project control root.
+- Durable bind data lives under
+  `/home/<user>/docker/<project>/binds/`; named volumes use
+  `vx_<user>_<project>_<volume>`.
+- Immutable self-service previews live temporarily under
+  `/usr/local/vesta/data/tmp/compose-previews/<preview-id>/`.
+- Docker objects and inspect output are runtime evidence, not persistence.
+- HTTP routes remain Vesta state and render through the dedicated `vx-proxy`
+  web template; projects without routes receive no nginx configuration.
+
+Before Compose path changes, read
+`.docs/contracts/compose-storage.md`,
+`.docs/contracts/compose-networking.md`, and
+`.docs/contracts/compose-self-service-deployment.md`.
+
 ## When To Check Multiple Locations
 
 - If changing a runtime helper or CLI command, edit the root repo files first.
