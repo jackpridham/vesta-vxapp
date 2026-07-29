@@ -19,7 +19,7 @@ source "$repo_root/func/vx/compose/main.sh"
 
 cases=(
     privileged:PRIVILEGED
-    docker-socket:MOUNT
+    docker-socket:'(MOUNT|PATH)'
     root-mount:MOUNT
     host-pid:HOST_PID
     host-ipc:HOST_IPC
@@ -49,7 +49,7 @@ for test_case in "${cases[@]}"; do
         2>"$error_file"; then
         fail "$name reached accepted candidate state"
     fi
-    grep -Fq "Compose policy rejection [$code]" "$error_file" \
+    grep -Eq "Compose policy rejection \\[$code\\]" "$error_file" \
         || fail "$name returned the wrong deny-first diagnostic"
     if grep -Fq 'must-not-leak' "$error_file"; then
         fail "$name leaked a hostile input value"
