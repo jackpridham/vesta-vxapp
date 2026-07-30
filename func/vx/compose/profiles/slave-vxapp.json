@@ -1,0 +1,15 @@
+{
+  "name": "slave-vxapp",
+  "version": 1,
+  "enabled": true,
+  "admin_only": true,
+  "allow_build": false,
+  "allow_bind_mounts": false,
+  "allow_external_networks": false,
+  "allow_public_ports": false,
+  "allow_host_namespaces": false,
+  "allowed_cap_add": [
+    "SETGID",
+    "SETUID"
+  ]
+}

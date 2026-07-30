@@ -230,6 +230,12 @@ for export_size in "${export_sizes[@]}"; do
     done
 done
 
+sed -i "s/^PROFILE=.*/PROFILE='slave-vxapp'/" "$root/project.conf"
+export_json="$(vx_compose_definition_export_json alice shop)"
+jq -e '.PROFILE == "slave-vxapp"' <<<"$export_json" >/dev/null \
+    || fail 'definition export rejected an installed versioned profile'
+sed -i "s/^PROFILE=.*/PROFILE='standard'/" "$root/project.conf"
+
 export_diagnostics="$test_root/export.err"
 rm -f "$root/compose.yaml"
 ln -s "$export_source" "$root/compose.yaml"

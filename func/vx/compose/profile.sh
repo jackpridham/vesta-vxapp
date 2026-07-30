@@ -94,6 +94,11 @@ vx_compose_profile_require_authorized() {
     local profile="$3"
     local assignment expires expires_epoch profile_version
 
+    vx_compose_profile_is_available "$profile" \
+        || {
+            vx_compose_error 'Compose profile is not available'
+            return 1
+        }
     vx_compose_profile_is_admin_only "$profile" || return 0
     assignment="$(vx_compose_profile_assignment_path "$owner" "$project")"
     [[ -f "$assignment" && ! -L "$assignment"
