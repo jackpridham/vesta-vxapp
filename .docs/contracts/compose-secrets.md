@@ -59,3 +59,17 @@ re-provisions secrets.
 Synthetic canaries must be absent from metadata, list/inspect output, audit
 history, Docker command logs, Compose validation errors, web HTML/JSON,
 unencrypted backups, and routine container logs.
+
+## Exact-image secret consumers
+
+An image that does not natively read Compose secret files may use a reviewed
+executable stored in an existing managed volume. Compose may invoke that
+executable by its non-sensitive container path; the executable may then read
+the root-owned `/run/secrets/<name>` mount. The wrapper must contain no secret
+value, remain inside backup/restore coverage, and pass the same canary tests.
+
+For the current `slave-vxapp` exact-image rehearsal, `LOG_LEVEL=info` is a
+non-secret literal runtime setting. It prevents Laravel's debug-level tenant
+detection message from exposing the protected `TENANT_DETECTION` value.
+Routine log capture must still prove the canary absent; configuration alone is
+not acceptance evidence.
