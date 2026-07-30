@@ -86,4 +86,146 @@ for field in "${quota_fields[@]}"; do
         || fail "user JSON omits U_$field"
 done
 
+package_test_root="$test_root/package-validation"
+export VESTA="$package_test_root/vesta"
+package_source="$package_test_root/source"
+mkdir -p \
+    "$VESTA/conf" \
+    "$VESTA/data/packages" \
+    "$VESTA/func" \
+    "$package_source" \
+    "$package_test_root/templates/dns" \
+    "$package_test_root/templates/web/nginx/php-fpm"
+
+cp "$repo_root/func/domain.sh" "$VESTA/func/domain.sh"
+cat >"$VESTA/func/main.sh" <<'EOF'
+OK=0
+E_EXISTS=4
+E_NOTEXIST=5
+ARGUMENTS=''
+
+check_args() {
+    :
+}
+
+is_format_valid() {
+    :
+}
+
+is_package_valid() {
+    :
+}
+
+is_int_format_valid() {
+    :
+}
+
+is_format_valid_shell() {
+    :
+}
+
+log_history() {
+    :
+}
+
+log_event() {
+    :
+}
+
+check_result() {
+    local code="$1"
+    local message="$2"
+
+    printf '%s\n' "$message" >&2
+    exit "$code"
+}
+
+parse_object_kv_list_non_eval() {
+    local assignment key value
+
+    for assignment in "$@"; do
+        key="${assignment%%=*}"
+        value="${assignment#*=}"
+        value="${value#\'}"
+        value="${value%\'}"
+        printf -v "$key" '%s' "$value"
+    done
+}
+EOF
+cat >"$VESTA/conf/vesta.conf" <<EOF
+WEB_SYSTEM='nginx'
+WEB_BACKEND='php-fpm'
+PROXY_SYSTEM='nginx'
+WEBTPL='$package_test_root/templates/web'
+DNSTPL='$package_test_root/templates/dns'
+EOF
+
+touch \
+    "$package_test_root/templates/dns/default.tpl" \
+    "$package_test_root/templates/web/nginx/default.tpl" \
+    "$package_test_root/templates/web/nginx/default.stpl" \
+    "$package_test_root/templates/web/nginx/php-fpm/default.tpl" \
+    "$package_test_root/templates/web/nginx/php-fpm/default.stpl"
+
+write_package_fixture() {
+    local package_name="$1"
+
+    cat >"$package_source/$package_name.pkg" <<'EOF'
+WEB_DOMAINS='1'
+WEB_ALIASES='1'
+DNS_DOMAINS='1'
+DNS_RECORDS='1'
+MAIL_DOMAINS='1'
+MAIL_ACCOUNTS='1'
+DATABASES='1'
+CRON_JOBS='1'
+DISK_QUOTA='1'
+BANDWIDTH='1'
+BACKUPS='1'
+SHELL='bash'
+WEB_TEMPLATE='default'
+DNS_TEMPLATE='default'
+PROXY_TEMPLATE='default'
+EOF
+}
+
+assert_invalid_template_blocks_package() {
+    local package_name="$1"
+    local missing_template="$2"
+    local output
+
+    write_package_fixture "$package_name"
+    mv "$missing_template" "$missing_template.missing"
+    if output="$(
+        VESTA="$VESTA" \
+            "$repo_root/bin/v-add-user-package" \
+            "$package_source" "$package_name" 2>&1
+    )"; then
+        mv "$missing_template.missing" "$missing_template"
+        fail "$package_name accepted a missing template"
+    fi
+    mv "$missing_template.missing" "$missing_template"
+    [[ "$output" == *"template doesn't exist"* ]] \
+        || fail "$package_name returned the wrong missing-template diagnostic"
+    [[ ! -e "$VESTA/data/packages/$package_name.pkg" ]] \
+        || fail "$package_name was copied after template validation failed"
+}
+
+assert_invalid_template_blocks_package \
+    invalidweb \
+    "$package_test_root/templates/web/nginx/php-fpm/default.tpl"
+assert_invalid_template_blocks_package \
+    invaliddns \
+    "$package_test_root/templates/dns/default.tpl"
+assert_invalid_template_blocks_package \
+    invalidproxy \
+    "$package_test_root/templates/web/nginx/default.tpl"
+
+write_package_fixture validtemplates
+VESTA="$VESTA" \
+    "$repo_root/bin/v-add-user-package" \
+    "$package_source" validtemplates
+[[ -f "$VESTA/data/packages/validtemplates.pkg" ]] \
+    || fail 'valid package was not copied after all template validators passed'
+
 echo "Compose package integration tests passed."
