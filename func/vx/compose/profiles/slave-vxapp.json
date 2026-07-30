@@ -1,6 +1,6 @@
 {
   "name": "slave-vxapp",
-  "version": 1,
+  "version": 2,
   "enabled": true,
   "admin_only": true,
   "allow_build": false,
@@ -9,6 +9,9 @@
   "allow_public_ports": false,
   "allow_host_namespaces": false,
   "allowed_cap_add": [
+    "CHOWN",
+    "DAC_OVERRIDE",
+    "KILL",
     "SETGID",
     "SETUID"
   ]
