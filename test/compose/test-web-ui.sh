@@ -131,6 +131,9 @@ expect_pattern web/css/docker.css \
 expect_absent web/templates/docker_project_shared.php \
     'fonts.googleapis.com|sentry' \
     'project console does not import remote fonts or product branding'
+expect_absent web/templates/header.html \
+    'fonts.googleapis.com|fonts.gstatic.com' \
+    'Docker panel shell does not load remote fonts'
 expect_pattern web/templates/docker_list_shared.php \
     "docker_available.*docker_quota.*docker_can_add_from_scope|docker_available.*reached.*docker_can_add_from_scope" \
     'advanced add follows Docker readiness, quota, and explicit owner scope'

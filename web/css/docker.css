@@ -1161,7 +1161,7 @@
 @media (max-width: 760px) {
   .body-docker .l-content > .l-center,
   .body-docker .l-content > .right_sidebar {
-    display: none;
+    display: none !important;
   }
 
   .body-docker .l-header .l-center {
