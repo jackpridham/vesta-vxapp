@@ -54,11 +54,19 @@ else
     age_state='no'
 fi
 
+if command -v python3 >/dev/null 2>&1 \
+    && python3 --version >/dev/null 2>&1; then
+    python3_state='yes'
+else
+    python3_state='no'
+fi
+
 if [ "$state" = 'yes' ] \
     && [ "$daemon_state" = 'yes' ] \
     && [ "$compose_state" = 'yes' ] \
     && [ "$jq_state" = 'yes' ] \
-    && [ "$age_state" = 'yes' ]; then
+    && [ "$age_state" = 'yes' ] \
+    && [ "$python3_state" = 'yes' ]; then
     orchestration_state='yes'
 else
     orchestration_state='no'
@@ -72,6 +80,7 @@ case "$format" in
         echo '    ,"DOCKER_COMPOSE_AVAILABLE": "'$compose_state'"'
         echo '    ,"JQ_AVAILABLE": "'$jq_state'"'
         echo '    ,"AGE_AVAILABLE": "'$age_state'"'
+        echo '    ,"PYTHON3_AVAILABLE": "'$python3_state'"'
         echo '    ,"DOCKER_ORCHESTRATION_READY": "'$orchestration_state'"'
         echo '}'
         ;;

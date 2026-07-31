@@ -13,7 +13,7 @@ if grep -En 'docker-projects/.*/secrets|docker-registry/config.json' \
     echo "FAIL: unencrypted user backup includes Compose secret/auth values" >&2
     exit 1
 fi
-for dependency in docker-compose jq age; do
+for dependency in docker-compose jq age python3; do
     grep -Fq "$dependency" "$repo_root/install/vst-install-debian.sh" \
         || {
             echo "FAIL: Debian installer omits $dependency" >&2

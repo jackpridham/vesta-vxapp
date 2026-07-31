@@ -63,6 +63,11 @@ cat >"$fake_bin/age" <<'EOF'
 [[ "${1-}" = '--version' && -f "$VX_TEST_STATE/age" ]]
 EOF
 
+cat >"$fake_bin/python3" <<'EOF'
+#!/usr/bin/env bash
+[[ "${1-}" = '--version' && -f "$VX_TEST_STATE/python3" ]]
+EOF
+
 cat >"$fake_bin/apt-cache" <<'EOF'
 #!/usr/bin/env bash
 [[ "${1-}" = 'show' ]] || exit 1
@@ -70,7 +75,7 @@ case "${2-}" in
     docker-compose-plugin)
         [[ -f "$VX_TEST_STATE/docker-repo" ]]
         ;;
-    docker.io|docker-compose|jq|age)
+    docker.io|docker-compose|jq|age|python3)
         exit 0
         ;;
     *)
@@ -102,6 +107,11 @@ for package in "$@"; do
         age)
             if [[ "${VX_TEST_WITHHOLD_AGE:-no}" != 'yes' ]]; then
                 touch "$VX_TEST_STATE/age"
+            fi
+            ;;
+        python3)
+            if [[ "${VX_TEST_WITHHOLD_PYTHON3:-no}" != 'yes' ]]; then
+                touch "$VX_TEST_STATE/python3"
             fi
             ;;
     esac
@@ -238,7 +248,7 @@ fi
 grep -Fq 'unable to establish protected Compose data-root mounts' \
     "$test_root/guard-failure.out"
 
-for tool_state in docker daemon compose jq age; do
+for tool_state in docker daemon compose jq age python3; do
     [[ -f "$state_dir/$tool_state" ]] \
         || { echo "installer did not establish $tool_state readiness" >&2; exit 1; }
 done
@@ -247,6 +257,7 @@ grep -Fq 'docker-compose-plugin' "$state_dir/apt.log"
 [[ -f "$state_dir/legacy-compose" && -f "$state_dir/docker-repo" ]]
 grep -Fq 'jq' "$state_dir/apt.log"
 grep -Fq 'age' "$state_dir/apt.log"
+grep -Fq 'python3' "$state_dir/apt.log"
 [[ -f "$apt_root/keyrings/docker.asc"
     && ! -L "$apt_root/keyrings/docker.asc"
     && "$(stat -c '%a' "$apt_root/keyrings/docker.asc")" == 644 ]] \
@@ -277,6 +288,7 @@ for key in \
     DOCKER_COMPOSE_AVAILABLE \
     JQ_AVAILABLE \
     AGE_AVAILABLE \
+    PYTHON3_AVAILABLE \
     DOCKER_ORCHESTRATION_READY
 do
     [[ "$(printf '%s' "$readiness_json" | "$real_jq" -r --arg key "$key" '.[$key]')" = 'yes' ]] \
@@ -297,6 +309,14 @@ not_ready_json="$("$repo_root/bin/v-check-docker-engine" json)"
 
 if VX_TEST_WITHHOLD_AGE=yes "$installer_under_test" >/dev/null 2>&1; then
     echo "installer succeeded without a working age command" >&2
+    exit 1
+fi
+
+touch "$state_dir/age"
+rm -f "$state_dir/python3"
+if VX_TEST_WITHHOLD_PYTHON3=yes \
+    "$installer_under_test" >/dev/null 2>&1; then
+    echo "installer succeeded without a working python3 command" >&2
     exit 1
 fi
 

@@ -2,7 +2,7 @@
 # info: install and verify docker orchestration prerequisites
 # options: NONE
 #
-# The function installs Docker, Docker Compose, jq, and age when required.
+# The function installs Docker, Docker Compose, jq, age, and Python 3 when required.
 
 set -Eeuo pipefail
 
@@ -31,6 +31,11 @@ has_jq() {
 has_age() {
     command -v age >/dev/null 2>&1 \
         && age --version >/dev/null 2>&1
+}
+
+has_python3() {
+    command -v python3 >/dev/null 2>&1 \
+        && python3 --version >/dev/null 2>&1
 }
 
 apt_install() {
@@ -134,14 +139,14 @@ fi
 "$VESTA/bin/v-install-docker-compose-mount-guard" \
     || fail "unable to activate the Docker Compose mount guard"
 
-if has_docker && has_compose && has_jq && has_age \
+if has_docker && has_compose && has_jq && has_age && has_python3 \
     && docker info >/dev/null 2>&1; then
     echo "= Docker orchestration prerequisites are already ready."
     exit 0
 fi
 
 echo "= Installing missing Docker orchestration prerequisites..."
-if ! has_docker || ! has_compose || ! has_jq || ! has_age; then
+if ! has_docker || ! has_compose || ! has_jq || ! has_age || ! has_python3; then
     apt-get update
 fi
 
@@ -191,6 +196,14 @@ if ! has_age; then
     has_age || fail "age verification failed after installation"
 fi
 
+if ! has_python3; then
+    apt-cache show python3 >/dev/null 2>&1 \
+        || fail "the python3 package is unavailable"
+    apt_install python3
+    hash -r
+    has_python3 || fail "Python 3 verification failed after installation"
+fi
+
 if ! docker info >/dev/null 2>&1; then
     command -v systemctl >/dev/null 2>&1 \
         || fail "Docker daemon is unavailable and systemctl is missing"
@@ -201,6 +214,7 @@ has_docker || fail "Docker CLI is unavailable"
 has_compose || fail "Docker Compose is unavailable"
 has_jq || fail "jq is unavailable"
 has_age || fail "age is unavailable"
+has_python3 || fail "Python 3 is unavailable"
 docker info >/dev/null 2>&1 || fail "Docker daemon is unavailable"
 
 echo "= Docker orchestration installation completed."
