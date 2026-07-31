@@ -53,6 +53,19 @@ for function_name in \
         || fail "main.sh did not publish $function_name"
 done
 
+[[ "$(vx_compose_backup_policy_next_run \
+    weekly@fri@10:00 2026-07-31T09:00:00Z)" \
+    == 2026-07-31T10:00:00Z ]] \
+    || fail "weekly schedule skipped a later same-weekday slot"
+[[ "$(vx_compose_backup_policy_next_run \
+    weekly@fri@10:00 2026-07-31T10:00:00Z)" \
+    == 2026-08-07T10:00:00Z ]] \
+    || fail "weekly schedule was not strictly later at the exact slot"
+[[ "$(vx_compose_backup_policy_next_run \
+    weekly@fri@10:00 2026-07-31T11:00:00Z)" \
+    == 2026-08-07T10:00:00Z ]] \
+    || fail "weekly schedule returned a past same-weekday slot"
+
 # Policy validation, persistence, owner/project binding, mode, and attribution.
 _VX_COMPOSE_AUDIT_ACTOR='admin'
 vx_compose_backup_policy_add \
@@ -94,7 +107,12 @@ vx_compose_backup_policy_state_update \
     "$archived_policy" LAST_SUCCESS '2026-01-01T00:00:00Z'
 vx_compose_backup_policy_state_update \
     "$archived_policy" REPLICATION_STATE succeeded
-vx_compose_backup_policy_restore_reset alice app "$archived_policy"
+restore_policy_candidate="$test_root/restore-policy-candidate"
+mkdir -p "$restore_policy_candidate"
+vx_compose_backup_policy_sanitize_to \
+    "$archived_policy" "$restore_policy_candidate/backup-policy.conf"
+vx_compose_restore_install_backup_policy \
+    "$(dirname -- "$policy_path")" "$restore_policy_candidate"
 reset_policy="$(vx_compose_backup_policy_list_json alice app)"
 jq -e '
     .ENABLED == "yes"
@@ -232,6 +250,24 @@ replicated_file="$(find "$test_root/replicated/alice/app" -type f -name '*.age')
 cmp -s "$test_root/drill.tar.gz" "$replicated_file" \
     || fail "fixture adapter did not persist and verify descriptor input"
 
+env_adapter="$VESTA/func/vx/compose/replication-adapters/env-clean"
+printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -Eeuo pipefail' \
+    '[[ -z "${BACKUP_ENV_CANARY:-}" ]] || exit 1' \
+    '[[ "$#" -eq 2 && -f /proc/self/fd/3 ]] || exit 1' \
+    'jq -cn '\''{STATE:"succeeded",REFERENCE:"env-clean"}'\''' \
+    >"$env_adapter"
+chmod 0755 "$env_adapter"
+BACKUP_ENV_CANARY='must-not-cross-adapter-boundary'
+export BACKUP_ENV_CANARY
+replication="$(
+    vx_compose_backup_replicate alice app env-clean "$test_root/drill.tar.gz"
+)"
+unset BACKUP_ENV_CANARY
+jq -e '.STATE == "succeeded"' <<<"$replication" >/dev/null \
+    || fail "replication adapter inherited caller environment"
+
 # A managed run updates durable state, invokes protected replication, performs
 # the due restore drill, retention, and emits an attributed audit event.
 fake_bin="$test_root/fake-bin"
@@ -268,6 +304,10 @@ vx_compose_backup_project() {
     printf 'managed archive\n' >"$3"
 }
 vx_compose_backup_replicate() {
+    if [[ "$3" == none ]]; then
+        printf '{"STATE":"not-configured"}\n'
+        return
+    fi
     [[ "$1" == alice && "$2" == app && "$3" == fixture-copy && -f "$4" ]] \
         || return 1
     if [[ "${EXPECT_CIPHERTEXT:-no}" == yes ]]; then
@@ -360,6 +400,60 @@ vx_compose_backup_policy_run alice app \
     || fail "policy lock did not recover after interruption"
 PATH="$prior_path"
 unset VX_DOCKER_AGE_RECIPIENT EXPECT_CIPHERTEXT
+
+vx_compose_backup_policy_add \
+    alice app yes daily@02:30 7 4 no none 3600 86400
+original_retention="$(declare -f vx_compose_backup_policy_retention)"
+success_before_retention_failure="$(
+    jq -s '[.[] | select(.ACTION=="backup-policy-run" and .RESULT=="succeeded")]
+        | length' "$(dirname -- "$policy_path")/audit.log"
+)"
+vx_compose_backup_policy_retention() { return 1; }
+if vx_compose_backup_policy_run alice app >/dev/null 2>&1; then
+    fail "retention failure returned backup policy success"
+fi
+eval "$original_retention"
+[[ "$(vx_compose_meta_get "$policy_path" LAST_ERROR)" == retention-failed ]] \
+    || fail "retention failure was not persisted transactionally"
+jq -e '
+    any(.ALERTS[];
+        .TYPE=="backup-failure" and .STATUS=="open"
+    )
+' <<<"$(vx_compose_alerts_list_json alice app)" >/dev/null \
+    || fail "retention failure did not open a typed backup alert"
+[[ "$(
+    jq -s '[.[] | select(.ACTION=="backup-policy-run" and .RESULT=="succeeded")]
+        | length' "$(dirname -- "$policy_path")/audit.log"
+)" -eq "$success_before_retention_failure" ]] \
+    || fail "retention failure emitted a success audit"
+vx_compose_backup_policy_run alice app \
+    || fail "policy did not recover after retention failure"
+last_success_before_failed_write="$(
+    vx_compose_meta_get "$policy_path" LAST_SUCCESS
+)"
+success_audits_before="$(
+    jq -s '[.[] | select(.ACTION=="backup-policy-run" and .RESULT=="succeeded")]
+        | length' "$(dirname -- "$policy_path")/audit.log"
+)"
+VX_COMPOSE_TEST_BACKUP_POLICY_WRITE_FAIL=2
+export VX_COMPOSE_TEST_BACKUP_POLICY_WRITE_FAIL
+if vx_compose_backup_policy_run alice app >/dev/null 2>&1; then
+    fail "injected policy state-write failure returned success"
+fi
+unset VX_COMPOSE_TEST_BACKUP_POLICY_WRITE_FAIL
+vx_compose_backup_policy_file_validate "$policy_path" \
+    || fail "failed transactional policy write corrupted exact authority"
+[[ "$(vx_compose_meta_get "$policy_path" LAST_ERROR)" == run-in-progress
+    && "$(vx_compose_meta_get "$policy_path" LAST_SUCCESS)" \
+        == "$last_success_before_failed_write" ]] \
+    || fail "terminal write failure did not preserve recoverable operation state"
+[[ "$(
+    jq -s '[.[] | select(.ACTION=="backup-policy-run" and .RESULT=="succeeded")]
+        | length' "$(dirname -- "$policy_path")/audit.log"
+)" -eq "$success_audits_before" ]] \
+    || fail "failed policy state write emitted a success audit"
+vx_compose_backup_policy_run alice app \
+    || fail "next policy run did not recover after state-write failure"
 
 # Scheduler enumerates only enabled, due policy files and passes structured
 # owner/project arguments rather than executing stored shell strings.
