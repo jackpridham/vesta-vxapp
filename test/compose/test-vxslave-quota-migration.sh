@@ -45,7 +45,7 @@ U_DOCKER_SERVICES='1'
 U_DOCKER_CPUS='1.000'
 U_DOCKER_MEMORY_MB='1024'
 U_DOCKER_PIDS='256'
-U_DOCKER_STORAGE_MB='1024'
+U_DOCKER_STORAGE_MB='2'
 U_DOCKER_PORTS='1'
 U_DOCKER_SECRETS='1'
 U_DOCKER_VOLUMES='2'
@@ -81,6 +81,22 @@ grep -Fq "rollback.sh '$output_dir' slave 'existing-vxslave'" \
     || fail 'exact rollback command was not emitted'
 [[ "$(sha256sum "$output_dir/rollback-user.conf" | awk '{print $1}')" \
     == "$source_user_bytes" ]] || fail 'rollback user was not byte exact'
+jq -e '
+    .PACKAGE_VALUES
+        == ["1","1","1.000","1024","256","1024","1","1","2"]
+    and .EFFECTIVE_VALUES
+        == ["1","1","1.000","1024","256","1024","1","1","2"]
+    and .USED
+        == ["1","1","1.000","1024","256","2","1","1","2"]
+' "$output_dir/expected-quota.json" >/dev/null \
+    || {
+        jq . "$output_dir/expected-quota.json" >&2
+        fail 'prepared assertion conflated authoritative usage with limits'
+    }
+grep -Fq \
+    'authoritative source usage is ["1","1","1.000","1024","256","2","1","1","2"]' \
+    "$output_dir/apply-and-rollback.txt" \
+    || fail 'procedure did not record authoritative source usage'
 
 if "$repo_root/install/migrations/vxslave-compose-quota/prepare.sh" \
     "$test_root/default.pkg" "$source_user" "$test_root/forbidden" default \
@@ -118,7 +134,7 @@ U_DOCKER_SERVICES='1'
 U_DOCKER_CPUS='1.000'
 U_DOCKER_MEMORY_MB='1024'
 U_DOCKER_PIDS='256'
-U_DOCKER_STORAGE_MB='1024'
+U_DOCKER_STORAGE_MB='2'
 U_DOCKER_PORTS='1'
 U_DOCKER_SECRETS='1'
 U_DOCKER_VOLUMES='2'
@@ -127,7 +143,7 @@ EOF
 source "$repo_root/func/vx/compose/main.sh"
 
 vx_compose_quota_check_values \
-    rehearsal 1 1 1000 1024 256 1024 1 1 2 \
+    rehearsal 1 1 1000 1024 256 2 1 1 2 \
     || fail 'exact current usage was rejected'
 fields=(
     DOCKER_PROJECTS
@@ -159,7 +175,7 @@ jq -e '
     [.QUOTAS[].EFFECTIVE_VALUE]
         == ["1","1","1.000","1024","256","1024","1","1","2"]
     and [.QUOTAS[].USED]
-        == ["1","1","1.000","1024","256","1024","1","1","2"]
+        == ["1","1","1.000","1024","256","2","1","1","2"]
 ' <<<"$quota_json" >/dev/null \
     || fail 'applied rehearsal state did not match the approved limits'
 
