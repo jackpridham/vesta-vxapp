@@ -67,9 +67,17 @@ test('operator console observes drift, reconciles explicitly, and remains usable
     const archive = runVestaCommand('v-backup-docker-project', [owner, project]).trim();
 
     await page.setViewportSize({ width: 1280, height: 720 });
-    await page.goto(
-      `/list/docker/project/?project=${encodeURIComponent(project)}&user=${encodeURIComponent(owner)}`
+    await page.goto(`/list/docker/?user=${encodeURIComponent(owner)}`);
+    const projectCard = page.locator(
+      `#docker-list-cards article[data-owner="${owner}"][data-name="${project}"]`
     );
+    await expect(projectCard).toBeVisible();
+    await page.evaluate(() => window.VX_DOCKER_POLLING_TEST.refresh());
+    await expect(projectCard.locator('.docker-card-health-badge')).toHaveAttribute(
+      'data-freshness',
+      /^(fresh|stale)$/
+    );
+    await projectCard.getByRole('link', { name: /details/i }).click();
     await expect(page.getByRole('heading', { name: project })).toBeVisible();
     await expect(page.getByRole('heading', { name: /Desired\/runtime drift/i })).toBeVisible();
     await expect(page.getByRole('heading', { name: /Managed backups/i })).toBeVisible();
