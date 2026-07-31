@@ -9,6 +9,13 @@ Registry-backed image evidence records the immutable repository reference and
 unknown labels are replaced with an empty value; image environment values are
 not copied.
 
+Web preview/session payloads accept those current-image fields only through an
+explicit nested schema. OCI labels retain the same five-key,
+512-character, control/credential/userinfo-free boundary. Trust decisions
+accept only the documented mode, decision, profile/policy versions,
+adapter state/detail, threshold, created time, and exception flag. Unknown
+fields or any uploaded source path make the complete preview fail closed.
+
 Protected evidence lives below
 `/usr/local/vesta/data/vx/compose/image-trust/evidence/<digest>/`, outside
 tenant-writable and backup paths. SBOM and provenance documents are root-owned
