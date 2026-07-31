@@ -45,11 +45,11 @@ docker_log="$test_root/docker.log"
     printf '%s\n' 'fi'
     printf '%s\n' 'if [[ "$1" == inspect && "${2:-}" =~ ^[a-f0-9]{12,64}$ ]]; then'
     printf '%s\n' \
-        '  printf "%s\n" '"'"'[{"Config":{"Labels":{"com.docker.compose.project":"vx-alice-web","com.docker.compose.service":"app","vx.managed":"yes","vx.user":"alice","vx.project":"web","vx.revision":"1","vx.image-id":"sha256:feedface"}},"Image":"sha256:feedface"}]'"'"
+        '  printf "%s\n" '"'"'[{"Config":{"Labels":{"com.docker.compose.project":"vx-alice-web","com.docker.compose.service":"app","vx.managed":"yes","vx.user":"alice","vx.project":"web","vx.revision":"1","vx.image-id":"sha256:feedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedface"}},"Image":"sha256:feedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedface"}]'"'"
     printf '%s\n' 'fi'
     printf '%s\n' 'if [[ " $* " == *" image inspect "* ]]; then'
     printf '%s\n' \
-        '  printf "%s\n" '"'"'{"Id":"sha256:feedface","RepoTags":["alpine:3.20"],"RepoDigests":["alpine@sha256:feedface"],"Architecture":"amd64","Os":"linux"}'"'"
+        '  printf "%s\n" '"'"'{"Id":"sha256:feedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedface","RepoTags":["alpine:3.20"],"RepoDigests":["alpine@sha256:feedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedface"],"Architecture":"amd64","Os":"linux"}'"'"
     printf '%s\n' 'fi'
 } >"$fake_docker"
 chmod 0755 "$fake_docker"
