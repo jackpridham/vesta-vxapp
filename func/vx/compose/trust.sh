@@ -12,6 +12,44 @@ vx_compose_trust_root() {
     printf '%s/data/vx/compose/image-trust\n' "$VESTA"
 }
 
+vx_compose_trust_lock_acquire() {
+    local digest="$1" root lock_root lock_file
+
+    vx_compose_trust_digest_is_valid "$digest" || return 1
+    [[ -z "${VX_COMPOSE_TRUST_LOCK_FD:-}" ]] || return 1
+    root="$(vx_compose_trust_root)"
+    lock_root="$root/locks"
+    install -d -m 0700 "$root" "$lock_root"
+    [[ -d "$root" && ! -L "$root"
+        && -d "$lock_root" && ! -L "$lock_root"
+        && "$(stat -c '%a' "$root")" == 700
+        && "$(stat -c '%a' "$lock_root")" == 700 ]] || return 1
+    if [[ "$EUID" -eq 0
+        && ( "$(stat -c '%u' "$root")" -ne 0
+            || "$(stat -c '%u' "$lock_root")" -ne 0 ) ]]; then
+        return 1
+    fi
+    lock_file="$lock_root/${digest#sha256:}.lock"
+    exec {VX_COMPOSE_TRUST_LOCK_FD}>"$lock_file" || return 1
+    chmod 0600 "$lock_file" || {
+        exec {VX_COMPOSE_TRUST_LOCK_FD}>&-
+        unset VX_COMPOSE_TRUST_LOCK_FD
+        return 1
+    }
+    flock -x "$VX_COMPOSE_TRUST_LOCK_FD" || {
+        exec {VX_COMPOSE_TRUST_LOCK_FD}>&-
+        unset VX_COMPOSE_TRUST_LOCK_FD
+        return 1
+    }
+}
+
+vx_compose_trust_lock_release() {
+    [[ -n "${VX_COMPOSE_TRUST_LOCK_FD:-}" ]] || return 0
+    flock -u "$VX_COMPOSE_TRUST_LOCK_FD" || true
+    exec {VX_COMPOSE_TRUST_LOCK_FD}>&-
+    unset VX_COMPOSE_TRUST_LOCK_FD
+}
+
 vx_compose_trust_digest_is_valid() {
     [[ "$1" =~ ^sha256:[a-f0-9]{64}$ ]]
 }
@@ -45,11 +83,7 @@ vx_compose_trust_prepare_evidence() {
     vx_compose_trust_digest_is_valid "$digest" || return 1
     [[ "$immutable_reference" == *@sha256:${digest#sha256:}
         && "$image_id" =~ ^sha256:[a-f0-9]{12,64}$ ]] || return 1
-    jq -e '
-        type == "object"
-        and (keys - ["source","revision","version","vendor","created"] | length == 0)
-        and all(.[]; type == "string" and length <= 512)
-    ' <<<"$labels" >/dev/null || return 1
+    vx_compose_image_oci_labels_are_safe "$labels" || return 1
     root="$(vx_compose_trust_root)"
     evidence="$(vx_compose_trust_evidence_dir "$digest")" || return 1
     install -d -m 0700 "$root" "$root/evidence" "$evidence"
@@ -73,8 +107,11 @@ vx_compose_trust_prepare_evidence() {
             return 1
         fi
         jq -e --arg digest "$digest" --arg reference "$immutable_reference" \
+            --arg image_id "$image_id" --argjson labels "$labels" \
             '.SCHEMA == 1 and .DIGEST == $digest
-             and .IMMUTABLE_REFERENCE == $reference' "$metadata" >/dev/null \
+             and .IMMUTABLE_REFERENCE == $reference
+             and .IMAGE_ID == $image_id
+             and .OCI_LABELS == $labels' "$metadata" >/dev/null \
             || return 1
         printf '%s\n' "$evidence"
         return 0
@@ -101,7 +138,7 @@ vx_compose_trust_prepare_evidence() {
     printf '%s\n' "$evidence"
 }
 
-vx_compose_trust_attachment_add() {
+vx_compose_trust_attachment_add_locked() {
     local digest="$1" type="$2" document="$3" generator="$4"
     local verified="${5:-unverified}" evidence document_digest metadata
     local temp_file temp_document
@@ -150,6 +187,23 @@ vx_compose_trust_attachment_add() {
     cat "$metadata"
 }
 
+vx_compose_trust_attachment_add() {
+    local digest="$1" result status
+
+    vx_compose_trust_digest_is_valid "$digest" || return 1
+    vx_compose_trust_lock_acquire "$digest" || return 1
+    if result="$(vx_compose_trust_attachment_add_locked "$@")"; then
+        status=0
+    else
+        status=$?
+    fi
+    vx_compose_trust_lock_release
+    if (( status == 0 )); then
+        printf '%s\n' "$result"
+    fi
+    return "$status"
+}
+
 vx_compose_trust_adapter_path() {
     local adapter="$1" root path
 
@@ -165,20 +219,39 @@ vx_compose_trust_adapter_path() {
 
 vx_compose_trust_run_adapter() {
     local adapter="$1" digest="$2" evidence="$3" threshold="$4"
-    local path output status state
+    local path output status state root temp_output
 
     path="$(vx_compose_trust_adapter_path "$adapter")" || {
         jq -n --arg adapter "$adapter" \
             '{ADAPTER:$adapter,STATE:"unavailable",DETAIL:"adapter unavailable"}'
         return 0
     }
-    if output="$(timeout --signal=KILL "$VX_COMPOSE_TRUST_TIMEOUT_SECONDS" \
-        env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin \
-        "$path" "$digest" "$evidence" "$threshold" 2>/dev/null)"; then
+    root="$(vx_compose_trust_root)"
+    [[ -d "$root" && ! -L "$root" ]] || return 1
+    temp_output="$(mktemp "$root/.adapter-output.XXXXXX")" || return 1
+    chmod 0600 "$temp_output"
+    if timeout --signal=KILL "$VX_COMPOSE_TRUST_TIMEOUT_SECONDS" \
+        bash -c '
+            fixed_root=$1
+            shift
+            cd "$fixed_root"
+            for fd_path in /proc/self/fd/*; do
+                fd=${fd_path##*/}
+                case "$fd" in 0|1|2) ;; *[!0-9]*|"") ;; *)
+                    eval "exec ${fd}>&-"
+                esac
+            done
+            ulimit -f 16
+            exec env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin "$@"
+        ' vx-trust-adapter "$root" \
+        "$path" "$digest" "$evidence" "$threshold" \
+        </dev/null >"$temp_output" 2>/dev/null; then
         status=0
     else
         status=$?
     fi
+    output="$(head -c 8193 "$temp_output")"
+    rm -f -- "$temp_output"
     if (( status == 124 || status == 137 )); then
         jq -n --arg adapter "$adapter" \
             '{ADAPTER:$adapter,STATE:"timeout",DETAIL:"adapter timed out"}'
@@ -238,7 +311,7 @@ vx_compose_trust_exception_applies() {
     (( expires_epoch > $(date -u +%s) ))
 }
 
-vx_compose_verify_image_trust() {
+vx_compose_verify_image_trust_locked() {
     local profile="$1" immutable_reference="$2" image_id="$3" labels="$4"
     local mode digest evidence profile_version policy_version signature
     local vulnerability decision exception=no record temp_file root
@@ -304,4 +377,31 @@ vx_compose_verify_image_trust() {
         return 1
     fi
     cat "$record"
+}
+
+vx_compose_verify_image_trust() {
+    local profile="$1" immutable_reference="$2"
+    local mode digest result status
+
+    mode="$(vx_compose_trust_mode_for_profile "$profile")" || return 1
+    if [[ "$mode" == disabled ]]; then
+        vx_compose_verify_image_trust_locked "$@"
+        return
+    fi
+    digest="${immutable_reference##*@}"
+    vx_compose_trust_digest_is_valid "$digest" || {
+        vx_compose_error 'registry digest is required by Docker image trust policy'
+        return 1
+    }
+    vx_compose_trust_lock_acquire "$digest" || return 1
+    if result="$(vx_compose_verify_image_trust_locked "$@")"; then
+        status=0
+    else
+        status=$?
+    fi
+    vx_compose_trust_lock_release
+    if (( status == 0 )); then
+        printf '%s\n' "$result"
+    fi
+    return "$status"
 }

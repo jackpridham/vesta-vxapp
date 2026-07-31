@@ -17,8 +17,9 @@ fail() {
 }
 
 fake_docker="$test_root/fake-docker"
-inspect_json='{"Id":"sha256:1234567890abcdef","RepoTags":["example.test/app:1"],"RepoDigests":["aaa.invalid/unrelated@sha256:0000000000000000000000000000000000000000000000000000000000000000","example.test/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"Architecture":"amd64","Os":"linux","Config":{"Labels":{"org.opencontainers.image.source":"https://example.test/source","org.opencontainers.image.revision":"abc123","org.opencontainers.image.version":"1","org.opencontainers.image.vendor":"Vortex","org.opencontainers.image.created":"2026-07-31T00:00:00Z","secret.label":"must-not-copy"}}}'
-manifest_json='{"Descriptor":{"digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}'
+inspect_json='{"Id":"sha256:1234567890abcdef","RepoTags":["example.test/app:1"],"RepoDigests":["aaa.invalid/unrelated@sha256:0000000000000000000000000000000000000000000000000000000000000000","example.test/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"Architecture":"amd64","Os":"linux","Config":{"Labels":{"org.opencontainers.image.source":"https://example.test/source","org.opencontainers.image.revision":"abc123","org.opencontainers.image.version":"secret token must-not-copy","org.opencontainers.image.vendor":"Vortex","org.opencontainers.image.created":"2026-07-31T00:00:00Z","secret.label":"must-not-copy"}}}'
+current_manifest_json='[{"Descriptor":{"digest":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},"Platform":{"os":"linux","architecture":"amd64"}},{"Descriptor":{"digest":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},"Platform":{"os":"linux","architecture":"arm64"}}]'
+candidate_manifest_json='[{"Descriptor":{"digest":"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},"Platform":{"os":"linux","architecture":"amd64"}},{"Descriptor":{"digest":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},"Platform":{"os":"linux","architecture":"arm64"}}]'
 {
     printf '%s\n' '#!/usr/bin/env bash'
     printf '%s\n' 'set -Eeuo pipefail'
@@ -37,7 +38,11 @@ VX_BROKEN_GENERATOR
     printf '    printf "%%s\\n" %q\n' "$inspect_json"
     printf '%s\n' '    ;;'
     printf '%s\n' '  *" manifest inspect "*)'
-    printf '    printf "%%s\\n" %q\n' "$manifest_json"
+    printf '%s\n' '    if [[ "${!#}" == *@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa || -e "$(dirname -- "$0")/manifest-same" ]]; then'
+    printf '      printf "%%s\\n" %q\n' "$current_manifest_json"
+    printf '%s\n' '    else'
+    printf '      printf "%%s\\n" %q\n' "$candidate_manifest_json"
+    printf '%s\n' '    fi'
     printf '%s\n' '    ;;'
     printf '%s\n' '  *" image load "*) printf "%s\n" "Loaded image: example.test/app:1" ;;'
     printf '%s\n' 'esac'
@@ -55,10 +60,14 @@ jq -e '
     and .IMAGE_ID == "sha256:1234567890abcdef"
     and (.IMMUTABLE_REFERENCES | length == 2)
     and .OCI_LABELS.source == "https://example.test/source"
+    and .OCI_LABELS.version == ""
     and (.OCI_LABELS | has("secret.label") | not)
     and .OS == "linux"
     and .ARCHITECTURE == "amd64"
 ' "$test_root/pull.json" >/dev/null || fail "public pull identity was not recorded"
+if grep -Fq 'must-not-copy' "$test_root/pull.json"; then
+    fail "credential-like content in an allowed OCI label leaked"
+fi
 [[ ! -e "$(vx_compose_image_metadata_root bob 2>/dev/null || true)" ]] \
     || fail "image metadata crossed owners"
 
@@ -124,11 +133,24 @@ jq -e '
     || fail "immutable registry, OCI, or disabled trust evidence is incomplete"
 
 update_log_start="$(wc -l <"$test_root/docker.log")"
+touch "$test_root/manifest-same"
+vx_compose_image_update_candidate alice example.test/app:1 \
+    >"$test_root/update-same.json"
+rm -f "$test_root/manifest-same"
+jq -e '
+    .CURRENT_REGISTRY_DIGEST == "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    and .CURRENT_DIGEST == "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    and .CANDIDATE_DIGEST == "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    and .UPDATE_AVAILABLE == false
+    and .MUTATED == false
+' "$test_root/update-same.json" >/dev/null \
+    || fail "unchanged multi-architecture tag reported a false update"
 vx_compose_image_update_candidate alice example.test/app:1 \
     >"$test_root/update.json"
 jq -e '
-    .CURRENT_DIGEST == "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    and .CANDIDATE_DIGEST == "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    .CURRENT_REGISTRY_DIGEST == "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    and .CURRENT_DIGEST == "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    and .CANDIDATE_DIGEST == "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
     and .UPDATE_AVAILABLE == true
     and .MUTATED == false
 ' "$test_root/update.json" >/dev/null \

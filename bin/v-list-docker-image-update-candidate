@@ -17,8 +17,8 @@ result="$(vx_compose_image_update_candidate "$user" "$image")" \
     || check_result "$E_INVALID" 'Docker image update lookup failed'
 case "$format" in
     json) printf '%s\n' "$result" ;;
-    plain) jq -r '[.REFERENCE,.CURRENT_DIGEST,.CANDIDATE_DIGEST,
-        .UPDATE_AVAILABLE,.MUTATED]|@tsv' <<<"$result" ;;
+    plain) jq -r '[.REFERENCE,.CURRENT_REGISTRY_DIGEST,.CURRENT_DIGEST,
+        .CANDIDATE_DIGEST,.UPDATE_AVAILABLE,.MUTATED]|@tsv' <<<"$result" ;;
     *) check_result "$E_INVALID" 'format must be json or plain' ;;
 esac
 exit
