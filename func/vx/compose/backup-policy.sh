@@ -403,9 +403,11 @@ vx_compose_backup_policies_run_due() {
     while IFS=$'\t' read -r owner project path; do
         vx_compose_backup_policy_file_validate "$path" || continue
         [[ "$(vx_compose_meta_get "$path" ENABLED 2>/dev/null)" == yes ]] || continue
-        [[ "$(date -u -d "$(vx_compose_meta_get "$path" NEXT_RUN)" +%s)" -le "$now" ]] \
-            || continue
-        vx_compose_backup_policy_run "$owner" "$project" || :
+        if [[ "$(date -u -d "$(vx_compose_meta_get "$path" NEXT_RUN)" +%s)" \
+            -le "$now" ]]; then
+            vx_compose_backup_policy_run "$owner" "$project" || :
+        fi
+        vx_compose_backup_alerts_evaluate_policy "$owner" "$project" || :
     done < <(
         find "$VESTA/data/users" -mindepth 4 -maxdepth 4 -type f \
             -path '*/docker-projects/*/backup-policy.conf' -perm 0600 -print0 \
