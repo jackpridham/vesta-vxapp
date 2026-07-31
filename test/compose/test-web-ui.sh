@@ -69,6 +69,37 @@ expect_pattern web/templates/docker_list_shared.php \
 expect_pattern web/templates/docker_project_shared.php \
     'vx_compose_actor_can_mutate_project' \
     'project details derive mutation controls from project profile authority'
+for helper in \
+    services endpoints routes ingress health resources revisions backups \
+    alerts operations events; do
+    expect_pattern web/inc/vx_compose.php \
+        "function vx_compose_view_${helper}" \
+        "$helper has an escaped Compose view-model helper"
+done
+expect_pattern web/inc/vx_compose.php \
+    "htmlspecialchars.*ENT_QUOTES.*UTF-8" \
+    'Compose view-model scalars are escaped centrally'
+expect_pattern web/templates/docker_project_shared.php \
+    'docker-data-table' \
+    'project detail payloads use semantic data tables'
+expect_pattern web/templates/docker_project_shared.php \
+    '<details class="docker-advanced-json">' \
+    'raw project payloads are opt-in Advanced JSON'
+expect_pattern web/templates/docker_project_shared.php \
+    'docker-button--danger.*Impact:|Impact:.*docker-button--danger' \
+    'interrupting project actions have a distinct impact treatment'
+expect_pattern web/templates/docker_project_shared.php \
+    'docker-impact-note' \
+    'project mutation impact is visible before opening actions'
+expect_pattern web/css/docker.css \
+    'docker-console-bg: #1f1633' \
+    'project console uses the local warm-purple dashboard token'
+expect_pattern web/css/docker.css \
+    'docker-data-table--stack' \
+    'project tables collapse for mobile screens'
+expect_absent web/templates/docker_project_shared.php \
+    'fonts.googleapis.com|sentry' \
+    'project console does not import remote fonts or product branding'
 expect_pattern web/templates/docker_list_shared.php \
     "docker_available.*docker_quota.*docker_can_add_from_scope|docker_available.*reached.*docker_can_add_from_scope" \
     'advanced add follows Docker readiness, quota, and explicit owner scope'
@@ -339,6 +370,57 @@ expect_pattern web/ajax/docker/actions/routes.php 'vx_compose_routes_payload' \
     'route output uses managed route state'
 expect_pattern web/ajax/docker/actions/secrets.php 'vx_compose_secrets_payload' \
     'secret output is metadata-only'
+
+if command -v php >/dev/null 2>&1; then
+    php -r '
+        define("VESTA_CMD", "/usr/local/vesta/bin/");
+        require $argv[1];
+        $attack = "<script>alert(\"x\")</script>";
+        $project = array(
+            "SERVICE_SUMMARY" => array($attack => array(
+                "IMAGE" => $attack,
+                "PORTS" => array($attack),
+                "HAS_HEALTHCHECK" => true,
+            )),
+            "PUBLISHED_ENDPOINTS" => array(array(
+                "SERVICE" => $attack,
+                "DISPLAY" => $attack,
+                "PROTOCOL" => "tcp",
+            )),
+            "RESOURCES" => array("CPUS_MILLI" => $attack),
+        );
+        $views = array(
+            vx_compose_view_services($project),
+            vx_compose_view_endpoints($project),
+            vx_compose_view_routes(array($attack => array(
+                "DOMAIN" => $attack,
+                "SERVICE" => $attack,
+            ))),
+            vx_compose_view_ingress(array(
+                "COUNT" => 1,
+                "CONSUMERS" => array(array("CONSUMER" => $attack)),
+            )),
+            vx_compose_view_health(array(
+                "STATUS" => $attack,
+                "SERVICES" => array(array("SERVICE" => $attack)),
+            )),
+            vx_compose_view_resources($project, array()),
+            vx_compose_view_revisions(array(2, 1), 2),
+            vx_compose_view_backups(array(array("ARCHIVE" => $attack))),
+            vx_compose_view_alerts(array(
+                "ALERTS" => array(array("TYPE" => $attack)),
+            )),
+            vx_compose_view_operations(array(array("ACTION" => $attack))),
+            vx_compose_view_events(array(array("DETAILS" => $attack))),
+        );
+        $encoded = json_encode($views);
+        if (strpos($encoded, "<script>") !== false
+            || strpos($encoded, "&lt;script&gt;") === false) {
+            fwrite(STDERR, "FAIL: Compose view model emitted an unsafe scalar\n");
+            exit(1);
+        }
+    ' "$ROOT/web/inc/vx_compose.php" || failures=$((failures + 1))
+fi
 
 if [ "$failures" -ne 0 ]; then
     exit 1

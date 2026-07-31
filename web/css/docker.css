@@ -710,6 +710,424 @@
   padding: 16px 20px;
 }
 
+/*
+ * Project console: a local incident-dashboard vocabulary.
+ * System fonts keep the panel self-contained; no branding or remote assets.
+ */
+.body-docker .docker-project-console {
+  --docker-console-bg: #1f1633;
+  --docker-console-deep: #150f23;
+  --docker-console-surface: #281d40;
+  --docker-console-surface-raised: #302348;
+  --docker-console-border: #493763;
+  --docker-console-text: #ffffff;
+  --docker-console-muted: #c9c2d2;
+  --docker-console-purple: #79628c;
+  --docker-console-focus: #fa7faa;
+  --docker-console-lime: #c2ef4e;
+  --docker-console-danger: #ff8f8f;
+  background:
+    radial-gradient(circle at 92% 3%, rgba(106, 95, 193, 0.32), transparent 25rem),
+    var(--docker-console-deep);
+  border: 1px solid var(--docker-console-border);
+  border-radius: 16px;
+  box-shadow: rgba(22, 15, 36, 0.45) 0 4px 24px 4px;
+  color: var(--docker-console-text);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  padding: 20px;
+}
+
+.body-docker .docker-project-console .docker-hero,
+.body-docker .docker-project-console .docker-panel,
+.body-docker .docker-project-console .docker-overview-card {
+  background: rgba(48, 35, 72, 0.9);
+  border: 1px solid var(--docker-console-border);
+  box-shadow:
+    rgba(0, 0, 0, 0.18) 0 10px 24px -16px,
+    rgba(255, 255, 255, 0.04) 0 1px 0 inset;
+}
+
+.body-docker .docker-project-console .docker-page-title,
+.body-docker .docker-project-console .docker-panel__title,
+.body-docker .docker-project-console .docker-overview-card__value {
+  color: var(--docker-console-text);
+}
+
+.body-docker .docker-project-console .docker-eyebrow {
+  color: var(--docker-console-lime);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.08em;
+}
+
+.body-docker .docker-project-console .docker-page-copy,
+.body-docker .docker-project-console .docker-panel__copy,
+.body-docker .docker-project-console .docker-overview-card__meta,
+.body-docker .docker-project-console .docker-overview-card__label {
+  color: var(--docker-console-muted);
+}
+
+.body-docker .docker-button--danger {
+  background: #fff1f0;
+  box-shadow:
+    rgba(207, 60, 44, 0.28) 0 0 0 1px inset,
+    rgba(0, 0, 0, 0.1) 0 1px 3px inset;
+  color: #a9271a;
+}
+
+.body-docker .docker-button--danger:hover,
+.body-docker .docker-button--danger:focus {
+  background: #cf3c2c;
+  color: #ffffff;
+}
+
+.body-docker .docker-project-console .docker-button {
+  border-radius: 13px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.body-docker .docker-project-console .docker-button--primary {
+  background: var(--docker-console-purple);
+  border: 1px solid #584674;
+  box-shadow: rgba(0, 0, 0, 0.16) 0 1px 3px inset;
+}
+
+.body-docker .docker-project-console .docker-button--secondary {
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: rgba(255, 255, 255, 0.2) 0 0 0 1px inset;
+  color: var(--docker-console-text);
+}
+
+.body-docker .docker-project-console .docker-button--danger {
+  background: rgba(207, 60, 44, 0.22);
+  box-shadow: rgba(255, 143, 143, 0.6) 0 0 0 1px inset;
+  color: #ffd4d0;
+}
+
+.body-docker .docker-project-console .docker-button:hover,
+.body-docker .docker-project-console .docker-button:focus {
+  box-shadow: rgba(0, 0, 0, 0.28) 0 8px 24px;
+}
+
+.body-docker .docker-project-console .docker-button:focus-visible,
+.body-docker .docker-project-console summary:focus-visible {
+  outline: 2px solid var(--docker-console-focus);
+  outline-offset: 3px;
+}
+
+.body-docker .docker-impact-note {
+  align-items: flex-start;
+  background: rgba(255, 143, 143, 0.12);
+  border: 1px solid rgba(255, 143, 143, 0.5);
+  border-radius: 10px;
+  color: #ffe2df;
+  display: flex;
+  font-size: 13px;
+  gap: 12px;
+  line-height: 1.5;
+  margin: 16px 0 18px;
+  padding: 13px 16px;
+}
+
+.body-docker .docker-impact-note strong {
+  flex: 0 0 auto;
+  text-transform: uppercase;
+}
+
+.body-docker .docker-console-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.body-docker .docker-console-panel {
+  margin: 0;
+  min-width: 0;
+}
+
+.body-docker .docker-console-panel--wide {
+  grid-column: span 2;
+}
+
+.body-docker .docker-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.body-docker .docker-data-table {
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 620px;
+  width: 100%;
+}
+
+.body-docker .docker-data-table th,
+.body-docker .docker-data-table td {
+  border-bottom: 1px solid var(--docker-console-border);
+  color: var(--docker-console-muted);
+  line-height: 1.45;
+  padding: 12px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.body-docker .docker-data-table thead th {
+  color: #a99db8;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.body-docker .docker-data-table tbody th {
+  color: var(--docker-console-text);
+  font-weight: 600;
+}
+
+.body-docker .docker-data-table tbody tr:hover {
+  background: rgba(121, 98, 140, 0.1);
+}
+
+.body-docker .docker-empty-cell,
+.body-docker .docker-empty-copy {
+  color: var(--docker-console-muted);
+  font-style: normal;
+  margin: 0;
+}
+
+.body-docker .docker-code-chip,
+.body-docker .docker-revision-chip,
+.body-docker .docker-count-badge,
+.body-docker .docker-result-badge {
+  background: rgba(121, 98, 140, 0.2);
+  border: 1px solid var(--docker-console-border);
+  border-radius: 999px;
+  color: #eee9f3;
+  display: inline-flex;
+  font-size: 12px;
+  margin: 2px 5px 2px 0;
+  padding: 4px 8px;
+}
+
+.body-docker .docker-code-chip {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+.body-docker .docker-endpoint-grid,
+.body-docker .docker-resource-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  margin-top: 16px;
+}
+
+.body-docker .docker-endpoint-card,
+.body-docker .docker-resource-grid article {
+  background: var(--docker-console-deep);
+  border: 1px solid var(--docker-console-border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding: 14px;
+}
+
+.body-docker .docker-endpoint-card span,
+.body-docker .docker-resource-grid span {
+  color: #a99db8;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.body-docker .docker-endpoint-card strong,
+.body-docker .docker-resource-grid strong {
+  color: var(--docker-console-text);
+  overflow-wrap: anywhere;
+}
+
+.body-docker .docker-endpoint-card small,
+.body-docker .docker-resource-grid small {
+  color: var(--docker-console-muted);
+}
+
+.body-docker .docker-key-values {
+  display: grid;
+  gap: 1px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0 0 14px;
+}
+
+.body-docker .docker-key-values div {
+  background: rgba(21, 15, 35, 0.55);
+  padding: 12px;
+}
+
+.body-docker .docker-key-values dt {
+  color: #a99db8;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.body-docker .docker-key-values dd {
+  color: var(--docker-console-text);
+  margin: 6px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.body-docker .docker-revision-list,
+.body-docker .docker-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.body-docker .docker-revision-chip--current {
+  background: rgba(194, 239, 78, 0.14);
+  border-color: rgba(194, 239, 78, 0.5);
+  color: var(--docker-console-lime);
+}
+
+.body-docker .docker-impact-copy,
+.body-docker .docker-privacy-note {
+  color: var(--docker-console-muted);
+  font-size: 13px;
+  line-height: 1.55;
+  margin: 14px 0 0;
+}
+
+.body-docker .docker-privacy-note {
+  border-left: 3px solid var(--docker-console-purple);
+  padding-left: 12px;
+}
+
+.body-docker .docker-alert-stack {
+  display: grid;
+  gap: 10px;
+}
+
+.body-docker .docker-alert-item {
+  align-items: start;
+  background: rgba(255, 178, 135, 0.08);
+  border: 1px solid rgba(255, 178, 135, 0.28);
+  border-radius: 10px;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(140px, 0.5fr) minmax(220px, 1.5fr) auto;
+  padding: 14px;
+}
+
+.body-docker .docker-alert-item strong,
+.body-docker .docker-alert-item span {
+  display: block;
+}
+
+.body-docker .docker-alert-item strong {
+  color: #ffcfb4;
+  text-transform: capitalize;
+}
+
+.body-docker .docker-alert-item span,
+.body-docker .docker-alert-item small,
+.body-docker .docker-alert-item p {
+  color: var(--docker-console-muted);
+  margin: 0;
+}
+
+.body-docker .docker-result-badge[data-result="succeeded"],
+.body-docker .docker-result-badge[data-result="success"] {
+  background: rgba(194, 239, 78, 0.12);
+  border-color: rgba(194, 239, 78, 0.45);
+  color: var(--docker-console-lime);
+}
+
+.body-docker .docker-result-badge[data-result="failed"] {
+  background: rgba(255, 143, 143, 0.12);
+  border-color: rgba(255, 143, 143, 0.45);
+  color: #ffc1bb;
+}
+
+.body-docker .docker-event-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.body-docker .docker-event-list li {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 10px 1fr;
+  padding: 0 0 18px;
+  position: relative;
+}
+
+.body-docker .docker-event-list li:not(:last-child)::before {
+  background: var(--docker-console-border);
+  content: "";
+  height: 100%;
+  left: 4px;
+  position: absolute;
+  top: 9px;
+  width: 1px;
+}
+
+.body-docker .docker-event-list__marker {
+  background: var(--docker-console-purple);
+  border: 2px solid var(--docker-console-surface-raised);
+  border-radius: 50%;
+  height: 9px;
+  margin-top: 5px;
+  position: relative;
+  width: 9px;
+  z-index: 1;
+}
+
+.body-docker .docker-event-list strong,
+.body-docker .docker-event-list small {
+  display: block;
+}
+
+.body-docker .docker-event-list strong {
+  color: var(--docker-console-text);
+  text-transform: capitalize;
+}
+
+.body-docker .docker-event-list small,
+.body-docker .docker-event-list p {
+  color: var(--docker-console-muted);
+}
+
+.body-docker .docker-event-list p {
+  margin: 5px 0 0;
+}
+
+.body-docker .docker-advanced-json {
+  border-top: 1px solid var(--docker-console-border);
+  margin-top: 18px;
+  padding-top: 12px;
+}
+
+.body-docker .docker-advanced-json summary {
+  color: #bcb1ca;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  list-style-position: inside;
+  text-transform: uppercase;
+}
+
+.body-docker .docker-project-console pre.docker-mono {
+  background: var(--docker-console-deep);
+  border-color: var(--docker-console-border);
+  color: #e7dff0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
 @media (max-width: 1120px) {
   .body-docker .docker-overview-grid,
   .body-docker .docker-metric-grid,
@@ -772,5 +1190,61 @@
   .body-docker .docker-page-title {
     font-size: 32px;
     letter-spacing: -1.28px;
+  }
+
+  .body-docker .docker-project-console {
+    border-left: 0;
+    border-radius: 0;
+    border-right: 0;
+    padding: 14px;
+  }
+
+  .body-docker .docker-console-grid,
+  .body-docker .docker-key-values {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .body-docker .docker-console-panel--wide {
+    grid-column: auto;
+  }
+
+  .body-docker .docker-project-console .docker-hero__actions,
+  .body-docker .docker-project-console .docker-button {
+    width: 100%;
+  }
+
+  .body-docker .docker-impact-note,
+  .body-docker .docker-alert-item {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .body-docker .docker-data-table--stack {
+    min-width: 0;
+  }
+
+  .body-docker .docker-data-table--stack thead {
+    left: -9999px;
+    position: absolute;
+  }
+
+  .body-docker .docker-data-table--stack,
+  .body-docker .docker-data-table--stack tbody,
+  .body-docker .docker-data-table--stack tr,
+  .body-docker .docker-data-table--stack th,
+  .body-docker .docker-data-table--stack td {
+    display: block;
+    width: 100%;
+  }
+
+  .body-docker .docker-data-table--stack tr {
+    border-bottom: 1px solid var(--docker-console-border);
+    padding: 10px 0;
+  }
+
+  .body-docker .docker-data-table--stack th,
+  .body-docker .docker-data-table--stack td {
+    border: 0;
+    padding: 5px 0;
   }
 }

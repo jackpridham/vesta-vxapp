@@ -1187,6 +1187,374 @@ function vx_compose_backups_payload($owner, $project)
     );
 }
 
+function vx_compose_view_scalar($value, $fallback = '—')
+{
+    if (is_bool($value)) {
+        $value = $value ? 'Yes' : 'No';
+    } elseif ($value === null || is_array($value) || is_object($value)) {
+        $value = $fallback;
+    } elseif (!is_scalar($value) || trim((string) $value) === '') {
+        $value = $fallback;
+    }
+    return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+}
+
+function vx_compose_view_list($value)
+{
+    if (!is_array($value)) {
+        return array();
+    }
+    $items = array();
+    foreach ($value as $item) {
+        if (is_scalar($item) && trim((string) $item) !== '') {
+            $items[] = vx_compose_view_scalar($item);
+        }
+    }
+    return $items;
+}
+
+function vx_compose_view_records($value)
+{
+    if (!is_array($value)) {
+        return array();
+    }
+    $records = array();
+    foreach ($value as $key => $record) {
+        if (is_array($record)) {
+            $records[] = array($key, $record);
+        }
+    }
+    return $records;
+}
+
+function vx_compose_view_services($project)
+{
+    $summary = isset($project['SERVICE_SUMMARY'])
+        && is_array($project['SERVICE_SUMMARY'])
+        ? $project['SERVICE_SUMMARY']
+        : array();
+    $rows = array();
+    foreach ($summary as $service => $record) {
+        if (!is_array($record)) {
+            continue;
+        }
+        $rows[] = array(
+            'service' => vx_compose_view_scalar($service),
+            'image' => vx_compose_view_scalar(
+                isset($record['IMAGE']) ? $record['IMAGE'] : null
+            ),
+            'ports' => vx_compose_view_list(
+                isset($record['PORTS']) ? $record['PORTS'] : array()
+            ),
+            'healthcheck' => vx_compose_view_scalar(
+                isset($record['HAS_HEALTHCHECK'])
+                    ? $record['HAS_HEALTHCHECK'] : false
+            ),
+        );
+    }
+    return $rows;
+}
+
+function vx_compose_view_endpoints($project)
+{
+    $endpoints = isset($project['PUBLISHED_ENDPOINTS'])
+        && is_array($project['PUBLISHED_ENDPOINTS'])
+        ? $project['PUBLISHED_ENDPOINTS']
+        : array();
+    $rows = array();
+    foreach ($endpoints as $record) {
+        if (!is_array($record)) {
+            continue;
+        }
+        $rows[] = array(
+            'service' => vx_compose_view_scalar(
+                isset($record['SERVICE']) ? $record['SERVICE'] : null
+            ),
+            'published' => vx_compose_view_scalar(
+                isset($record['DISPLAY']) ? $record['DISPLAY'] : null
+            ),
+            'protocol' => vx_compose_view_scalar(
+                isset($record['PROTOCOL']) ? $record['PROTOCOL'] : null
+            ),
+        );
+    }
+    return $rows;
+}
+
+function vx_compose_view_routes($payload)
+{
+    if (isset($payload['ROUTES']) && is_array($payload['ROUTES'])) {
+        $payload = $payload['ROUTES'];
+    }
+    $rows = array();
+    foreach (vx_compose_view_records($payload) as $item) {
+        list($key, $record) = $item;
+        $scheme = isset($record['SCHEME']) && is_scalar($record['SCHEME'])
+            ? (string) $record['SCHEME'].'://' : '';
+        $target = '';
+        if (isset($record['HOST']) && is_scalar($record['HOST'])) {
+            $target = (string) $record['HOST'];
+        } elseif (isset($record['HOST_PORT'])
+            && is_scalar($record['HOST_PORT'])) {
+            $target = '127.0.0.1:'.(string) $record['HOST_PORT'];
+        }
+        $rows[] = array(
+            'domain' => vx_compose_view_scalar(
+                isset($record['DOMAIN']) ? $record['DOMAIN'] : $key
+            ),
+            'service' => vx_compose_view_scalar(
+                isset($record['SERVICE']) ? $record['SERVICE'] : null
+            ),
+            'target' => vx_compose_view_scalar($scheme.$target),
+            'path' => vx_compose_view_scalar(
+                isset($record['PATH']) ? $record['PATH'] : '/'
+            ),
+        );
+    }
+    return $rows;
+}
+
+function vx_compose_view_ingress($payload)
+{
+    $rows = array();
+    $consumers = isset($payload['CONSUMERS'])
+        && is_array($payload['CONSUMERS'])
+        ? $payload['CONSUMERS']
+        : (!isset($payload['COUNT']) && is_array($payload)
+            ? $payload : array());
+    foreach (vx_compose_view_records($consumers) as $item) {
+        list($key, $record) = $item;
+        $headers = array();
+        if (isset($record['HEADER_NAMES'])
+            && is_array($record['HEADER_NAMES'])) {
+            foreach ($record['HEADER_NAMES'] as $header) {
+                if (is_scalar($header) && trim((string) $header) !== '') {
+                    $headers[] = (string) $header;
+                }
+            }
+        }
+        $rows[] = array(
+            'consumer' => vx_compose_view_scalar(
+                isset($record['CONSUMER'])
+                    ? $record['CONSUMER']
+                    : (isset($record['OWNER']) ? $record['OWNER'] : $key)
+            ),
+            'domain' => vx_compose_view_scalar(
+                isset($record['DOMAIN']) ? $record['DOMAIN'] : null
+            ),
+            'headers' => vx_compose_view_scalar(
+                !empty($headers) ? implode(', ', $headers) : null
+            ),
+            'target' => vx_compose_view_scalar(
+                isset($record['TARGET']) ? $record['TARGET'] : null
+            ),
+            'health' => vx_compose_view_scalar(
+                isset($record['HEALTH']) ? $record['HEALTH'] : null
+            ),
+        );
+    }
+    return array(
+        'count' => vx_compose_view_scalar(
+            isset($payload['COUNT']) ? $payload['COUNT'] : count($rows),
+            '0'
+        ),
+        'rows' => $rows,
+    );
+}
+
+function vx_compose_view_health($payload)
+{
+    $services = isset($payload['SERVICES']) && is_array($payload['SERVICES'])
+        ? $payload['SERVICES']
+        : array();
+    $rows = array();
+    foreach (vx_compose_view_records($services) as $item) {
+        list($key, $record) = $item;
+        $rows[] = array(
+            'service' => vx_compose_view_scalar(
+                isset($record['SERVICE']) ? $record['SERVICE'] : $key
+            ),
+            'status' => vx_compose_view_scalar(
+                isset($record['STATUS']) ? $record['STATUS'] : null
+            ),
+            'restarts' => vx_compose_view_scalar(
+                isset($record['RESTART_COUNT'])
+                    ? $record['RESTART_COUNT'] : 0,
+                '0'
+            ),
+        );
+    }
+    return array(
+        'status' => vx_compose_view_scalar(
+            isset($payload['STATUS']) ? $payload['STATUS'] : 'unknown'
+        ),
+        'observed' => vx_compose_view_scalar(
+            isset($payload['OBSERVED_AT']) ? $payload['OBSERVED_AT'] : null
+        ),
+        'freshness' => vx_compose_view_scalar(
+            isset($payload['FRESHNESS']) ? $payload['FRESHNESS'] : 'unavailable'
+        ),
+        'source' => vx_compose_view_scalar(
+            isset($payload['SOURCE']) ? $payload['SOURCE'] : null
+        ),
+        'services' => $rows,
+    );
+}
+
+function vx_compose_view_resources($project, $stats)
+{
+    $resources = isset($project['RESOURCES']) && is_array($project['RESOURCES'])
+        ? $project['RESOURCES']
+        : array();
+    $latest = isset($stats['LATEST']) && is_array($stats['LATEST'])
+        ? $stats['LATEST']
+        : array();
+    return array(
+        'cpu_limit' => vx_compose_view_scalar(
+            isset($resources['CPUS_MILLI'])
+                && is_scalar($resources['CPUS_MILLI'])
+                ? (string) $resources['CPUS_MILLI'].' millicores' : null
+        ),
+        'memory_limit' => vx_compose_view_scalar(
+            isset($resources['MEMORY_MB'])
+                && is_scalar($resources['MEMORY_MB'])
+                ? (string) $resources['MEMORY_MB'].' MiB' : null
+        ),
+        'storage_limit' => vx_compose_view_scalar(
+            isset($resources['STORAGE_MB'])
+                && is_scalar($resources['STORAGE_MB'])
+                ? (string) $resources['STORAGE_MB'].' MiB' : null
+        ),
+        'pids_limit' => vx_compose_view_scalar(
+            isset($resources['PIDS']) ? $resources['PIDS'] : null
+        ),
+        'cpu_now' => vx_compose_view_scalar(
+            isset($latest['CPU_PERCENT']) && is_scalar($latest['CPU_PERCENT'])
+                ? (string) $latest['CPU_PERCENT'].'%' : null
+        ),
+        'memory_now' => vx_compose_view_scalar(
+            isset($latest['MEMORY_MB']) && is_scalar($latest['MEMORY_MB'])
+                ? (string) $latest['MEMORY_MB'].' MiB' : null
+        ),
+    );
+}
+
+function vx_compose_view_revisions($revisions, $current)
+{
+    $rows = array();
+    foreach ((array) $revisions as $revision) {
+        if (!is_numeric($revision)) {
+            continue;
+        }
+        $rows[] = array(
+            'revision' => vx_compose_view_scalar((int) $revision),
+            'current' => ((int) $revision === (int) $current),
+        );
+    }
+    return $rows;
+}
+
+function vx_compose_view_backups($payload)
+{
+    $rows = array();
+    foreach (vx_compose_view_records($payload) as $item) {
+        list(, $record) = $item;
+        $rows[] = array(
+            'archive' => vx_compose_view_scalar(
+                isset($record['ARCHIVE']) ? $record['ARCHIVE'] : null
+            ),
+            'created' => vx_compose_view_scalar(
+                isset($record['CREATED']) ? $record['CREATED'] : null
+            ),
+            'bytes' => vx_compose_view_scalar(
+                isset($record['BYTES']) ? $record['BYTES'] : null
+            ),
+        );
+    }
+    return $rows;
+}
+
+function vx_compose_view_alerts($payload)
+{
+    $alerts = isset($payload['ALERTS']) && is_array($payload['ALERTS'])
+        ? $payload['ALERTS']
+        : array();
+    $rows = array();
+    foreach (vx_compose_view_records($alerts) as $item) {
+        list(, $record) = $item;
+        $rows[] = array(
+            'type' => vx_compose_view_scalar(
+                isset($record['TYPE']) ? $record['TYPE'] : null
+            ),
+            'status' => vx_compose_view_scalar(
+                isset($record['STATUS']) ? $record['STATUS'] : null
+            ),
+            'message' => vx_compose_view_scalar(
+                isset($record['VALUE']) ? $record['VALUE'] : null
+            ),
+            'opened' => vx_compose_view_scalar(
+                isset($record['OPENED']) ? $record['OPENED'] : null
+            ),
+            'acknowledged' => vx_compose_view_scalar(
+                isset($record['ACK']) ? $record['ACK'] : false
+            ),
+        );
+    }
+    return $rows;
+}
+
+function vx_compose_view_operations($events)
+{
+    $rows = array();
+    foreach (vx_compose_view_records($events) as $item) {
+        list(, $record) = $item;
+        $rows[] = array(
+            'action' => vx_compose_view_scalar(
+                isset($record['ACTION']) ? $record['ACTION'] : null
+            ),
+            'result' => vx_compose_view_scalar(
+                isset($record['RESULT']) ? $record['RESULT'] : null
+            ),
+            'timestamp' => vx_compose_view_scalar(
+                isset($record['TIMESTAMP']) ? $record['TIMESTAMP'] : null
+            ),
+            'duration' => vx_compose_view_scalar(
+                isset($record['DURATION_MS'])
+                    && is_scalar($record['DURATION_MS'])
+                    ? (string) $record['DURATION_MS'].' ms' : null
+            ),
+        );
+    }
+    return array_slice(array_reverse($rows), 0, 8);
+}
+
+function vx_compose_view_events($events)
+{
+    $rows = array();
+    foreach (vx_compose_view_records($events) as $item) {
+        list(, $record) = $item;
+        $action = isset($record['ACTION']) && is_scalar($record['ACTION'])
+            ? (string) $record['ACTION'] : '';
+        $result = isset($record['RESULT']) && is_scalar($record['RESULT'])
+            ? (string) $record['RESULT'] : '';
+        $rows[] = array(
+            'timestamp' => vx_compose_view_scalar(
+                isset($record['TIMESTAMP']) ? $record['TIMESTAMP'] : null
+            ),
+            'actor' => vx_compose_view_scalar(
+                isset($record['ACTOR']) ? $record['ACTOR'] : null
+            ),
+            'event' => vx_compose_view_scalar(
+                trim($action.' '.$result)
+            ),
+            'details' => vx_compose_view_scalar(
+                isset($record['DETAILS']) ? $record['DETAILS'] : null
+            ),
+        );
+    }
+    return array_slice(array_reverse($rows), 0, 20);
+}
+
 function vx_compose_pretty_json($value)
 {
     $flags = defined('JSON_PRETTY_PRINT') ? JSON_PRETTY_PRINT : 0;
