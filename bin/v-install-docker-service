@@ -6,6 +6,8 @@
 
 set -Eeuo pipefail
 
+VESTA="${VESTA:-/usr/local/vesta}"
+
 fail() {
     echo "- Docker orchestration installation failed: $1" >&2
     exit 1
@@ -128,6 +130,9 @@ if ! command -v apt-get >/dev/null 2>&1 \
     || ! command -v apt-cache >/dev/null 2>&1; then
     fail "apt-get and apt-cache are required"
 fi
+
+"$VESTA/bin/v-install-docker-compose-mount-guard" \
+    || fail "unable to activate the Docker Compose mount guard"
 
 if has_docker && has_compose && has_jq && has_age \
     && docker info >/dev/null 2>&1; then

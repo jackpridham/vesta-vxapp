@@ -1,0 +1,77 @@
+#!/bin/bash
+# info: install and activate the Docker Compose data-root mount guard
+# options: [ACTIVATION]
+#
+# The function makes Docker require protected Compose bind-source mounts before
+# the daemon may start managed workloads.
+
+set -Eeuo pipefail
+
+VESTA="${VESTA:-/usr/local/vesta}"
+activation="${1:-now}"
+[[ "$activation" == now || "$activation" == defer ]] \
+    || {
+        echo "- Docker Compose mount-guard installation failed: invalid activation" >&2
+        exit 1
+    }
+
+fail() {
+    echo "- Docker Compose mount-guard installation failed: $1" >&2
+    exit 1
+}
+
+systemd_root=/etc/systemd/system
+service_source="$VESTA/install/common/systemd/vesta-compose-data-roots.service"
+dropin_source="$VESTA/install/common/systemd/docker.service.d/vesta-compose-data-roots.conf"
+service_target="$systemd_root/vesta-compose-data-roots.service"
+dropin_dir="$systemd_root/docker.service.d"
+dropin_target="$dropin_dir/vesta-compose-data-roots.conf"
+
+command -v systemctl >/dev/null 2>&1 \
+    || fail "systemctl is required"
+command -v perl >/dev/null 2>&1 \
+    || fail "perl is required"
+command -v mount >/dev/null 2>&1 \
+    || fail "mount is required"
+command -v mountpoint >/dev/null 2>&1 \
+    || fail "mountpoint is required"
+command -v umount >/dev/null 2>&1 \
+    || fail "umount is required"
+[[ -f "$service_source" && ! -L "$service_source"
+    && -f "$dropin_source" && ! -L "$dropin_source" ]] \
+    || fail "mount-guard templates are unavailable"
+[[ -x "$VESTA/bin/v-prepare-docker-compose-data-roots"
+    && ! -L "$VESTA/bin/v-prepare-docker-compose-data-roots" ]] \
+    || fail "mount-guard preparation command is unavailable"
+[[ -d "$systemd_root" && ! -L "$systemd_root"
+    && ! -L "$service_target" && ! -L "$dropin_dir"
+    && ! -L "$dropin_target" ]] \
+    || fail "systemd mount-guard paths are unsafe"
+install -o 0 -g 0 -m 0755 -d "$dropin_dir"
+
+service_temp="$(mktemp "$systemd_root/.vesta-compose-data-roots.service.XXXXXX")" \
+    || fail "unable to stage the mount-guard service"
+dropin_temp="$(mktemp "$dropin_dir/.vesta-compose-data-roots.conf.XXXXXX")" \
+    || {
+        rm -f -- "$service_temp"
+        fail "unable to stage the Docker dependency"
+    }
+install -o 0 -g 0 -m 0644 "$service_source" "$service_temp" \
+    && install -o 0 -g 0 -m 0644 "$dropin_source" "$dropin_temp" \
+    && mv -fT -- "$service_temp" "$service_target" \
+    && mv -fT -- "$dropin_temp" "$dropin_target" \
+    || {
+        rm -f -- "$service_temp" "$dropin_temp"
+        fail "unable to install the mount guard"
+    }
+systemctl daemon-reload \
+    || fail "unable to reload Docker systemd dependencies"
+systemctl enable vesta-compose-data-roots.service \
+    || fail "unable to enable the mount guard"
+if [[ "$activation" == now ]]; then
+    systemctl restart vesta-compose-data-roots.service \
+        || fail "unable to establish protected Compose data-root mounts"
+fi
+
+echo "= Docker Compose mount guard is installed ($activation)."
+exit 0

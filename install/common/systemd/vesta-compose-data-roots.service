@@ -1,0 +1,15 @@
+[Unit]
+Description=Restore protected Vesta Docker Compose data-root mounts
+Documentation=file:/usr/local/vesta/docs/container-orchestration.md
+DefaultDependencies=no
+After=local-fs.target
+Before=docker.service containerd.service
+RequiresMountsFor=/home /usr/local/vesta
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/vesta/bin/v-prepare-docker-compose-data-roots
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

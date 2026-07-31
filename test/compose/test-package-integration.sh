@@ -41,6 +41,26 @@ cmp -s \
     "$repo_root/example-of-linux-root-folder/usr/local/vesta/conf/vx-docker-policy.conf" \
     || fail "runtime and synthetic policy defaults differ"
 
+grep -Fq '/usr/local/vesta/bin/v-install-docker-compose-mount-guard' \
+    "$repo_root/src/deb/vesta/postinst" \
+    || fail 'Vesta package lifecycle omits the Compose mount guard'
+guard_line="$(
+    grep -n -m1 'v-install-docker-compose-mount-guard defer' \
+        "$repo_root/src/deb/vesta/postinst" | cut -d: -f1
+)"
+fresh_exit_line="$(
+    grep -n -m1 '^    exit$' \
+        "$repo_root/src/deb/vesta/postinst" | cut -d: -f1
+)"
+[[ "$guard_line" -lt "$fresh_exit_line" ]] \
+    || fail 'fresh-package early exit bypasses the Compose mount guard'
+grep -Fq '$VESTA/bin/v-install-docker-compose-mount-guard' \
+    "$repo_root/install/vst-install-debian.sh" \
+    || fail 'fresh Vesta installer does not activate the Compose mount guard'
+grep -Fq '"$VESTA/bin/v-install-docker-compose-mount-guard"' \
+    "$repo_root/bin/v-install-docker-service" \
+    || fail 'Docker installer omits the Compose mount guard'
+
 while IFS= read -r package_file; do
     for field in "${quota_fields[@]}"; do
         grep -Eq "^${field}='(0|unlimited)'$" "$package_file" \

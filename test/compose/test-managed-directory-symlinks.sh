@@ -35,6 +35,10 @@ else
     owner="$(id -un)"
 fi
 mkdir -p "$VESTA/data/users/$owner" "$HOMEDIR/$owner"
+mkdir -p "$VESTA/func/vx"
+cp -a "$repo_root/func/vx/compose" "$VESTA/func/vx/"
+mkdir -p "$VESTA/conf"
+printf 'HOMEDIR=%q\n' "$HOMEDIR" >"$VESTA/conf/vesta.conf"
 if (( EUID == 0 )); then
     chown "$owner:$owner" "$HOMEDIR/$owner"
 fi
@@ -178,6 +182,24 @@ if (( EUID == 0 )); then
     if mountpoint -q "$HOMEDIR/$owner/docker"; then
         fail 'managed data-root mount survived explicit owner cleanup'
     fi
+
+    ln -s "$VESTA/data/users/$owner" "$VESTA/data/users/linked-owner"
+    if VX_COMPOSE_TEST_MODE=yes VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \
+        VESTA="$VESTA" HOMEDIR="$HOMEDIR" \
+        "$repo_root/bin/v-prepare-docker-compose-data-roots" \
+        >/dev/null 2>&1; then
+        fail 'boot preparation skipped a linked user-authority entry'
+    fi
+    rm "$VESTA/data/users/linked-owner"
+    VX_COMPOSE_TEST_MODE=yes VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \
+        VESTA="$VESTA" HOMEDIR="$HOMEDIR" \
+        "$repo_root/bin/v-prepare-docker-compose-data-roots" >/dev/null \
+        || fail 'boot preparation did not restore the managed data-root mount'
+    mountpoint -q "$HOMEDIR/$owner/docker" \
+        || fail 'boot preparation returned before restoring the mount'
+    VX_COMPOSE_TEST_MODE=yes VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \
+        vx_compose_owner_data_unmount "$owner" \
+        || fail 'boot-restored managed data-root unmount failed'
 fi
 
 echo 'Compose managed-directory symlink tests passed.'

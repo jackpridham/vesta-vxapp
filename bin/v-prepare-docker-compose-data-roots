@@ -1,0 +1,58 @@
+#!/bin/bash
+# info: restore protected Docker Compose owner data-root mounts
+# options: NONE
+#
+# The function runs before Docker and restores the self-bind mounts that keep
+# managed bind-source paths stable across service and host restarts.
+
+set -Eeuo pipefail
+
+fail() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+[[ "$EUID" -eq 0 ]] \
+    || fail "Compose data-root preparation requires root"
+
+VESTA="${VESTA:-/usr/local/vesta}"
+HOMEDIR="${HOMEDIR:-/home}"
+[[ -r "$VESTA/conf/vesta.conf" ]] \
+    || fail "Vesta configuration is unavailable"
+# shellcheck source=conf/vesta.conf
+source "$VESTA/conf/vesta.conf"
+HOMEDIR="${HOMEDIR:-/home}"
+[[ "$HOMEDIR" == /home
+    || ( "${VX_COMPOSE_TEST_MODE:-}" == yes
+        && "${VX_COMPOSE_TEST_ALLOW_SELF_BIND:-}" == yes ) ]] \
+    || fail "protected Compose boot mounts require HOMEDIR=/home"
+[[ -d "$VESTA/data/users" && ! -L "$VESTA/data/users" ]] \
+    || fail "Vesta user authority is unavailable"
+[[ -r "$VESTA/func/vx/compose/main.sh" ]] \
+    || fail "Compose runtime helpers are unavailable"
+# shellcheck source=func/vx/compose/main.sh
+source "$VESTA/func/vx/compose/main.sh"
+
+shopt -s nullglob
+for user_root in "$VESTA/data/users"/*; do
+    [[ ! -L "$user_root" ]] \
+        || fail "Vesta user authority entry is linked: $user_root"
+    [[ -d "$user_root" && ! -L "$user_root" ]] || continue
+    projects_root="$user_root/docker-projects"
+    [[ -e "$projects_root" || -L "$projects_root" ]] || continue
+    [[ -d "$projects_root" && ! -L "$projects_root" ]] \
+        || fail "Compose project authority is unsafe: $projects_root"
+
+    owner="${user_root##*/}"
+    vx_compose_owner_is_valid "$owner" \
+        || fail "Compose owner key is invalid: $owner"
+    id -u "$owner" >/dev/null 2>&1 \
+        || fail "Compose owner does not exist: $owner"
+    [[ -d "$HOMEDIR/$owner" && ! -L "$HOMEDIR/$owner" ]] \
+        || fail "Compose owner home is unsafe: $owner"
+    vx_compose_prepare_project_data_roots "$owner" \
+        || fail "unable to protect Compose data root: $owner"
+done
+
+echo "Protected Docker Compose data-root mounts are ready."
+exit 0

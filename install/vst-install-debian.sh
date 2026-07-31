@@ -1816,6 +1816,10 @@ fi
 echo "== Adding vesta account"
 $VESTA/bin/v-add-user admin $vpass $email default System Administrator
 check_result $? "can't create admin user"
+
+echo "== Activating Docker Compose mount guard"
+$VESTA/bin/v-install-docker-compose-mount-guard
+check_result $? "Docker Compose mount-guard activation failed"
 $VESTA/bin/v-change-user-shell admin bash
 $VESTA/bin/v-change-user-language admin $lang
 

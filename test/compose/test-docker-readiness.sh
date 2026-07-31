@@ -10,11 +10,25 @@ fake_bin="$test_root/bin"
 state_dir="$test_root/state"
 fake_vesta="$test_root/vesta"
 apt_root="$test_root/etc/apt"
+systemd_root="$test_root/etc/systemd/system"
 installer_under_test="$test_root/v-install-docker-service"
-mkdir -p "$fake_bin" "$state_dir" "$fake_vesta/func" "$fake_vesta/conf"
-
 test_uid="$(id -u)"
 test_gid="$(id -g)"
+mkdir -p "$fake_bin" "$state_dir" "$fake_vesta/func" "$fake_vesta/conf" \
+    "$fake_vesta/bin" "$fake_vesta/install/common/systemd/docker.service.d" \
+    "$systemd_root"
+cp "$repo_root/bin/v-prepare-docker-compose-data-roots" "$fake_vesta/bin/"
+sed \
+    -e "s#systemd_root=/etc/systemd/system#systemd_root=$systemd_root#" \
+    -e "s/install -o 0 -g 0/install -o $test_uid -g $test_gid/" \
+    "$repo_root/bin/v-install-docker-compose-mount-guard" \
+    >"$fake_vesta/bin/v-install-docker-compose-mount-guard"
+chmod 0755 "$fake_vesta/bin/v-install-docker-compose-mount-guard"
+cp "$repo_root/install/common/systemd/vesta-compose-data-roots.service" \
+    "$fake_vesta/install/common/systemd/"
+cp "$repo_root/install/common/systemd/docker.service.d/vesta-compose-data-roots.conf" \
+    "$fake_vesta/install/common/systemd/docker.service.d/"
+
 sed \
     -e "s#/etc/apt/keyrings#$apt_root/keyrings#g" \
     -e "s#/etc/apt/sources.list.d#$apt_root/sources.list.d#g" \
@@ -135,7 +149,12 @@ EOF
 cat >"$fake_bin/systemctl" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$VX_TEST_STATE/systemctl.log"
-touch "$VX_TEST_STATE/daemon"
+if [[ "$*" == 'restart vesta-compose-data-roots.service'
+    && "${VX_TEST_FAIL_MOUNT_GUARD:-no}" == yes ]]; then
+    exit 1
+fi
+[[ "$*" == 'enable --now docker' ]] && touch "$VX_TEST_STATE/daemon"
+exit 0
 EOF
 
 chmod +x "$fake_bin"/*
@@ -160,6 +179,40 @@ ln -s "$unsafe_key_target" "$apt_root/keyrings/docker.asc"
 
 touch "$state_dir/docker" "$state_dir/daemon"
 "$installer_under_test" >/dev/null
+
+cmp "$repo_root/install/common/systemd/vesta-compose-data-roots.service" \
+    "$systemd_root/vesta-compose-data-roots.service"
+cmp "$repo_root/install/common/systemd/docker.service.d/vesta-compose-data-roots.conf" \
+    "$systemd_root/docker.service.d/vesta-compose-data-roots.conf"
+grep -Fq 'Before=docker.service containerd.service' \
+    "$systemd_root/vesta-compose-data-roots.service"
+grep -Fq 'Requires=vesta-compose-data-roots.service' \
+    "$systemd_root/docker.service.d/vesta-compose-data-roots.conf"
+grep -Fq 'After=vesta-compose-data-roots.service' \
+    "$systemd_root/docker.service.d/vesta-compose-data-roots.conf"
+grep -Fq 'daemon-reload' "$state_dir/systemctl.log"
+grep -Fq 'enable vesta-compose-data-roots.service' \
+    "$state_dir/systemctl.log"
+grep -Fq 'restart vesta-compose-data-roots.service' \
+    "$state_dir/systemctl.log"
+restart_count="$(
+    grep -Fc 'restart vesta-compose-data-roots.service' \
+        "$state_dir/systemctl.log"
+)"
+VESTA="$fake_vesta" \
+    "$fake_vesta/bin/v-install-docker-compose-mount-guard" defer >/dev/null
+[[ "$(
+    grep -Fc 'restart vesta-compose-data-roots.service' \
+        "$state_dir/systemctl.log"
+)" == "$restart_count" ]] \
+    || { echo "deferred mount-guard installation activated the unit" >&2; exit 1; }
+if VX_TEST_FAIL_MOUNT_GUARD=yes "$installer_under_test" \
+    >"$test_root/guard-failure.out" 2>&1; then
+    echo "installer continued after mount-guard preparation failed" >&2
+    exit 1
+fi
+grep -Fq 'unable to establish protected Compose data-root mounts' \
+    "$test_root/guard-failure.out"
 
 for tool_state in docker daemon compose jq age; do
     [[ -f "$state_dir/$tool_state" ]] \

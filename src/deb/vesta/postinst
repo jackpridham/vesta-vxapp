@@ -7,12 +7,23 @@ release=$(cat /etc/debian_version | tr "." "\n" | head -n1)
 
 # Run triggers only on updates
 if [ ! -e "/usr/local/vesta/data/users/admin" ]; then
+    # The main installer has not created Vesta state yet. Install and enable
+    # the dependency now; the main installer activates it after admin exists.
+    if ! /usr/local/vesta/bin/v-install-docker-compose-mount-guard defer; then
+        echo "Docker Compose mount-guard installation failed" >&2
+        exit 1
+    fi
     version=$(curl -s http://c.myvestacp.com/latest.txt?installed)
     version=${version:6}
     echo "=== myVesta $version installed ==="
     echo "=== myVesta build date: $build_date"
     echo "$version" > /usr/local/vesta/version.txt
     exit
+fi
+
+if ! /usr/local/vesta/bin/v-install-docker-compose-mount-guard; then
+    echo "Docker Compose mount-guard activation failed" >&2
+    exit 1
 fi
 
 /usr/local/vesta/bin/v-ensure-poold-folders-not-empty
