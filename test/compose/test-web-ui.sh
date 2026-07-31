@@ -52,8 +52,9 @@ expect_pattern web/list/docker/index.php 'inc/vx_compose\.php' \
     'Compose list adapter is loaded'
 expect_pattern web/list/docker/index.php 'vx_compose_list_projects_for_actor' \
     'Compose projects are the list source'
-expect_pattern web/edit/docker/index.php 'vx_compose_resolve_mutable_project' \
-    'simple edit resolves a mutable Compose project'
+expect_pattern web/edit/docker/index.php \
+    'vx_compose_resolve_accessible_project' \
+    'owner/admin simple edit resolves an accessible Compose project'
 expect_pattern web/add/docker/index.php \
     'if \(!\$docker_available\)' \
     'simple add rejects POST when orchestration is unavailable'
@@ -267,6 +268,9 @@ for page in start stop restart; do
     expect_pattern "web/${page}/docker/index.php" \
         'vx_compose_resolve_mutable_project' \
         "$page requires project mutation authority"
+    expect_pattern "web/${page}/docker/index.php" \
+        'v-run-docker-project-action' \
+        "$page rechecks actor capability in the mutation adapter"
 done
 
 for action in acknowledge_alert backup deploy recreate restore rollback; do

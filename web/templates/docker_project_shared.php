@@ -73,7 +73,7 @@
 
   <div class="docker-hero__actions">
     <a class="button docker-button docker-button--secondary" href="/list/docker/?user=<?=urlencode($docker_project_owner)?>"><?=__('Back to projects')?></a>
-    <?php if ($docker_project_can_mutate && !empty($docker_project['IS_SIMPLE'])) { ?>
+    <?php if (($user === 'admin' || $user === $docker_project_owner) && !empty($docker_project['IS_SIMPLE'])) { ?>
     <a class="button docker-button docker-button--secondary" href="/edit/docker/?container=<?=urlencode($docker_project_name)?><?=$project_query_owner?>"><?=__('Simple settings')?></a>
     <?php } ?>
     <?php if ($docker_project_can_mutate) { ?>

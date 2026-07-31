@@ -98,7 +98,7 @@ vx_compose_role_write() {
 
 vx_compose_role_set() {
     local manager="$1" owner="$2" project="$3" actor="$4" role="$5"
-    local root path old updated now
+    local root path old updated now existed=no
 
     vx_compose_require_project "$owner" "$project" || return 1
     [[ "$manager" == admin || "$manager" == "$owner" ]] || {
@@ -124,10 +124,13 @@ vx_compose_role_set() {
     vx_compose_lock_acquire "$owner" "$project" || return 1
     path="$(vx_compose_roles_path "$owner" "$project")"
     old='{"SCHEMA":1,"ASSIGNMENTS":{}}'
-    [[ ! -f "$path" ]] || old="$(jq -c '
-        select(type == "object" and .SCHEMA == 1
-            and (.ASSIGNMENTS | type == "object"))
-    ' "$path" 2>/dev/null)" || old=
+    if [[ -f "$path" ]]; then
+        existed=yes
+        old="$(jq -c '
+            select(type == "object" and .SCHEMA == 1
+                and (.ASSIGNMENTS | type == "object"))
+        ' "$path" 2>/dev/null)" || old=
+    fi
     if [[ -z "$old" ]]; then
         vx_compose_lock_release
         vx_compose_error 'stored Compose role metadata is invalid'
@@ -143,13 +146,21 @@ vx_compose_role_set() {
         vx_compose_lock_release
         return 1
     }
-    if vx_compose_role_write "$path" "$updated" \
-        && VX_COMPOSE_INVOKE_REVISION_OVERRIDE="$(
+    if ! vx_compose_role_write "$path" "$updated"; then
+        vx_compose_lock_release
+        return 1
+    fi
+    if VX_COMPOSE_INVOKE_REVISION_OVERRIDE="$(
             vx_compose_meta_get "$root/project.conf" REVISION
         )" vx_compose_audit "$root" role-grant succeeded \
             "actor=$actor role=$role" 0 '[]' "$manager"; then
         vx_compose_lock_release
         return 0
+    fi
+    if [[ "$existed" == yes ]]; then
+        vx_compose_role_write "$path" "$old" || :
+    else
+        rm -f -- "$path" || :
     fi
     vx_compose_lock_release
     return 1
@@ -186,12 +197,16 @@ vx_compose_role_delete() {
         vx_compose_lock_release
         return 1
     }
-    if vx_compose_role_write "$path" "$updated" \
-        && vx_compose_audit "$root" role-revoke succeeded \
-            "actor=$actor" 0 '[]' "$manager"; then
+    if ! vx_compose_role_write "$path" "$updated"; then
+        vx_compose_lock_release
+        return 1
+    fi
+    if vx_compose_audit "$root" role-revoke succeeded \
+        "actor=$actor" 0 '[]' "$manager"; then
         vx_compose_lock_release
         return 0
     fi
+    vx_compose_role_write "$path" "$old" || :
     vx_compose_lock_release
     return 1
 }

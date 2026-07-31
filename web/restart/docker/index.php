@@ -28,10 +28,14 @@ if (!empty($_GET['container'])
         $user
     ))) {
     exec(
-        VESTA_CMD."v-restart-docker-project "
+        VESTA_CMD."v-run-docker-project-action "
+        .escapeshellarg($user)
+        ." "
         .escapeshellarg($docker_owner)
         ." "
-        .escapeshellarg($_GET['container']),
+        .escapeshellarg($_GET['container'])
+        ." "
+        .escapeshellarg('restart'),
         $output,
         $return_var
     );

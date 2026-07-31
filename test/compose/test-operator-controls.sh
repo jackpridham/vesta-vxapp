@@ -139,6 +139,16 @@ source "$repo_root/func/vx/compose/main.sh"
 vx_compose_role_set alice alice app bob viewer
 [[ "$(stat -c '%a' "$root/roles.json")" == 600 ]] \
     || fail 'role metadata mode is not 0600'
+roles_before_failure="$(sha256sum "$root/roles.json" | awk '{print $1}')"
+if (
+    vx_compose_audit() { return 1; }
+    vx_compose_role_set alice alice app carol operator
+) 2>/dev/null; then
+    fail 'role grant reported success without durable audit evidence'
+fi
+[[ "$(sha256sum "$root/roles.json" | awk '{print $1}')" \
+    == "$roles_before_failure" ]] \
+    || fail 'failed role audit left an unauthorized grant'
 vx_compose_authorize bob alice app view \
     || fail 'viewer lacks view'
 if vx_compose_authorize bob alice app lifecycle 2>/dev/null; then

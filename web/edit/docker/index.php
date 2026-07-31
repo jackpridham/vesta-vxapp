@@ -21,11 +21,13 @@ if ($docker_owner_requested && !vx_docker_user_exists($docker_form_owner, $docke
     exit;
 }
 $docker_container_name = trim((string) $_GET['container']);
-$docker_details_container = vx_compose_resolve_mutable_project(
-    $docker_form_owner,
-    $docker_container_name,
-    $user
-);
+$docker_details_container = ($user === 'admin' || $user === $docker_form_owner)
+    ? vx_compose_resolve_accessible_project(
+        $docker_form_owner,
+        $docker_container_name,
+        $user
+    )
+    : array();
 
 if (empty($docker_details_container)) {
     $_SESSION['error_msg'] = __('Compose project does not exist.');
@@ -64,11 +66,12 @@ if (!empty($_POST['save'])) {
             'Docker orchestration prerequisites are unavailable.'
         );
     }
-    if (empty(vx_compose_resolve_mutable_project(
-        $docker_form_owner,
-        $docker_container_name,
-        $user
-    ))) {
+    if (($user !== 'admin' && $user !== $docker_form_owner)
+        || empty(vx_compose_resolve_accessible_project(
+            $docker_form_owner,
+            $docker_container_name,
+            $user
+        ))) {
         $_SESSION['error_msg'] = __(
             'You are not authorized to update this Compose project.'
         );
