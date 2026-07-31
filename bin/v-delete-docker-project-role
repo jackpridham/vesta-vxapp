@@ -1,0 +1,20 @@
+#!/bin/bash
+# info: revoke a fine-grained Docker Compose project role
+# options: ACTOR USER PROJECT SUBJECT
+
+compose_actor=$1
+user=$2
+compose_project=$3
+subject=$4
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '4' "$#" 'ACTOR USER PROJECT SUBJECT'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+vx_compose_role_delete "$compose_actor" "$user" "$compose_project" "$subject" \
+    || check_result "$E_INVALID" 'Compose project role revocation failed'
+log_history "revoked Compose project role $compose_project/$subject"
+log_event "$OK" "$ARGUMENTS"
+exit

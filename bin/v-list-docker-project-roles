@@ -1,0 +1,26 @@
+#!/bin/bash
+# info: list fine-grained Docker Compose project roles
+# options: ACTOR USER PROJECT [FORMAT]
+
+compose_actor=$1
+user=$2
+compose_project=$3
+format=${4-json}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '3' "$#" 'ACTOR USER PROJECT [FORMAT]'
+[ "$#" -le 4 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+payload="$(vx_compose_roles_list_json \
+    "$compose_actor" "$user" "$compose_project")" \
+    || check_result "$E_INVALID" 'Compose project role listing failed'
+case "$format" in
+    json) printf '%s\n' "$payload" ;;
+    plain) jq -r '.ASSIGNMENTS|to_entries[]|[.key,.value.ROLE,.value.UPDATED]|@tsv' \
+        <<<"$payload" ;;
+    *) check_result "$E_INVALID" 'format must be json or plain' ;;
+esac
+exit

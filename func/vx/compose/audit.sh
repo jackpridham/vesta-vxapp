@@ -57,6 +57,17 @@ vx_compose_last_operation_write() {
     local temp_file
 
     install -d -m 0750 "$runtime" || return 1
+    # A typed long-running operation owns this record until it reaches a
+    # terminal state. Nested lifecycle/audit events must not destroy its
+    # opaque identifier or make the final progress update impossible.
+    if [[ -f "$runtime/last-operation.json"
+        && ! -L "$runtime/last-operation.json" ]] \
+        && jq -e '
+            ((.OPERATION_ID // "") | test("^[a-f0-9]{32}$"))
+            and .RESULT == "running"
+        ' "$runtime/last-operation.json" >/dev/null 2>&1; then
+        return 0
+    fi
     temp_file="$(mktemp "$runtime/.last-operation.XXXXXX")" || return 1
     jq -S . <<<"$event" >"$temp_file" || {
         rm -f -- "$temp_file"

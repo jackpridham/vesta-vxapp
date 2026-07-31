@@ -1,0 +1,22 @@
+#!/bin/bash
+# info: add an approved typed Docker Compose notification route
+# options: ACTOR USER PROJECT TYPE DESTINATION
+
+compose_actor=$1
+user=$2
+compose_project=$3
+type=$4
+destination=$5
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '5' "$#" 'ACTOR USER PROJECT TYPE DESTINATION'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+vx_compose_notification_route_set \
+    "$compose_actor" "$user" "$compose_project" "$type" "$destination" \
+    || check_result "$E_INVALID" 'Compose notification route update failed'
+log_history "updated Compose notification route $compose_project/$type"
+log_event "$OK" "$ARGUMENTS"
+exit

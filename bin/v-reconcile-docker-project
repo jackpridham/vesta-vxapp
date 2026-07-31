@@ -1,0 +1,22 @@
+#!/bin/bash
+# info: reconcile an exactly observed Docker Compose project drift state
+# options: ACTOR USER PROJECT DRIFT_DIGEST CURRENT_REVISION
+
+compose_actor=$1
+user=$2
+compose_project=$3
+drift_digest=$4
+current_revision=$5
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '5' "$#" 'ACTOR USER PROJECT DRIFT_DIGEST CURRENT_REVISION'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+vx_compose_reconcile "$compose_actor" "$user" "$compose_project" \
+    "$drift_digest" "$current_revision" \
+    || check_result "$E_UPDATE" 'Docker Compose project reconcile failed'
+log_history "reconciled Docker Compose project $compose_project"
+log_event "$OK" "$ARGUMENTS"
+exit

@@ -1,0 +1,19 @@
+#!/bin/bash
+# info: preview a bound Docker Compose project rollback
+# options: ACTOR USER PROJECT TARGET_REVISION
+
+compose_actor=$1
+user=$2
+compose_project=$3
+target_revision=$4
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '4' "$#" 'ACTOR USER PROJECT TARGET_REVISION'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+vx_compose_rollback_preview_json \
+    "$compose_actor" "$user" "$compose_project" "$target_revision" \
+    || check_result "$E_INVALID" 'Compose rollback preview failed'
+exit

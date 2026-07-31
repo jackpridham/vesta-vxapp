@@ -1,0 +1,26 @@
+#!/bin/bash
+# info: apply an immutable manifest-bound Docker Compose rollback preview
+# options: ACTOR USER PROJECT TARGET CURRENT FROM_MANIFEST TO_MANIFEST
+
+compose_actor=$1
+user=$2
+compose_project=$3
+target_revision=$4
+current_revision=$5
+from_manifest=$6
+to_manifest=$7
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '7' "$#" \
+    'ACTOR USER PROJECT TARGET CURRENT FROM_MANIFEST TO_MANIFEST'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+vx_compose_rollback_bound "$compose_actor" "$user" "$compose_project" \
+    "$target_revision" "$current_revision" "$from_manifest" "$to_manifest" \
+    || check_result "$E_UPDATE" 'bound Docker Compose rollback failed'
+log_history "applied bound Docker Compose rollback $compose_project/$target_revision"
+log_event "$OK" "$ARGUMENTS"
+exit

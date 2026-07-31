@@ -1,0 +1,22 @@
+#!/bin/bash
+# info: check a Docker Compose project actor capability
+# options: ACTOR USER PROJECT CAPABILITY
+
+compose_actor=$1
+user=$2
+compose_project=$3
+capability=$4
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '4' "$#" 'ACTOR USER PROJECT CAPABILITY'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+vx_compose_authorize "$compose_actor" "$user" "$compose_project" "$capability" \
+    || check_result "$E_INVALID" 'Compose project capability denied'
+jq -n --arg actor "$compose_actor" --arg owner "$user" \
+    --arg project "$compose_project" --arg capability "$capability" \
+    '{AUTHORIZED:true,ACTOR:$compose_actor,OWNER:$owner,PROJECT:$project,
+      CAPABILITY:$capability}'
+exit

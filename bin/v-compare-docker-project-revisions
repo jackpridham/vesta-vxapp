@@ -1,0 +1,29 @@
+#!/bin/bash
+# info: compare immutable Docker Compose project revisions
+# options: ACTOR USER PROJECT FROM_REVISION TO_REVISION [FORMAT]
+
+compose_actor=$1
+user=$2
+compose_project=$3
+from_revision=$4
+to_revision=$5
+format=${6-json}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '5' "$#" 'ACTOR USER PROJECT FROM_REVISION TO_REVISION [FORMAT]'
+[ "$#" -le 6 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+payload="$(vx_compose_revision_compare_json "$compose_actor" "$user" \
+    "$compose_project" "$from_revision" "$to_revision")" \
+    || check_result "$E_INVALID" 'Compose revision comparison failed'
+case "$format" in
+    json) printf '%s\n' "$payload" ;;
+    plain) jq -r '[.FROM_REVISION,.TO_REVISION,
+        (.SERVICES.ADDED|join(",")),(.SERVICES.REMOVED|join(",")),
+        (.SERVICES.CHANGED|join(","))]|@tsv' <<<"$payload" ;;
+    *) check_result "$E_INVALID" 'format must be json or plain' ;;
+esac
+exit

@@ -1,0 +1,17 @@
+#!/bin/bash
+# info: preview explicit Docker Compose project reconciliation
+# options: ACTOR USER PROJECT
+
+compose_actor=$1
+user=$2
+compose_project=$3
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '3' "$#" 'ACTOR USER PROJECT'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+vx_compose_reconcile_preview_json "$compose_actor" "$user" "$compose_project" \
+    || check_result "$E_INVALID" 'Compose reconcile preview failed'
+exit

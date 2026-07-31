@@ -1,0 +1,28 @@
+#!/bin/bash
+# info: list desired and runtime Docker Compose project drift
+# options: ACTOR USER PROJECT [FORMAT]
+
+compose_actor=$1
+user=$2
+compose_project=$3
+format=${4-json}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '3' "$#" 'ACTOR USER PROJECT [FORMAT]'
+[ "$#" -le 4 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+vx_compose_authorize "$compose_actor" "$user" "$compose_project" view \
+    || check_result "$E_INVALID" 'Compose project capability denied'
+payload="$(vx_compose_drift_observe_json "$user" "$compose_project")" \
+    || check_result "$E_INVALID" 'Compose drift observation failed'
+case "$format" in
+    json) printf '%s\n' "$payload" ;;
+    plain) jq -r '[.MATCH,.CURRENT_REVISION,.DRIFT_DIGEST,
+        (.MISSING_SERVICES|join(",")),(.EXTRA_SERVICES|join(","))]|@tsv' \
+        <<<"$payload" ;;
+    *) check_result "$E_INVALID" 'format must be json or plain' ;;
+esac
+exit
