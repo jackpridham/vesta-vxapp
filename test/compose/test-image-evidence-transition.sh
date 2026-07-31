@@ -112,20 +112,23 @@ mkdir -p "$(vx_compose_image_metadata_root alice)"
 jq -S '{IMAGE_ID:.worker.IMAGE_ID}' "$fixture" \
     >"$(vx_compose_image_metadata_root alice)/$local_identity_key.json"
 
-# Unmanifested legacy evidence cannot bootstrap authority unless current and
-# every retained legacy revision are byte-identical.
-jq '.worker.IMAGE_ID = "sha256:9999999999999999999999999999999999999999999999999999999999999999"' \
-    "$fixture" >"$project_root/revisions/000004/images.json"
-chmod 0640 "$project_root/revisions/000004/images.json"
+# A missing active revision image can never bootstrap from current-only bytes.
+mv "$revision_file" "$test_root/active-revision-images.json"
 current_before="$(sha256sum "$project_root/images.json" | awk '{print $1}')"
 if vx_compose_project_resolve_images alice evidence 2>/dev/null; then
-    fail "disagreeing unmanifested legacy sources created migration authority"
+    fail "current-only legacy evidence created migration authority"
 fi
 [[ ! -e "$project_root/image-evidence-migration"
     && "$(sha256sum "$project_root/images.json" | awk '{print $1}')" \
         == "$current_before" ]] \
-    || fail "failed authority bootstrap changed current evidence"
-install -m 0640 "$fixture" "$project_root/revisions/000004/images.json"
+    || fail "missing active revision changed current evidence"
+install -m 0640 "$test_root/active-revision-images.json" "$revision_file"
+
+# Retained revisions may bind distinct valid historical image identities.
+jq '.worker.IMAGE_ID = "sha256:9999999999999999999999999999999999999999999999999999999999999999"' \
+    "$fixture" >"$test_root/revision-000004-images.json"
+install -m 0640 "$test_root/revision-000004-images.json" \
+    "$project_root/revisions/000004/images.json"
 
 revision_before="$(sha256sum "$revision_file" | awk '{print $1}')"
 vx_compose_project_resolve_images alice evidence
@@ -142,8 +145,9 @@ jq -e '
     and .worker.TRUST.DECISION == "disabled"
 ' "$project_root/images.json" >/dev/null \
     || fail "legacy evidence did not upgrade to schema 2"
-jq -e 'select(.ACTION == "image-evidence-schema-upgrade"
+jq -e 'select(.ACTION == "resolve-images"
               and .RESULT == "succeeded"
+              and (.DETAILS | contains("schema_transition="))
               and (.DETAILS | length <= 256))' \
     "$project_root/audit.log" >/dev/null \
     || fail "schema upgrade was not recorded in the bounded audit"
@@ -155,11 +159,20 @@ authority="$project_root/image-evidence-migration"
     || fail "legacy migration authority permissions are not immutable"
 jq -e '
     .SCHEMA == 1 and .OWNER == "alice" and .PROJECT == "evidence"
-    and [.SOURCES[].NAME] == ["000001","000002","000003","000004"]
-    and .LEGACY_EVIDENCE.api.IMAGE_ID
+    and [.ENTRIES[].NAME] == ["000001","000002","000003","000004"]
+    and .ENTRIES[0].EVIDENCE.api.IMAGE_ID
         == "sha256:1111111111111111111111111111111111111111111111111111111111111111"
+    and .ENTRIES[3].EVIDENCE.worker.IMAGE_ID
+        == "sha256:9999999999999999999999999999999999999999999999999999999999999999"
 ' "$authority/evidence.json" >/dev/null \
     || fail "legacy migration authority did not bind all retained sources"
+vx_compose_image_evidence_migration_authority_verify \
+    alice evidence "$project_root" 1 "$revision_file" \
+    || fail "active revision authority entry was not selectable"
+vx_compose_image_evidence_migration_authority_verify \
+    alice evidence "$project_root" 4 \
+    "$project_root/revisions/000004/images.json" \
+    || fail "historical revision authority entry was not selectable"
 
 authority_manifest_copy="$test_root/migration-manifest.sha256"
 cp "$authority/manifest.sha256" "$authority_manifest_copy"
@@ -177,6 +190,40 @@ fi
 chmod 0700 "$authority"
 install -m 0400 "$authority_manifest_copy" "$authority/manifest.sha256"
 chmod 0500 "$authority"
+
+install -m 0640 "$fixture" "$project_root/revisions/000004/images.json"
+if vx_compose_image_evidence_migration_authority_verify \
+    alice evidence "$project_root" 4 \
+    "$project_root/revisions/000004/images.json"; then
+    fail "tampered retained revision authority entry was accepted"
+fi
+install -m 0640 "$test_root/revision-000004-images.json" \
+    "$project_root/revisions/000004/images.json"
+
+# Selecting a distinct retained revision re-resolves against that revision's
+# own authority entry rather than the active revision's historical identity.
+cp "$project_root/images.json" "$test_root/revision-000001-current.json"
+sed -i "s/^REVISION='1'/REVISION='4'/" "$project_root/project.conf"
+install -m 0640 "$test_root/revision-000004-images.json" \
+    "$project_root/images.json"
+jq '.Id = "sha256:9999999999999999999999999999999999999999999999999999999999999999"' \
+    "$local_inspect" >"$test_root/changed.json"
+mv "$test_root/changed.json" "$local_inspect"
+jq -n -S '{IMAGE_ID:"sha256:9999999999999999999999999999999999999999999999999999999999999999"}' \
+    >"$(vx_compose_image_metadata_root alice)/$local_identity_key.json"
+vx_compose_project_resolve_images alice evidence
+jq -e '.worker.IMAGE_ID
+    == "sha256:9999999999999999999999999999999999999999999999999999999999999999"' \
+    "$project_root/images.json" >/dev/null \
+    || fail "distinct retained revision could not be re-resolved"
+sed -i "s/^REVISION='4'/REVISION='1'/" "$project_root/project.conf"
+jq '.Id = "sha256:2222222222222222222222222222222222222222222222222222222222222222"' \
+    "$local_inspect" >"$test_root/changed.json"
+mv "$test_root/changed.json" "$local_inspect"
+jq -n -S '{IMAGE_ID:"sha256:2222222222222222222222222222222222222222222222222222222222222222"}' \
+    >"$(vx_compose_image_metadata_root alice)/$local_identity_key.json"
+install -m 0640 "$test_root/revision-000001-current.json" \
+    "$project_root/images.json"
 
 # Active authority verification accepts schema 2 current evidence only through
 # the separately manifest-bound legacy migration authority.
@@ -226,6 +273,38 @@ bind_legacy_canonical_only() {
 }
 
 bind_active_revision
+
+# Active verification enforces the complete protected path even when current
+# and revision image bytes are equal.
+vx_compose_active_revision_verify alice evidence \
+    || fail "secure byte-equal active evidence was rejected"
+chmod 0770 "$project_root/revisions"
+if vx_compose_active_revision_verify alice evidence 2>/dev/null; then
+    fail "writable revisions directory passed active verification"
+fi
+chmod 0750 "$project_root/revisions"
+chmod 0660 "$project_root/revisions/000001/manifest.sha256"
+if vx_compose_active_revision_verify alice evidence 2>/dev/null; then
+    fail "writable active manifest passed active verification"
+fi
+chmod 0640 "$project_root/revisions/000001/manifest.sha256"
+mv "$project_root/revisions/000001/manifest.sha256" \
+    "$test_root/active-manifest.sha256"
+ln -s "$test_root/active-manifest.sha256" \
+    "$project_root/revisions/000001/manifest.sha256"
+if vx_compose_active_revision_verify alice evidence 2>/dev/null; then
+    fail "linked active manifest passed active verification"
+fi
+rm -f -- "$project_root/revisions/000001/manifest.sha256"
+install -m 0640 "$test_root/active-manifest.sha256" \
+    "$project_root/revisions/000001/manifest.sha256"
+if (( EUID == 0 )); then
+    chown 65534:65534 "$revision_file"
+    if vx_compose_active_revision_verify alice evidence 2>/dev/null; then
+        fail "wrong-owner active revision image passed verification"
+    fi
+    chown 0:0 "$revision_file"
+fi
 
 # Digest-bearing references are one unambiguous immutable identity, and raw
 # duplicate JSON keys are rejected before jq can collapse them.
@@ -302,6 +381,8 @@ assert_rejected_without_mutation() {
 
     current_before="$(sha256sum "$project_root/images.json" | awk '{print $1}')"
     revision_before="$(sha256sum "$revision_file" | awk '{print $1}')"
+    success_before="$(jq -s '[.[] | select(.ACTION == "resolve-images"
+        and .RESULT == "succeeded")] | length' "$project_root/audit.log")"
     if vx_compose_project_resolve_images alice evidence \
         >"$test_root/rejected.out" 2>"$test_root/rejected.err"; then
         fail "$description was accepted"
@@ -351,7 +432,7 @@ chmod 0750 "$project_root"
 
 chmod 0700 "$authority"
 if vx_compose_image_evidence_migration_authority_verify \
-    alice evidence "$project_root" "$baseline"; then
+    alice evidence "$project_root" 1 "$baseline"; then
     fail "writable migration authority directory was accepted"
 fi
 chmod 0500 "$authority"
@@ -430,11 +511,13 @@ vx_compose_project_resolve_images alice evidence
 
 # Repeating the same refresh is byte-idempotent and does not repeat upgrade audit.
 current_before="$(sha256sum "$project_root/images.json" | awk '{print $1}')"
-upgrade_events_before="$(jq -s '[.[] | select(.ACTION == "image-evidence-schema-upgrade")] | length' "$project_root/audit.log")"
+upgrade_events_before="$(jq -s '[.[] | select(.ACTION == "resolve-images"
+    and (.DETAILS | contains("schema_transition=")))] | length' "$project_root/audit.log")"
 vx_compose_project_resolve_images alice evidence
 [[ "$(sha256sum "$project_root/images.json" | awk '{print $1}')" \
     == "$current_before" ]] || fail "repeat resolution was not byte-idempotent"
-[[ "$(jq -s '[.[] | select(.ACTION == "image-evidence-schema-upgrade")] | length' "$project_root/audit.log")" \
+[[ "$(jq -s '[.[] | select(.ACTION == "resolve-images"
+    and (.DETAILS | contains("schema_transition=")))] | length' "$project_root/audit.log")" \
     == "$upgrade_events_before" ]] || fail "repeat resolution repeated the schema-upgrade audit"
 
 # Unknown or unsupported schemas/fields are never interpreted as compatible.
@@ -458,7 +541,8 @@ for failure_hook in \
     VX_COMPOSE_TEST_IMAGE_EVIDENCE_INSTALL_FAIL \
     VX_COMPOSE_TEST_IMAGE_EVIDENCE_FAIL_AFTER_RENAME \
     VX_COMPOSE_TEST_IMAGE_EVIDENCE_FAIL_AFTER_FSYNC \
-    VX_COMPOSE_TEST_IMAGE_EVIDENCE_FAIL_SCHEMA_AUDIT \
+    VX_COMPOSE_TEST_IMAGE_EVIDENCE_FAIL_FINAL_DIR_FSYNC \
+    VX_COMPOSE_TEST_IMAGE_EVIDENCE_FAIL_SERVICE_COUNT \
     VX_COMPOSE_TEST_IMAGE_EVIDENCE_FAIL_RESOLVE_AUDIT; do
     install -m 0640 "$fixture" "$revision_file"
     install -m 0640 "$fixture" "$project_root/images.json"
@@ -476,14 +560,39 @@ for failure_hook in \
     [[ "$(sha256sum "$revision_file" | awk '{print $1}')" \
         == "$revision_before" ]] \
         || fail "$failure_hook changed revision evidence"
+    [[ "$(jq -s '[.[] | select(.ACTION == "resolve-images"
+        and .RESULT == "succeeded")] | length' "$project_root/audit.log")" \
+        == "$success_before" ]] \
+        || fail "$failure_hook left a false terminal success audit"
     if compgen -G "$project_root/.images.previous.*" >/dev/null; then
         fail "$failure_hook left an ambiguous rollback snapshot"
     fi
 done
-jq -s -e '[.[] | select(.ACTION == "image-evidence-schema-upgrade"
-                         and .RESULT == "failed")] | length >= 4' \
+jq -s -e '[.[] | select(.ACTION == "resolve-images"
+                         and .RESULT == "failed")] | length >= 5' \
     "$project_root/audit.log" >/dev/null \
     || fail "post-install failures were not reconstructable from audit"
+
+# Snapshot cleanup happens after the one truthful terminal success event. A
+# protected leftover is auditable but cannot turn durable success into failure.
+install -m 0640 "$fixture" "$revision_file"
+install -m 0640 "$fixture" "$project_root/images.json"
+bind_legacy_canonical_only
+success_before="$(jq -s '[.[] | select(.ACTION == "resolve-images"
+    and .RESULT == "succeeded")] | length' "$project_root/audit.log")"
+VX_COMPOSE_TEST_IMAGE_EVIDENCE_FAIL_BACKUP_CLEANUP=yes \
+    vx_compose_project_resolve_images alice evidence
+jq -e 'all(.[]; .SCHEMA == 2)' "$project_root/images.json" >/dev/null \
+    || fail "cleanup failure rolled back durable current evidence"
+[[ "$(jq -s '[.[] | select(.ACTION == "resolve-images"
+    and .RESULT == "succeeded")] | length' "$project_root/audit.log")" \
+    == $((success_before + 1)) ]] \
+    || fail "cleanup failure corrupted terminal audit truth"
+jq -s -e '[.[] | select(.ACTION == "image-evidence-cleanup"
+                         and .RESULT == "failed")] | length >= 1' \
+    "$project_root/audit.log" >/dev/null \
+    || fail "cleanup failure was not audited"
+rm -f -- "$project_root"/.images.previous.*
 
 # Rollback may restore the retained production-era bytes; re-resolution upgrades
 # only current evidence and leaves the immutable legacy authority byte-exact.
