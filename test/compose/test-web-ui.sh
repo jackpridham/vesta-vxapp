@@ -44,6 +44,9 @@ expect_file web/ajax/docker/actions/rollback.php
 expect_file web/ajax/docker/actions/backup.php
 expect_file web/ajax/docker/actions/restore.php
 expect_file web/ajax/docker/actions/recreate.php
+expect_file web/ajax/docker/actions/drift.php
+expect_file web/ajax/docker/actions/reconcile.php
+expect_file web/ajax/docker/actions/roles.php
 
 expect_pattern web/list/docker/index.php 'inc/vx_compose\.php' \
     'Compose list adapter is loaded'
@@ -266,14 +269,17 @@ for page in start stop restart; do
         "$page requires project mutation authority"
 done
 
-for action in acknowledge_alert backup deploy recreate remove restore rollback; do
+for action in acknowledge_alert backup deploy recreate restore rollback; do
     expect_pattern "web/ajax/docker/actions/${action}.php" \
-        'vx_compose_resolve_mutable_project' \
-        "$action requires project mutation authority"
+        'vx_compose_resolve_capable_project' \
+        "$action requires capability-specific project authority"
     expect_pattern "web/ajax/docker/actions/${action}.php" \
         'vx_docker_is_orchestration_ready' \
         "$action rejects mutation while orchestration is unavailable"
 done
+expect_pattern web/ajax/docker/actions/remove.php \
+    'vx_compose_resolve_accessible_project' \
+    'remove requires owner/admin authority over an accessible project'
 
 for action in logs inspect audit routes ingress_consumers secrets images; do
     expect_pattern "web/ajax/docker/actions/${action}.php" \
@@ -349,8 +355,8 @@ expect_pattern web/ajax/docker/actions/logs.php 'v-list-docker-project-logs' \
     'logs use bounded Compose log output'
 expect_pattern web/ajax/docker/actions/logs.php "name|service|in_array\\(\\\$service" \
     'logs validate a selected canonical service'
-expect_pattern web/ajax/docker/actions/recreate.php 'v-recreate-docker-project' \
-    'service recreation uses the constrained command'
+expect_pattern web/ajax/docker/actions/recreate.php 'v-run-docker-project-action' \
+    'service recreation uses the actor-authorized constrained command'
 expect_pattern web/ajax/docker/actions/recreate.php "in_array\\(\\\$service" \
     'service recreation validates canonical membership'
 expect_pattern web/ajax/docker/actions/inspect.php 'vx_compose_resolve_accessible_project' \
@@ -362,8 +368,45 @@ expect_pattern web/ajax/docker/actions/stats.php 'vx_compose_stats_payload' \
 expect_pattern web/ajax/docker/actions/alerts.php 'vx_compose_alerts_payload' \
     'alerts are project-scoped'
 expect_pattern web/ajax/docker/actions/acknowledge_alert.php \
-    'v-acknowledge-docker-project-alert' \
-    'alert acknowledgement is project-scoped'
+    'v-run-docker-project-action' \
+    'alert acknowledgement is actor-authorized and project-scoped'
+for capability_action in \
+    'deploy:deploy' 'rollback:rollback' 'backup:backup' 'restore:restore' \
+    'recreate:lifecycle' 'reconcile:reconcile'; do
+    action="${capability_action%%:*}"
+    capability="${capability_action#*:}"
+    expect_pattern "web/ajax/docker/actions/${action}.php" \
+        "vx_compose_resolve_capable_project|${capability}" \
+        "$action uses a capability-specific resolver"
+done
+expect_pattern web/ajax/docker/actions/rollback.php \
+    'v-apply-docker-project-rollback' \
+    'rollback consumes the manifest-bound preview adapter'
+expect_pattern web/ajax/docker/actions/rollback.php 'from_manifest' \
+    'rollback confirmation preserves the current manifest binding'
+expect_pattern web/ajax/docker/actions/rollback.php 'to_manifest' \
+    'rollback confirmation preserves the target manifest binding'
+expect_pattern web/ajax/docker/actions/reconcile.php 'drift_digest' \
+    'reconcile confirmation preserves the drift digest binding'
+expect_pattern web/ajax/docker/actions/reconcile.php 'current_revision' \
+    'reconcile confirmation preserves the revision binding'
+for action in drift reconcile roles; do
+    expect_pattern "web/ajax/docker/actions/${action}.php" \
+        'include_authentication_check\.php' \
+        "$action includes the nested authentication check"
+    expect_pattern "web/ajax/docker/actions/${action}.php" \
+        '\$myvesta_logged_user' \
+        "$action derives actor authority from the logged-in user"
+    expect_pattern "web/ajax/docker/actions/${action}.php" \
+        'exit;' \
+        "$action terminates after emitting bounded output"
+done
+expect_pattern web/ajax/docker/actions/reconcile.php \
+    'escapeshellarg.*myvesta_logged_user' \
+    'reconcile escapes the actor shell argument'
+expect_pattern web/ajax/docker/actions/reconcile.php \
+    'escapeshellarg.*owner' \
+    'reconcile escapes the owner shell argument'
 expect_pattern web/ajax/docker/actions/audit.php 'vx_compose_audit_payload' \
     'audit output uses the redacted CLI'
 expect_pattern web/ajax/docker/actions/routes.php 'vx_compose_routes_payload' \

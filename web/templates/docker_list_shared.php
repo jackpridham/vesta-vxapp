@@ -133,6 +133,16 @@
                 <span class="docker-stat__meta"><?=htmlspecialchars(isset($container['PROFILE']) ? $container['PROFILE'] : 'standard', ENT_QUOTES)?></span>
               </div>
               <div class="docker-stat">
+                <span class="docker-stat__label"><?=__('Runtime drift')?></span>
+                <b class="docker-stat__value"><?=!empty($container['DRIFT']['MATCH']) ? __('Exact') : __('Review')?></b>
+                <span class="docker-stat__meta"><?=htmlspecialchars(isset($container['DRIFT']['DRIFT_DIGEST']) ? substr((string) $container['DRIFT']['DRIFT_DIGEST'], 0, 12) : __('unavailable'), ENT_QUOTES)?></span>
+              </div>
+              <div class="docker-stat">
+                <span class="docker-stat__label"><?=__('Last operation')?></span>
+                <b class="docker-stat__value"><?=htmlspecialchars(isset($container['LAST_OPERATION']['ACTION']) ? $container['LAST_OPERATION']['ACTION'] : __('None'), ENT_QUOTES)?></b>
+                <span class="docker-stat__meta"><?=htmlspecialchars(isset($container['LAST_OPERATION']['RESULT']) ? $container['LAST_OPERATION']['RESULT'] : '', ENT_QUOTES)?></span>
+              </div>
+              <div class="docker-stat">
                 <span class="docker-stat__label"><?=__('Project routes')?></span>
                 <b class="docker-stat__value"><?=htmlspecialchars($docker_route_count, ENT_QUOTES)?></b>
                 <span class="docker-stat__meta"><?=htmlspecialchars($docker_managed_targets, ENT_QUOTES)?></span>

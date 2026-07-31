@@ -22,10 +22,11 @@ $owner = trim((string) $_POST['owner']);
 $name = trim((string) $_POST['name']);
 $aid = trim((string) $_POST['aid']);
 
-if (empty(vx_compose_resolve_mutable_project(
+if (empty(vx_compose_resolve_capable_project(
     $owner,
     $name,
-    $myvesta_logged_user
+    $myvesta_logged_user,
+    'lifecycle'
 ))) {
     echo json_encode(array('OK' => false));
     exit;
@@ -34,9 +35,11 @@ if (empty(vx_compose_resolve_mutable_project(
 $output = array();
 $return_var = 0;
 exec(
-    VESTA_CMD."v-acknowledge-docker-project-alert "
+    VESTA_CMD."v-run-docker-project-action "
+    .escapeshellarg($myvesta_logged_user)." "
     .escapeshellarg($owner)." "
     .escapeshellarg($name)." "
+    .escapeshellarg('alert-acknowledge')." "
     .escapeshellarg($aid),
     $output,
     $return_var

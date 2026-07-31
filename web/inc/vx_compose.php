@@ -16,6 +16,14 @@ function vx_compose_command_json($command, $arguments, $default = array())
         'v-validate-docker-project-source',
         'v-list-docker-project-definition',
         'v-stage-docker-project-preview',
+        'v-check-docker-project-capability',
+        'v-list-docker-project-drift',
+        'v-preview-docker-project-reconcile',
+        'v-preview-docker-project-rollback',
+        'v-compare-docker-project-revisions',
+        'v-list-docker-project-operation',
+        'v-list-docker-project-roles',
+        'v-list-docker-project-notification-routes',
     );
     if (!in_array($command, $allowed, true) || !is_array($arguments)) {
         return $default;
@@ -335,10 +343,42 @@ function vx_compose_actor_can_access_owner($owner, $actor)
     return $actor === 'admin' || $owner === $actor;
 }
 
-function vx_compose_actor_can_manage_profile($actor, $owner, $profile)
+function vx_compose_actor_has_capability($actor, $owner, $project, $capability)
 {
-    return $profile === 'standard'
-        && ($actor === 'admin' || $actor === $owner);
+    if (!vx_compose_owner_key_is_valid($actor)
+        && $actor !== 'admin') {
+        return false;
+    }
+    $payload = vx_compose_command_json(
+        'v-check-docker-project-capability',
+        array($actor, $owner, $project, $capability),
+        array()
+    );
+    return isset($payload['AUTHORIZED']) && $payload['AUTHORIZED'] === true;
+}
+
+function vx_compose_actor_can_manage_profile(
+    $actor,
+    $owner,
+    $profile,
+    $project = '',
+    $mode = ''
+)
+{
+    if ($profile !== 'standard') {
+        return false;
+    }
+    if ($actor === 'admin' || $actor === $owner) {
+        return true;
+    }
+    return $mode === 'change'
+        && $project !== ''
+        && vx_compose_actor_has_capability(
+            $actor,
+            $owner,
+            $project,
+            'preview'
+        );
 }
 
 function vx_compose_actor_can_mutate_project($project, $actor, $owner)
@@ -352,8 +392,17 @@ function vx_compose_actor_can_mutate_project($project, $actor, $owner)
     if ($actor === 'admin') {
         return true;
     }
-    return $actor === $owner
-        && (string) $project['PROFILE'] === 'standard';
+    if ($actor === $owner) {
+        return (string) $project['PROFILE'] === 'standard';
+    }
+    return !empty($project['PROJECT'])
+        && (string) $project['PROFILE'] === 'standard'
+        && vx_compose_actor_has_capability(
+            $actor,
+            $owner,
+            (string) $project['PROJECT'],
+            'lifecycle'
+        );
 }
 
 function vx_compose_stage_preview(
@@ -1039,7 +1088,13 @@ function vx_compose_get_project($owner, $project)
 
 function vx_compose_resolve_accessible_project($owner, $project, $actor)
 {
-    if (!vx_compose_actor_can_access_owner($owner, $actor)) {
+    if (!vx_compose_actor_can_access_owner($owner, $actor)
+        && !vx_compose_actor_has_capability(
+            $actor,
+            $owner,
+            $project,
+            'view'
+        )) {
         return array();
     }
     return vx_compose_get_project($owner, $project);
@@ -1047,12 +1102,32 @@ function vx_compose_resolve_accessible_project($owner, $project, $actor)
 
 function vx_compose_resolve_mutable_project($owner, $project, $actor)
 {
+    return vx_compose_resolve_capable_project(
+        $owner,
+        $project,
+        $actor,
+        'lifecycle'
+    );
+}
+
+function vx_compose_resolve_capable_project(
+    $owner,
+    $project,
+    $actor,
+    $capability
+) {
     $resolved = vx_compose_resolve_accessible_project(
         $owner,
         $project,
         $actor
     );
-    if (!vx_compose_actor_can_mutate_project($resolved, $actor, $owner)) {
+    if (empty($resolved)
+        || !vx_compose_actor_has_capability(
+            $actor,
+            $owner,
+            $project,
+            $capability
+        )) {
         return array();
     }
     return $resolved;
@@ -1516,12 +1591,18 @@ function vx_compose_view_operations($events)
                 isset($record['RESULT']) ? $record['RESULT'] : null
             ),
             'timestamp' => vx_compose_view_scalar(
-                isset($record['TIMESTAMP']) ? $record['TIMESTAMP'] : null
+                isset($record['UPDATED'])
+                    ? $record['UPDATED']
+                    : (isset($record['TIMESTAMP'])
+                        ? $record['TIMESTAMP'] : null)
             ),
             'duration' => vx_compose_view_scalar(
-                isset($record['DURATION_MS'])
+                isset($record['PERCENT'])
+                    && is_scalar($record['PERCENT'])
+                    ? (string) $record['PERCENT'].'%'
+                    : (isset($record['DURATION_MS'])
                     && is_scalar($record['DURATION_MS'])
-                    ? (string) $record['DURATION_MS'].' ms' : null
+                    ? (string) $record['DURATION_MS'].' ms' : null)
             ),
         );
     }

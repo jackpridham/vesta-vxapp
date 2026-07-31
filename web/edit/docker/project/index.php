@@ -44,7 +44,9 @@ if ($compose_standard_workflow
     && !vx_compose_actor_can_manage_profile(
         $user,
         $compose_project_owner,
-        $compose_project_profile
+        $compose_project_profile,
+        $compose_project_name,
+        'change'
     )) {
     $_SESSION['error_msg'] = __('Compose project is not accessible.');
     header('Location: /list/docker/');
@@ -251,7 +253,9 @@ if (!empty($_POST['confirm_update'])) {
         && vx_compose_actor_can_manage_profile(
             $user,
             $preview['owner'],
-            $preview['profile']
+            $preview['profile'],
+            $preview['project'],
+            'change'
         )) {
         $cmd = VESTA_CMD."v-spawn-ajax-process "
             .escapeshellarg($user)

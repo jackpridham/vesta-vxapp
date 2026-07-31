@@ -14,7 +14,13 @@ if (!vx_docker_is_orchestration_ready()) {
 $container_name = trim((string) $_POST['dataset']['container_name']);
 $container_owner = !empty($_POST['dataset']['owner']) ? trim((string) $_POST['dataset']['owner']) : $myvesta_logged_user;
 
-if (empty(vx_compose_resolve_mutable_project($container_owner, $container_name, $myvesta_logged_user))) {
+if (($myvesta_logged_user !== 'admin'
+        && $myvesta_logged_user !== $container_owner)
+    || empty(vx_compose_resolve_accessible_project(
+        $container_owner,
+        $container_name,
+        $myvesta_logged_user
+    ))) {
     echo __('You do not have access to this Compose project.');
     exit;
 }

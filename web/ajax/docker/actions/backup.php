@@ -15,10 +15,11 @@ $project = trim((string) $_POST['dataset']['container_name']);
 $owner = !empty($_POST['dataset']['owner'])
     ? trim((string) $_POST['dataset']['owner'])
     : $myvesta_logged_user;
-if (empty(vx_compose_resolve_mutable_project(
+if (empty(vx_compose_resolve_capable_project(
     $owner,
     $project,
-    $myvesta_logged_user
+    $myvesta_logged_user,
+    'backup'
 ))) {
     echo __('You do not have access to this Compose project.');
     exit;
@@ -47,9 +48,11 @@ if (isset($_POST['No'])) {
 
 $cmd = VESTA_CMD."v-spawn-ajax-process "
     .escapeshellarg($myvesta_logged_user)
-    ." /usr/local/vesta/bin/v-backup-docker-project "
+    ." /usr/local/vesta/bin/v-run-docker-project-action "
+    .escapeshellarg($myvesta_logged_user)." "
     .escapeshellarg($owner)." "
-    .escapeshellarg($project);
+    .escapeshellarg($project)." "
+    .escapeshellarg('backup');
 $hash = trim(shell_exec($cmd));
 
 echo '<b>'.__('Compose backup output').':</b><br /><br />';

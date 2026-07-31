@@ -30,6 +30,9 @@ if (!empty($_POST['docker_logs'])
     || !empty($_POST['docker_ingress_consumers'])
     || !empty($_POST['docker_secrets'])
     || !empty($_POST['docker_images'])
+    || !empty($_POST['docker_drift'])
+    || !empty($_POST['docker_roles'])
+    || !empty($_POST['docker_reconcile'])
     || !empty($_POST['docker_recreate'])
     || !empty($_POST['docker_deploy'])
     || !empty($_POST['docker_rollback'])
@@ -64,6 +67,9 @@ foreach (array(
     'ingress_consumers',
     'secrets',
     'images',
+    'drift',
+    'roles',
+    'reconcile',
     'recreate',
     'deploy',
     'rollback',

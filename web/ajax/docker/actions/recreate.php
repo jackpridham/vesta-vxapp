@@ -15,10 +15,11 @@ $project_name = trim((string) $_POST['dataset']['container_name']);
 $owner = !empty($_POST['dataset']['owner'])
     ? trim((string) $_POST['dataset']['owner'])
     : $myvesta_logged_user;
-$project = vx_compose_resolve_mutable_project(
+$project = vx_compose_resolve_capable_project(
     $owner,
     $project_name,
-    $myvesta_logged_user
+    $myvesta_logged_user,
+    'lifecycle'
 );
 if (empty($project)) {
     echo __('You do not have access to this Compose project.');
@@ -82,9 +83,11 @@ if (isset($_POST['No'])) {
 
 $cmd = VESTA_CMD."v-spawn-ajax-process "
     .escapeshellarg($myvesta_logged_user)
-    ." /usr/local/vesta/bin/v-recreate-docker-project "
+    ." /usr/local/vesta/bin/v-run-docker-project-action "
+    .escapeshellarg($myvesta_logged_user)." "
     .escapeshellarg($owner)." "
     .escapeshellarg($project_name)." "
+    .escapeshellarg('recreate')." "
     .escapeshellarg($service);
 $hash = trim((string) shell_exec($cmd));
 

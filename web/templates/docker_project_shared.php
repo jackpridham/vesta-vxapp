@@ -31,7 +31,15 @@
   );
   $backup_rows = vx_compose_view_backups($docker_project_backups);
   $alert_rows = vx_compose_view_alerts($docker_project_alerts);
-  $operation_rows = vx_compose_view_operations($docker_project_audit);
+  $operation_source = !empty($docker_project['LAST_OPERATION'])
+      && is_array($docker_project['LAST_OPERATION'])
+      ? array($docker_project['LAST_OPERATION'])
+      : $docker_project_audit;
+  $operation_rows = vx_compose_view_operations($operation_source);
+  $docker_project_drift = !empty($docker_project['DRIFT'])
+      && is_array($docker_project['DRIFT'])
+      ? $docker_project['DRIFT']
+      : array('STATUS' => 'unavailable', 'MATCH' => false);
   $event_rows = vx_compose_view_events($docker_project_audit);
   $secret_names = is_array($docker_project_secrets)
       ? vx_compose_view_list(array_keys($docker_project_secrets))
@@ -103,9 +111,19 @@
       <strong class="docker-overview-card__value"><?=$ingress_view['count']?></strong>
       <p class="docker-overview-card__meta"><?=__('Redacted native-domain consumers.')?></p>
     </article>
+    <article class="docker-overview-card">
+      <span class="docker-overview-card__label"><?=__('Runtime drift')?></span>
+      <strong class="docker-overview-card__value"><?=!empty($docker_project_drift['MATCH']) ? __('Exact') : __('Review')?></strong>
+      <p class="docker-overview-card__meta"><?=!empty($docker_project_drift['MATCH']) ? __('Observed runtime matches desired authority.') : __('Open Project actions for read-only evidence and explicit reconcile.')?></p>
+    </article>
   </div>
 
   <div class="docker-console-grid">
+    <section class="docker-panel docker-console-panel">
+      <div class="docker-panel__header"><h2 class="docker-panel__title"><?=__('Desired/runtime drift')?></h2></div>
+      <p class="docker-panel__copy"><?=__('Drift uses stable ownership, revision, image, network, mount, port, security, and desired-running evidence. Reconcile is never automatic.')?></p>
+      <details class="docker-advanced-json"><summary><?=__('Advanced JSON')?></summary><pre class="docker-mono"><?=htmlspecialchars(vx_compose_pretty_json($docker_project_drift), ENT_QUOTES)?></pre></details>
+    </section>
     <section class="docker-panel docker-console-panel docker-console-panel--wide">
       <div class="docker-panel__header">
         <div>
