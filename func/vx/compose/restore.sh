@@ -326,11 +326,17 @@ vx_compose_restore_prepare_secrets() {
                 return 1
             }
         chmod 0600 "$source"
-        expected_sha="$(jq -er --arg secret "$secret" \
-            '.[$secret].SHA256 | select(test("^[a-f0-9]{64}$"))' \
-            "$([[ -f "$integrity" ]] && printf '%s' "$integrity" \
-                || printf '%s' "$metadata")")" \
-            || return 1
+        expected_sha=''
+        if [[ -f "$integrity" && ! -L "$integrity" ]]; then
+            expected_sha="$(jq -er --arg secret "$secret" \
+                '.[$secret].SHA256 | select(test("^[a-f0-9]{64}$"))' \
+                "$integrity" 2>/dev/null)" || expected_sha=''
+        fi
+        if [[ -z "$expected_sha" ]]; then
+            expected_sha="$(jq -er --arg secret "$secret" \
+                '.[$secret].SHA256 | select(test("^[a-f0-9]{64}$"))' \
+                "$metadata")" || return 1
+        fi
         actual_sha="$(sha256sum "$source" | awk '{print $1}')"
         [[ "$actual_sha" == "$expected_sha" ]] \
             || {
@@ -378,17 +384,28 @@ vx_compose_restore_install_secrets() {
         mv -- "$old_root" "$root/secrets" || :
         return 1
     fi
-    if [[ -n "$integrity" && -f "$integrity" ]]; then
-        install -m 0600 "$integrity" "$root/secret-integrity.json" || return 1
-    elif jq -e 'all(.[]?; (.SHA256 // "") | test("^[a-f0-9]{64}$"))' \
-        "$metadata" >/dev/null; then
-        jq -S 'with_entries(.value = {SHA256: .value.SHA256})' "$metadata" \
-            >"$root/secret-integrity.json" || return 1
-        chmod 0600 "$root/secret-integrity.json" || return 1
+    if [[ -n "$integrity" && -f "$integrity" && ! -L "$integrity" ]]; then
+        jq -S --slurpfile legacy "$metadata" '
+            reduce ($legacy[0] | to_entries[]) as $entry (.;
+                if ((.[$entry.key].SHA256 // "")
+                    | test("^[a-f0-9]{64}$"))
+                then .
+                elif (($entry.value.SHA256 // "")
+                    | test("^[a-f0-9]{64}$"))
+                then .[$entry.key] = {SHA256: $entry.value.SHA256}
+                else .
+                end
+            )
+        ' "$integrity" >"$root/secret-integrity.json" || return 1
     else
-        printf '{}\n' >"$root/secret-integrity.json" || return 1
-        chmod 0600 "$root/secret-integrity.json" || return 1
+        jq -S 'with_entries(
+            .value = if ((.value.SHA256 // "") | test("^[a-f0-9]{64}$"))
+                then {SHA256: .value.SHA256}
+                else {}
+                end
+        )' "$metadata" >"$root/secret-integrity.json" || return 1
     fi
+    chmod 0600 "$root/secret-integrity.json" || return 1
     if jq -e 'any(.[]?; has("SHA256"))' "$root/secrets.json" >/dev/null; then
         jq -S 'with_entries(.value |= del(.SHA256))' "$root/secrets.json" \
             >"$root/.secrets.public.restore" || return 1
