@@ -144,11 +144,15 @@ printf '%s\n' \
     >"$VESTA/data/users/$owner/docker-projects/legacy/project.conf"
 if (( EUID == 0 )); then
     chown -R "$owner:$owner" "$HOMEDIR/$owner/docker"
+    VX_COMPOSE_TEST_MODE=yes VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \
+        VESTA="$VESTA" HOMEDIR="$HOMEDIR" \
+        "$repo_root/bin/v-prepare-docker-compose-data-roots" migrate >/dev/null \
+        || fail 'owner-owned legacy root did not transition'
+else
+    VX_COMPOSE_TEST_MODE=yes VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \
+        vx_compose_prepare_legacy_project_data_roots "$owner" legacy \
+        || fail 'owner-owned legacy root did not transition'
 fi
-VX_COMPOSE_TEST_MODE=yes VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \
-    VESTA="$VESTA" HOMEDIR="$HOMEDIR" \
-    "$repo_root/bin/v-prepare-docker-compose-data-roots" migrate >/dev/null \
-    || fail 'owner-owned legacy root did not transition'
 authority_uid="$EUID"
 [[ "$(stat -c %u "$HOMEDIR/$owner/docker")" == "$authority_uid"
     && "$(stat -c %u "$HOMEDIR/$owner/docker/legacy")" == "$authority_uid"
