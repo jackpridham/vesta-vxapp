@@ -17,6 +17,6 @@ vx_compose_authorize "$compose_actor" "$user" "$compose_project" "$capability" \
     || check_result "$E_INVALID" 'Compose project capability denied'
 jq -n --arg actor "$compose_actor" --arg owner "$user" \
     --arg project "$compose_project" --arg capability "$capability" \
-    '{AUTHORIZED:true,ACTOR:$compose_actor,OWNER:$owner,PROJECT:$project,
+    '{AUTHORIZED:true,ACTOR:$actor,OWNER:$owner,PROJECT:$project,
       CAPABILITY:$capability}'
 exit

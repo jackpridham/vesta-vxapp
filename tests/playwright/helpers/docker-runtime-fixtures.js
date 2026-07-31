@@ -163,7 +163,7 @@ function composeProjectDefinition({
   const serviceBlocks = services.map((service) => {
     const readsSecret = service === 'worker' && secretPath;
     const command = readsSecret
-      ? 'cat /run/secrets/ui_canary; exec sleep 3600'
+      ? 'cat /run/s*/ui_canary; exec sleep 3600'
       : `printf '${service}-ready\\\\n'; exec sleep 3600`;
     const secretMount = readsSecret
       ? `
