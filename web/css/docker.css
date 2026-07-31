@@ -1159,6 +1159,22 @@
 }
 
 @media (max-width: 760px) {
+  .body-docker .l-content > .l-center,
+  .body-docker .l-content > .right_sidebar {
+    display: none;
+  }
+
+  .body-docker .l-header .l-center {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .body-docker .l-content > .docker-shell {
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    width: 100% !important;
+  }
+
   .body-docker #floating-center-div {
     max-height: calc(100vh - 24px);
     padding: 28px 16px 20px !important;

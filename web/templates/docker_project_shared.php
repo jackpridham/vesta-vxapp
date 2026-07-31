@@ -148,7 +148,7 @@
         <p class="docker-panel__copy"><?=__('Immutable images, healthcheck coverage, and bound ports from the current validated definition.')?></p>
       </div>
       <div class="docker-table-scroll">
-        <table class="docker-data-table">
+        <table class="docker-data-table docker-data-table--stack">
           <thead><tr><th><?=__('Service')?></th><th><?=__('Image')?></th><th><?=__('Published ports')?></th><th><?=__('Healthcheck')?></th></tr></thead>
           <tbody>
           <?php if (empty($service_rows)) { ?>

@@ -96,6 +96,9 @@ expect_pattern web/templates/docker_project_shared.php \
     'docker-data-table' \
     'project detail payloads use semantic data tables'
 expect_pattern web/templates/docker_project_shared.php \
+    '<table class="docker-data-table docker-data-table--stack">' \
+    'service and endpoint facts collapse on narrow screens'
+expect_pattern web/templates/docker_project_shared.php \
     '<details class="docker-advanced-json">' \
     'raw project payloads are opt-in Advanced JSON'
 expect_pattern web/templates/docker_project_shared.php \
@@ -119,6 +122,12 @@ expect_pattern web/css/docker.css \
 expect_pattern web/css/docker.css \
     'width: calc\(100vw - 24px\)' \
     'project action modal fits narrow mobile viewports'
+expect_pattern web/css/docker.css \
+    'l-content > .right_sidebar' \
+    'Docker mobile pages suppress the legacy fixed activity sidebar'
+expect_pattern web/css/docker.css \
+    'l-content > .docker-shell' \
+    'Docker mobile pages give the product console the full viewport'
 expect_absent web/templates/docker_project_shared.php \
     'fonts.googleapis.com|sentry' \
     'project console does not import remote fonts or product branding'
