@@ -50,6 +50,28 @@ for user_root in "$VESTA/data/users"/*; do
         || fail "Compose owner does not exist: $owner"
     [[ -d "$HOMEDIR/$owner" && ! -L "$HOMEDIR/$owner" ]] \
         || fail "Compose owner home is unsafe: $owner"
+
+    has_managed_project=no
+    for project_root in "$projects_root"/*; do
+        [[ ! -L "$project_root" ]] \
+            || fail "Compose project authority entry is linked: $project_root"
+        [[ -d "$project_root" ]] || continue
+        project="${project_root##*/}"
+        vx_compose_project_is_valid "$project" \
+            || fail "Compose project authority key is invalid: $project"
+        [[ -e "$project_root/project.conf"
+            || -L "$project_root/project.conf" ]] || continue
+        [[ -f "$project_root/project.conf"
+            && ! -L "$project_root/project.conf" ]] \
+            || fail "Compose project metadata is unsafe: $owner/$project"
+        [[ "$(vx_compose_meta_get "$project_root/project.conf" OWNER)" \
+                == "$owner"
+            && "$(vx_compose_meta_get "$project_root/project.conf" PROJECT)" \
+                == "$project" ]] \
+            || fail "Compose project metadata identity mismatch: $owner/$project"
+        has_managed_project=yes
+    done
+    [[ "$has_managed_project" == yes ]] || continue
     vx_compose_prepare_project_data_roots "$owner" \
         || fail "unable to protect Compose data root: $owner"
 done

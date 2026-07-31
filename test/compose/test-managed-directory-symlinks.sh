@@ -183,6 +183,18 @@ if (( EUID == 0 )); then
         fail 'managed data-root mount survived explicit owner cleanup'
     fi
 
+    VX_COMPOSE_TEST_MODE=yes VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \
+        VESTA="$VESTA" HOMEDIR="$HOMEDIR" \
+        "$repo_root/bin/v-prepare-docker-compose-data-roots" >/dev/null \
+        || fail 'boot preparation rejected empty legacy project authority'
+    if mountpoint -q "$HOMEDIR/$owner/docker"; then
+        fail 'boot preparation mounted an owner without a managed project'
+    fi
+    mkdir -p "$VESTA/data/users/$owner/docker-projects/legacy"
+    printf '%s\n' \
+        "OWNER='$owner'" \
+        "PROJECT='legacy'" \
+        >"$VESTA/data/users/$owner/docker-projects/legacy/project.conf"
     ln -s "$VESTA/data/users/$owner" "$VESTA/data/users/linked-owner"
     if VX_COMPOSE_TEST_MODE=yes VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \
         VESTA="$VESTA" HOMEDIR="$HOMEDIR" \
