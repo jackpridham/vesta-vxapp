@@ -79,7 +79,8 @@ function isLocalPanelTarget() {
     const remoteHost = remoteTarget.includes('@') ? remoteTarget.split('@').pop() : remoteTarget;
     const assertedPanelHost = getPanelRuntimeHost();
     if (assertedPanelHost !== '') {
-      return remoteHost === assertedPanelHost;
+      const loopbackHosts = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
+      return loopbackHosts.has(hostname) && remoteHost === assertedPanelHost;
     }
     return remoteHost === hostname;
   }
