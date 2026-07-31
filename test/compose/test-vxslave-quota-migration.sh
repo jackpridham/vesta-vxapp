@@ -56,6 +56,16 @@ output_dir="$test_root/prepared"
     "$source_package" "$source_user" "$output_dir" existing-vxslave \
     >"$test_root/prepare.out"
 
+assertion_file="$output_dir/apply-and-rollback.txt"
+[[ "$(grep -c -- '--arg field DOCKER_' "$assertion_file")" -eq 9 ]] \
+    || fail 'generated procedure did not contain nine named quota assertions'
+for field in \
+    DOCKER_PROJECTS DOCKER_SERVICES DOCKER_CPUS DOCKER_MEMORY_MB DOCKER_PIDS \
+    DOCKER_STORAGE_MB DOCKER_PORTS DOCKER_SECRETS DOCKER_VOLUMES; do
+    grep -Fq -- "--arg field $field" "$assertion_file" \
+        || fail "generated procedure omitted named assertion: $field"
+done
+
 [[ "$(sha256sum "$output_dir/rollback.pkg" | awk '{print $1}')" \
     == "$source_bytes" ]] || fail 'rollback package was not byte exact'
 for line in \

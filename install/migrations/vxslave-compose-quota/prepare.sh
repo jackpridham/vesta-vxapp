@@ -173,7 +173,16 @@ sudo /usr/local/vesta/bin/v-update-user-counters slave
 sudo /usr/local/vesta/bin/v-list-docker-compose-quota slave json
 
 ASSERT:
-sudo /usr/local/vesta/bin/v-list-docker-compose-quota slave json | jq -e --argjson expected_limits '$limits_json' --argjson expected_used '$used_json' '.PACKAGE == "vxslave-compose" and [.QUOTAS[].PACKAGE_VALUE] == \$expected_limits and [.QUOTAS[].EFFECTIVE_VALUE] == \$expected_limits and [.QUOTAS[].USED] == \$expected_used'
+quota_json="\$(sudo /usr/local/vesta/bin/v-list-docker-compose-quota slave json)"
+printf '%s\n' "\$quota_json" | jq -e --arg field DOCKER_PROJECTS --arg limit 1 --arg used 1 '.PACKAGE == "vxslave-compose" and ([.QUOTAS[] | select(.FIELD == \$field)] | length) == 1 and all(.QUOTAS[] | select(.FIELD == \$field); .PACKAGE_VALUE == \$limit and .EFFECTIVE_VALUE == \$limit and .USED == \$used)'
+printf '%s\n' "\$quota_json" | jq -e --arg field DOCKER_SERVICES --arg limit 1 --arg used 1 '.PACKAGE == "vxslave-compose" and ([.QUOTAS[] | select(.FIELD == \$field)] | length) == 1 and all(.QUOTAS[] | select(.FIELD == \$field); .PACKAGE_VALUE == \$limit and .EFFECTIVE_VALUE == \$limit and .USED == \$used)'
+printf '%s\n' "\$quota_json" | jq -e --arg field DOCKER_CPUS --arg limit 1.000 --arg used 1.000 '.PACKAGE == "vxslave-compose" and ([.QUOTAS[] | select(.FIELD == \$field)] | length) == 1 and all(.QUOTAS[] | select(.FIELD == \$field); .PACKAGE_VALUE == \$limit and .EFFECTIVE_VALUE == \$limit and .USED == \$used)'
+printf '%s\n' "\$quota_json" | jq -e --arg field DOCKER_MEMORY_MB --arg limit 1024 --arg used 1024 '.PACKAGE == "vxslave-compose" and ([.QUOTAS[] | select(.FIELD == \$field)] | length) == 1 and all(.QUOTAS[] | select(.FIELD == \$field); .PACKAGE_VALUE == \$limit and .EFFECTIVE_VALUE == \$limit and .USED == \$used)'
+printf '%s\n' "\$quota_json" | jq -e --arg field DOCKER_PIDS --arg limit 256 --arg used 256 '.PACKAGE == "vxslave-compose" and ([.QUOTAS[] | select(.FIELD == \$field)] | length) == 1 and all(.QUOTAS[] | select(.FIELD == \$field); .PACKAGE_VALUE == \$limit and .EFFECTIVE_VALUE == \$limit and .USED == \$used)'
+printf '%s\n' "\$quota_json" | jq -e --arg field DOCKER_STORAGE_MB --arg limit 1024 --arg used 2 '.PACKAGE == "vxslave-compose" and ([.QUOTAS[] | select(.FIELD == \$field)] | length) == 1 and all(.QUOTAS[] | select(.FIELD == \$field); .PACKAGE_VALUE == \$limit and .EFFECTIVE_VALUE == \$limit and .USED == \$used)'
+printf '%s\n' "\$quota_json" | jq -e --arg field DOCKER_PORTS --arg limit 1 --arg used 1 '.PACKAGE == "vxslave-compose" and ([.QUOTAS[] | select(.FIELD == \$field)] | length) == 1 and all(.QUOTAS[] | select(.FIELD == \$field); .PACKAGE_VALUE == \$limit and .EFFECTIVE_VALUE == \$limit and .USED == \$used)'
+printf '%s\n' "\$quota_json" | jq -e --arg field DOCKER_SECRETS --arg limit 1 --arg used 1 '.PACKAGE == "vxslave-compose" and ([.QUOTAS[] | select(.FIELD == \$field)] | length) == 1 and all(.QUOTAS[] | select(.FIELD == \$field); .PACKAGE_VALUE == \$limit and .EFFECTIVE_VALUE == \$limit and .USED == \$used)'
+printf '%s\n' "\$quota_json" | jq -e --arg field DOCKER_VOLUMES --arg limit 2 --arg used 2 '.PACKAGE == "vxslave-compose" and ([.QUOTAS[] | select(.FIELD == \$field)] | length) == 1 and all(.QUOTAS[] | select(.FIELD == \$field); .PACKAGE_VALUE == \$limit and .EFFECTIVE_VALUE == \$limit and .USED == \$used)'
 
 ROLLBACK:
 sudo /usr/local/vesta/install/migrations/vxslave-compose-quota/rollback.sh '$output_dir' slave '$original_package' /usr/local/vesta
