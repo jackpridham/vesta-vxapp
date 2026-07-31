@@ -600,6 +600,29 @@ install -m 0640 "$fixture" "$revision_file"
 install -m 0640 "$fixture" "$project_root/images.json"
 bind_legacy_canonical_only
 revision_before="$(sha256sum "$revision_file" | awk '{print $1}')"
+
+mv "$authority" "$project_root/.migration-authority.saved"
+if vx_compose_active_revision_verify alice evidence 2>/dev/null; then
+    fail "byte-equal unmanifested legacy evidence bypassed missing authority"
+fi
+mv "$project_root/.migration-authority.saved" "$authority"
+
+cp "$authority/manifest.sha256" "$test_root/rollback-authority-manifest"
+chmod 0700 "$authority"
+chmod 0600 "$authority/manifest.sha256"
+printf 'corrupt\n' >>"$authority/manifest.sha256"
+chmod 0400 "$authority/manifest.sha256"
+chmod 0500 "$authority"
+if vx_compose_active_revision_verify alice evidence 2>/dev/null; then
+    fail "byte-equal unmanifested legacy evidence bypassed corrupt authority"
+fi
+chmod 0700 "$authority"
+install -m 0400 "$test_root/rollback-authority-manifest" \
+    "$authority/manifest.sha256"
+chmod 0500 "$authority"
+vx_compose_active_revision_verify alice evidence \
+    || fail "valid per-revision authority rejected byte-equal rollback evidence"
+
 vx_compose_project_resolve_images alice evidence
 jq -e 'all(.[]; .SCHEMA == 2)' "$project_root/images.json" >/dev/null \
     || fail "legacy rollback evidence could not be re-resolved"
