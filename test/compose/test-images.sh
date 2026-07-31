@@ -17,6 +17,8 @@ fail() {
 }
 
 fake_docker="$test_root/fake-docker"
+inspect_json='{"Id":"sha256:1234567890abcdef","RepoTags":["example.test/app:1"],"RepoDigests":["aaa.invalid/unrelated@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","example.test/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"Architecture":"amd64","Os":"linux","Config":{"Labels":{"org.opencontainers.image.source":"https://example.test/source","org.opencontainers.image.revision":"abc123","org.opencontainers.image.version":"1","org.opencontainers.image.vendor":"Vortex","org.opencontainers.image.created":"2026-07-31T00:00:00Z","secret.label":"must-not-copy"}}}'
+manifest_json='{"Descriptor":{"digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}'
 {
     printf '%s\n' '#!/usr/bin/env bash'
     printf '%s\n' 'set -Eeuo pipefail'
@@ -26,7 +28,16 @@ fake_docker="$test_root/fake-docker"
     printf '%s\n' 'printf "ARG=%s\n" "$@" >>"$(dirname -- "$0")/docker.log"'
     printf '%s\n' 'case " $* " in'
     printf '%s\n' '  *" image inspect "*)'
-    printf '%s\n' '    printf "%s\n" '"'"'{"Id":"sha256:1234567890abcdef","RepoTags":["example.test/app:1"],"RepoDigests":["example.test/app@sha256:abcdef"],"Architecture":"amd64","Os":"linux"}'"'"
+: <<'VX_BROKEN_GENERATOR'
+    printf '%s\n' '    printf "%s\n" '"'"'{"Id":"sha256:1234567890abcdef","RepoTags":["example.test/app:1"],"RepoDigests":["example.test/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"Architecture":"amd64","Os":"linux","Config":{"Labels":{"org.opencontainers.image.source":"https://example.test/source","org.opencontainers.image.revision":"abc123","org.opencontainers.image.version":"1","org.opencontainers.image.vendor":"Vortex","org.opencontainers.image.created":"2026-07-31T00:00:00Z","secret.label":"must-not-copy"}}}'"'"'"
+    printf '%s\n' '    ;;'
+    printf '%s\n' '  *" manifest inspect "*)'
+    printf '%s\n' '    printf "%s\n" '"'"'{"Descriptor":{"digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}'"'"
+VX_BROKEN_GENERATOR
+    printf '    printf "%%s\\n" %q\n' "$inspect_json"
+    printf '%s\n' '    ;;'
+    printf '%s\n' '  *" manifest inspect "*)'
+    printf '    printf "%%s\\n" %q\n' "$manifest_json"
     printf '%s\n' '    ;;'
     printf '%s\n' '  *" image load "*) printf "%s\n" "Loaded image: example.test/app:1" ;;'
     printf '%s\n' 'esac'
@@ -42,6 +53,9 @@ jq -e '
     .OWNER == "alice"
     and .REFERENCE == "example.test/app:1"
     and .IMAGE_ID == "sha256:1234567890abcdef"
+    and (.IMMUTABLE_REFERENCES | length == 2)
+    and .OCI_LABELS.source == "https://example.test/source"
+    and (.OCI_LABELS | has("secret.label") | not)
     and .OS == "linux"
     and .ARCHITECTURE == "amd64"
 ' "$test_root/pull.json" >/dev/null || fail "public pull identity was not recorded"
@@ -102,5 +116,30 @@ jq -e '.web.IMAGE_ID == "sha256:1234567890abcdef"' \
     || fail "pending candidate image evidence is incomplete"
 [[ "$(cat "$project_root/revisions/000001/images.json")" == frozen ]] \
     || fail "candidate image resolution mutated a finalized revision"
+jq -e '
+    .web.IMMUTABLE_REFERENCE == "example.test/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    and .web.REGISTRY_DIGEST == "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    and .web.TRUST.DECISION == "disabled"
+' "$test_root/pending-images.json" >/dev/null \
+    || fail "immutable registry, OCI, or disabled trust evidence is incomplete"
+
+update_log_start="$(wc -l <"$test_root/docker.log")"
+vx_compose_image_update_candidate alice example.test/app:1 \
+    >"$test_root/update.json"
+jq -e '
+    .CURRENT_DIGEST == "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    and .CANDIDATE_DIGEST == "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    and .UPDATE_AVAILABLE == true
+    and .MUTATED == false
+' "$test_root/update.json" >/dev/null \
+    || fail "non-mutating image update candidate is incomplete"
+[[ "$(grep -c 'ARG=image' "$test_root/docker.log")" -ge 1 ]] \
+    || fail "image inspection was not exercised"
+grep -Fq 'ARG=manifest' "$test_root/docker.log" \
+    || fail "update candidate did not use a manifest-only lookup"
+if tail -n "+$((update_log_start + 1))" "$test_root/docker.log" \
+    | grep -Eq 'ARG=(pull|tag|rm)'; then
+    fail "update candidate mutated local image state"
+fi
 
 echo "Compose image source tests passed."

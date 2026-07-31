@@ -1,0 +1,24 @@
+#!/bin/bash
+# info: report a non-mutating Docker image update candidate
+# options: USER IMAGE [FORMAT]
+
+user=$1
+image=$2
+format=${3-json}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '2' "$#" 'USER IMAGE [FORMAT]'
+[ "$#" -le 3 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+result="$(vx_compose_image_update_candidate "$user" "$image")" \
+    || check_result "$E_INVALID" 'Docker image update lookup failed'
+case "$format" in
+    json) printf '%s\n' "$result" ;;
+    plain) jq -r '[.REFERENCE,.CURRENT_DIGEST,.CANDIDATE_DIGEST,
+        .UPDATE_AVAILABLE,.MUTATED]|@tsv' <<<"$result" ;;
+    *) check_result "$E_INVALID" 'format must be json or plain' ;;
+esac
+exit
