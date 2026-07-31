@@ -33,9 +33,9 @@ vx_compose_secret_version_candidate() {
 
 vx_compose_secret_version_allocate() {
     local metadata="$1"
-    local candidate attempt
+    local candidate
 
-    for attempt in {1..8}; do
+    for _ in {1..8}; do
         VX_COMPOSE_SECRET_VERSION_CANDIDATE=''
         vx_compose_secret_version_candidate || return 1
         candidate="$VX_COMPOSE_SECRET_VERSION_CANDIDATE"
