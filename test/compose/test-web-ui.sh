@@ -265,6 +265,12 @@ done
 expect_pattern web/ajax/docker/actions/ingress_consumers.php \
     'vx_compose_ingress_consumers_payload.*myvesta_logged_user|myvesta_logged_user' \
     'native ingress panel call binds the authenticated actor'
+expect_pattern web/ajax/docker/index.php \
+    "docker_ingress_consumers" \
+    'project action modal exposes native ingress consumers'
+expect_pattern web/ajax/docker/router.php \
+    "'ingress_consumers'|docker_ingress_consumers" \
+    'project action router dispatches native ingress consumers'
 expect_pattern bin/v-list-docker-project-ingress-consumers \
     'vx_compose_ingress_actor_can_view_metadata' \
     'native ingress adapter uses explicit capability authorization'

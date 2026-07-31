@@ -27,6 +27,7 @@ if (!empty($_POST['docker_logs'])
     || !empty($_POST['docker_inspect'])
     || !empty($_POST['docker_audit'])
     || !empty($_POST['docker_routes'])
+    || !empty($_POST['docker_ingress_consumers'])
     || !empty($_POST['docker_secrets'])
     || !empty($_POST['docker_images'])
     || !empty($_POST['docker_recreate'])
@@ -60,6 +61,7 @@ if (!empty($_POST['docker_inspect'])) {
 foreach (array(
     'audit',
     'routes',
+    'ingress_consumers',
     'secrets',
     'images',
     'recreate',

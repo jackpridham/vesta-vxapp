@@ -48,6 +48,7 @@ if ($container_name === '') {
     echo myvesta_get_element('button_gray', '', 'docker_inspect', __('Project summary'), null, 'width: 300px;', 'add');
     echo myvesta_get_element('button_gray', '', 'docker_audit', __('Audit trail'), null, 'width: 300px;', 'add');
     echo myvesta_get_element('button_gray', '', 'docker_routes', __('Managed routes'), null, 'width: 300px;', 'add');
+    echo myvesta_get_element('button_gray', '', 'docker_ingress_consumers', __('Native ingress consumers'), null, 'width: 300px;', 'add');
     echo myvesta_get_element('button_gray', '', 'docker_secrets', __('Secret metadata'), null, 'width: 300px;', 'add');
     echo myvesta_get_element('button_gray', '', 'docker_images', __('Image identities'), null, 'width: 300px;', 'add');
     if ($can_mutate_project) {
