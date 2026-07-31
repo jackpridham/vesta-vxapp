@@ -14,9 +14,19 @@ accepted as CLI arguments. Create/change commands accept a root-readable input
 file descriptor or protected temporary file and remove the temporary file
 after an atomic install.
 
-Metadata may contain secret name, target path, ownership request, creation
-time, rotation time, and SHA-256 for change detection. It never contains the
-value.
+Public metadata contains exactly secret name, target path, availability
+status, opaque version, creation time, and rotation time. Versions are
+cryptographically random 128-bit values encoded as 32 lowercase hexadecimal
+characters. Creation issues the first version and leaves rotation time empty;
+each successful rotation issues a unique new version while preserving
+creation time. Generation retries collisions eight times and then fails
+without mutation.
+
+The content SHA-256 used for encrypted backup and restore integrity lives only
+in separate root-owned mode-0600 private metadata. It is never returned by
+list or web surfaces. Read-only listing projects legacy metadata into the
+public schema in memory, including an ephemeral opaque compatibility version
+when required, without exposing its digest or rewriting stored state.
 
 ## Mounting
 

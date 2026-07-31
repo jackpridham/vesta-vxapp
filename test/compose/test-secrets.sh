@@ -131,8 +131,27 @@ jq -e '
     || fail "managed secret was not canonicalized"
 
 vx_compose_secret_list_json alice app >"$test_root/list.json"
-jq -e '.api_key.NAME == "api_key" and .api_key.SHA256 != ""' \
-    "$test_root/list.json" >/dev/null || fail "secret metadata is incomplete"
+jq -e '
+    .api_key.NAME == "api_key"
+    and (.api_key | keys | sort) == [
+        "CREATED", "NAME", "ROTATED", "STATUS", "TARGET", "VERSION"
+    ]
+    and (.api_key.VERSION | test("^[a-f0-9]{32}$"))
+    and .api_key.STATUS == "available"
+    and .api_key.ROTATED == ""
+    and (.. | objects | has("SHA256") | not)
+' "$test_root/list.json" >/dev/null || fail "public secret metadata is unsafe"
+first_version="$(jq -r '.api_key.VERSION' "$test_root/list.json")"
+integrity_metadata="$(vx_compose_secret_integrity_path alice app)"
+[[ -f "$integrity_metadata"
+    && "$(stat -c '%a' "$integrity_metadata")" == 600 ]] \
+    || fail "private secret integrity metadata is not protected"
+if [[ "$EUID" -eq 0 && "$(stat -c '%u:%g' "$integrity_metadata")" != 0:0 ]]; then
+    fail "private secret integrity metadata is not root-owned"
+fi
+jq -e '.api_key.SHA256 | test("^[a-f0-9]{64}$")' \
+    "$integrity_metadata" >/dev/null \
+    || fail "private secret integrity metadata is incomplete"
 if grep -F 'secret-canary-must-not-leak' \
     "$test_root/list.json" \
     "$test_root/add.stdout" \
@@ -166,6 +185,82 @@ vx_compose_secret_change alice app api_key "$value_file"
     || fail "secret rotation failed"
 [[ "$(cat "$test_root/recreate.calls")" == app ]] \
     || fail "secret rotation did not recreate only the affected service"
+vx_compose_secret_list_json alice app >"$test_root/rotated-list.json"
+jq -e --arg prior "$first_version" '
+    .api_key.VERSION != $prior
+    and (.api_key.VERSION | test("^[a-f0-9]{32}$"))
+    and .api_key.ROTATED != ""
+' "$test_root/rotated-list.json" >/dev/null \
+    || fail "secret rotation did not issue a new opaque version"
+
+# A collision retries without changing the public encoding or exposing a hash.
+printf '0\n' >"$test_root/collision.calls"
+vx_compose_secret_version_candidate() {
+    local calls
+    calls="$(cat "$test_root/collision.calls")"
+    calls=$((calls + 1))
+    printf '%s\n' "$calls" >"$test_root/collision.calls"
+    if [[ "$calls" -eq 1 ]]; then
+        VX_COMPOSE_SECRET_VERSION_CANDIDATE="$(jq -r '.api_key.VERSION' \
+            "$(vx_compose_secret_metadata_path alice app)")"
+    else
+        VX_COMPOSE_SECRET_VERSION_CANDIDATE="$(printf '%032x' 42)"
+    fi
+}
+collision_value="$test_root/collision-rotation"
+printf 'rotated-canary-must-not-leak\n' >"$collision_value"
+chmod 0600 "$collision_value"
+vx_compose_secret_change alice app api_key "$collision_value"
+[[ "$(cat "$test_root/collision.calls")" -eq 2
+    && "$(jq -r '.api_key.VERSION' \
+        "$(vx_compose_secret_metadata_path alice app)")" \
+        == 0000000000000000000000000000002a ]] \
+    || fail "opaque secret version collision was not retried"
+prior_metadata="$(cat "$(vx_compose_secret_metadata_path alice app)")"
+collision_failure="$test_root/collision-failure"
+printf 'collision failure canary\n' >"$collision_failure"
+chmod 0600 "$collision_failure"
+vx_compose_secret_version_candidate() {
+    VX_COMPOSE_SECRET_VERSION_CANDIDATE="$(jq -r '.api_key.VERSION' \
+        "$(vx_compose_secret_metadata_path alice app)")"
+}
+if vx_compose_secret_change alice app api_key "$collision_failure" \
+    2>"$test_root/collision-failure.stderr"; then
+    fail "exhausted opaque version collisions were accepted"
+fi
+[[ -f "$collision_failure"
+    && "$(cat "$(vx_compose_secret_metadata_path alice app)")" \
+        == "$prior_metadata" ]] \
+    || fail "version collision failure mutated secret metadata or input"
+grep -Fq 'unable to allocate a unique Compose secret version' \
+    "$test_root/collision-failure.stderr" \
+    || fail "version collision exhaustion returned the wrong diagnostic"
+unset -f vx_compose_secret_version_candidate
+# Restore the production generator after the collision seam override.
+# shellcheck source=func/vx/compose/secrets.sh
+source "$repo_root/func/vx/compose/secrets.sh"
+
+# Legacy SHA metadata is projected in memory without rewrite or digest exposure.
+legacy_metadata="$test_root/legacy-secrets.json"
+cp "$(vx_compose_secret_metadata_path alice app)" "$legacy_metadata"
+jq '.api_key |= del(.VERSION, .STATUS) |
+    .api_key.SHA256 = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"' \
+    "$legacy_metadata" >"$legacy_metadata.new"
+mv "$legacy_metadata.new" "$(vx_compose_secret_metadata_path alice app)"
+legacy_before="$(sha256sum "$(vx_compose_secret_metadata_path alice app)")"
+vx_compose_secret_list_json alice app >"$test_root/legacy-list.json"
+legacy_after="$(sha256sum "$(vx_compose_secret_metadata_path alice app)")"
+[[ "$legacy_before" == "$legacy_after" ]] \
+    || fail "legacy read rewrote secret metadata"
+jq -e '
+    (.api_key | keys | sort) == [
+        "CREATED", "NAME", "ROTATED", "STATUS", "TARGET", "VERSION"
+    ]
+    and (.api_key.VERSION | test("^[a-f0-9]{32}$"))
+    and (tostring | contains("aaaaaaaaaaaaaaaa") | not)
+' "$test_root/legacy-list.json" >/dev/null \
+    || fail "legacy secret read exposed an integrity digest"
+cp "$legacy_metadata" "$(vx_compose_secret_metadata_path alice app)"
 
 # A failed new-inode bind restores value+metadata, rebinds the old inode, keeps
 # caller input for retry, and redacts both generations.

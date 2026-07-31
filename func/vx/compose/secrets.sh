@@ -12,6 +12,44 @@ vx_compose_secret_metadata_path() {
     printf '%s/secrets.json\n' "$(vx_compose_project_root "$1" "$2")"
 }
 
+vx_compose_secret_integrity_path() {
+    printf '%s/secret-integrity.json\n' "$(vx_compose_project_root "$1" "$2")"
+}
+
+vx_compose_secret_private_file_secure() {
+    chmod 0600 "$1" || return 1
+    if [[ "$EUID" -eq 0 ]]; then
+        chown 0:0 "$1" || return 1
+    fi
+}
+
+vx_compose_secret_version_candidate() {
+    local candidate
+
+    candidate="$(openssl rand -hex 16 2>/dev/null)" || return 1
+    [[ "$candidate" =~ ^[a-f0-9]{32}$ ]] || return 1
+    VX_COMPOSE_SECRET_VERSION_CANDIDATE="$candidate"
+}
+
+vx_compose_secret_version_allocate() {
+    local metadata="$1"
+    local candidate attempt
+
+    for attempt in {1..8}; do
+        VX_COMPOSE_SECRET_VERSION_CANDIDATE=''
+        vx_compose_secret_version_candidate || return 1
+        candidate="$VX_COMPOSE_SECRET_VERSION_CANDIDATE"
+        [[ "$candidate" =~ ^[a-f0-9]{32}$ ]] || return 1
+        if ! jq -e --arg version "$candidate" \
+            'any(.[]?; .VERSION == $version)' "$metadata" >/dev/null; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    vx_compose_error 'unable to allocate a unique Compose secret version'
+    return 1
+}
+
 vx_compose_secret_count() {
     local owner="$1"
     local projects_root project_root secret_file count=0
@@ -57,29 +95,67 @@ vx_compose_secret_metadata_update() {
     local project="$2"
     local name="$3"
     local sha="$4"
-    local metadata root temp_file now created
+    local action="${5:-add}"
+    local metadata integrity root temp_file integrity_temp now created rotated
+    local version
 
     root="$(vx_compose_project_root "$owner" "$project")"
     metadata="$(vx_compose_secret_metadata_path "$owner" "$project")"
-    [[ -f "$metadata" ]] || printf '%s\n' '{}' >"$metadata"
+    integrity="$(vx_compose_secret_integrity_path "$owner" "$project")"
+    [[ -f "$metadata" ]] || {
+        printf '%s\n' '{}' >"$metadata"
+        vx_compose_secret_private_file_secure "$metadata" || return 1
+    }
+    [[ -f "$integrity" ]] || {
+        printf '%s\n' '{}' >"$integrity"
+        vx_compose_secret_private_file_secure "$integrity" || return 1
+    }
     now="$(vx_compose_now)"
     created="$(jq -r --arg name "$name" '.[$name].CREATED // empty' "$metadata")"
     [[ -n "$created" ]] || created="$now"
+    if [[ "$action" == add ]]; then
+        rotated=''
+    else
+        rotated="$now"
+    fi
+    version="$(vx_compose_secret_version_allocate "$metadata")" || return 1
     temp_file="$(mktemp "$root/.secrets.XXXXXX")"
     jq -S \
         --arg name "$name" \
-        --arg sha "$sha" \
+        --arg version "$version" \
         --arg created "$created" \
-        --arg rotated "$now" \
-        '.[$name] = {
+        --arg rotated "$rotated" \
+        'with_entries(.value |= del(.SHA256))
+        | .[$name] = {
             NAME: $name,
             TARGET: ("/run/secrets/" + $name),
-            SHA256: $sha,
+            STATUS: "available",
+            VERSION: $version,
             CREATED: $created,
             ROTATED: $rotated
         }' "$metadata" >"$temp_file"
-    chmod 0600 "$temp_file"
+    vx_compose_secret_private_file_secure "$temp_file" || {
+        rm -f -- "$temp_file"
+        return 1
+    }
+    integrity_temp="$(mktemp "$root/.secret-integrity.XXXXXX")"
+    jq -S --arg name "$name" --arg sha "$sha" \
+        --slurpfile public "$metadata" '
+            reduce ($public[0] | to_entries[]) as $entry (.;
+                if ($entry.value.SHA256 // "")
+                    | test("^[a-f0-9]{64}$")
+                then .[$entry.key] = {SHA256: $entry.value.SHA256}
+                else .
+                end
+            )
+            | .[$name] = {SHA256: $sha}
+        ' "$integrity" >"$integrity_temp"
+    vx_compose_secret_private_file_secure "$integrity_temp" || {
+        rm -f -- "$temp_file" "$integrity_temp"
+        return 1
+    }
     mv -f -- "$temp_file" "$metadata"
+    mv -f -- "$integrity_temp" "$integrity"
 }
 
 vx_compose_secret_install() {
@@ -88,10 +164,10 @@ vx_compose_secret_install() {
     local name="$3"
     local value_file="$4"
     local action="$5"
-    local root secrets_root secret_file temp_file sha metadata
+    local root secrets_root secret_file temp_file sha metadata integrity
     local current_size=0 new_size growth_mb measured_storage
-    local rollback_secret rollback_metadata redaction_root service
-    local result=0 recovery_result=0 had_metadata=no had_secret=no
+    local rollback_secret rollback_metadata rollback_integrity redaction_root service
+    local result=0 recovery_result=0 had_metadata=no had_integrity=no had_secret=no
     local swapped=no
     local affected_services='[]'
 
@@ -183,10 +259,13 @@ vx_compose_secret_install() {
     fi
     sha="$(sha256sum "$temp_file" | awk '{print $1}')"
     metadata="$(vx_compose_secret_metadata_path "$owner" "$project")"
+    integrity="$(vx_compose_secret_integrity_path "$owner" "$project")"
     rollback_secret="$secrets_root/.${name}.rollback.$$"
     rollback_metadata="$root/.secrets.rollback.$$"
+    rollback_integrity="$root/.secret-integrity.rollback.$$"
     redaction_root="$root/runtime/secret-redaction"
-    [[ ! -e "$rollback_secret" && ! -e "$rollback_metadata" ]] || result=1
+    [[ ! -e "$rollback_secret" && ! -e "$rollback_metadata"
+        && ! -e "$rollback_integrity" ]] || result=1
     if [[ "$result" -eq 0 ]]; then
         if ! install -d -m 0700 "$redaction_root" \
             || ! install -m 0600 "$value_file" "$redaction_root/new"; then
@@ -206,6 +285,12 @@ vx_compose_secret_install() {
             had_metadata=yes
             if [[ "${VX_COMPOSE_TEST_SECRET_COPY_FAIL:-}" == metadata ]] \
                 || ! install -m 0600 "$metadata" "$rollback_metadata"; then
+                result=1
+            fi
+        fi
+        if [[ "$result" -eq 0 && -f "$integrity" ]]; then
+            had_integrity=yes
+            if ! install -m 0600 "$integrity" "$rollback_integrity"; then
                 result=1
             fi
         fi
@@ -230,7 +315,7 @@ vx_compose_secret_install() {
     [[ "$result" -ne 0 ]] || chmod 0600 "$secret_file" || result=1
     if [[ "$result" -eq 0 ]] \
         && ! vx_compose_secret_metadata_update \
-            "$owner" "$project" "$name" "$sha"; then
+            "$owner" "$project" "$name" "$sha" "$action"; then
         result=1
     fi
     if [[ "$result" -eq 0 && "$action" == change ]]; then
@@ -246,7 +331,8 @@ vx_compose_secret_install() {
             result=1
         elif ! rm -rf -- "$redaction_root"; then
             result=1
-        elif ! rm -f -- "$rollback_secret" "$rollback_metadata"; then
+        elif ! rm -f -- \
+            "$rollback_secret" "$rollback_metadata" "$rollback_integrity"; then
             result=1
         fi
     fi
@@ -265,6 +351,12 @@ vx_compose_secret_install() {
             else
                 rm -f -- "$metadata"
             fi
+            if [[ "$had_integrity" == yes ]]; then
+                install -m 0600 "$rollback_integrity" "$integrity" \
+                    || recovery_result=1
+            else
+                rm -f -- "$integrity"
+            fi
         fi
         if [[ "$action" == change && "$swapped" == yes ]]; then
             while IFS= read -r service; do
@@ -277,7 +369,8 @@ vx_compose_secret_install() {
         fi
         vx_compose_audit "$root" "secret-$action" failed \
             'secret rotation failed; prior value restored' || :
-        if ! rm -f -- "$rollback_secret" "$rollback_metadata" \
+        if ! rm -f -- \
+            "$rollback_secret" "$rollback_metadata" "$rollback_integrity" \
             || ! rm -rf -- "$redaction_root"; then
             recovery_result=1
             vx_compose_update_state \
@@ -307,7 +400,7 @@ vx_compose_secret_delete() {
     local owner="$1"
     local project="$2"
     local name="$3"
-    local root metadata temp_file referenced
+    local root metadata integrity temp_file referenced
 
     vx_compose_require_project "$owner" "$project" || return 1
     vx_compose_secret_name_is_valid "$name" \
@@ -344,6 +437,13 @@ vx_compose_secret_delete() {
         chmod 0600 "$temp_file"
         mv -f -- "$temp_file" "$metadata"
     fi
+    integrity="$(vx_compose_secret_integrity_path "$owner" "$project")"
+    if [[ -f "$integrity" ]]; then
+        temp_file="$(mktemp "$root/.secret-integrity.XXXXXX")"
+        jq -S --arg name "$name" 'del(.[$name])' "$integrity" >"$temp_file"
+        vx_compose_secret_private_file_secure "$temp_file"
+        mv -f -- "$temp_file" "$integrity"
+    fi
     vx_compose_audit "$root" secret-delete succeeded
     vx_compose_lock_release
     vx_compose_refresh_counters "$owner"
@@ -352,7 +452,7 @@ vx_compose_secret_delete() {
 vx_compose_secret_list_json() {
     local owner="$1"
     local project="$2"
-    local metadata
+    local metadata projected name version status
 
     vx_compose_require_project "$owner" "$project" || return 1
     metadata="$(vx_compose_secret_metadata_path "$owner" "$project")"
@@ -360,7 +460,38 @@ vx_compose_secret_list_json() {
         printf '%s\n' '{}'
         return
     }
-    jq -S . "$metadata"
+    projected='{}'
+    while IFS= read -r name; do
+        version="$(jq -r --arg name "$name" '.[$name].VERSION // empty' \
+            "$metadata")"
+        if [[ ! "$version" =~ ^[a-f0-9]{32}$ ]]; then
+            version="$(vx_compose_secret_version_allocate "$metadata")" \
+                || return 1
+        fi
+        status=missing
+        [[ -f "$(vx_compose_secret_path "$owner" "$project" "$name")"
+            && ! -L "$(vx_compose_secret_path "$owner" "$project" "$name")" ]] \
+            && status=available
+        projected="$(jq -c \
+            --arg name "$name" \
+            --arg target "$(jq -r --arg name "$name" \
+                '.[$name].TARGET // ("/run/secrets/" + $name)' "$metadata")" \
+            --arg status "$status" \
+            --arg version "$version" \
+            --arg created "$(jq -r --arg name "$name" \
+                '.[$name].CREATED // ""' "$metadata")" \
+            --arg rotated "$(jq -r --arg name "$name" \
+                '.[$name].ROTATED // ""' "$metadata")" \
+            '.[$name] = {
+                NAME: $name,
+                TARGET: $target,
+                STATUS: $status,
+                VERSION: $version,
+                CREATED: $created,
+                ROTATED: $rotated
+            }' <<<"$projected")" || return 1
+    done < <(jq -r 'keys[]' "$metadata")
+    jq -S . <<<"$projected"
 }
 
 vx_compose_age_encrypt() {

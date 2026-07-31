@@ -32,7 +32,8 @@ vx_compose_backup_member_is_expected() {
         ''|manifest.json|manifest.sha256|encrypted-secrets.age|\
         control|control/compose.yaml|control/canonical.json|\
         control/project.conf|control/policy.conf|control/variables.env|\
-        control/images.json|control/secrets.json|control/audit.log|\
+        control/images.json|control/secrets.json|\
+        control/secret-integrity.json|control/audit.log|\
         control/routes.conf|control/simple.json|control/alerts.conf|\
         control/revisions|\
         control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]|\
@@ -265,6 +266,7 @@ vx_compose_restore_prepare_secrets() {
     local extracted="$3"
     local output_root="$4"
     local metadata="$extracted/control/secrets.json"
+    local integrity="$extracted/control/secret-integrity.json"
     local encrypted="$extracted/encrypted-secrets.age"
     local decrypted_tar secret source expected_sha actual_sha
 
@@ -325,7 +327,9 @@ vx_compose_restore_prepare_secrets() {
             }
         chmod 0600 "$source"
         expected_sha="$(jq -er --arg secret "$secret" \
-            '.[$secret].SHA256 | select(test("^[a-f0-9]{64}$"))' "$metadata")" \
+            '.[$secret].SHA256 | select(test("^[a-f0-9]{64}$"))' \
+            "$([[ -f "$integrity" ]] && printf '%s' "$integrity" \
+                || printf '%s' "$metadata")")" \
             || return 1
         actual_sha="$(sha256sum "$source" | awk '{print $1}')"
         [[ "$actual_sha" == "$expected_sha" ]] \
@@ -346,6 +350,7 @@ vx_compose_restore_install_secrets() {
     local root="$1"
     local secret_source="$2"
     local metadata="$3"
+    local integrity="${4:-}"
     local new_root="$root/.secrets.restore"
     local old_root="$root/.secrets.before-restore"
     local secret
@@ -372,6 +377,23 @@ vx_compose_restore_install_secrets() {
         rm -rf -- "$root/secrets"
         mv -- "$old_root" "$root/secrets" || :
         return 1
+    fi
+    if [[ -n "$integrity" && -f "$integrity" ]]; then
+        install -m 0600 "$integrity" "$root/secret-integrity.json" || return 1
+    elif jq -e 'all(.[]?; (.SHA256 // "") | test("^[a-f0-9]{64}$"))' \
+        "$metadata" >/dev/null; then
+        jq -S 'with_entries(.value = {SHA256: .value.SHA256})' "$metadata" \
+            >"$root/secret-integrity.json" || return 1
+        chmod 0600 "$root/secret-integrity.json" || return 1
+    else
+        printf '{}\n' >"$root/secret-integrity.json" || return 1
+        chmod 0600 "$root/secret-integrity.json" || return 1
+    fi
+    if jq -e 'any(.[]?; has("SHA256"))' "$root/secrets.json" >/dev/null; then
+        jq -S 'with_entries(.value |= del(.SHA256))' "$root/secrets.json" \
+            >"$root/.secrets.public.restore" || return 1
+        chmod 0600 "$root/.secrets.public.restore" || return 1
+        mv -f -- "$root/.secrets.public.restore" "$root/secrets.json" || return 1
     fi
 }
 
@@ -625,7 +647,8 @@ vx_compose_restore_project_existing() {
             "$snapshot_root/control/" || setup_failed=yes
     fi
     for volume in \
-        routes.conf images.json simple.json secrets.json alerts.conf; do
+        routes.conf images.json simple.json secrets.json secret-integrity.json \
+        alerts.conf; do
         [[ "$setup_failed" == yes || ! -f "$root/$volume" ]] \
             || cp -a -- "$root/$volume" "$snapshot_root/control/" \
             || setup_failed=yes
@@ -719,7 +742,8 @@ vx_compose_restore_project_existing() {
     if [[ "$setup_failed" != yes ]]; then
         if vx_compose_restore_install_secrets \
             "$root" "$extracted/restore-secrets" \
-            "$extracted/control/secrets.json"; then
+            "$extracted/control/secrets.json" \
+            "$extracted/control/secret-integrity.json"; then
             secrets_swapped=yes
         else
             setup_failed=yes
@@ -822,10 +846,12 @@ vx_compose_restore_project_existing() {
             "$root/runtime/canonical.json" || recovery_ok=no
         rm -f -- \
             "$root/routes.conf" "$root/images.json" "$root/simple.json" \
-            "$root/secrets.json" "$root/alerts.conf" \
+            "$root/secrets.json" "$root/secret-integrity.json" \
+            "$root/alerts.conf" \
             "$root/runtime/routes.pending.json" "$root/.variables.env.restore"
         for volume in \
-            routes.conf images.json simple.json secrets.json alerts.conf; do
+            routes.conf images.json simple.json secrets.json \
+            secret-integrity.json alerts.conf; do
             [[ ! -f "$snapshot_root/control/$volume" ]] \
                 || cp -a -- "$snapshot_root/control/$volume" "$root/$volume" \
                 || recovery_ok=no
@@ -951,7 +977,8 @@ vx_compose_restore_project_new() {
     if [[ "$result" -eq 0 ]] \
         && ! vx_compose_restore_install_secrets \
             "$root" "$extracted/restore-secrets" \
-            "$extracted/control/secrets.json"; then
+            "$extracted/control/secrets.json" \
+            "$extracted/control/secret-integrity.json"; then
         result=1
     fi
     [[ "$result" -ne 0 ]] || rm -rf -- "$root/.secrets.before-restore"
