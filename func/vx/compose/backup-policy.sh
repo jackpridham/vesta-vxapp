@@ -89,7 +89,7 @@ vx_compose_backup_policy_file_validate() {
 vx_compose_backup_policy_write() {
     local owner="$1" project="$2" enabled="$3" schedule="$4" daily="$5"
     local weekly="$6" encryption="$7" adapter="$8" freshness="$9"
-    local restore_interval="${10}" old="${11:-}" path root temp next_run
+    local restore_interval="${10}" old="${11:-}" path root temp next_run value
     root="$(vx_compose_project_root "$owner" "$project")"
     path="$root/backup-policy.conf"
     next_run="$(vx_compose_backup_policy_next_run "$schedule")" || return 1
@@ -105,8 +105,11 @@ vx_compose_backup_policy_write() {
         printf "RESTORE_TEST_INTERVAL_SECONDS='%s'\n" "$restore_interval"
         for field in LAST_ATTEMPT LAST_SUCCESS LAST_ARCHIVE LAST_ERROR \
             REPLICATION_STATE LAST_REPLICATED LAST_RESTORE_TEST RESTORE_TEST_STATE; do
-            printf "%s='%s'\n" "$field" \
-                "$(vx_compose_meta_get "$old" "$field" 2>/dev/null || :)"
+            value=''
+            if [[ -n "$old" && -f "$old" && ! -L "$old" ]]; then
+                value="$(vx_compose_meta_get "$old" "$field" 2>/dev/null || :)"
+            fi
+            printf "%s='%s'\n" "$field" "$value"
         done
         printf "NEXT_RUN='%s'\n" "$next_run"
     } >"$temp"
