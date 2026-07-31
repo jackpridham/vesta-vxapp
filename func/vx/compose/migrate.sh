@@ -265,6 +265,8 @@ vx_compose_migrate_owner() {
                             "$HOMEDIR/$owner/docker/$name/binds/$source" \
                             "$HOMEDIR/$owner/docker/$name/$source"
                 done
+                vx_compose_rollback_legacy_project_data_roots \
+                    "$owner" "$name" || true
                 [[ "$was_running" != yes ]] \
                     || "$(vx_compose_docker_bin)" start "$container" >/dev/null \
                     || true

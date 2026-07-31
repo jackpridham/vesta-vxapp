@@ -3,7 +3,14 @@ set -Eeuo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 test_root="$(mktemp -d)"
-trap 'rm -rf -- "$test_root"' EXIT
+cleanup() {
+    if [[ -n "${migration_owner:-}" ]] \
+        && mountpoint -q "$HOMEDIR/$migration_owner/docker" 2>/dev/null; then
+        umount "$HOMEDIR/$migration_owner/docker" || :
+    fi
+    rm -rf -- "$test_root"
+}
+trap cleanup EXIT
 export VESTA="$test_root/vesta"
 export HOMEDIR="$test_root/home"
 mkdir -p "$VESTA/data/users/alice"
@@ -67,7 +74,8 @@ if [[ -n "$migration_owner" ]]; then
     vx_compose_audit() { :; }
 
     migration_report="$(
-        vx_compose_migrate_owner "$migration_owner" apply
+        VX_COMPOSE_TEST_MODE=yes VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \
+            vx_compose_migrate_owner "$migration_owner" apply
     )"
     jq -e '.[0] == {PROJECT:"site",STATUS:"migrated"}' \
         <<<"$migration_report" >/dev/null \
@@ -75,11 +83,17 @@ if [[ -n "$migration_owner" ]]; then
             echo 'FAIL: real owner-owned legacy migration did not complete' >&2
             exit 1
         }
+    migration_mount_ok=yes
+    if (( EUID == 0 )) \
+        && ! mountpoint -q "$HOMEDIR/$migration_owner/docker"; then
+        migration_mount_ok=no
+    fi
     [[ -d "$HOMEDIR/$migration_owner/docker/site/binds/data"
         && "$(stat -c %u "$HOMEDIR/$migration_owner/docker")" == "$EUID"
         && "$(stat -c %u "$HOMEDIR/$migration_owner/docker/site")" == "$EUID"
         && "$(stat -c %u "$HOMEDIR/$migration_owner/docker/site/binds/data")" \
             == "$(id -u "$migration_owner")"
+        && "$migration_mount_ok" == yes
         && "$(cat "$VESTA/data/users/$migration_owner/docker-projects/.legacy-data-authority/site.conf")" \
             == "STATE='complete'" ]] \
         || {

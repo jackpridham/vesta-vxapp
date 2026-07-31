@@ -67,6 +67,37 @@ sub prepare_child {
     return $handle;
 }
 
+sub self_bind_enabled {
+    my ($home_root) = @_;
+    return 0 unless $> == 0;
+    return 1 if $home_root eq '/home';
+    return ($ENV{VX_COMPOSE_TEST_MODE} // '') eq 'yes'
+        && ($ENV{VX_COMPOSE_TEST_ALLOW_SELF_BIND} // '') eq 'yes';
+}
+
+sub is_mountpoint {
+    my ($handle) = @_;
+    return system('mountpoint', '-q', "/proc/$$/fd/" . fileno($handle)) == 0;
+}
+
+sub self_bind {
+    my ($handle) = @_;
+    my $path = "/proc/$$/fd/" . fileno($handle);
+    return if is_mountpoint($handle);
+    system('mount', '--bind', $path, $path) == 0
+        or fail('cannot protect managed data root as a self-bind mount');
+    is_mountpoint($handle)
+        or fail('managed data root self-bind mount was not established');
+}
+
+sub self_unbind {
+    my ($handle) = @_;
+    return unless is_mountpoint($handle);
+    my $path = "/proc/$$/fd/" . fileno($handle);
+    system('umount', '--lazy', $path) == 0
+        or fail('cannot release managed legacy data-root self-bind mount');
+}
+
 @ARGV == 5
     or fail('usage: managed-directory.pl OWNER HOMEDIR PROJECT LEAF MODE');
 my ($owner, $home_root, $project, $leaf, $transition) = @ARGV;
@@ -77,6 +108,7 @@ $project eq '-' || $project =~ /\A[a-z][a-z0-9_-]{0,62}\z/
 $leaf eq '-' || $leaf =~ /\A[a-z0-9][a-z0-9_-]{0,63}\z/
     or fail('invalid managed bind leaf');
 $transition eq 'normal' || $transition eq 'legacy'
+    || $transition eq 'rollback' || $transition eq 'unmount'
     or fail('invalid managed directory transition');
 $leaf eq '-' || $project ne '-'
     or fail('managed bind leaf requires a project');
@@ -105,15 +137,18 @@ fail('managed owner home has unexpected ownership')
 
 my @authority_uids = ($authority_uid);
 push @authority_uids, $owner_uid if $transition eq 'legacy';
+my $managed_uid = $transition eq 'rollback' ? $owner_uid : $authority_uid;
+my @managed_uids = $transition eq 'rollback'
+    ? ($authority_uid) : @authority_uids;
 my @handles = ($home_root_handle, $owner_home);
 my $docker = prepare_child(
     parent => $owner_home,
     name => 'docker',
     mode => 0750,
-    uid => $authority_uid,
+    uid => $managed_uid,
     gid => $owner_gid,
-    allowed_uids => \@authority_uids,
-    must_exist => $transition eq 'legacy',
+    allowed_uids => \@managed_uids,
+    must_exist => $transition ne 'normal',
 );
 push @handles, $docker;
 
@@ -142,20 +177,20 @@ if ($project ne '-') {
         parent => $docker,
         name => $project,
         mode => 0750,
-        uid => $authority_uid,
+        uid => $managed_uid,
         gid => $owner_gid,
-        allowed_uids => \@authority_uids,
-        must_exist => $transition eq 'legacy',
+        allowed_uids => \@managed_uids,
+        must_exist => $transition ne 'normal',
     );
     push @handles, $project_handle;
     my $binds = prepare_child(
         parent => $project_handle,
         name => 'binds',
         mode => 0750,
-        uid => $authority_uid,
+        uid => $managed_uid,
         gid => $owner_gid,
-        allowed_uids => \@authority_uids,
-        must_exist => 0,
+        allowed_uids => \@managed_uids,
+        must_exist => $transition eq 'rollback',
     );
     push @handles, $binds;
     if ($leaf ne '-') {
@@ -186,6 +221,18 @@ for my $name ('docker', ($project ne '-' ? ($project, 'binds') : ()),
     } @handles;
     fail("managed directory chain identity changed: $name") unless $expected;
     $parent = $reopened;
+}
+
+if (self_bind_enabled($home_root)) {
+    if ($transition eq 'rollback' || $transition eq 'unmount') {
+        undef $parent;
+        for (my $index = $#handles; $index >= 3; $index--) {
+            close($handles[$index]);
+        }
+        self_unbind($docker);
+    } else {
+        self_bind($docker);
+    }
 }
 
 exit 0;

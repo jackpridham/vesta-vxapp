@@ -103,4 +103,5 @@ vx_compose_remove_owner_runtime() {
             return 1
         fi
     done < <(vx_compose_owner_project_keys "$owner")
+    vx_compose_owner_data_unmount "$owner"
 }

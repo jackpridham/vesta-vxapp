@@ -3,7 +3,18 @@ set -Eeuo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 test_root="$(mktemp -d)"
-trap 'rm -rf -- "$test_root"' EXIT
+cleanup() {
+    if (( EUID == 0 )); then
+        for mount_path in \
+            "$HOMEDIR/$owner/docker" \
+            "$HOMEDIR/$owner/docker.transitioned"; do
+            mountpoint -q "$mount_path" 2>/dev/null \
+                && umount "$mount_path" || :
+        done
+    fi
+    rm -rf -- "$test_root"
+}
+trap cleanup EXIT
 
 export VESTA="$test_root/vesta"
 export HOMEDIR="$test_root/home"
@@ -78,11 +89,12 @@ fi
 assert_target_unchanged bind-leaf
 rm "$HOMEDIR/$owner/docker/app/binds/data"
 
-# A rename after the docker descriptor is open must not redirect project or
-# bind creation through a replacement symlink.
+# A rename while descriptors are open must not redirect project or bind
+# creation through a replacement symlink.
 rm -rf -- "$HOMEDIR/$owner/docker/app"
 pause="/tmp/vx-managed-directory-pause.$$"
 VX_COMPOSE_TEST_MODE=yes \
+VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \
 VX_COMPOSE_TEST_MANAGED_DIRECTORY_PAUSE="$pause" \
     vx_compose_prepare_project_data_roots "$owner" raced \
     >"$test_root/race.out" 2>"$test_root/race.error" &
@@ -103,6 +115,18 @@ assert_target_unchanged parent-swap
 rm "$HOMEDIR/$owner/docker"
 mv "$HOMEDIR/$owner/docker.protected" "$HOMEDIR/$owner/docker"
 
+if (( EUID == 0 )); then
+    VX_COMPOSE_TEST_MODE=yes VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \
+        vx_compose_prepare_project_data_roots "$owner" raced \
+        || fail 'managed data-root self-bind failed'
+    mountpoint -q "$HOMEDIR/$owner/docker" \
+        || fail 'managed data root is not a mountpoint'
+    if mv "$HOMEDIR/$owner/docker" "$HOMEDIR/$owner/docker.replaced" \
+        2>/dev/null; then
+        fail 'post-helper managed data-root rename was allowed'
+    fi
+fi
+
 # Real legacy roots begin tenant-owned. The explicit migration transition may
 # claim them once, but its protected marker prevents a second owner-to-root
 # transition after replacement.
@@ -112,6 +136,7 @@ mkdir -p "$HOMEDIR/$owner/docker/legacy/source"
 if (( EUID == 0 )); then
     chown -R "$owner:$owner" "$HOMEDIR/$owner/docker"
 fi
+VX_COMPOSE_TEST_MODE=yes VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \
 vx_compose_prepare_legacy_project_data_roots "$owner" legacy \
     || fail 'owner-owned legacy root did not transition'
 authority_uid="$EUID"
@@ -120,6 +145,18 @@ authority_uid="$EUID"
     && "$(cat "$VESTA/data/users/$owner/docker-projects/.legacy-data-authority/legacy.conf")" \
         == "STATE='complete'" ]] \
     || fail 'legacy transition did not establish protected authority'
+VX_COMPOSE_TEST_MODE=yes VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \
+vx_compose_rollback_legacy_project_data_roots "$owner" legacy \
+    || fail 'failed migration could not restore legacy ownership'
+[[ "$(stat -c %u "$HOMEDIR/$owner/docker")" == "$(id -u "$owner")"
+    && ! -e "$VESTA/data/users/$owner/docker-projects/.legacy-data-authority/legacy.conf" ]] \
+    || fail 'legacy ownership rollback did not restore retry authority'
+VX_COMPOSE_TEST_MODE=yes VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \
+vx_compose_prepare_legacy_project_data_roots "$owner" legacy \
+    || fail 'restored legacy root could not transition on retry'
+if (( EUID == 0 )); then
+    umount "$HOMEDIR/$owner/docker"
+fi
 mv "$HOMEDIR/$owner/docker" "$HOMEDIR/$owner/docker.transitioned"
 mkdir -p "$HOMEDIR/$owner/docker/legacy"
 if (( EUID == 0 )); then
@@ -130,6 +167,17 @@ if (( EUID == 0 )); then
     fi
     [[ "$(stat -c %u "$HOMEDIR/$owner/docker")" == "$(id -u "$owner")" ]] \
         || fail 'rejected replacement legacy root was mutated'
+    rm -rf -- "$HOMEDIR/$owner/docker"
+    mv "$HOMEDIR/$owner/docker.transitioned" "$HOMEDIR/$owner/docker"
+    VX_COMPOSE_TEST_MODE=yes VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \
+        vx_compose_prepare_project_data_roots "$owner" legacy \
+        || fail 'managed data root could not be remounted'
+    VX_COMPOSE_TEST_MODE=yes VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \
+        vx_compose_owner_data_unmount "$owner" \
+        || fail 'managed data-root unmount failed'
+    if mountpoint -q "$HOMEDIR/$owner/docker"; then
+        fail 'managed data-root mount survived explicit owner cleanup'
+    fi
 fi
 
 echo 'Compose managed-directory symlink tests passed.'
