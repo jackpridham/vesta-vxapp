@@ -73,6 +73,15 @@ known-good archive. Policy runs hold the existing project lock through backup,
 validation-only restore, retention, replication, audit, and atomic state
 update.
 
+Cold backup writes a mode-`0600`, owner/project-bound recovery marker before
+stopping a running workload. Normal signal handling redeploys that exact
+workload and removes only scoped staging. A later locked invocation recovers a
+marker left by an untrappable interruption before new work; recovery failure
+retains the marker and sets `restore-required`. `LAST_ATTEMPT` plus
+`LAST_ERROR=run-in-progress` is the durable operation marker. Terminal fields
+are validated and replaced together as one exact 17-field file; retention
+completes before a successful terminal state or success audit is recorded.
+
 The daily host job enumerates only regular mode-`0600` policy files, takes one
 host scheduler lock, and invokes due owner/project pairs directly. It never
 writes project values into cron. Replication adapters are named executables
@@ -86,6 +95,9 @@ root-owned mode-`0700` `TARGET_ROOT`. It copies and verifies the descriptor
 before reporting success. When encryption is required, the descriptor is a
 temporary whole-archive age ciphertext, never the managed plaintext archive;
 the temporary payload is mode `0600` and removed after the adapter returns.
+Adapters execute with an empty environment containing only the controlled
+safe `PATH` and `VESTA`; their only other inputs are validated owner/project
+arguments and descriptor 3.
 
 Validation-only restore drills extract into a disposable root, verify archive
 structure and checksums, and remove that root without mutating desired state,
@@ -101,8 +113,11 @@ preparation. Apply restores only its reviewed configuration
 (`ENABLED`, schedule, retention, encryption, adapter, freshness, and drill
 interval), recomputes `NEXT_RUN`, and resets every attempt/result timestamp,
 error, archive, replication, and drill state. The policy switch is atomic; an
-existing target policy is snapshotted and restored if that switch fails.
-Validation-only restore never changes policy authority.
+existing target policy is snapshotted inside the core restore transaction and
+restored by its normal rollback path if a late switch fails. New-project
+restore installs the same sanitized candidate before success and removes it
+with the new control root on failure. Validation-only restore never changes
+policy authority.
 
 ## Acceptance
 

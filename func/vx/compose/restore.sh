@@ -483,6 +483,12 @@ vx_compose_restore_prepare() {
         "$owner" "$project" "$extracted/control/compose.yaml" \
         "$candidate" "$profile" yes "$extracted/binds" "$validation_secrets" \
         || return 1
+    if [[ -f "$extracted/control/backup-policy.conf" ]] \
+        && ! vx_compose_backup_policy_sanitize_to \
+            "$extracted/control/backup-policy.conf" \
+            "$candidate/backup-policy.conf"; then
+        return 1
+    fi
     if [[ -f "$extracted/control/simple.json" ]]; then
         install -m 0600 "$extracted/control/simple.json" "$candidate/simple.json"
     fi
@@ -560,6 +566,24 @@ vx_compose_restore_prepare() {
     (( projected_storage >= 0 )) || projected_storage=0
     vx_compose_quota_compare \
         "$owner" DOCKER_STORAGE_MB "$projected_storage"
+}
+
+vx_compose_restore_install_backup_policy() {
+    local root="$1" candidate="$2" temp
+    [[ -f "$candidate/backup-policy.conf" \
+        && ! -L "$candidate/backup-policy.conf" ]] || return 0
+    temp="$root/.backup-policy.conf.restore"
+    rm -f -- "$temp"
+    install -m 0600 "$candidate/backup-policy.conf" "$temp" || return 1
+    vx_compose_backup_policy_file_validate "$temp" || {
+        rm -f -- "$temp"
+        return 1
+    }
+    [[ "${VX_COMPOSE_TEST_RESTORE_BACKUP_POLICY_FAIL:-no}" != yes ]] || {
+        rm -f -- "$temp"
+        return 1
+    }
+    mv -f -- "$temp" "$root/backup-policy.conf"
 }
 
 vx_compose_restore_next_revision() {
@@ -673,7 +697,7 @@ vx_compose_restore_project_existing() {
     fi
     for volume in \
         routes.conf images.json simple.json secrets.json secret-integrity.json \
-        alerts.conf; do
+        alerts.conf backup-policy.conf; do
         [[ "$setup_failed" == yes || ! -f "$root/$volume" ]] \
             || cp -a -- "$root/$volume" "$snapshot_root/control/" \
             || setup_failed=yes
@@ -816,6 +840,12 @@ vx_compose_restore_project_existing() {
             vx_compose_stop "$owner" "$project"; then
         setup_failed=yes
     fi
+    if [[ "$setup_failed" != yes \
+        && -f "$candidate/backup-policy.conf" ]]; then
+        if ! vx_compose_restore_install_backup_policy "$root" "$candidate"; then
+            setup_failed=yes
+        fi
+    fi
     if [[ "$setup_failed" != yes ]] \
         && vx_compose_restore_install_active \
             "$owner" "$project" "$candidate" "$extracted" \
@@ -872,11 +902,11 @@ vx_compose_restore_project_existing() {
         rm -f -- \
             "$root/routes.conf" "$root/images.json" "$root/simple.json" \
             "$root/secrets.json" "$root/secret-integrity.json" \
-            "$root/alerts.conf" \
+            "$root/alerts.conf" "$root/backup-policy.conf" \
             "$root/runtime/routes.pending.json" "$root/.variables.env.restore"
         for volume in \
             routes.conf images.json simple.json secrets.json \
-            secret-integrity.json alerts.conf; do
+            secret-integrity.json alerts.conf backup-policy.conf; do
             [[ ! -f "$snapshot_root/control/$volume" ]] \
                 || cp -a -- "$snapshot_root/control/$volume" "$root/$volume" \
                 || recovery_ok=no
@@ -928,8 +958,8 @@ vx_compose_restore_project_existing() {
                 && vx_compose_stop "$owner" "$project" || recovery_ok=no
         fi
         if [[ "$recovery_ok" == yes ]]; then
-            vx_compose_update_state \
-                "$owner" "$project" "$previous_state" || recovery_ok=no
+            cp -a -- "$snapshot_root/control/project.conf" \
+                "$root/project.conf" || recovery_ok=no
         fi
         if [[ "$recovery_ok" != yes ]]; then
             vx_compose_update_state "$owner" "$project" restore-required || :
@@ -981,6 +1011,10 @@ vx_compose_restore_project_new() {
     fi
     root="$(vx_compose_project_root "$owner" "$project")"
     if ! install -m 0600 "$candidate/variables.env" "$root/variables.env"; then
+        result=1
+    fi
+    if [[ "$result" -eq 0 && -f "$candidate/backup-policy.conf" ]] \
+        && ! vx_compose_restore_install_backup_policy "$root" "$candidate"; then
         result=1
     fi
     if [[ "$result" -eq 0 ]]; then
@@ -1102,7 +1136,7 @@ vx_compose_restore_project() {
     local project="$2"
     local archive="$3"
     local mode="${4:-validate}"
-    local work_root extracted candidate desired_state result root policy_snapshot=''
+    local work_root extracted candidate desired_state result
     local apply_locked=no ports_locked=no quota_locked=no route_locked=no
 
     [[ "$mode" == validate || "$mode" == apply ]] \
@@ -1159,19 +1193,6 @@ vx_compose_restore_project() {
         return 1
     }
     route_locked=yes
-    root="$(vx_compose_project_root "$owner" "$project")"
-    if [[ -f "$root/backup-policy.conf" \
-        && ! -L "$root/backup-policy.conf" ]]; then
-        policy_snapshot="$work_root/backup-policy.before"
-        install -m 0600 "$root/backup-policy.conf" "$policy_snapshot" || {
-            vx_compose_routes_lock_release
-            vx_compose_owner_quota_lock_release
-            vx_compose_ports_lock_release
-            vx_compose_lock_release
-            rm -rf -- "$work_root"
-            return 1
-        }
-    fi
     if ! vx_compose_restore_prepare \
         "$owner" "$project" "$extracted" "$candidate"; then
         vx_compose_routes_lock_release
@@ -1189,21 +1210,6 @@ vx_compose_restore_project() {
         vx_compose_restore_project_new \
             "$owner" "$project" "$extracted" "$candidate" "$desired_state"
         result=$?
-    fi
-    if [[ "$result" -eq 0 \
-        && -f "$extracted/control/backup-policy.conf" ]]; then
-        if ! vx_compose_backup_policy_restore_reset "$owner" "$project" \
-            "$extracted/control/backup-policy.conf"; then
-            if [[ -n "$policy_snapshot" ]]; then
-                install -m 0600 "$policy_snapshot" \
-                    "$root/.backup-policy.restore-rollback" \
-                    && mv -f -- "$root/.backup-policy.restore-rollback" \
-                        "$root/backup-policy.conf" || :
-            else
-                rm -f -- "$root/backup-policy.conf"
-            fi
-            result=1
-        fi
     fi
     rm -rf -- "$work_root"
     [[ "$route_locked" != yes ]] || vx_compose_routes_lock_release

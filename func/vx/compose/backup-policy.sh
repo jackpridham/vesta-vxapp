@@ -13,19 +13,34 @@ vx_compose_backup_policy_schedule_valid() {
 
 vx_compose_backup_policy_next_run() {
     local schedule="$1" from="${2:-$(vx_compose_now)}" expression
+    local from_epoch candidate_epoch current_dow target_dow days weekday
     vx_compose_backup_policy_schedule_valid "$schedule" || return 1
+    from_epoch="$(date -u -d "$from" +%s)" || return 1
     case "$schedule" in
         daily@*)
             expression="$(date -u -d "$from" +%F) ${schedule#daily@} UTC"
-            [[ "$(date -u -d "$expression" +%s)" -gt "$(date -u -d "$from" +%s)" ]] \
-                || expression="tomorrow ${schedule#daily@} UTC"
+            candidate_epoch="$(date -u -d "$expression" +%s)" || return 1
+            (( candidate_epoch > from_epoch )) \
+                || candidate_epoch=$((candidate_epoch + 86400))
             ;;
         weekly@*)
-            expression="next ${schedule#weekly@}"
-            expression="${expression%@*} ${schedule##*@} UTC"
+            weekday="${schedule#weekly@}"
+            weekday="${weekday%@*}"
+            case "$weekday" in
+                mon) target_dow=1 ;; tue) target_dow=2 ;; wed) target_dow=3 ;;
+                thu) target_dow=4 ;; fri) target_dow=5 ;; sat) target_dow=6 ;;
+                sun) target_dow=7 ;;
+            esac
+            current_dow="$(date -u -d "$from" +%u)" || return 1
+            days=$(((target_dow - current_dow + 7) % 7))
+            expression="$(date -u -d "$from" +%F) ${schedule##*@} UTC"
+            candidate_epoch="$(date -u -d "$expression + $days days" +%s)" \
+                || return 1
+            (( candidate_epoch > from_epoch )) \
+                || candidate_epoch=$((candidate_epoch + 604800))
             ;;
     esac
-    date -u -d "$expression" +'%Y-%m-%dT%H:%M:%SZ'
+    date -u -d "@$candidate_epoch" +'%Y-%m-%dT%H:%M:%SZ'
 }
 
 vx_compose_backup_policy_validate_values() {
@@ -116,18 +131,33 @@ vx_compose_backup_policy_write() {
     chmod 0600 "$temp" && mv -f -- "$temp" "$path"
 }
 
-vx_compose_backup_policy_restore_reset() {
-    local owner="$1" project="$2" archived="$3"
+vx_compose_backup_policy_sanitize_to() {
+    local archived="$1" output="$2" output_parent temp
     vx_compose_backup_policy_file_validate "$archived" || return 1
-    vx_compose_backup_policy_write "$owner" "$project" \
-        "$(vx_compose_meta_get "$archived" ENABLED)" \
-        "$(vx_compose_meta_get "$archived" SCHEDULE)" \
-        "$(vx_compose_meta_get "$archived" RETAIN_DAILY)" \
-        "$(vx_compose_meta_get "$archived" RETAIN_WEEKLY)" \
-        "$(vx_compose_meta_get "$archived" ENCRYPTION_REQUIRED)" \
-        "$(vx_compose_meta_get "$archived" REPLICATION_ADAPTER)" \
-        "$(vx_compose_meta_get "$archived" FRESHNESS_SECONDS)" \
-        "$(vx_compose_meta_get "$archived" RESTORE_TEST_INTERVAL_SECONDS)" ''
+    output_parent="$(realpath -e -- "$(dirname -- "$output")")" || return 1
+    [[ ! -e "$output" && ! -L "$output" ]] || return 1
+    temp="$(mktemp "$output_parent/.backup-policy-sanitize.XXXXXX")" || return 1
+    {
+        for field in ENABLED SCHEDULE RETAIN_DAILY RETAIN_WEEKLY \
+            ENCRYPTION_REQUIRED REPLICATION_ADAPTER FRESHNESS_SECONDS \
+            RESTORE_TEST_INTERVAL_SECONDS; do
+            printf "%s='%s'\n" "$field" \
+                "$(vx_compose_meta_get "$archived" "$field")"
+        done
+        printf "LAST_ATTEMPT=''\nLAST_SUCCESS=''\n"
+        printf "LAST_ARCHIVE=''\nLAST_ERROR=''\nREPLICATION_STATE=''\n"
+        printf "LAST_REPLICATED=''\nLAST_RESTORE_TEST=''\nRESTORE_TEST_STATE=''\n"
+        printf "NEXT_RUN='%s'\n" "$(
+            vx_compose_backup_policy_next_run \
+                "$(vx_compose_meta_get "$archived" SCHEDULE)"
+        )"
+    } >"$temp"
+    chmod 0600 "$temp" \
+        && vx_compose_backup_policy_file_validate "$temp" \
+        && mv -- "$temp" "$output" || {
+            rm -f -- "$temp"
+            return 1
+        }
 }
 
 vx_compose_backup_policy_add() {
@@ -178,18 +208,53 @@ vx_compose_backup_policy_list_json() {
         '{OWNER:$owner,PROJECT:$project}+ $policy'
 }
 
-vx_compose_backup_policy_state_update() {
-    local path="$1" field="$2" value="$3" root temp
-    case " $VX_COMPOSE_BACKUP_POLICY_FIELDS " in *" $field "*) ;; *) return 1;; esac
+vx_compose_backup_policy_state_transaction() {
+    local path="$1" root temp next field value
+    shift
+    (( $# > 0 && $# % 2 == 0 )) || return 1
+    vx_compose_backup_policy_file_validate "$path" || return 1
     root="$(dirname -- "$path")"
     temp="$(mktemp "$root/.backup-policy.XXXXXX")" || return 1
-    awk -v key="$field" -v value="$value" '
-        BEGIN { found=0 }
-        $0 ~ ("^" key "='\''") { printf "%s='\''%s'\''\n", key, value; found=1; next }
-        { print }
-        END { if (!found) printf "%s='\''%s'\''\n", key, value }
-    ' "$path" >"$temp" || { rm -f -- "$temp"; return 1; }
-    chmod 0600 "$temp" && mv -f -- "$temp" "$path"
+    cp -- "$path" "$temp" || { rm -f -- "$temp"; return 1; }
+    while (( $# )); do
+        field="$1" value="$2"
+        shift 2
+        case " $VX_COMPOSE_BACKUP_POLICY_FIELDS " in
+            *" $field "*) ;;
+            *) rm -f -- "$temp"; return 1 ;;
+        esac
+        next="$(mktemp "$root/.backup-policy-field.XXXXXX")" || {
+            rm -f -- "$temp"
+            return 1
+        }
+        awk -v key="$field" -v value="$value" '
+            $0 ~ ("^" key "='\''") {
+                printf "%s='\''%s'\''\n", key, value
+                next
+            }
+            { print }
+        ' "$temp" >"$next" || {
+            rm -f -- "$temp" "$next"
+            return 1
+        }
+        mv -- "$next" "$temp" || { rm -f -- "$temp" "$next"; return 1; }
+    done
+    _VX_COMPOSE_BACKUP_POLICY_WRITE_SEQUENCE=$(( \
+        ${_VX_COMPOSE_BACKUP_POLICY_WRITE_SEQUENCE:-0} + 1 \
+    ))
+    chmod 0600 "$temp" \
+        && vx_compose_backup_policy_file_validate "$temp" \
+        && [[ "${VX_COMPOSE_TEST_BACKUP_POLICY_WRITE_FAIL:-no}" != yes \
+            && "${VX_COMPOSE_TEST_BACKUP_POLICY_WRITE_FAIL:-no}" \
+                != "$_VX_COMPOSE_BACKUP_POLICY_WRITE_SEQUENCE" ]] \
+        && mv -f -- "$temp" "$path" || {
+            rm -f -- "$temp"
+            return 1
+        }
+}
+
+vx_compose_backup_policy_state_update() {
+    vx_compose_backup_policy_state_transaction "$@"
 }
 
 vx_compose_backup_policy_retention() {
@@ -240,7 +305,8 @@ vx_compose_backup_replicate() {
     [[ "$adapter" != none ]] || { printf '{"STATE":"not-configured"}\n'; return; }
     executable="$(vx_compose_backup_replication_adapter_path "$adapter")" \
         || { printf '{"STATE":"not-configured"}\n'; return; }
-    result="$("$executable" "$owner" "$project" 3<"$archive" 2>/dev/null)" \
+    result="$(env -i PATH="$VX_COMPOSE_SAFE_PATH" VESTA="$VESTA" \
+        "$executable" "$owner" "$project" 3<"$archive" 2>/dev/null)" \
         || { printf '{"STATE":"failed"}\n'; return 1; }
     jq -ce 'select(type=="object" and
         (.STATE=="succeeded" or .STATE=="failed" or .STATE=="not-configured"))
@@ -264,6 +330,7 @@ vx_compose_backup_restore_drill() {
 _vx_compose_backup_policy_run_locked() {
     local owner="$1" project="$2" path root now archive policy encryption adapter
     local replication restore_due=no result=1 replication_input encrypted_payload=''
+    local replication_state='' replicated_at='' restore_state='' restore_at=''
     vx_compose_require_project "$owner" "$project" || return 1
     vx_compose_lock_acquire "$owner" "$project" || return 1
     root="$(vx_compose_project_root "$owner" "$project")"
@@ -274,13 +341,34 @@ _vx_compose_backup_policy_run_locked() {
     policy="$(vx_compose_backup_policy_list_json "$owner" "$project")" || {
         vx_compose_lock_release; return 1;
     }
+    _VX_COMPOSE_BACKUP_POLICY_WRITE_SEQUENCE=0
     now="$(vx_compose_now)"
-    vx_compose_backup_policy_state_update "$path" LAST_ATTEMPT "$now" || :
+    if [[ "$(jq -r .LAST_ERROR <<<"$policy")" == run-in-progress ]]; then
+        vx_compose_backup_orphan_cleanup "$owner" "$project" || {
+            vx_compose_audit "$root" backup-policy-run failed \
+                orphan-cleanup-failed || :
+            vx_compose_lock_release
+            return 1
+        }
+    fi
+    if ! vx_compose_backup_policy_state_transaction "$path" \
+        LAST_ATTEMPT "$now" LAST_ERROR run-in-progress; then
+        vx_compose_audit "$root" backup-policy-run failed \
+            policy-state-write-failed || :
+        vx_compose_lock_release
+        return 1
+    fi
     encryption="$(jq -r .ENCRYPTION_REQUIRED <<<"$policy")"
     if [[ "$encryption" == yes ]] \
         && { [[ -z "${VX_DOCKER_AGE_RECIPIENT:-}" ]] \
             || ! command -v age >/dev/null 2>&1; }; then
-        vx_compose_backup_policy_state_update "$path" LAST_ERROR encryption-unavailable
+        if ! vx_compose_backup_policy_state_transaction "$path" \
+            LAST_ERROR encryption-unavailable; then
+            vx_compose_audit "$root" backup-policy-run failed \
+                policy-state-write-failed || :
+            vx_compose_lock_release
+            return 1
+        fi
         vx_compose_backup_alert_set "$owner" "$project" encryption-unavailable \
             'backup encryption is unavailable'
         vx_compose_audit "$root" backup-policy-run failed encryption-unavailable || :
@@ -304,8 +392,13 @@ _vx_compose_backup_policy_run_locked() {
                 || ! vx_compose_age_encrypt "$archive" "$encrypted_payload" \
                 || cmp -s "$archive" "$encrypted_payload"; then
                 rm -f -- "$encrypted_payload"
-                vx_compose_backup_policy_state_update "$path" LAST_ERROR \
-                    encryption-unavailable
+                if ! vx_compose_backup_policy_state_transaction "$path" \
+                    LAST_ERROR encryption-unavailable; then
+                    vx_compose_audit "$root" backup-policy-run failed \
+                        policy-state-write-failed || :
+                    vx_compose_lock_release
+                    return 1
+                fi
                 vx_compose_backup_alert_set "$owner" "$project" \
                     encryption-unavailable 'backup encryption is unavailable'
                 vx_compose_audit "$root" backup-policy-run failed \
@@ -318,11 +411,11 @@ _vx_compose_backup_policy_run_locked() {
         replication="$(vx_compose_backup_replicate \
             "$owner" "$project" "$adapter" "$replication_input")" || :
         rm -f -- "$encrypted_payload"
-        vx_compose_backup_policy_state_update "$path" REPLICATION_STATE \
-            "$(jq -r '.STATE // "failed"' <<<"$replication")"
-        case "$(jq -r '.STATE // "failed"' <<<"$replication")" in
+        replication_state="$(jq -r '.STATE // "failed"' <<<"$replication")"
+        replicated_at="$(jq -r .LAST_REPLICATED <<<"$policy")"
+        case "$replication_state" in
             succeeded)
-                vx_compose_backup_policy_state_update "$path" LAST_REPLICATED "$now"
+                replicated_at="$now"
                 vx_compose_backup_alert_close "$owner" "$project" \
                     replication-failure
                 vx_compose_backup_alert_close "$owner" "$project" \
@@ -345,28 +438,62 @@ _vx_compose_backup_policy_run_locked() {
         fi
         if [[ "$restore_due" == yes ]]; then
             if vx_compose_backup_restore_drill "$owner" "$project" "$archive"; then
-                vx_compose_backup_policy_state_update "$path" RESTORE_TEST_STATE succeeded
-                vx_compose_backup_policy_state_update "$path" LAST_RESTORE_TEST "$now"
+                restore_state=succeeded
+                restore_at="$now"
             else
-                vx_compose_backup_policy_state_update "$path" RESTORE_TEST_STATE failed
+                restore_state=failed
+                restore_at="$(jq -r .LAST_RESTORE_TEST <<<"$policy")"
                 vx_compose_backup_alert_set "$owner" "$project" restore-test-failure \
                     'validation-only restore failed'
             fi
+        else
+            restore_state="$(jq -r .RESTORE_TEST_STATE <<<"$policy")"
+            restore_at="$(jq -r .LAST_RESTORE_TEST <<<"$policy")"
         fi
-        vx_compose_backup_policy_state_update "$path" LAST_SUCCESS "$now"
-        vx_compose_backup_policy_state_update "$path" LAST_ARCHIVE "$(basename -- "$archive")"
-        vx_compose_backup_policy_state_update "$path" LAST_ERROR ''
-        vx_compose_backup_policy_state_update "$path" NEXT_RUN \
-            "$(vx_compose_backup_policy_next_run "$(jq -r .SCHEDULE <<<"$policy")" "$now")"
-        vx_compose_backup_policy_retention "$owner" "$project" \
+        if ! vx_compose_backup_policy_retention "$owner" "$project" \
             "$(jq -r .RETAIN_DAILY <<<"$policy")" \
-            "$(jq -r .RETAIN_WEEKLY <<<"$policy")" "$(basename -- "$archive")"
+            "$(jq -r .RETAIN_WEEKLY <<<"$policy")" \
+            "$(basename -- "$archive")"; then
+            if ! vx_compose_backup_policy_state_transaction "$path" \
+                LAST_ERROR retention-failed; then
+                vx_compose_audit "$root" backup-policy-run failed \
+                    policy-state-write-failed || :
+            else
+                vx_compose_audit "$root" backup-policy-run failed \
+                    retention-failed || :
+            fi
+            vx_compose_backup_alert_set "$owner" "$project" backup-failure \
+                'managed backup retention failed'
+            vx_compose_lock_release
+            return 1
+        fi
+        if ! vx_compose_backup_policy_state_transaction "$path" \
+            LAST_SUCCESS "$now" \
+            LAST_ARCHIVE "$(basename -- "$archive")" \
+            LAST_ERROR '' \
+            NEXT_RUN "$(vx_compose_backup_policy_next_run \
+                "$(jq -r .SCHEDULE <<<"$policy")" "$now")" \
+            REPLICATION_STATE "$replication_state" \
+            LAST_REPLICATED "$replicated_at" \
+            RESTORE_TEST_STATE "$restore_state" \
+            LAST_RESTORE_TEST "$restore_at"; then
+            vx_compose_audit "$root" backup-policy-run failed \
+                policy-state-write-failed || :
+            vx_compose_lock_release
+            return 1
+        fi
         vx_compose_audit "$root" backup-policy-run succeeded \
             "archive=$(basename -- "$archive") replication=$(jq -r .STATE <<<"$replication")" || :
         result=0
     else
         rm -rf -- "$root/runtime/.backup-validation.$BASHPID"
-        vx_compose_backup_policy_state_update "$path" LAST_ERROR backup-failed
+        if ! vx_compose_backup_policy_state_transaction "$path" \
+            LAST_ERROR backup-failed; then
+            vx_compose_audit "$root" backup-policy-run failed \
+                policy-state-write-failed || :
+            vx_compose_lock_release
+            return 1
+        fi
         vx_compose_backup_alert_set "$owner" "$project" backup-failure 'managed backup failed'
         vx_compose_audit "$root" backup-policy-run failed backup-failed || :
     fi
@@ -449,7 +576,8 @@ vx_compose_backup_alerts_evaluate_policy() {
                 && "$(date -u -d "$next" +%s 2>/dev/null || echo 0)" -lt "$now" ]] \
                 && { active=yes; message='scheduled backup is overdue'; } ;;
         backup-failure)
-            [[ "$last_error" == backup-failed ]] \
+            [[ "$last_error" == backup-failed \
+                || "$last_error" == retention-failed ]] \
                 && { active=yes; message='managed backup failed'; } ;;
         encryption-unavailable)
             [[ "$last_error" == encryption-unavailable ]] \
