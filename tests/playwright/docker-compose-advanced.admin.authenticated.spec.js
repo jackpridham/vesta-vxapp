@@ -54,6 +54,7 @@ async function assertSpawnedOutput(modal, heading) {
 
 test('advanced preview/deploy, service controls, recovery actions, and redaction work end to end', async ({ page }) => {
   test.setTimeout(600_000);
+  page.setDefaultTimeout(15_000);
   test.skip(
     !(hasLocalVestaRuntime() || hasRemoteVestaRuntime()) || !isLocalPanelTarget(),
     'Advanced destructive coverage requires the configured panel and exact Vesta runtime target.'

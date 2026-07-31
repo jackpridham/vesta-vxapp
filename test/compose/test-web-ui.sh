@@ -110,6 +110,15 @@ expect_pattern web/css/docker.css \
 expect_pattern web/css/docker.css \
     'docker-data-table--stack' \
     'project tables collapse for mobile screens'
+expect_pattern web/css/docker.css \
+    'max-height: calc\(100vh - 32px\)' \
+    'project action modal is bounded to the viewport'
+expect_pattern web/css/docker.css \
+    'overflow-y: auto' \
+    'project action modal remains scrollable'
+expect_pattern web/css/docker.css \
+    'width: calc\(100vw - 24px\)' \
+    'project action modal fits narrow mobile viewports'
 expect_absent web/templates/docker_project_shared.php \
     'fonts.googleapis.com|sentry' \
     'project console does not import remote fonts or product branding'

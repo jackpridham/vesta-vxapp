@@ -613,6 +613,17 @@
   resize: vertical;
 }
 
+.body-docker #floating-center-div {
+  box-sizing: border-box;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.body-docker #floating-center-div-content {
+  max-width: 100%;
+}
+
 .body-docker input.vst-input:disabled {
   background: #f5f5f5 !important;
   color: #666666;
@@ -1148,6 +1159,12 @@
 }
 
 @media (max-width: 760px) {
+  .body-docker #floating-center-div {
+    max-height: calc(100vh - 24px);
+    padding: 28px 16px 20px !important;
+    width: calc(100vw - 24px) !important;
+  }
+
   .body-docker .docker-shell {
     padding: 14px 14px 0;
   }
