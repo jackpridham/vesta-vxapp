@@ -10,7 +10,13 @@ include($_SERVER['DOCUMENT_ROOT']."/inc/vx_compose.php");
 $docker_project_name = isset($_GET['project']) && !is_array($_GET['project'])
     ? trim((string) $_GET['project'])
     : '';
-$docker_project_owner = vx_docker_resolve_owner_from_request($user);
+$docker_project_owner = $user;
+if (isset($_GET['user']) && !is_array($_GET['user'])) {
+    $requested_owner = trim((string) $_GET['user']);
+    if ($requested_owner !== '') {
+        $docker_project_owner = $requested_owner;
+    }
+}
 $docker_project = vx_compose_resolve_accessible_project(
     $docker_project_owner,
     $docker_project_name,

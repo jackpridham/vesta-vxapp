@@ -76,6 +76,12 @@ expect_pattern web/templates/docker_project_shared.php \
 expect_pattern web/list/docker/project/index.php \
     'vx_compose_project_action_capabilities' \
     'project details resolve every action capability for the current actor'
+expect_pattern web/list/docker/project/index.php \
+    "\\\$_GET\\['user'\\]" \
+    'project details preserve an explicit owner for delegated access checks'
+expect_pattern web/list/docker/project/index.php \
+    'vx_compose_resolve_accessible_project' \
+    'project details authorize the requested owner and project together'
 expect_pattern web/templates/docker_project_shared.php \
     'docker_project_can_update' \
     'advanced update visibility requires preview and deploy capabilities'
