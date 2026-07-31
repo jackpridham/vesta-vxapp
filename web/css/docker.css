@@ -389,6 +389,17 @@
   color: #666666;
 }
 
+.body-docker .docker-health-badge[data-freshness="stale"] {
+  border-style: dashed;
+  opacity: 0.82;
+}
+
+.body-docker .docker-health-badge[data-freshness="unavailable"] {
+  background: #f3f1f5;
+  border-color: #8c8494;
+  color: #554e5c;
+}
+
 .body-docker .docker-card__toolbar {
   margin-bottom: 18px;
 }

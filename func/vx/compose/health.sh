@@ -3,16 +3,13 @@
 vx_compose_runtime_containers_json() {
     local owner="$1"
     local project="$2"
-    local root docker_bin container_id raw
+    local root docker_bin container_id raw raw_ids
     local -a container_ids=()
 
     vx_compose_require_project "$owner" "$project" || return 1
     root="$(vx_compose_project_root "$owner" "$project")"
     docker_bin="$(vx_compose_docker_bin)" || return 1
-    while IFS= read -r container_id; do
-        [[ "$container_id" =~ ^[a-f0-9]{12,64}$ ]] \
-            && container_ids+=("$container_id")
-    done < <(
+    raw_ids="$(
         env -i \
             PATH="$VX_COMPOSE_SAFE_PATH" \
             HOME="$root/runtime/home" \
@@ -21,7 +18,11 @@ vx_compose_runtime_containers_json() {
             --filter 'label=vx.managed=yes' \
             --filter "label=vx.user=$owner" \
             --filter "label=vx.project=$project"
-    )
+    )" || return 1
+    while IFS= read -r container_id; do
+        [[ "$container_id" =~ ^[a-f0-9]{12,64}$ ]] \
+            && container_ids+=("$container_id")
+    done <<<"$raw_ids"
     if ((${#container_ids[@]} == 0)); then
         printf '[]\n'
         return
@@ -60,19 +61,30 @@ vx_compose_health_collect() {
     local owner="$1"
     local project="$2"
     local root canonical metadata desired containers snapshot temp_file
+    local source freshness observed_at
 
     vx_compose_require_project "$owner" "$project" || return 1
     root="$(vx_compose_project_root "$owner" "$project")"
     canonical="$root/runtime/canonical.json"
     metadata="$root/project.conf"
     desired="$(vx_compose_meta_get "$metadata" STATE)" || return 1
-    containers="$(vx_compose_runtime_containers_json "$owner" "$project")" \
-        || return 1
+    observed_at="$(vx_compose_now)"
+    source=docker
+    freshness=fresh
+    if ! containers="$(
+        vx_compose_runtime_containers_json "$owner" "$project"
+    )"; then
+        containers='[]'
+        source=docker-unavailable
+        freshness=unavailable
+    fi
     snapshot="$(jq -n \
         --arg owner "$owner" \
         --arg project "$project" \
         --arg desired "$desired" \
-        --arg updated "$(vx_compose_now)" \
+        --arg observed_at "$observed_at" \
+        --arg source "$source" \
+        --arg freshness "$freshness" \
         --argjson canonical "$(cat "$canonical")" \
         --argjson containers "$containers" '
         def service_state($service):
@@ -94,7 +106,13 @@ vx_compose_health_collect() {
                     RUNTIME_STATE: "missing",
                     HEALTH: "unknown",
                     HEALTHCHECK: $has_check,
-                    CONTAINER_ID: null
+                    CONTAINER_ID: null,
+                    RESTART_COUNT: 0,
+                    STARTED_AT: null,
+                    UPTIME_SECONDS: 0,
+                    OOM_KILLED: false,
+                    FAILING_STREAK: 0,
+                    HEALTH_OUTPUT: ""
                 }
               else
                 $matches[0] as $container
@@ -120,7 +138,45 @@ vx_compose_health_collect() {
                         ) then $health else "unknown" end
                     ),
                     HEALTHCHECK: $has_check,
-                    CONTAINER_ID: $container.Id
+                    CONTAINER_ID: $container.Id,
+                    RESTART_COUNT: (
+                        $container.RestartCount // 0
+                        | if type == "number" and . >= 0 then . else 0 end
+                    ),
+                    STARTED_AT: (
+                        $container.State.StartedAt
+                        // null
+                        | if type == "string" and length > 0 then . else null end
+                    ),
+                    UPTIME_SECONDS: (
+                        ($container.State.StartedAt // "") as $started
+                        | (
+                            $started
+                            | sub("\\.[0-9]+Z$"; "Z")
+                            | fromdateiso8601?
+                        ) as $epoch
+                        | if $epoch == null then 0
+                          else ([0, (now - $epoch | floor)] | max)
+                          end
+                    ),
+                    OOM_KILLED: (
+                        $container.State.OOMKilled // false
+                        | if type == "boolean" then . else false end
+                    ),
+                    FAILING_STREAK: (
+                        $container.State.Health.FailingStreak // 0
+                        | if type == "number" and . >= 0 then . else 0 end
+                    ),
+                    HEALTH_OUTPUT: (
+                        [
+                            $container.State.Health.Log[]?
+                            | select((.Output // "") != "")
+                        ]
+                        | if length > 0
+                            then "[redacted health check output]"
+                            else ""
+                          end
+                    )
                 }
               end;
         (reduce ($canonical.services | keys[]) as $service
@@ -138,7 +194,11 @@ vx_compose_health_collect() {
             OWNER: $owner,
             PROJECT: $project,
             STATUS: $status,
-            UPDATED: $updated,
+            OBSERVED_AT: $observed_at,
+            UPDATED: $observed_at,
+            SOURCE: $source,
+            AGE_SECONDS: 0,
+            FRESHNESS: $freshness,
             SERVICES: $services
         }
     ')" || return 1
@@ -147,6 +207,58 @@ vx_compose_health_collect() {
     chmod 0640 "$temp_file"
     mv -f -- "$temp_file" "$root/runtime/last-health.json"
     cat "$root/runtime/last-health.json"
+}
+
+vx_compose_health_observation_json() {
+    local owner="$1"
+    local project="$2"
+    local max_age="${3:-120}"
+    local root snapshot now_epoch observed_epoch age
+
+    [[ "$max_age" =~ ^[0-9]+$ ]] || return 1
+    vx_compose_require_project "$owner" "$project" || return 1
+    root="$(vx_compose_project_root "$owner" "$project")"
+    snapshot="$root/runtime/last-health.json"
+    if [[ ! -f "$snapshot" || -L "$snapshot" ]]; then
+        jq -n \
+            --arg owner "$owner" \
+            --arg project "$project" \
+            --arg observed_at "$(vx_compose_now)" '{
+                OWNER: $owner,
+                PROJECT: $project,
+                STATUS: "unknown",
+                OBSERVED_AT: $observed_at,
+                UPDATED: $observed_at,
+                SOURCE: "snapshot-unavailable",
+                AGE_SECONDS: 0,
+                FRESHNESS: "unavailable",
+                SERVICES: {}
+            }'
+        return
+    fi
+    now_epoch="$(date -u +%s)"
+    observed_epoch="$(jq -r '
+        (.OBSERVED_AT // .UPDATED // "")
+        | sub("\\.[0-9]+Z$"; "Z")
+        | fromdateiso8601? // 0
+    ' "$snapshot")"
+    age=$((now_epoch - observed_epoch))
+    ((age >= 0)) || age=0
+    jq \
+        --argjson age "$age" \
+        --argjson max_age "$max_age" '
+            .AGE_SECONDS = $age
+            | .FRESHNESS = (
+                if (.FRESHNESS // "") == "unavailable"
+                    or $age > ($max_age * 10)
+                    then "unavailable"
+                elif $age > $max_age then "stale"
+                else "fresh"
+                end
+            )
+            | .OBSERVED_AT = (.OBSERVED_AT // .UPDATED)
+            | .SOURCE = (.SOURCE // "legacy-snapshot")
+        ' "$snapshot"
 }
 
 vx_compose_monitor_project() {

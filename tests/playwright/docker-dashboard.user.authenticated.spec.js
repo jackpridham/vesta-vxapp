@@ -151,3 +151,124 @@ test('Compose detail page renders project health, metrics, and revision context'
     /healthy|starting|degraded|unhealthy|unknown/i
   );
 });
+
+test('dashboard polling settles health and stats together and rejects an older poll', async ({ page }) => {
+  await loginAsRole(page, 'dockerUser');
+  const { card } = await requireRealDockerList(page);
+  let healthRequests = 0;
+  let statsRequests = 0;
+
+  await page.route('**/ajax/docker/actions/health.php', async (route) => {
+    healthRequests += 1;
+    const requestNumber = healthRequests;
+    if (requestNumber === 1) {
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        STATUS: requestNumber === 1 ? 'unhealthy' : 'healthy',
+        HEALTH_STATUS: requestNumber === 1 ? 'unhealthy' : 'healthy',
+        OBSERVED_AT: requestNumber === 1
+          ? '2026-01-01T00:00:00Z'
+          : new Date().toISOString(),
+        FRESHNESS: requestNumber === 1 ? 'stale' : 'fresh',
+      }),
+    }).catch(() => {});
+  });
+  await page.route('**/ajax/docker/actions/stats.php', async (route) => {
+    statsRequests += 1;
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        LATEST: {
+          CPU_PCT: statsRequests === 1 ? 99 : 1.25,
+          MEM_MB: 2048,
+          RX_MBPS: 1.234,
+          TX_MBPS: 2.345,
+        },
+      }),
+    }).catch(() => {});
+  });
+  await page.route('**/ajax/docker/actions/alerts.php', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({ ALERTS: [] }),
+  }));
+
+  await page.evaluate(() => window.VX_DOCKER_POLLING_TEST.refresh());
+  await page.waitForTimeout(20);
+  await page.evaluate(() => window.VX_DOCKER_POLLING_TEST.refresh());
+
+  await expect(card.locator('.docker-card-health-badge')).toHaveText('healthy');
+  await expect(card.locator('.docker-card-health-badge')).toHaveAttribute(
+    'data-freshness',
+    'fresh'
+  );
+  await expect(card.locator('.docker-card-latest-cpu')).toHaveText('1.3%');
+  await expect(card.locator('.docker-card-latest-mem')).toHaveText('2.0 GiB');
+  await expect(card.locator('.docker-card-latest-rx')).toHaveText('1.23 MiB/s');
+  await expect(card.locator('.docker-card-latest-tx')).toHaveText('2.35 MiB/s');
+
+  await page.unroute('**/ajax/docker/actions/health.php');
+  await page.unroute('**/ajax/docker/actions/stats.php');
+  await page.route('**/ajax/docker/actions/health.php', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({
+      STATUS: 'healthy',
+      HEALTH_STATUS: 'healthy',
+      OBSERVED_AT: new Date().toISOString(),
+      FRESHNESS: 'fresh',
+    }),
+  }));
+  await page.route('**/ajax/docker/actions/stats.php', (route) => route.abort());
+  await page.evaluate(() => window.VX_DOCKER_POLLING_TEST.refresh());
+  await expect(card.locator('.docker-card-health-badge')).toHaveText('healthy');
+  await expect(card.locator('.docker-card-latest-cpu')).toHaveText('No data');
+
+  await page.unroute('**/ajax/docker/actions/health.php');
+  await page.unroute('**/ajax/docker/actions/stats.php');
+  await page.route('**/ajax/docker/actions/health.php', (route) => route.abort());
+  await page.route('**/ajax/docker/actions/stats.php', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({
+      LATEST: { CPU_PCT: 2, MEM_MB: 512, RX_MBPS: 0, TX_MBPS: 0 },
+    }),
+  }));
+  await page.evaluate(() => window.VX_DOCKER_POLLING_TEST.refresh());
+  await expect(card.locator('.docker-card-health-badge')).toHaveText('unknown');
+  await expect(card.locator('.docker-card-health-badge')).toHaveAttribute(
+    'data-freshness',
+    'unavailable'
+  );
+  await expect(card.locator('.docker-card-latest-cpu')).toHaveText('2.0%');
+
+  await page.unroute('**/ajax/docker/actions/stats.php');
+  await page.route('**/ajax/docker/actions/stats.php', (route) => route.abort());
+  await page.evaluate(() => window.VX_DOCKER_POLLING_TEST.refresh());
+  await expect(card.locator('.docker-card-health-badge')).toHaveText('unknown');
+  await expect(card.locator('.docker-card-latest-cpu')).toHaveText('No data');
+
+  await page.unroute('**/ajax/docker/actions/health.php');
+  await page.unroute('**/ajax/docker/actions/stats.php');
+  await page.route('**/ajax/docker/actions/health.php', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await route.fulfill({ contentType: 'application/json', body: '{}' })
+      .catch(() => {});
+  });
+  await page.route('**/ajax/docker/actions/stats.php', async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    await route.fulfill({ contentType: 'application/json', body: '{}' })
+      .catch(() => {});
+  });
+  await page.evaluate(() => {
+    window.DOCKER_LIST.requestTimeoutMs = 20;
+    window.VX_DOCKER_POLLING_TEST.refresh();
+  });
+  await page.waitForTimeout(50);
+  await expect(card.locator('.docker-card-health-badge')).toHaveText('unknown');
+  await expect(card.locator('.docker-card-latest-cpu')).toHaveText('No data');
+
+  await page.evaluate(() => window.VX_DOCKER_POLLING_TEST.refresh());
+  await page.goto('/list/docker/');
+  await expect(page.locator('body')).toBeVisible();
+});

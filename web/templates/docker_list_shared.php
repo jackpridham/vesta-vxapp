@@ -45,11 +45,27 @@
       $docker_card_id = 'docker-card-'.$docker_card_owner.'-'.$docker_card_name;
       $docker_card_status = isset($container['STATUS']) ? $container['STATUS'] : '';
       $docker_health_status = isset($container['HEALTH_STATUS']) && $container['HEALTH_STATUS'] !== '' ? $container['HEALTH_STATUS'] : 'unknown';
-      $docker_route_domain = isset($container['DOMAIN']) && $container['DOMAIN'] !== '' ? $container['DOMAIN'] : __('No route');
-      $docker_route_path = isset($container['ROUTE_PATH']) && $container['ROUTE_PATH'] !== '' ? $container['ROUTE_PATH'] : '/';
-      $docker_proxy_target = isset($container['PROXY_TARGET']) && $container['PROXY_TARGET'] !== '' ? $container['PROXY_TARGET'] : __('No target');
+      $docker_route_count = isset($container['PROJECT_ROUTE_COUNT'])
+          ? (int) $container['PROJECT_ROUTE_COUNT']
+          : 0;
+      $docker_managed_targets = !empty($container['MANAGED_ROUTE_TARGETS'])
+          && is_array($container['MANAGED_ROUTE_TARGETS'])
+          ? implode(', ', $container['MANAGED_ROUTE_TARGETS'])
+          : __('No managed route targets');
+      $docker_endpoint_displays = array();
+      if (!empty($container['PUBLISHED_ENDPOINTS'])
+          && is_array($container['PUBLISHED_ENDPOINTS'])) {
+          foreach ($container['PUBLISHED_ENDPOINTS'] as $docker_endpoint) {
+              if (is_array($docker_endpoint)
+                  && !empty($docker_endpoint['DISPLAY'])) {
+                  $docker_endpoint_displays[] = (string) $docker_endpoint['DISPLAY'];
+              }
+          }
+      }
+      $docker_published_endpoints = !empty($docker_endpoint_displays)
+          ? implode(', ', $docker_endpoint_displays)
+          : __('No published endpoints');
       $docker_restart_policy = isset($container['RESTART_POLICY']) && $container['RESTART_POLICY'] !== '' ? $container['RESTART_POLICY'] : __('No restart policy');
-      $docker_host_port = isset($container['HOST_PORT']) && $container['HOST_PORT'] !== '' ? $container['HOST_PORT'] : __('No port');
       $docker_query_owner = $docker_actor_is_admin ? '&user='.urlencode($docker_card_owner) : '';
       $docker_action = ($docker_card_status === 'running') ? 'stop' : 'start';
       $docker_card_can_mutate = vx_compose_actor_can_mutate_project(
@@ -69,7 +85,8 @@
               owner: '<?=htmlspecialchars($docker_card_owner, ENT_QUOTES)?>',
               name: '<?=htmlspecialchars($docker_card_name, ENT_QUOTES)?>',
               healthStatus: '<?=htmlspecialchars($docker_health_status, ENT_QUOTES)?>',
-              lastHealthAt: '<?=htmlspecialchars(isset($container['LAST_HEALTH_AT']) ? $container['LAST_HEALTH_AT'] : '', ENT_QUOTES)?>'
+              lastHealthAt: '<?=htmlspecialchars(isset($container['LAST_HEALTH_AT']) ? $container['LAST_HEALTH_AT'] : '', ENT_QUOTES)?>',
+              healthFreshness: '<?=htmlspecialchars(isset($container['HEALTH_FRESHNESS']) ? $container['HEALTH_FRESHNESS'] : 'unavailable', ENT_QUOTES)?>'
             });
           </script>
           <article id="<?=htmlspecialchars($docker_card_id, ENT_QUOTES)?>" class="l-unit docker-card <?php if ($docker_card_status !== 'running') echo 'l-unit--suspended'; ?>" data-owner="<?=htmlspecialchars($docker_card_owner, ENT_QUOTES)?>" data-name="<?=htmlspecialchars($docker_card_name, ENT_QUOTES)?>" data-status="<?=htmlspecialchars($docker_card_status !== '' ? $docker_card_status : 'unknown', ENT_QUOTES)?>">
@@ -83,7 +100,7 @@
                   </div>
                   <div class="docker-badge-group">
                     <span class="docker-status-badge docker-card-status" data-status="<?=htmlspecialchars($docker_card_status !== '' ? $docker_card_status : 'unknown', ENT_QUOTES)?>"><?=htmlspecialchars($docker_card_status !== '' ? $docker_card_status : __('unknown'), ENT_QUOTES)?></span>
-                    <span class="docker-health-badge docker-card-health-badge" data-health-state="<?=htmlspecialchars($docker_health_status, ENT_QUOTES)?>"><?=htmlspecialchars($docker_health_status, ENT_QUOTES)?></span>
+                    <span class="docker-health-badge docker-card-health-badge" role="status" aria-live="polite" aria-label="<?=htmlspecialchars('Health '.$docker_health_status.'; observation '.(isset($container['HEALTH_FRESHNESS']) ? $container['HEALTH_FRESHNESS'] : 'unavailable'), ENT_QUOTES)?>" data-health-state="<?=htmlspecialchars($docker_health_status, ENT_QUOTES)?>" data-freshness="<?=htmlspecialchars(isset($container['HEALTH_FRESHNESS']) ? $container['HEALTH_FRESHNESS'] : 'unavailable', ENT_QUOTES)?>"><?=htmlspecialchars($docker_health_status, ENT_QUOTES)?></span>
                   </div>
                 </div>
               </div>
@@ -116,17 +133,13 @@
                 <span class="docker-stat__meta"><?=htmlspecialchars(isset($container['PROFILE']) ? $container['PROFILE'] : 'standard', ENT_QUOTES)?></span>
               </div>
               <div class="docker-stat">
-                <span class="docker-stat__label"><?=__('Route')?></span>
-                <b class="docker-stat__value"><?=htmlspecialchars($docker_route_domain, ENT_QUOTES)?></b>
-                <span class="docker-stat__meta"><?=htmlspecialchars($docker_route_path, ENT_QUOTES)?></span>
+                <span class="docker-stat__label"><?=__('Project routes')?></span>
+                <b class="docker-stat__value"><?=htmlspecialchars($docker_route_count, ENT_QUOTES)?></b>
+                <span class="docker-stat__meta"><?=htmlspecialchars($docker_managed_targets, ENT_QUOTES)?></span>
               </div>
               <div class="docker-stat">
-                <span class="docker-stat__label"><?=__('Proxy target')?></span>
-                <b class="docker-stat__value docker-mono"><?=htmlspecialchars($docker_proxy_target, ENT_QUOTES)?></b>
-              </div>
-              <div class="docker-stat">
-                <span class="docker-stat__label"><?=__('Host port')?></span>
-                <b class="docker-stat__value docker-mono"><?=htmlspecialchars($docker_host_port, ENT_QUOTES)?></b>
+                <span class="docker-stat__label"><?=__('Published endpoints')?></span>
+                <b class="docker-stat__value docker-mono"><?=htmlspecialchars($docker_published_endpoints, ENT_QUOTES)?></b>
               </div>
               <div class="docker-stat">
                 <span class="docker-stat__label">CPU</span>
@@ -335,7 +348,7 @@
           <article class="docker-metric-card"><span class="docker-metric-card__label"><?=__('Memory')?></span><b id="docker-card-mem" class="docker-metric-card__value"><?=__('No data')?></b></article>
           <article class="docker-metric-card"><span class="docker-metric-card__label">RX</span><b id="docker-card-rx" class="docker-metric-card__value"><?=__('No data')?></b></article>
           <article class="docker-metric-card"><span class="docker-metric-card__label">TX</span><b id="docker-card-tx" class="docker-metric-card__value"><?=__('No data')?></b></article>
-          <article class="docker-metric-card"><span class="docker-metric-card__label"><?=__('Health state')?></span><b id="docker-card-health-status" class="docker-metric-card__value docker-health-badge" data-health-state="unknown"><?=__('No data')?></b></article>
+          <article class="docker-metric-card"><span class="docker-metric-card__label"><?=__('Health state')?></span><b id="docker-card-health-status" class="docker-metric-card__value docker-health-badge" role="status" aria-live="polite" aria-label="<?=__('Health unknown; observation unavailable')?>" data-health-state="unknown" data-freshness="unavailable"><?=__('No data')?></b></article>
           <article class="docker-metric-card"><span class="docker-metric-card__label"><?=__('Last health update')?></span><b id="docker-card-health-updated" class="docker-metric-card__value"><?=__('No data')?></b></article>
           <article class="docker-metric-card docker-metric-card--wide"><span class="docker-metric-card__label"><?=__('Open alerts')?></span><b id="docker-card-alert-count" class="docker-metric-card__value">0</b></article>
         </div>

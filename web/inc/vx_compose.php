@@ -720,6 +720,85 @@ function vx_compose_state_for_legacy_view($state)
     return $state !== '' ? $state : 'unknown';
 }
 
+function vx_compose_normalize_published_endpoints($service_summary)
+{
+    if (!is_array($service_summary)) {
+        return array();
+    }
+
+    $endpoints = array();
+    ksort($service_summary, SORT_STRING);
+    foreach ($service_summary as $service => $summary) {
+        if (!is_string($service)
+            || preg_match('/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/', $service) !== 1
+            || !is_array($summary)
+            || !isset($summary['PORTS'])
+            || !is_array($summary['PORTS'])) {
+            continue;
+        }
+        foreach ($summary['PORTS'] as $mapping) {
+            if (!is_string($mapping)
+                || preg_match(
+                    '/^(?:'
+                    .'(\[(?:[0-9A-Fa-f:]+)\])'
+                    .'|'
+                    .'((?:[0-9]{1,3}\.){3}[0-9]{1,3})'
+                    .'):([0-9]+(?:-[0-9]+)?):'
+                    .'([0-9]+(?:-[0-9]+)?)\/(tcp|udp)$/',
+                    $mapping,
+                    $matches
+                ) !== 1) {
+                continue;
+            }
+
+            $host_ip = $matches[1] !== ''
+                ? substr($matches[1], 1, -1)
+                : $matches[2];
+            if (filter_var($host_ip, FILTER_VALIDATE_IP) === false) {
+                continue;
+            }
+            $host_port = $matches[3];
+            $container_port = $matches[4];
+            $valid = true;
+            foreach (array($host_port, $container_port) as $port_range) {
+                $bounds = array_map('intval', explode('-', $port_range));
+                if ($bounds[0] < 1 || $bounds[0] > 65535
+                    || (count($bounds) === 2
+                        && ($bounds[1] < $bounds[0]
+                            || $bounds[1] > 65535))) {
+                    $valid = false;
+                }
+            }
+            $host_bounds = explode('-', $host_port);
+            $container_bounds = explode('-', $container_port);
+            if (count($host_bounds) !== count($container_bounds)
+                || (count($host_bounds) === 2
+                    && ((int) $host_bounds[1] - (int) $host_bounds[0])
+                        !== ((int) $container_bounds[1]
+                            - (int) $container_bounds[0]))) {
+                $valid = false;
+            }
+            if (!$valid) {
+                continue;
+            }
+
+            $display_ip = strpos($host_ip, ':') !== false
+                ? '['.$host_ip.']'
+                : $host_ip;
+            $endpoints[] = array(
+                'SERVICE' => $service,
+                'HOST_IP' => $host_ip,
+                'HOST_PORT' => $host_port,
+                'CONTAINER_PORT' => $container_port,
+                'PROTOCOL' => $matches[5],
+                'DISPLAY' => $display_ip.':'.$host_port
+                    .' → '.$container_port.'/'.$matches[5],
+            );
+        }
+    }
+    return $endpoints;
+}
+
 function vx_compose_normalize_project($project)
 {
     if (!is_array($project)
@@ -750,6 +829,30 @@ function vx_compose_normalize_project($project)
         && count($services) === 1
         ? $project['SIMPLE']
         : array();
+    $health_observation = isset($project['HEALTH_OBSERVATION'])
+        && is_array($project['HEALTH_OBSERVATION'])
+        ? $project['HEALTH_OBSERVATION']
+        : array();
+    $published_endpoints = vx_compose_normalize_published_endpoints(
+        isset($project['SERVICE_SUMMARY'])
+            ? $project['SERVICE_SUMMARY']
+            : array()
+    );
+    $managed_route_targets = array();
+    foreach ($routes as $route) {
+        if (!is_array($route)
+            || empty($route['HOST_PORT'])
+            || !preg_match('/^[0-9]+$/', (string) $route['HOST_PORT'])) {
+            continue;
+        }
+        $scheme = isset($route['SCHEME'])
+            && in_array($route['SCHEME'], array('http', 'https'), true)
+            ? $route['SCHEME']
+            : 'http';
+        $managed_route_targets[] = $scheme
+            .'://127.0.0.1:'.(string) $route['HOST_PORT'];
+    }
+    $managed_route_targets = array_values(array_unique($managed_route_targets));
 
     return array_merge($project, $simple, array(
         'NAME' => $name,
@@ -763,9 +866,12 @@ function vx_compose_normalize_project($project)
         'HEALTH_STATUS' => isset($project['HEALTH'])
             ? (string) $project['HEALTH']
             : 'unknown',
-        'LAST_HEALTH_AT' => isset($project['UPDATED'])
-            ? (string) $project['UPDATED']
+        'LAST_HEALTH_AT' => isset($health_observation['OBSERVED_AT'])
+            ? (string) $health_observation['OBSERVED_AT']
             : '',
+        'HEALTH_FRESHNESS' => isset($health_observation['FRESHNESS'])
+            ? (string) $health_observation['FRESHNESS']
+            : 'unavailable',
         'HOST_PORT' => !empty($simple) && isset($simple['HOST_PORT'])
             ? (string) $simple['HOST_PORT']
             : (isset($first_route['HOST_PORT'])
@@ -805,6 +911,10 @@ function vx_compose_normalize_project($project)
         'SERVICE_COUNT' => count($services),
         'SERVICES' => $services,
         'IMAGES' => $images,
+        'PUBLISHED_ENDPOINTS' => $published_endpoints,
+        'PROJECT_ROUTES' => $routes,
+        'PROJECT_ROUTE_COUNT' => count($routes),
+        'MANAGED_ROUTE_TARGETS' => $managed_route_targets,
         'REVISION' => isset($project['REVISION']) ? (int) $project['REVISION'] : 0,
         'IS_COMPOSE' => true,
         'IS_SIMPLE' => !empty($simple),
@@ -962,8 +1072,8 @@ function vx_compose_health_payload($owner, $project)
     $payload['HEALTH_STATUS'] = isset($payload['STATUS'])
         ? $payload['STATUS']
         : 'unknown';
-    $payload['LAST_HEALTH_AT'] = isset($payload['UPDATED'])
-        ? $payload['UPDATED']
+    $payload['LAST_HEALTH_AT'] = isset($payload['OBSERVED_AT'])
+        ? $payload['OBSERVED_AT']
         : '';
     $payload['NAME'] = $project;
     return $payload;

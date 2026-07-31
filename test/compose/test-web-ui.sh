@@ -80,6 +80,21 @@ expect_pattern web/templates/docker_list_shared.php \
     'all Compose quota dimensions are rendered'
 expect_pattern web/templates/docker_project_shared.php 'Advanced update' \
     'standard owners can discover advanced update'
+expect_pattern web/js/pages/list_docker.js \
+    '\$\.when\(statsRequest, healthRequest\)' \
+    'dashboard settles fresh health and metrics together'
+expect_pattern web/js/pages/list_docker.js \
+    'generation !== pollGeneration' \
+    'dashboard rejects responses from an older poll'
+expect_pattern web/js/pages/list_docker.js \
+    'beforeunload pagehide' \
+    'dashboard cancels polling during navigation'
+expect_pattern web/js/pages/list_docker.js \
+    'formatCapacityMiB|MiB.*GiB' \
+    'dashboard shares binary capacity formatting'
+expect_pattern web/templates/docker_list_shared.php \
+    'data-freshness.*aria-label|aria-label.*data-freshness' \
+    'dashboard exposes health freshness to assistive technology'
 
 expect_pattern web/add/docker/project/index.php "myvesta_logged_user|\\\$user" \
     'advanced page is tied to the authenticated actor'

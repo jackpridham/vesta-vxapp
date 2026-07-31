@@ -1,0 +1,47 @@
+#!/bin/bash
+# info: list native ingress consumers for a Docker Compose project
+# options: USER PROJECT [FORMAT]
+
+user=$1
+compose_project=$2
+format=${3-json}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '2' "$#" 'USER PROJECT [FORMAT]'
+[ "$#" -le 3 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+
+consumers="$(vx_compose_ingress_consumers_json "$user" "$compose_project")" \
+    || check_result "$E_INVALID" 'Docker Compose ingress consumer listing failed'
+actor="$(id -un)"
+if [[ "$actor" != root && "$actor" != admin ]]; then
+    consumers="$(jq -n --argjson count "$(jq 'length' <<<"$consumers")" \
+        '{COUNT: $count}')"
+fi
+case "$format" in
+    json)
+        printf '%s\n' "$consumers"
+        ;;
+    plain)
+        if jq -e 'has("COUNT")' <<<"$consumers" >/dev/null 2>&1; then
+            jq -r '.COUNT | tostring' <<<"$consumers"
+        else
+            jq -r '
+                .[]
+                | [
+                    .OWNER, .DOMAIN, .SCHEME, .PATH, .TARGET,
+                    .HEALTH, .CONFIG_FRESHNESS,
+                    (.HEADER_NAMES | join(","))
+                ]
+                | @tsv
+            ' <<<"$consumers"
+        fi
+        ;;
+    *)
+        check_result "$E_INVALID" 'format must be json or plain'
+        ;;
+esac
+exit

@@ -38,7 +38,7 @@
     </div>
     <div class="docker-badge-group">
       <span class="docker-status-badge" data-status="<?=htmlspecialchars($docker_project['STATUS'], ENT_QUOTES)?>"><?=htmlspecialchars($docker_project['STATE'], ENT_QUOTES)?></span>
-      <span class="docker-health-badge" data-health-state="<?=htmlspecialchars($docker_project['HEALTH_STATUS'], ENT_QUOTES)?>"><?=htmlspecialchars($docker_project['HEALTH_STATUS'], ENT_QUOTES)?></span>
+      <span class="docker-health-badge" role="status" aria-live="polite" aria-label="<?=htmlspecialchars('Health '.$docker_project['HEALTH_STATUS'].'; observation '.(isset($docker_project_health['FRESHNESS']) ? $docker_project_health['FRESHNESS'] : 'unavailable'), ENT_QUOTES)?>" data-health-state="<?=htmlspecialchars($docker_project['HEALTH_STATUS'], ENT_QUOTES)?>" data-freshness="<?=htmlspecialchars(isset($docker_project_health['FRESHNESS']) ? $docker_project_health['FRESHNESS'] : 'unavailable', ENT_QUOTES)?>"><?=htmlspecialchars($docker_project['HEALTH_STATUS'], ENT_QUOTES)?></span>
     </div>
   </section>
 
