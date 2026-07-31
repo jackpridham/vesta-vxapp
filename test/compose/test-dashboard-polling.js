@@ -57,9 +57,13 @@ vm.runInNewContext(source, context, { filename: 'list_docker.js' });
 const polling = context.window.VX_DOCKER_POLLING_TEST;
 assert(polling, 'polling test contract was not exported');
 assert.strictEqual(polling.formatCpu(1.234), '1.2%');
+assert.strictEqual(polling.formatCpu(null), 'No data');
+assert.strictEqual(polling.formatCpu(''), 'No data');
 assert.strictEqual(polling.formatCapacityMiB(512), '512.0 MiB');
 assert.strictEqual(polling.formatCapacityMiB(2048), '2.0 GiB');
+assert.strictEqual(polling.formatCapacityMiB(null), 'No data');
 assert.strictEqual(polling.formatNetwork(1.234), '1.23 MiB/s');
+assert.strictEqual(polling.formatNetwork(null), 'No data');
 assert.match(
   polling.formatTimestamp(new Date(Date.now() - 5000).toISOString()),
   /\(5s ago\)$/

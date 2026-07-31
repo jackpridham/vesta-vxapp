@@ -51,14 +51,22 @@
         activeRequests = [];
     }
 
-    function formatCpu(value) {
+    function metricNumber(value) {
+        if (value === null || value === undefined || value === '') {
+            return null;
+        }
         var numeric = Number(value);
-        return Number.isFinite(numeric) ? numeric.toFixed(1) + '%' : 'No data';
+        return Number.isFinite(numeric) ? numeric : null;
+    }
+
+    function formatCpu(value) {
+        var numeric = metricNumber(value);
+        return numeric !== null ? numeric.toFixed(1) + '%' : 'No data';
     }
 
     function formatCapacityMiB(value) {
-        var numeric = Number(value);
-        if (!Number.isFinite(numeric)) {
+        var numeric = metricNumber(value);
+        if (numeric === null) {
             return 'No data';
         }
         return numeric >= 1024
@@ -67,8 +75,8 @@
     }
 
     function formatNetwork(value) {
-        var numeric = Number(value);
-        return Number.isFinite(numeric)
+        var numeric = metricNumber(value);
+        return numeric !== null
             ? numeric.toFixed(2) + ' MiB/s'
             : 'No data';
     }
@@ -149,24 +157,28 @@
             var latest = result.metric && result.metric.LATEST
                 ? result.metric.LATEST
                 : {};
+            var cpu = metricNumber(latest.CPU_PCT);
+            var memory = metricNumber(latest.MEM_MB);
+            var received = metricNumber(latest.RX_MBPS);
+            var transmitted = metricNumber(latest.TX_MBPS);
             var health = result.health || unavailableHealth();
             var healthStatus = health.HEALTH_STATUS || health.STATUS || 'unknown';
             var freshness = health.FRESHNESS || 'unavailable';
 
-            if (Number.isFinite(Number(latest.CPU_PCT))) {
-                cpuTotal += Number(latest.CPU_PCT);
+            if (cpu !== null) {
+                cpuTotal += cpu;
                 cpuCount += 1;
             }
-            if (Number.isFinite(Number(latest.MEM_MB))) {
-                memTotal += Number(latest.MEM_MB);
+            if (memory !== null) {
+                memTotal += memory;
                 memCount += 1;
             }
-            if (Number.isFinite(Number(latest.RX_MBPS))) {
-                rxTotal += Number(latest.RX_MBPS);
+            if (received !== null) {
+                rxTotal += received;
                 rxCount += 1;
             }
-            if (Number.isFinite(Number(latest.TX_MBPS))) {
-                txTotal += Number(latest.TX_MBPS);
+            if (transmitted !== null) {
+                txTotal += transmitted;
                 txCount += 1;
             }
             if ((healthPriority[healthStatus] || 2) > bestHealthScore) {
