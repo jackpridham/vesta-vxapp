@@ -1,0 +1,45 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+owner="${1:?owner required}"
+project="${2:?project required}"
+vesta_root="${VESTA:-/usr/local/vesta}"
+config="$vesta_root/conf/vx-compose-replication-local-fixture.conf"
+[[ "$owner" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ \
+    && "$project" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || exit 1
+[[ -f /proc/self/fd/3 ]] || exit 1
+if [[ ! -f "$config" || -L "$config" || "$(stat -c %a "$config")" != 600 ]]; then
+    jq -cn '{STATE:"not-configured"}'
+    exit
+fi
+if [[ "$EUID" -eq 0 && "$(stat -c %u "$config")" -ne 0 ]]; then
+    jq -cn '{STATE:"not-configured"}'
+    exit
+fi
+target_root="$(awk -F "'" '
+    $0 ~ /^TARGET_ROOT='\''\/[^'\'']*'\''$/ { print $2 }
+' "$config")"
+if [[ -z "$target_root" || ! -d "$target_root" || -L "$target_root" \
+    || "$(stat -c %a "$target_root")" != 700 ]]; then
+    jq -cn '{STATE:"not-configured"}'
+    exit
+fi
+if [[ "$EUID" -eq 0 && "$(stat -c %u "$target_root")" -ne 0 ]]; then
+    jq -cn '{STATE:"not-configured"}'
+    exit
+fi
+destination="$target_root/$owner/$project"
+install -d -m 0700 "$target_root/$owner" "$destination"
+timestamp="$(date -u +%Y%m%dT%H%M%S.%NZ)"
+output="$destination/$project-$timestamp.age"
+temp="$(mktemp "$destination/.replication.XXXXXX")"
+trap 'rm -f -- "$temp"' EXIT
+chmod 0600 "$temp"
+cp -- /proc/self/fd/3 "$temp"
+cmp -s /proc/self/fd/3 "$temp"
+chmod 0600 "$temp"
+mv -- "$temp" "$output"
+trap - EXIT
+reference="$(basename -- "$output")"
+jq -cn --arg reference "$reference" \
+    '{STATE:"succeeded",REFERENCE:("local-fixture:"+$reference)}'

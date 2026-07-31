@@ -1,0 +1,19 @@
+#!/bin/bash
+# info: run a managed Docker Compose backup policy now
+# options: USER PROJECT
+
+user=$1
+compose_project=$2
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '2' "$#" 'USER PROJECT'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+vx_compose_backup_policy_run "$user" "$compose_project" \
+    || check_result "$E_INVALID" 'Docker Compose backup policy run failed'
+log_history "ran Docker Compose backup policy $compose_project"
+log_event "$OK" "$ARGUMENTS"
+exit

@@ -56,6 +56,7 @@ done < <(vx_docker_list_all_records)
 
 if [ "$period" = 'daily' ]; then
     vx_compose_preview_gc >/dev/null 2>&1 || true
+    vx_compose_backup_policies_run_due >/dev/null 2>&1 || true
     vx_compose_monitor_all
 fi
 

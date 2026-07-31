@@ -31,7 +31,7 @@ vx_compose_backup_member_is_expected() {
     case "$member" in
         ''|manifest.json|manifest.sha256|encrypted-secrets.age|\
         control|control/compose.yaml|control/canonical.json|\
-        control/project.conf|control/policy.conf|control/variables.env|\
+        control/project.conf|control/policy.conf|control/backup-policy.conf|control/variables.env|\
         control/images.json|control/secrets.json|\
         control/secret-integrity.json|control/audit.log|\
         control/routes.conf|control/simple.json|control/alerts.conf|\
@@ -428,6 +428,14 @@ vx_compose_restore_prepare() {
         || return 1
     archived_project="$(vx_compose_meta_get "$extracted/control/project.conf" PROJECT)" \
         || return 1
+    if [[ -f "$extracted/control/backup-policy.conf" ]]; then
+        vx_compose_backup_policy_file_validate \
+            "$extracted/control/backup-policy.conf" \
+            || {
+                vx_compose_error 'restore backup policy metadata is invalid'
+                return 1
+            }
+    fi
     profile="$(vx_compose_meta_get "$extracted/control/project.conf" PROFILE)" \
         || return 1
     [[ "$archived_owner" == "$owner" && "$archived_project" == "$project" ]] \
@@ -1094,7 +1102,7 @@ vx_compose_restore_project() {
     local project="$2"
     local archive="$3"
     local mode="${4:-validate}"
-    local work_root extracted candidate desired_state result
+    local work_root extracted candidate desired_state result root policy_snapshot=''
     local apply_locked=no ports_locked=no quota_locked=no route_locked=no
 
     [[ "$mode" == validate || "$mode" == apply ]] \
@@ -1151,6 +1159,19 @@ vx_compose_restore_project() {
         return 1
     }
     route_locked=yes
+    root="$(vx_compose_project_root "$owner" "$project")"
+    if [[ -f "$root/backup-policy.conf" \
+        && ! -L "$root/backup-policy.conf" ]]; then
+        policy_snapshot="$work_root/backup-policy.before"
+        install -m 0600 "$root/backup-policy.conf" "$policy_snapshot" || {
+            vx_compose_routes_lock_release
+            vx_compose_owner_quota_lock_release
+            vx_compose_ports_lock_release
+            vx_compose_lock_release
+            rm -rf -- "$work_root"
+            return 1
+        }
+    fi
     if ! vx_compose_restore_prepare \
         "$owner" "$project" "$extracted" "$candidate"; then
         vx_compose_routes_lock_release
@@ -1168,6 +1189,21 @@ vx_compose_restore_project() {
         vx_compose_restore_project_new \
             "$owner" "$project" "$extracted" "$candidate" "$desired_state"
         result=$?
+    fi
+    if [[ "$result" -eq 0 \
+        && -f "$extracted/control/backup-policy.conf" ]]; then
+        if ! vx_compose_backup_policy_restore_reset "$owner" "$project" \
+            "$extracted/control/backup-policy.conf"; then
+            if [[ -n "$policy_snapshot" ]]; then
+                install -m 0600 "$policy_snapshot" \
+                    "$root/.backup-policy.restore-rollback" \
+                    && mv -f -- "$root/.backup-policy.restore-rollback" \
+                        "$root/backup-policy.conf" || :
+            else
+                rm -f -- "$root/backup-policy.conf"
+            fi
+            result=1
+        fi
     fi
     rm -rf -- "$work_root"
     [[ "$route_locked" != yes ]] || vx_compose_routes_lock_release

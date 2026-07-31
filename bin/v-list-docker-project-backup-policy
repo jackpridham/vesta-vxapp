@@ -1,0 +1,23 @@
+#!/bin/bash
+# info: list a managed Docker Compose backup policy
+# options: USER PROJECT [FORMAT]
+
+user=$1
+compose_project=$2
+format=${3-json}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '2' "$#" 'USER PROJECT [FORMAT]'
+[ "$#" -le 3 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+policy="$(vx_compose_backup_policy_list_json "$user" "$compose_project")" \
+    || check_result "$E_INVALID" 'Docker Compose backup policy listing failed'
+case "$format" in
+    json) printf '%s\n' "$policy" ;;
+    plain) jq -r 'to_entries[] | [.key, (.value|tostring)] | @tsv' <<<"$policy" ;;
+    *) check_result "$E_INVALID" 'format must be json or plain' ;;
+esac
+exit

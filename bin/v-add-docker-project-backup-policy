@@ -1,0 +1,30 @@
+#!/bin/bash
+# info: add or change a managed Docker Compose backup policy
+# options: USER PROJECT ENABLED SCHEDULE RETAIN_DAILY RETAIN_WEEKLY ENCRYPTION_REQUIRED REPLICATION_ADAPTER FRESHNESS_SECONDS RESTORE_TEST_INTERVAL_SECONDS
+
+user=$1
+compose_project=$2
+enabled=$3
+schedule=$4
+retain_daily=$5
+retain_weekly=$6
+encryption_required=$7
+replication_adapter=$8
+freshness_seconds=$9
+restore_test_interval_seconds=${10}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '10' "$#" 'USER PROJECT ENABLED SCHEDULE RETAIN_DAILY RETAIN_WEEKLY ENCRYPTION_REQUIRED REPLICATION_ADAPTER FRESHNESS_SECONDS RESTORE_TEST_INTERVAL_SECONDS'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+vx_compose_backup_policy_add "$user" "$compose_project" "$enabled" "$schedule" \
+    "$retain_daily" "$retain_weekly" "$encryption_required" \
+    "$replication_adapter" "$freshness_seconds" \
+    "$restore_test_interval_seconds" \
+    || check_result "$E_INVALID" 'Docker Compose backup policy update failed'
+log_history "updated Docker Compose backup policy $compose_project"
+log_event "$OK" "$ARGUMENTS"
+exit

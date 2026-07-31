@@ -31,6 +31,66 @@ vx_compose_alert_notify() {
         "$owner" "$project" "$type" "$value"
 }
 
+vx_compose_backup_alert_set() {
+    local owner="$1" project="$2" type="$3" message="$4"
+    local root old updated temp aid notify=no
+    case "$type" in
+        missed-run|backup-failure|freshness-breach|encryption-unavailable|\
+        replication-lag|replication-failure|restore-test-failure) ;;
+        *) return 1 ;;
+    esac
+    vx_compose_require_project "$owner" "$project" || return 1
+    root="$(vx_compose_project_root "$owner" "$project")"
+    message="$(vx_compose_redact_text "$root" "$message")"
+    old='[]'
+    [[ ! -f "$root/alerts.json" ]] \
+        || old="$(jq -c 'if type=="array" then . else [] end' \
+            "$root/alerts.json" 2>/dev/null)" || old='[]'
+    if jq -e --arg type "$type" \
+        'any(.[]; .TYPE==$type and .STATUS=="open")' <<<"$old" >/dev/null; then
+        return 0
+    fi
+    aid="$(jq '[.[].AID] | max // 0 | . + 1' <<<"$old")"
+    updated="$(jq -c --arg type "$type" --arg value "$message" \
+        --arg now "$(vx_compose_now)" --argjson aid "$aid" \
+        '. + [{AID:$aid,TYPE:$type,STATUS:"open",ACK:false,OPENED:$now,
+            CLOSED:null,VALUE:$value,THRESHOLD:"resolved"}]' <<<"$old")" \
+        || return 1
+    temp="$(mktemp "$root/.alerts.XXXXXX")" || return 1
+    if ! jq -S . <<<"$updated" >"$temp" \
+        || ! chmod 0640 "$temp" \
+        || ! mv -f -- "$temp" "$root/alerts.json"; then
+        rm -f -- "$temp"
+        return 1
+    fi
+    [[ ! -f "$root/alerts.conf" ]] \
+        || notify="$(jq -r '.NOTIFY // false' "$root/alerts.conf" 2>/dev/null)"
+    vx_compose_audit "$root" "alert-$type" opened "$message" || :
+    [[ "$notify" != true ]] \
+        || vx_compose_alert_notify "$owner" "$project" "$type" "$message" || :
+}
+
+vx_compose_backup_alert_close() {
+    local owner="$1" project="$2" type="$3" root temp
+    vx_compose_require_project "$owner" "$project" || return 1
+    root="$(vx_compose_project_root "$owner" "$project")"
+    [[ -f "$root/alerts.json" ]] || return 0
+    jq -e --arg type "$type" \
+        'any(.[]; .TYPE==$type and .STATUS=="open")' \
+        "$root/alerts.json" >/dev/null || return 0
+    temp="$(mktemp "$root/.alerts.XXXXXX")" || return 1
+    if ! jq --arg type "$type" --arg now "$(vx_compose_now)" \
+        'map(if .TYPE==$type and .STATUS=="open"
+            then .STATUS="closed" | .CLOSED=$now else . end)' \
+        "$root/alerts.json" >"$temp" \
+        || ! chmod 0640 "$temp" \
+        || ! mv -f -- "$temp" "$root/alerts.json"; then
+        rm -f -- "$temp"
+        return 1
+    fi
+    vx_compose_audit "$root" "alert-$type" closed 'condition recovered' || :
+}
+
 vx_compose_alerts_evaluate() {
     local owner="$1"
     local project="$2"
