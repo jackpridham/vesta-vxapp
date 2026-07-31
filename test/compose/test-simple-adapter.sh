@@ -19,7 +19,7 @@ declare -g \
     IMAGE=nginx:alpine \
     COMMAND='' \
     ENV='NODE_ENV=production' \
-    MOUNTS='' \
+    MOUNTS='data:/data' \
     CONTAINER_PORT=8080 \
     RESTART_POLICY=unless-stopped \
     HEALTHCHECK_TYPE=none \
@@ -29,6 +29,23 @@ vx_compose_simple_render_loaded alice 18080 "$test_root/compose.yaml"
 grep -Fq '127.0.0.1:18080:8080' "$test_root/compose.yaml"
 grep -Fq 'NODE_ENV=production' "$test_root/compose.yaml"
 grep -Fq 'cap_drop: [ALL]' "$test_root/compose.yaml"
+grep -Fq 'create_host_path: false' "$test_root/compose.yaml"
+mkdir -p "$HOMEDIR/alice/docker/site/binds/data"
+docker compose --project-name vx-simple-adapter-test \
+    --file "$test_root/compose.yaml" config --format json \
+    >"$test_root/canonical.json"
+vx_compose_policy_check_supported_keys "$test_root/canonical.json" \
+    || {
+        echo 'FAIL: safe simple bind render was rejected' >&2
+        exit 1
+    }
+jq '.services.site.volumes[0].bind.create_host_path = true' \
+    "$test_root/canonical.json" >"$test_root/unsafe-bind.json"
+if vx_compose_policy_check_supported_keys \
+    "$test_root/unsafe-bind.json" 2>/dev/null; then
+    echo 'FAIL: automatic bind-path creation was accepted' >&2
+    exit 1
+fi
 mkdir "$test_root/candidate"
 vx_compose_simple_metadata_write_candidate \
     alice 18080 "$test_root/candidate"

@@ -508,16 +508,18 @@ function vx_compose_preview_value_is_source_path($value)
         || stripos($value, 'source-path-sentinel') !== false;
 }
 
-function vx_compose_preview_payload_is_source_free($value)
+function vx_compose_preview_payload_is_source_free($value, $parent_key = '')
 {
     if (!is_array($value)) {
         return !vx_compose_preview_value_is_source_path($value);
     }
     foreach ($value as $key => $item) {
-        if (is_string($key) && strcasecmp($key, 'source') === 0) {
+        if (is_string($key)
+            && strcasecmp($key, 'source') === 0
+            && strcasecmp((string) $parent_key, 'OCI_LABELS') !== 0) {
             return false;
         }
-        if (!vx_compose_preview_payload_is_source_free($item)) {
+        if (!vx_compose_preview_payload_is_source_free($item, $key)) {
             return false;
         }
     }
@@ -537,6 +539,148 @@ function vx_compose_preview_scalar_list($value)
         }
     }
     return $result;
+}
+
+function vx_compose_preview_string_is_safe($value, $maximum = 1024)
+{
+    return is_string($value)
+        && strlen($value) <= $maximum
+        && preg_match('/[\x00-\x1f\x7f]/D', $value) !== 1
+        && !vx_compose_preview_value_is_source_path($value);
+}
+
+function vx_compose_preview_oci_labels($value)
+{
+    $keys = array('source', 'revision', 'version', 'vendor', 'created');
+    if (!vx_compose_array_has_exact_keys($value, $keys)) {
+        return array();
+    }
+    $safe = array();
+    foreach ($keys as $key) {
+        if (!vx_compose_preview_string_is_safe($value[$key], 512)
+            || preg_match(
+                '/(^|[^a-z0-9])(password|passwd|secret|token|credential|'
+                .'authorization|authentication|bearer|private[._ -]?key|'
+                .'access[._ -]?(key|token|secret|credential)|'
+                .'client[._ -]?(key|token|secret|credential)|'
+                .'api[._ -]?key)([^a-z0-9]|$)/i',
+                $value[$key]
+            ) === 1
+            || preg_match(
+                '#[a-z][a-z0-9+.-]*://[^/@\s]+@#i',
+                $value[$key]
+            ) === 1) {
+            return array();
+        }
+        $safe[$key] = $value[$key];
+    }
+    return $safe;
+}
+
+function vx_compose_preview_trust_adapter($value, $expected_adapter)
+{
+    if (!is_array($value)
+        || !in_array($expected_adapter, array('signature', 'vulnerability'), true)) {
+        return array();
+    }
+    if (vx_compose_array_has_exact_keys($value, array('STATE'))) {
+        return $value['STATE'] === 'not-run'
+            ? array('STATE' => 'not-run') : array();
+    }
+    if (!vx_compose_array_has_exact_keys(
+        $value,
+        array('ADAPTER', 'STATE', 'DETAIL')
+    )
+        || $value['ADAPTER'] !== $expected_adapter
+        || !in_array(
+            $value['STATE'],
+            array('pass', 'fail', 'offline', 'unavailable', 'timeout', 'error'),
+            true
+        )
+        || !vx_compose_preview_string_is_safe($value['DETAIL'], 256)) {
+        return array();
+    }
+    return array(
+        'ADAPTER' => $value['ADAPTER'],
+        'STATE' => $value['STATE'],
+        'DETAIL' => $value['DETAIL'],
+    );
+}
+
+function vx_compose_preview_trust($value)
+{
+    if (!is_array($value)
+        || !isset(
+            $value['MODE'],
+            $value['DECISION'],
+            $value['PROFILE'],
+            $value['PROFILE_VERSION'],
+            $value['POLICY_VERSION'],
+            $value['SIGNATURE'],
+            $value['VULNERABILITY'],
+            $value['EXCEPTION']
+        )
+        || !in_array($value['MODE'], array('disabled', 'audit', 'enforce'), true)
+        || !in_array(
+            $value['DECISION'],
+            array('disabled', 'pass', 'fail', 'exception'),
+            true
+        )
+        || !vx_compose_preview_string_is_safe($value['PROFILE'], 64)
+        || !is_int($value['PROFILE_VERSION'])
+        || !is_int($value['POLICY_VERSION'])
+        || !is_bool($value['EXCEPTION'])) {
+        return array();
+    }
+    $signature = vx_compose_preview_trust_adapter(
+        $value['SIGNATURE'],
+        'signature'
+    );
+    $vulnerability = vx_compose_preview_trust_adapter(
+        $value['VULNERABILITY'],
+        'vulnerability'
+    );
+    if (empty($signature) || empty($vulnerability)) {
+        return array();
+    }
+    $safe = array(
+        'MODE' => $value['MODE'],
+        'DECISION' => $value['DECISION'],
+        'PROFILE' => $value['PROFILE'],
+        'PROFILE_VERSION' => $value['PROFILE_VERSION'],
+        'POLICY_VERSION' => $value['POLICY_VERSION'],
+        'SIGNATURE' => $signature,
+        'VULNERABILITY' => $vulnerability,
+        'EXCEPTION' => $value['EXCEPTION'],
+    );
+    if ($value['MODE'] === 'disabled') {
+        return vx_compose_array_has_exact_keys($value, array_keys($safe))
+            ? $safe : array();
+    }
+    $extended = array(
+        'SCHEMA',
+        'VULNERABILITY_THRESHOLD',
+        'CREATED',
+    );
+    foreach ($extended as $field) {
+        if (!array_key_exists($field, $value)) {
+            return array();
+        }
+    }
+    if ($value['SCHEMA'] !== 1
+        || !in_array(
+            $value['VULNERABILITY_THRESHOLD'],
+            array('low', 'medium', 'high', 'critical'),
+            true
+        )
+        || !vx_compose_preview_string_is_safe($value['CREATED'], 64)) {
+        return array();
+    }
+    $safe['SCHEMA'] = 1;
+    $safe['VULNERABILITY_THRESHOLD'] = $value['VULNERABILITY_THRESHOLD'];
+    $safe['CREATED'] = $value['CREATED'];
+    return vx_compose_array_has_exact_keys($value, array_keys($safe))
+        ? $safe : array();
 }
 
 function vx_compose_preview_change_set($value)
@@ -642,13 +786,20 @@ function vx_compose_preview_payload_sanitize($payload)
                 && !vx_compose_preview_value_is_source_path($reference)) {
                 $safe_identity = array();
                 foreach (
-                    array('REFERENCE', 'IMAGE_ID', 'OS', 'ARCHITECTURE')
+                    array(
+                        'REFERENCE',
+                        'IMMUTABLE_REFERENCE',
+                        'REGISTRY_DIGEST',
+                        'IMAGE_ID',
+                        'OS',
+                        'ARCHITECTURE',
+                    )
                     as $key
                 ) {
                     if (isset($identity[$key])
-                        && is_string($identity[$key])
-                        && !vx_compose_preview_value_is_source_path(
-                            $identity[$key]
+                        && vx_compose_preview_string_is_safe(
+                            $identity[$key],
+                            1024
                         )) {
                         $safe_identity[$key] = $identity[$key];
                     }
@@ -658,6 +809,20 @@ function vx_compose_preview_payload_sanitize($payload)
                         vx_compose_preview_scalar_list(
                             $identity['REPO_DIGESTS']
                         );
+                }
+                if (isset($identity['OCI_LABELS'])) {
+                    $labels = vx_compose_preview_oci_labels(
+                        $identity['OCI_LABELS']
+                    );
+                    if (!empty($labels)) {
+                        $safe_identity['OCI_LABELS'] = $labels;
+                    }
+                }
+                if (isset($identity['TRUST'])) {
+                    $trust = vx_compose_preview_trust($identity['TRUST']);
+                    if (!empty($trust)) {
+                        $safe_identity['TRUST'] = $trust;
+                    }
                 }
                 $safe['IMAGES']['CURRENT_IDENTITIES'][$reference] =
                     $safe_identity;

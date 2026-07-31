@@ -90,10 +90,17 @@ vx_compose_migration_render() {
                 target="${item#*:}"
                 [[ "$source" =~ ^[a-z0-9][a-z0-9_-]{0,63}$
                     && "$target" == /* ]] || return 1
-                printf '      - %s\n' \
+                printf '%s\n' \
+                    '      - type: bind'
+                printf '        source: %s\n' \
                     "$(jq -Rn \
-                        --arg value "$HOMEDIR/$owner/docker/$name/binds/$source:$target" \
+                        --arg value "$HOMEDIR/$owner/docker/$name/binds/$source" \
                         '$value')"
+                printf '        target: %s\n' \
+                    "$(jq -Rn --arg value "$target" '$value')"
+                printf '%s\n' \
+                    '        bind:' \
+                    '          create_host_path: false'
             done < <(tr '||' '\n' <<<"$mounts" | sed '/^$/d')
         fi
         case "$health_type" in
