@@ -5,9 +5,10 @@
 Registry-backed image evidence records the immutable repository reference and
 `sha256` digest, the local image ID, and only these bounded OCI labels:
 `source`, `revision`, `version`, `vendor`, and `created`. Each label is at most
-512 characters. Control characters, credential-like values, URI userinfo, and
-unknown labels are replaced with an empty value; image environment values are
-not copied.
+512 characters. Control characters, credential-like values (including
+delimiter-bounded `auth`, authorization/header/key/token/secret forms), URI
+userinfo, and unknown labels are replaced with an empty value; image
+environment values are not copied.
 
 Web preview/session payloads accept those current-image fields only through an
 explicit nested schema. OCI labels retain the same five-key,
