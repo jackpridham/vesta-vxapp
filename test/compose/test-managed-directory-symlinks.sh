@@ -8,7 +8,18 @@ trap 'rm -rf -- "$test_root"' EXIT
 export VESTA="$test_root/vesta"
 export HOMEDIR="$test_root/home"
 if (( EUID == 0 )); then
-    owner=nobody
+    owner=
+    while IFS=: read -r candidate _ candidate_uid _ _ _ _; do
+        (( candidate_uid >= 1000 )) || continue
+        if [[ "$(id -gn "$candidate" 2>/dev/null)" == "$candidate" ]]; then
+            owner="$candidate"
+            break
+        fi
+    done < <(getent passwd)
+    [[ -n "$owner" ]] || {
+        printf 'SKIP: no same-name non-root user/group fixture is available\n'
+        exit 0
+    }
 else
     owner="$(id -un)"
 fi
