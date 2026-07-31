@@ -73,11 +73,19 @@ known-good archive. Policy runs hold the existing project lock through backup,
 validation-only restore, retention, replication, audit, and atomic state
 update.
 
-Cold backup writes a mode-`0600`, owner/project-bound recovery marker before
-stopping a running workload. Normal signal handling redeploys that exact
-workload and removes only scoped staging. A later locked invocation recovers a
-marker left by an untrappable interruption before new work; recovery failure
-retains the marker and sets `restore-required`. `LAST_ATTEMPT` plus
+Cold backup writes a schema-versioned, mode-`0600` recovery marker under the
+exact project lock before stopping a running workload. The marker binds the
+owner/project, prior running state, revision, canonical hash, revision manifest
+and image hashes, stable schema-2 image/trust identity, and either ordinary
+revision-manifest or protected legacy-migration authority. Recovery converges
+with that accepted image evidence without registry or trust re-resolution.
+It removes the marker only after exact runtime identity, managed networks and
+volumes, fresh all-service health, routes/Host-header probes, and applicable
+profile checks pass. Normal signals recover immediately; a later locked
+invocation recovers an untrappable interruption before new work. Only genuine
+automatic convergence failure sets `restore-required`; terminal audit failure
+leaves an idempotent marker while the recovered runtime remains `running`.
+`LAST_ATTEMPT` plus
 `LAST_ERROR=run-in-progress` is the durable operation marker. Terminal fields
 are validated and replaced together as one exact 17-field file; retention
 completes before a successful terminal state or success audit is recorded.
