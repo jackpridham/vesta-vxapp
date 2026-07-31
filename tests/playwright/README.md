@@ -35,6 +35,7 @@ Supported variables:
 - `PLAYWRIGHT_LOCAL_RUNTIME_TARGET`: set to `yes` only when `PLAYWRIGHT_BASE_URL` truly points at the same machine that provides `/etc/profile.d/vesta.sh`; required for destructive runtime fixture seeding/cleanup
 - `PLAYWRIGHT_REMOTE_VESTA_SSH`: optional SSH destination for the exact remote Vesta runtime serving `PLAYWRIGHT_BASE_URL`, for example `debian@192.168.100.100`
 - `PLAYWRIGHT_REMOTE_VESTA_SSH_JUMP`: optional SSH jump destination for that remote runtime, for example `gizmo@192.168.100.16`; both SSH values must be single destinations without options or whitespace
+- `PLAYWRIGHT_PANEL_RUNTIME_HOST`: optional explicit runtime host assertion when `PLAYWRIGHT_BASE_URL` is a loopback SSH tunnel; it must exactly match the host in `PLAYWRIGHT_REMOTE_VESTA_SSH` and must not include a user name
 - `PLAYWRIGHT_ADMIN_USER` / `PLAYWRIGHT_ADMIN_PASSWORD`: enables admin-authenticated project
 - `PLAYWRIGHT_DOCKER_USER` / `PLAYWRIGHT_DOCKER_PASSWORD`: enables the main real non-admin-authenticated project; seed this user below quota so navigation/create/lifecycle/modal/dashboard coverage lands on the contracted list states instead of the dedicated quota fixture
 - `PLAYWRIGHT_DOCKER_EMPTY_USER` / `PLAYWRIGHT_DOCKER_EMPTY_PASSWORD`: optional dedicated user for the empty-state assertions; these supplement but do not replace `PLAYWRIGHT_DOCKER_USER` / `PLAYWRIGHT_DOCKER_PASSWORD`, because the authenticated Docker project is still gated by the main Docker-user credentials

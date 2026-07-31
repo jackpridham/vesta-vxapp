@@ -35,6 +35,17 @@ function getRemoteVestaSshJump() {
   );
 }
 
+function getPanelRuntimeHost() {
+  const host = sshDestination(
+    process.env.PLAYWRIGHT_PANEL_RUNTIME_HOST || '',
+    'PLAYWRIGHT_PANEL_RUNTIME_HOST'
+  );
+  if (host.includes('@')) {
+    throw new Error('PLAYWRIGHT_PANEL_RUNTIME_HOST must not include a user name.');
+  }
+  return host;
+}
+
 function remoteVestaSshArgs(remoteCommand) {
   const target = getRemoteVestaSshTarget();
   const jump = getRemoteVestaSshJump();
@@ -66,6 +77,10 @@ function isLocalPanelTarget() {
   if (hasRemoteVestaRuntime()) {
     const remoteTarget = getRemoteVestaSshTarget();
     const remoteHost = remoteTarget.includes('@') ? remoteTarget.split('@').pop() : remoteTarget;
+    const assertedPanelHost = getPanelRuntimeHost();
+    if (assertedPanelHost !== '') {
+      return remoteHost === assertedPanelHost;
+    }
     return remoteHost === hostname;
   }
 
