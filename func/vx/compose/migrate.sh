@@ -192,7 +192,7 @@ vx_compose_migrate_owner() {
             moved_sources=''
             if [[ -n "$mounts" ]]; then
                 if id -u "$owner" >/dev/null 2>&1; then
-                    vx_compose_prepare_project_data_roots \
+                    vx_compose_prepare_legacy_project_data_roots \
                         "$owner" "$name" || return 1
                 else
                     install -d -m 0750 \

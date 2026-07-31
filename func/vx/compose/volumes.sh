@@ -100,8 +100,8 @@ vx_compose_simple_bind_leaves_normalize() {
         [[ "$source" == "$bind_root"/* && "$relative_source" != */*
             && -e "$source" && ! -L "$source" ]] || return 1
         if [[ -d "$source" ]]; then
-            vx_compose_managed_directory_prepare \
-                "$owner" "$source" tenant 0750 || return 1
+            vx_compose_managed_bind_leaf_prepare \
+                "$owner" "$project" "$relative_source" || return 1
         else
             chown "$owner:$owner" "$source" || return 1
             chmod 0640 "$source" || return 1

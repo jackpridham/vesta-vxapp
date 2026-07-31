@@ -205,8 +205,8 @@ vx_compose_simple_prepare_binds() {
         source="${item%%:*}"
         [[ "$source" =~ ^[a-z0-9][a-z0-9_-]{0,63}$ ]] || return 1
         if id -u "$owner" >/dev/null 2>&1; then
-            vx_compose_managed_directory_prepare \
-                "$owner" "$bind_root/$source" tenant 0750 || return 1
+            vx_compose_managed_bind_leaf_prepare \
+                "$owner" "$project" "$source" || return 1
         else
             install -d -m 0750 "$bind_root/$source"
         fi
