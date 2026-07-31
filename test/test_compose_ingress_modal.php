@@ -46,6 +46,7 @@ function vx_compose_resolve_accessible_project($owner, $project, $actor) {
         : array();
 }
 function vx_compose_actor_can_mutate_project() { return false; }
+function vx_compose_actor_has_capability() { return false; }
 function vx_compose_pretty_json($value) { return json_encode($value); }
 function vx_compose_ingress_consumers_payload($owner, $project, $actor) {
     $GLOBALS['ingress_call'] = array($owner, $project, $actor);
