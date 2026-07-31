@@ -77,6 +77,7 @@ test('operator console observes drift, reconciles explicitly, and remains usable
       'data-freshness',
       /^(fresh|stale)$/
     );
+    await projectCard.hover();
     await projectCard.getByRole('link', { name: /details/i }).click();
     await expect(page.getByRole('heading', { name: project })).toBeVisible();
     await expect(page.getByRole('heading', { name: /Desired\/runtime drift/i })).toBeVisible();
