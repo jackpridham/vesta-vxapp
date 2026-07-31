@@ -79,6 +79,39 @@ jq -e '
     and (.NEXT_RUN | test("Z$"))
 ' <<<"$(vx_compose_backup_policy_list_json alice app)" >/dev/null \
     || fail "backup policy listing omitted validated authority"
+vx_compose_backup_policy_file_validate "$policy_path" \
+    || fail "persisted backup policy did not pass its restore validator"
+malicious_policy="$test_root/malicious-backup-policy.conf"
+cp "$policy_path" "$malicious_policy"
+sed -i "s#^REPLICATION_ADAPTER=.*#REPLICATION_ADAPTER='../escape'#" \
+    "$malicious_policy"
+if vx_compose_backup_policy_file_validate "$malicious_policy" 2>/dev/null; then
+    fail "malicious archived backup policy metadata was accepted"
+fi
+archived_policy="$test_root/archived-backup-policy.conf"
+cp "$policy_path" "$archived_policy"
+vx_compose_backup_policy_state_update \
+    "$archived_policy" LAST_SUCCESS '2026-01-01T00:00:00Z'
+vx_compose_backup_policy_state_update \
+    "$archived_policy" REPLICATION_STATE succeeded
+vx_compose_backup_policy_restore_reset alice app "$archived_policy"
+reset_policy="$(vx_compose_backup_policy_list_json alice app)"
+jq -e '
+    .ENABLED == "yes"
+    and .SCHEDULE == "daily@02:30"
+    and .REPLICATION_ADAPTER == "fixture-copy"
+    and .LAST_SUCCESS == ""
+    and .LAST_ARCHIVE == ""
+    and .REPLICATION_STATE == ""
+    and .RESTORE_TEST_STATE == ""
+    and (.NEXT_RUN | test("Z$"))
+' <<<"$reset_policy" >/dev/null \
+    || fail "restore did not reset archived operational policy state safely"
+control_copy="$test_root/control-copy"
+vx_compose_backup_copy_control \
+    "$VESTA/data/users/alice/docker-projects/app" "$control_copy"
+cmp -s "$policy_path" "$control_copy/backup-policy.conf" \
+    || fail "backup did not preserve policy evidence exactly"
 jq -e '
     select(
         .ACTOR == "admin"
@@ -103,6 +136,7 @@ invalid_policies=(
     "yes daily@02:30 7 3 no none 3600 86400"
     "yes daily@02:30 7 4 maybe none 3600 86400"
     "yes daily@02:30 7 4 no ../adapter 3600 86400"
+    "yes daily@02:30 7 4 no local-fixture 3600 86400"
     "yes daily@02:30 7 4 no none 3599 86400"
     "yes daily@02:30 7 4 no none 3600 86399"
 )
@@ -171,10 +205,59 @@ if find "$VESTA/data/users/alice/docker-projects/app/runtime" -maxdepth 1 \
     fail "restore drill left validation state behind"
 fi
 
+# The shipped fixture adapter cannot report success without an explicit,
+# protected target. Once configured, it copies and verifies descriptor input.
+replication="$(
+    vx_compose_backup_replicate \
+        alice app local-fixture "$test_root/drill.tar.gz"
+)"
+jq -e '.STATE == "not-configured"' <<<"$replication" >/dev/null \
+    || fail "unconfigured fixture replication was reported as success"
+mkdir -p "$VESTA/conf" "$test_root/replicated"
+chmod 0700 "$test_root/replicated"
+mkdir -p "$VESTA/func/vx/compose/replication-adapters"
+cp "$repo_root/func/vx/compose/replication-adapters/local-fixture" \
+    "$VESTA/func/vx/compose/replication-adapters/local-fixture"
+chmod 0755 "$VESTA/func/vx/compose/replication-adapters/local-fixture"
+printf "TARGET_ROOT='%s'\n" "$test_root/replicated" \
+    >"$VESTA/conf/vx-compose-replication-local-fixture.conf"
+chmod 0600 "$VESTA/conf/vx-compose-replication-local-fixture.conf"
+replication="$(
+    vx_compose_backup_replicate \
+        alice app local-fixture "$test_root/drill.tar.gz"
+)"
+jq -e '.STATE == "succeeded"' <<<"$replication" >/dev/null \
+    || fail "configured fixture replication did not succeed"
+replicated_file="$(find "$test_root/replicated/alice/app" -type f -name '*.age')"
+cmp -s "$test_root/drill.tar.gz" "$replicated_file" \
+    || fail "fixture adapter did not persist and verify descriptor input"
+
 # A managed run updates durable state, invokes protected replication, performs
 # the due restore drill, retention, and emits an attributed audit event.
+fake_bin="$test_root/fake-bin"
+mkdir -p "$fake_bin"
+printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -Eeuo pipefail' \
+    'output=' \
+    'input=' \
+    'while (($#)); do' \
+    '  case "$1" in' \
+    '    --output) output=$2; shift 2 ;;' \
+    '    --recipient) shift 2 ;;' \
+    '    --encrypt) shift ;;' \
+    '    *) input=$1; shift ;;' \
+    '  esac' \
+    'done' \
+    'printf "age-encrypted\\n" >"$output"' \
+    'base64 "$input" >>"$output"' >"$fake_bin/age"
+chmod 0755 "$fake_bin/age"
+prior_path="$PATH"
+PATH="$fake_bin:$PATH"
+VX_DOCKER_AGE_RECIPIENT='age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
+export VX_DOCKER_AGE_RECIPIENT
 vx_compose_backup_policy_add \
-    alice app yes daily@02:30 7 4 no fixture-copy 3600 86400
+    alice app yes daily@02:30 7 4 yes fixture-copy 3600 86400
 vx_compose_backup_allocate_path() {
     local root
     root="$(vx_compose_backup_root "$1" "$2")"
@@ -187,6 +270,11 @@ vx_compose_backup_project() {
 vx_compose_backup_replicate() {
     [[ "$1" == alice && "$2" == app && "$3" == fixture-copy && -f "$4" ]] \
         || return 1
+    if [[ "${EXPECT_CIPHERTEXT:-no}" == yes ]]; then
+        cp -- "$4" "$test_root/adapter-input"
+        ! grep -Fq 'managed archive' "$4" \
+            || fail "replication adapter received the plaintext archive"
+    fi
     printf '{"STATE":"succeeded","REFERENCE":"redacted-fixture"}\n'
 }
 vx_compose_backup_restore_drill() {
@@ -217,6 +305,61 @@ jq -e '
     )
 ' "$VESTA/data/users/alice/docker-projects/app/audit.log" >/dev/null \
     || fail "managed run audit evidence is missing"
+
+# Encryption-required replication receives a disposable whole-archive
+# ciphertext, never the managed plaintext archive or a key on argv.
+EXPECT_CIPHERTEXT=yes
+export EXPECT_CIPHERTEXT
+vx_compose_backup_policy_add \
+    alice app yes daily@02:30 7 4 yes fixture-copy 3600 86400
+vx_compose_backup_policy_run alice app
+grep -Fq 'age-encrypted' "$test_root/adapter-input" \
+    || fail "replication adapter input was not whole-archive ciphertext"
+if grep -Fq 'managed archive' "$test_root/adapter-input"; then
+    fail "replication ciphertext exposed plaintext archive content"
+fi
+if find "$VESTA/data/users/alice/docker-projects/app/runtime" -maxdepth 1 \
+    -name '.backup-replication.*' -print -quit | grep -q .; then
+    fail "encrypted replication left a temporary payload"
+fi
+
+# A duplicate run is rejected while the first owns the run lock. Killing the
+# first process releases both flock descriptors and leaves NEXT_RUN due, so
+# the scheduler can recover the interrupted attempt.
+original_backup_project="$(declare -f vx_compose_backup_project)"
+vx_compose_backup_policy_add \
+    alice app yes daily@02:30 7 4 yes fixture-copy 3600 86400
+vx_compose_backup_policy_state_update "$policy_path" \
+    NEXT_RUN '2000-01-01T00:00:00Z'
+barrier="$test_root/blocked-run.fifo"
+mkfifo "$barrier"
+exec {barrier_fd}<>"$barrier"
+vx_compose_backup_project() {
+    : >"$test_root/blocked-run.ready"
+    IFS= read -r _ <&"$barrier_fd"
+}
+vx_compose_backup_policy_run alice app >/dev/null 2>&1 &
+blocked_pid=$!
+for _ in $(seq 1 100); do
+    [[ -f "$test_root/blocked-run.ready" ]] && break
+    sleep 0.01
+done
+[[ -f "$test_root/blocked-run.ready" ]] \
+    || fail "concurrency fixture did not enter backup"
+if vx_compose_backup_policy_run alice app >/dev/null 2>&1; then
+    fail "duplicate concurrent backup policy run was not excluded"
+fi
+kill "$blocked_pid"
+wait "$blocked_pid" 2>/dev/null || :
+exec {barrier_fd}>&-
+[[ "$(vx_compose_meta_get "$policy_path" NEXT_RUN)" \
+    == '2000-01-01T00:00:00Z' ]] \
+    || fail "interrupted run consumed the next scheduler attempt"
+eval "$original_backup_project"
+vx_compose_backup_policy_run alice app \
+    || fail "policy lock did not recover after interruption"
+PATH="$prior_path"
+unset VX_DOCKER_AGE_RECIPIENT EXPECT_CIPHERTEXT
 
 # Scheduler enumerates only enabled, due policy files and passes structured
 # owner/project arguments rather than executing stored shell strings.

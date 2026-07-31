@@ -39,6 +39,10 @@ vx_compose_preview_gc() {
     echo preview-gc >>"$VX_MONITOR_TEST_LOG"
     return 1
 }
+vx_compose_backup_policies_run_due() {
+    echo backup-policies >>"$VX_MONITOR_TEST_LOG"
+    return 1
+}
 vx_compose_monitor_all() {
     echo monitor-all >>"$VX_MONITOR_TEST_LOG"
 }
@@ -50,7 +54,7 @@ HOMEDIR="$test_root/rrd-home" \
 BIN="$rrd_vesta/bin" \
     "$repo_root/bin/v-update-sys-rrd-docker" daily
 diff -u \
-    <(printf '%s\n' preview-gc monitor-all) \
+    <(printf '%s\n' preview-gc backup-policies monitor-all) \
     "$VX_MONITOR_TEST_LOG"
 
 echo "Compose monitor-all tests passed."
