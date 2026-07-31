@@ -232,7 +232,7 @@ test('advanced preview/deploy, service controls, recovery actions, and redaction
     await expect.poll(
       () => readProject(owner, project)?.REVISION || 0,
       { timeout: 180_000 }
-    ).toBe(2);
+    ).toBe(3);
     expect(await modal.textContent()).not.toContain(canary);
 
     const token = await readSessionToken(page);
