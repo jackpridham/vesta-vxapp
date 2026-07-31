@@ -1067,6 +1067,10 @@ function vx_compose_health_payload($owner, $project)
             'OWNER' => $owner,
             'PROJECT' => $project,
             'STATUS' => 'unknown',
+            'OBSERVED_AT' => gmdate('Y-m-d\TH:i:s\Z'),
+            'SOURCE' => 'command-unavailable',
+            'AGE_SECONDS' => 0,
+            'FRESHNESS' => 'unavailable',
             'SERVICES' => array(),
         )
     );
