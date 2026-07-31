@@ -1,23 +1,28 @@
 #!/bin/bash
 # info: list native ingress consumers for a Docker Compose project
-# options: USER PROJECT [FORMAT]
+# options: USER PROJECT [FORMAT] [ACTOR]
 
 user=$1
 compose_project=$2
 format=${3-json}
+actor=${4-}
 
 source "$VESTA/func/main.sh"
 source "$VESTA/func/vx/compose/main.sh"
 
-check_args '2' "$#" 'USER PROJECT [FORMAT]'
-[ "$#" -le 3 ] || check_result "$E_ARGS" 'too many arguments'
+check_args '2' "$#" 'USER PROJECT [FORMAT] [ACTOR]'
+[ "$#" -le 4 ] || check_result "$E_ARGS" 'too many arguments'
 is_format_valid 'user'
 is_object_valid 'user' 'USER' "$user"
+if [[ -n "$actor" ]]; then
+    vx_compose_ingress_actor_is_valid "$actor" \
+        || check_result "$E_INVALID" 'invalid Compose ingress actor'
+fi
 
 consumers="$(vx_compose_ingress_consumers_json "$user" "$compose_project")" \
     || check_result "$E_INVALID" 'Docker Compose ingress consumer listing failed'
-actor="$(id -un)"
-if [[ "$actor" != root && "$actor" != admin ]]; then
+if ! vx_compose_ingress_actor_can_view_metadata \
+    "$actor" "$user" "$compose_project"; then
     consumers="$(jq -n --argjson count "$(jq 'length' <<<"$consumers")" \
         '{COUNT: $count}')"
 fi

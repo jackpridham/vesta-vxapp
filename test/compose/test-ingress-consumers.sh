@@ -33,6 +33,12 @@ jq -n '{
                 {host_ip:"127.0.0.1", published:"8530", target:53,
                  protocol:"udp"}
             ]
+        },
+        ranged: {
+            ports: [
+                {host_ip:"127.0.0.1", published:"8600-8602",
+                 target:"80-82", protocol:"tcp"}
+            ]
         }
     }
 }' >"$project_root/runtime/canonical.json"
@@ -40,6 +46,7 @@ jq -n '{
 printf "%s\n" \
     "DOMAIN='app.example.test' PROXY='vx-proxy' PROXY_MODE='proxy' PROXY_TARGET='http://127.0.0.1:8420' PROXY_PATH='/' PROXY_HEADERS='X-Protected-Canary: forbidden-value||X-Trace-Name: private-value' SSL='yes'" \
     "DOMAIN='unrelated.example.test' PROXY='vx-proxy' PROXY_MODE='proxy' PROXY_TARGET='http://127.0.0.1:9999' PROXY_PATH='/' PROXY_HEADERS='X-Unrelated: not-visible' SSL='no'" \
+    "DOMAIN='range.example.test' PROXY='vx-proxy' PROXY_MODE='proxy' PROXY_TARGET='http://127.0.0.1:8601' PROXY_PATH='/' PROXY_HEADERS='' SSL='no'" \
     >"$VESTA/data/users/tenant-a/web.conf"
 printf "%s\n" \
     "DOMAIN='consumer.example.test' PROXY='vx-proxy' PROXY_MODE='proxy' PROXY_TARGET='http://127.0.0.1:8420/' PROXY_PATH='/api' PROXY_HEADERS='X-Cross-Owner: hidden-value' SSL='no'" \
@@ -74,7 +81,7 @@ source "$repo_root/func/vx/compose/main.sh"
 
 consumers="$(vx_compose_ingress_consumers_json tenant-a app)"
 jq -e '
-    length == 2
+    length == 3
     and .[0] == {
         OWNER:"tenant-a",
         DOMAIN:"app.example.test",
@@ -85,11 +92,13 @@ jq -e '
         CONFIG_FRESHNESS:"current",
         HEADER_NAMES:["X-Protected-Canary","X-Trace-Name"]
     }
-    and .[1].OWNER == "tenant-b"
-    and .[1].DOMAIN == "consumer.example.test"
-    and .[1].PATH == "/api"
-    and .[1].CONFIG_FRESHNESS == "stale"
-    and .[1].HEADER_NAMES == ["X-Cross-Owner"]
+    and .[1].DOMAIN == "range.example.test"
+    and .[1].TARGET == "http://127.0.0.1:8601"
+    and .[2].OWNER == "tenant-b"
+    and .[2].DOMAIN == "consumer.example.test"
+    and .[2].PATH == "/api"
+    and .[2].CONFIG_FRESHNESS == "stale"
+    and .[2].HEADER_NAMES == ["X-Cross-Owner"]
 ' <<<"$consumers" >/dev/null \
     || fail 'native ingress consumers were not matched and redacted'
 
@@ -102,5 +111,32 @@ if grep -Fq unrelated.example.test <<<"$consumers" \
     || grep -Fq redirect.example.test <<<"$consumers"; then
     fail 'unrelated native proxy records were included'
 fi
+
+endpoints="$(vx_compose_ingress_published_endpoints_json tenant-a app)"
+jq -e '
+    [
+        .[]
+        | select(.SERVICE == "ranged")
+        | .HOST_PORT
+    ] == [8600, 8601, 8602]
+' <<<"$endpoints" >/dev/null \
+    || fail 'matching published TCP range was not expanded safely'
+
+vx_compose_ingress_actor_can_view_metadata admin tenant-a app \
+    || fail 'explicit administrator actor lost redacted metadata access'
+if vx_compose_ingress_actor_can_view_metadata tenant-a tenant-a app; then
+    fail 'ordinary owner received full cross-owner ingress metadata'
+fi
+if vx_compose_ingress_actor_can_view_metadata '' tenant-a app; then
+    fail 'missing explicit actor received full ingress metadata'
+fi
+vx_compose_actor_has_project_capability() {
+    [[ "$1" == tenant-b
+        && "$2" == tenant-a
+        && "$3" == app
+        && "$4" == view-ingress-consumers ]]
+}
+vx_compose_ingress_actor_can_view_metadata tenant-b tenant-a app \
+    || fail 'real viewer capability was ignored'
 
 echo 'Compose ingress consumer tests passed.'

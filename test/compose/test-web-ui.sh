@@ -244,7 +244,7 @@ for action in acknowledge_alert backup deploy recreate remove restore rollback; 
         "$action rejects mutation while orchestration is unavailable"
 done
 
-for action in logs inspect audit routes secrets images; do
+for action in logs inspect audit routes ingress_consumers secrets images; do
     expect_pattern "web/ajax/docker/actions/${action}.php" \
         'vx_compose_resolve_accessible_project' \
         "$action remains available through read-only project access"
@@ -256,11 +256,21 @@ for page in start stop restart; do
         "$page rejects mutation while orchestration is unavailable"
 done
 
-for action in logs inspect audit routes secrets images health stats alerts; do
+for action in logs inspect audit routes ingress_consumers secrets images health stats alerts; do
     expect_absent "web/ajax/docker/actions/${action}.php" \
         'vx_docker_is_orchestration_ready' \
         "$action remains readable while orchestration is unavailable"
 done
+
+expect_pattern web/ajax/docker/actions/ingress_consumers.php \
+    'vx_compose_ingress_consumers_payload.*myvesta_logged_user|myvesta_logged_user' \
+    'native ingress panel call binds the authenticated actor'
+expect_pattern bin/v-list-docker-project-ingress-consumers \
+    'vx_compose_ingress_actor_can_view_metadata' \
+    'native ingress adapter uses explicit capability authorization'
+expect_absent bin/v-list-docker-project-ingress-consumers \
+    'id[[:space:]]+-un|whoami|SUDO_USER' \
+    'native ingress adapter does not infer panel authority from OS identity'
 
 for action in acknowledge_alert backup deploy recreate remove restore rollback; do
     if command -v php >/dev/null 2>&1; then

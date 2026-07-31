@@ -8,6 +8,24 @@ vx_compose_ingress_published_endpoints_json() {
     vx_compose_require_project "$owner" "$project" || return 1
     root="$(vx_compose_project_root "$owner" "$project")"
     jq -c '
+        def expanded_ports:
+            tostring as $value
+            | if ($value | test("^[0-9]+$")) then
+                [($value | tonumber)]
+              elif ($value | test("^[0-9]+-[0-9]+$")) then
+                ($value
+                    | capture("^(?<first>[0-9]+)-(?<last>[0-9]+)$")
+                    | (.first | tonumber) as $first
+                    | (.last | tonumber) as $last
+                    | if $first >= 1
+                        and $last <= 65535
+                        and $last >= $first
+                        and ($last - $first) <= 1023
+                      then [range($first; $last + 1)]
+                      else []
+                      end)
+              else []
+              end;
         [
             .services
             | to_entries[]
@@ -17,17 +35,39 @@ vx_compose_ingress_published_endpoints_json() {
                 type == "object"
                 and ((.protocol // "tcp") == "tcp")
                 and (.host_ip | type == "string")
-                and (.published | tostring | test("^[0-9]+$"))
-                and ((.published | tonumber) >= 1)
-                and ((.published | tonumber) <= 65535)
             )
+            | (.published | expanded_ports[]) as $published
+            | select($published >= 1 and $published <= 65535)
             | {
                 SERVICE: $service,
                 HOST_IP: .host_ip,
-                HOST_PORT: (.published | tonumber)
+                HOST_PORT: $published
             }
         ]
     ' "$root/runtime/canonical.json"
+}
+
+vx_compose_ingress_actor_is_valid() {
+    local actor="$1"
+
+    [[ "$actor" == admin ]] && return 0
+    vx_compose_owner_is_valid "$actor" \
+        && [[ -d "$VESTA/data/users/$actor" ]]
+}
+
+vx_compose_ingress_actor_can_view_metadata() {
+    local actor="$1"
+    local owner="$2"
+    local project="$3"
+
+    vx_compose_ingress_actor_is_valid "$actor" || return 1
+    [[ "$actor" == admin ]] && return 0
+    if declare -F vx_compose_actor_has_project_capability >/dev/null 2>&1; then
+        vx_compose_actor_has_project_capability \
+            "$actor" "$owner" "$project" view-ingress-consumers
+        return
+    fi
+    return 1
 }
 
 vx_compose_ingress_header_names_json() {

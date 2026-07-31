@@ -10,6 +10,7 @@ function vx_compose_command_json($command, $arguments, $default = array())
         'v-list-docker-project-alerts',
         'v-list-docker-project-audit',
         'v-list-docker-project-routes',
+        'v-list-docker-project-ingress-consumers',
         'v-list-docker-secrets',
         'v-list-docker-project-backups',
         'v-validate-docker-project-source',
@@ -1147,6 +1148,20 @@ function vx_compose_routes_payload($owner, $project)
         'v-list-docker-project-routes',
         array($owner, $project, 'json'),
         array()
+    );
+}
+
+function vx_compose_ingress_consumers_payload($owner, $project, $actor)
+{
+    if (!vx_compose_owner_key_is_valid($owner)
+        || !vx_compose_project_key_is_valid($project)
+        || ($actor !== 'admin' && !vx_compose_owner_key_is_valid($actor))) {
+        return array('COUNT' => 0);
+    }
+    return vx_compose_command_json(
+        'v-list-docker-project-ingress-consumers',
+        array($owner, $project, 'json', $actor),
+        array('COUNT' => 0)
     );
 }
 
