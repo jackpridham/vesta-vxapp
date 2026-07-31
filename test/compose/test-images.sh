@@ -17,7 +17,7 @@ fail() {
 }
 
 fake_docker="$test_root/fake-docker"
-inspect_json='{"Id":"sha256:1234567890abcdef","RepoTags":["example.test/app:1"],"RepoDigests":["aaa.invalid/unrelated@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","example.test/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"Architecture":"amd64","Os":"linux","Config":{"Labels":{"org.opencontainers.image.source":"https://example.test/source","org.opencontainers.image.revision":"abc123","org.opencontainers.image.version":"1","org.opencontainers.image.vendor":"Vortex","org.opencontainers.image.created":"2026-07-31T00:00:00Z","secret.label":"must-not-copy"}}}'
+inspect_json='{"Id":"sha256:1234567890abcdef","RepoTags":["example.test/app:1"],"RepoDigests":["aaa.invalid/unrelated@sha256:0000000000000000000000000000000000000000000000000000000000000000","example.test/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"Architecture":"amd64","Os":"linux","Config":{"Labels":{"org.opencontainers.image.source":"https://example.test/source","org.opencontainers.image.revision":"abc123","org.opencontainers.image.version":"1","org.opencontainers.image.vendor":"Vortex","org.opencontainers.image.created":"2026-07-31T00:00:00Z","secret.label":"must-not-copy"}}}'
 manifest_json='{"Descriptor":{"digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}'
 {
     printf '%s\n' '#!/usr/bin/env bash'

@@ -173,6 +173,7 @@ vx_compose_trust_run_adapter() {
         return 0
     }
     if output="$(timeout --signal=KILL "$VX_COMPOSE_TRUST_TIMEOUT_SECONDS" \
+        env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin \
         "$path" "$digest" "$evidence" "$threshold" 2>/dev/null)"; then
         status=0
     else
