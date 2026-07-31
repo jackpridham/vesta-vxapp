@@ -195,14 +195,20 @@ vx_compose_simple_prepare_binds() {
 
     [[ -n "${MOUNTS:-}" ]] || return 0
     bind_root="$(vx_compose_bind_root "$owner" "$project")"
-    install -d -m 0750 "$bind_root"
+    if id -u "$owner" >/dev/null 2>&1; then
+        vx_compose_prepare_project_data_roots "$owner" "$project" || return 1
+    else
+        install -d -m 0750 "$bind_root"
+    fi
     while IFS= read -r item; do
         [[ -n "$item" ]] || continue
         source="${item%%:*}"
         [[ "$source" =~ ^[a-z0-9][a-z0-9_-]{0,63}$ ]] || return 1
-        install -d -m 0750 "$bind_root/$source"
         if id -u "$owner" >/dev/null 2>&1; then
-            chown "$owner:$owner" "$bind_root/$source"
+            vx_compose_managed_directory_prepare \
+                "$owner" "$bind_root/$source" tenant 0750 || return 1
+        else
+            install -d -m 0750 "$bind_root/$source"
         fi
     done <<<"${MOUNTS//||/$'\n'}"
 }

@@ -27,7 +27,7 @@ vx_compose_role_capability() {
     local role="$1" capability="$2"
 
     case "$role:$capability" in
-        viewer:view) return 0 ;;
+        viewer:view|viewer:view-ingress-consumers) return 0 ;;
         operator:view|operator:lifecycle|operator:reconcile) return 0 ;;
         deployer:view|deployer:preview|deployer:deploy|deployer:rollback) return 0 ;;
         backup-operator:view|backup-operator:backup|backup-operator:restore) return 0 ;;
@@ -80,6 +80,16 @@ vx_compose_authorize() {
         vx_compose_error 'Compose capability denied'
         return 1
     }
+}
+
+vx_compose_actor_has_project_capability() {
+    local actor="$1"
+    local owner="$2"
+    local project="$3"
+    local capability="$4"
+
+    [[ "$actor" != admin && "$actor" != "$owner" ]] || return 1
+    vx_compose_authorize "$actor" "$owner" "$project" "$capability"
 }
 
 vx_compose_lock_authorize() {

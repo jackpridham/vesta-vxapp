@@ -191,7 +191,13 @@ vx_compose_migrate_owner() {
             fi
             moved_sources=''
             if [[ -n "$mounts" ]]; then
-                install -d -m 0750 "$HOMEDIR/$owner/docker/$name/binds"
+                if id -u "$owner" >/dev/null 2>&1; then
+                    vx_compose_prepare_project_data_roots \
+                        "$owner" "$name" || return 1
+                else
+                    install -d -m 0750 \
+                        "$HOMEDIR/$owner/docker/$name/binds"
+                fi
                 while IFS= read -r item; do
                     source="${item%%:*}"
                     if [[ -d "$HOMEDIR/$owner/docker/$name/$source"

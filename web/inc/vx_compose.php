@@ -560,7 +560,9 @@ function vx_compose_preview_oci_labels($value)
         if (!vx_compose_preview_string_is_safe($value[$key], 512)
             || preg_match(
                 '/(^|[^a-z0-9])(password|passwd|secret|token|credential|'
-                .'authorization|authentication|bearer|private[._ -]?key|'
+                .'auth|authorization|authentication|'
+                .'auth[._ -]?(header|key|token|secret|credential)|'
+                .'bearer|private[._ -]?key|'
                 .'access[._ -]?(key|token|secret|credential)|'
                 .'client[._ -]?(key|token|secret|credential)|'
                 .'api[._ -]?key)([^a-z0-9]|$)/i',

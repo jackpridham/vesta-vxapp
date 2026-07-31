@@ -62,12 +62,8 @@ vx_compose_ingress_actor_can_view_metadata() {
 
     vx_compose_ingress_actor_is_valid "$actor" || return 1
     [[ "$actor" == admin ]] && return 0
-    if declare -F vx_compose_actor_has_project_capability >/dev/null 2>&1; then
-        vx_compose_actor_has_project_capability \
-            "$actor" "$owner" "$project" view-ingress-consumers
-        return
-    fi
-    return 1
+    vx_compose_actor_has_project_capability \
+        "$actor" "$owner" "$project" view-ingress-consumers
 }
 
 vx_compose_ingress_header_names_json() {

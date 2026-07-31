@@ -13,6 +13,8 @@ mkdir -p \
     "$HOMEDIR/tenant-a/conf/web" \
     "$HOMEDIR/tenant-b/conf/web" \
     "$test_root/bin"
+printf "SUSPENDED='no'\n" >"$VESTA/data/users/tenant-a/user.conf"
+printf "SUSPENDED='no'\n" >"$VESTA/data/users/tenant-b/user.conf"
 
 fail() {
     printf 'FAIL: %s\n' "$1" >&2
@@ -20,10 +22,14 @@ fail() {
 }
 
 project_root="$VESTA/data/users/tenant-a/docker-projects/app"
-printf "OWNER='tenant-a'\nPROJECT='app'\nSTATE='running'\n" \
+printf "OWNER='tenant-a'\nPROJECT='app'\nPROFILE='standard'\nSTATE='running'\n" \
     >"$project_root/project.conf"
 printf 'services: {}\n' >"$project_root/compose.yaml"
 printf "POLICY_SCHEMA='1'\n" >"$project_root/policy.conf"
+printf '%s\n' \
+    '{"SCHEMA":1,"ASSIGNMENTS":{"tenant-b":{"ROLE":"viewer"}}}' \
+    >"$project_root/roles.json"
+chmod 0600 "$project_root/roles.json"
 jq -n '{
     services: {
         api: {
@@ -130,12 +136,6 @@ fi
 if vx_compose_ingress_actor_can_view_metadata '' tenant-a app; then
     fail 'missing explicit actor received full ingress metadata'
 fi
-vx_compose_actor_has_project_capability() {
-    [[ "$1" == tenant-b
-        && "$2" == tenant-a
-        && "$3" == app
-        && "$4" == view-ingress-consumers ]]
-}
 vx_compose_ingress_actor_can_view_metadata tenant-b tenant-a app \
     || fail 'real viewer capability was ignored'
 

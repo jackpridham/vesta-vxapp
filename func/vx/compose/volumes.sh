@@ -12,11 +12,12 @@ vx_compose_bind_root_secure() {
     local bind_root
 
     bind_root="$(vx_compose_bind_root "$owner" "$project")"
-    [[ -d "$bind_root" && ! -L "$bind_root" ]] || return 1
-    if (( EUID == 0 )) && id -u "$owner" >/dev/null 2>&1; then
-        chown "root:$owner" "$bind_root" || return 1
+    if id -u "$owner" >/dev/null 2>&1; then
+        vx_compose_prepare_project_data_roots "$owner" "$project" || return 1
+    else
+        [[ -d "$bind_root" && ! -L "$bind_root" ]] || return 1
+        chmod 0750 "$bind_root"
     fi
-    chmod 0750 "$bind_root"
 }
 
 vx_compose_managed_binds_verify() {
@@ -98,10 +99,11 @@ vx_compose_simple_bind_leaves_normalize() {
         relative_source="${source#"$bind_root"/}"
         [[ "$source" == "$bind_root"/* && "$relative_source" != */*
             && -e "$source" && ! -L "$source" ]] || return 1
-        chown "$owner:$owner" "$source" || return 1
         if [[ -d "$source" ]]; then
-            chmod 0750 "$source" || return 1
+            vx_compose_managed_directory_prepare \
+                "$owner" "$source" tenant 0750 || return 1
         else
+            chown "$owner:$owner" "$source" || return 1
             chmod 0640 "$source" || return 1
         fi
     done < <(jq -r '

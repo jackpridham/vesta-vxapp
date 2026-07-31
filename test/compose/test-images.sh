@@ -17,7 +17,7 @@ fail() {
 }
 
 fake_docker="$test_root/fake-docker"
-inspect_json='{"Id":"sha256:1234567890abcdef","RepoTags":["example.test/app:1"],"RepoDigests":["aaa.invalid/unrelated@sha256:0000000000000000000000000000000000000000000000000000000000000000","example.test/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"Architecture":"amd64","Os":"linux","Config":{"Labels":{"org.opencontainers.image.source":"https://example.test/source","org.opencontainers.image.revision":"abc123","org.opencontainers.image.version":"secret token must-not-copy","org.opencontainers.image.vendor":"Vortex","org.opencontainers.image.created":"2026-07-31T00:00:00Z","secret.label":"must-not-copy"}}}'
+inspect_json='{"Id":"sha256:1234567890abcdef","RepoTags":["example.test/app:1"],"RepoDigests":["aaa.invalid/unrelated@sha256:0000000000000000000000000000000000000000000000000000000000000000","example.test/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"Architecture":"amd64","Os":"linux","Config":{"Labels":{"org.opencontainers.image.source":"https://example.test/source?auth=must-not-copy","org.opencontainers.image.revision":"abc123","org.opencontainers.image.version":"secret token must-not-copy","org.opencontainers.image.vendor":"Vortex","org.opencontainers.image.created":"2026-07-31T00:00:00Z","secret.label":"must-not-copy"}}}'
 current_manifest_json='[{"Descriptor":{"digest":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},"Platform":{"os":"linux","architecture":"amd64"}},{"Descriptor":{"digest":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},"Platform":{"os":"linux","architecture":"arm64"}}]'
 candidate_manifest_json='[{"Descriptor":{"digest":"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},"Platform":{"os":"linux","architecture":"amd64"}},{"Descriptor":{"digest":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},"Platform":{"os":"linux","architecture":"arm64"}}]'
 {
@@ -59,7 +59,7 @@ jq -e '
     and .REFERENCE == "example.test/app:1"
     and .IMAGE_ID == "sha256:1234567890abcdef"
     and (.IMMUTABLE_REFERENCES | length == 2)
-    and .OCI_LABELS.source == "https://example.test/source"
+    and .OCI_LABELS.source == ""
     and .OCI_LABELS.version == ""
     and (.OCI_LABELS | has("secret.label") | not)
     and .OS == "linux"
