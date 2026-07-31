@@ -1,11 +1,18 @@
 #!/bin/bash
 # info: restore protected Docker Compose owner data-root mounts
-# options: NONE
+# options: [MODE]
 #
 # The function runs before Docker and restores the self-bind mounts that keep
 # managed bind-source paths stable across service and host restarts.
 
 set -Eeuo pipefail
+
+mode="${1:-boot}"
+[[ "$mode" == boot || "$mode" == migrate ]] \
+    || {
+        echo "Error: invalid Compose data-root preparation mode" >&2
+        exit 1
+    }
 
 fail() {
     echo "Error: $1" >&2
@@ -52,6 +59,7 @@ for user_root in "$VESTA/data/users"/*; do
         || fail "Compose owner home is unsafe: $owner"
 
     has_managed_project=no
+    managed_projects=()
     for project_root in "$projects_root"/*; do
         [[ ! -L "$project_root" ]] \
             || fail "Compose project authority entry is linked: $project_root"
@@ -70,11 +78,19 @@ for user_root in "$VESTA/data/users"/*; do
                 == "$project" ]] \
             || fail "Compose project metadata identity mismatch: $owner/$project"
         has_managed_project=yes
+        managed_projects+=("$project")
     done
     [[ "$has_managed_project" == yes ]] || continue
-    vx_compose_prepare_project_data_roots "$owner" \
-        || fail "unable to protect Compose data root: $owner"
+    if [[ "$mode" == migrate ]]; then
+        for project in "${managed_projects[@]}"; do
+            vx_compose_prepare_legacy_project_data_roots "$owner" "$project" \
+                || fail "unable to migrate Compose data root: $owner/$project"
+        done
+    else
+        vx_compose_prepare_project_data_roots "$owner" \
+            || fail "unable to protect Compose data root: $owner"
+    fi
 done
 
-echo "Protected Docker Compose data-root mounts are ready."
+echo "Protected Docker Compose data-root mounts are ready ($mode)."
 exit 0

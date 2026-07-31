@@ -17,7 +17,12 @@ test_gid="$(id -g)"
 mkdir -p "$fake_bin" "$state_dir" "$fake_vesta/func" "$fake_vesta/conf" \
     "$fake_vesta/bin" "$fake_vesta/install/common/systemd/docker.service.d" \
     "$systemd_root"
-cp "$repo_root/bin/v-prepare-docker-compose-data-roots" "$fake_vesta/bin/"
+cat >"$fake_vesta/bin/v-prepare-docker-compose-data-roots" <<'EOF'
+#!/usr/bin/env bash
+printf 'prepare %s\n' "$*" >>"$VX_TEST_STATE/lifecycle.log"
+[[ "$*" == migrate ]]
+EOF
+chmod 0755 "$fake_vesta/bin/v-prepare-docker-compose-data-roots"
 sed \
     -e "s#systemd_root=/etc/systemd/system#systemd_root=$systemd_root#" \
     -e "s/install -o 0 -g 0/install -o $test_uid -g $test_gid/" \
@@ -149,10 +154,17 @@ EOF
 cat >"$fake_bin/systemctl" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$VX_TEST_STATE/systemctl.log"
-if [[ "$*" == 'restart vesta-compose-data-roots.service'
+printf 'systemctl %s\n' "$*" >>"$VX_TEST_STATE/lifecycle.log"
+if [[ "$*" == 'is-active --quiet vesta-compose-data-roots.service' ]]; then
+    [[ -f "$VX_TEST_STATE/guard-active" ]]
+    exit
+fi
+if [[ "$*" == 'start vesta-compose-data-roots.service'
     && "${VX_TEST_FAIL_MOUNT_GUARD:-no}" == yes ]]; then
     exit 1
 fi
+[[ "$*" == 'start vesta-compose-data-roots.service' ]] \
+    && touch "$VX_TEST_STATE/guard-active"
 [[ "$*" == 'enable --now docker' ]] && touch "$VX_TEST_STATE/daemon"
 exit 0
 EOF
@@ -193,19 +205,31 @@ grep -Fq 'After=vesta-compose-data-roots.service' \
 grep -Fq 'daemon-reload' "$state_dir/systemctl.log"
 grep -Fq 'enable vesta-compose-data-roots.service' \
     "$state_dir/systemctl.log"
-grep -Fq 'restart vesta-compose-data-roots.service' \
+grep -Fq 'start vesta-compose-data-roots.service' \
     "$state_dir/systemctl.log"
-restart_count="$(
-    grep -Fc 'restart vesta-compose-data-roots.service' \
+[[ "$(sed -n '1p' "$state_dir/lifecycle.log")" == 'prepare migrate' ]] \
+    || { echo "mount migration did not precede systemd activation" >&2; exit 1; }
+start_count="$(
+    grep -Fc 'start vesta-compose-data-roots.service' \
         "$state_dir/systemctl.log"
 )"
+prepare_count="$(grep -Fc 'prepare migrate' "$state_dir/lifecycle.log")"
 VESTA="$fake_vesta" \
     "$fake_vesta/bin/v-install-docker-compose-mount-guard" defer >/dev/null
 [[ "$(
-    grep -Fc 'restart vesta-compose-data-roots.service' \
+    grep -Fc 'start vesta-compose-data-roots.service' \
         "$state_dir/systemctl.log"
-)" == "$restart_count" ]] \
+)" == "$start_count" ]] \
     || { echo "deferred mount-guard installation activated the unit" >&2; exit 1; }
+[[ "$(grep -Fc 'prepare migrate' "$state_dir/lifecycle.log")" \
+    == "$prepare_count" ]] \
+    || { echo "deferred mount-guard installation migrated data" >&2; exit 1; }
+VESTA="$fake_vesta" \
+    "$fake_vesta/bin/v-install-docker-compose-mount-guard" >/dev/null
+[[ "$(grep -Fc 'start vesta-compose-data-roots.service' \
+    "$state_dir/systemctl.log")" == "$start_count" ]] \
+    || { echo "active mount guard was stopped during upgrade" >&2; exit 1; }
+rm -f "$state_dir/guard-active"
 if VX_TEST_FAIL_MOUNT_GUARD=yes "$installer_under_test" \
     >"$test_root/guard-failure.out" 2>&1; then
     echo "installer continued after mount-guard preparation failed" >&2

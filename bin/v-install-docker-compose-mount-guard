@@ -47,6 +47,10 @@ command -v umount >/dev/null 2>&1 \
     && ! -L "$service_target" && ! -L "$dropin_dir"
     && ! -L "$dropin_target" ]] \
     || fail "systemd mount-guard paths are unsafe"
+if [[ "$activation" == now ]]; then
+    "$VESTA/bin/v-prepare-docker-compose-data-roots" migrate \
+        || fail "unable to migrate protected Compose data roots"
+fi
 install -o 0 -g 0 -m 0755 -d "$dropin_dir"
 
 service_temp="$(mktemp "$systemd_root/.vesta-compose-data-roots.service.XXXXXX")" \
@@ -69,8 +73,12 @@ systemctl daemon-reload \
 systemctl enable vesta-compose-data-roots.service \
     || fail "unable to enable the mount guard"
 if [[ "$activation" == now ]]; then
-    systemctl restart vesta-compose-data-roots.service \
-        || fail "unable to establish protected Compose data-root mounts"
+    if ! systemctl is-active --quiet vesta-compose-data-roots.service; then
+        systemctl reset-failed vesta-compose-data-roots.service \
+            || fail "unable to reset the Compose mount guard"
+        systemctl start vesta-compose-data-roots.service \
+            || fail "unable to establish protected Compose data-root mounts"
+    fi
 fi
 
 echo "= Docker Compose mount guard is installed ($activation)."
