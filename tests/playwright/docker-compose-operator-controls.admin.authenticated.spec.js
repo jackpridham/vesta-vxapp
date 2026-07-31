@@ -128,6 +128,9 @@ test('operator console observes drift, reconciles explicitly, and remains usable
     await page.setViewportSize({ width: 390, height: 844 });
     await page.reload();
     await expect(page.getByRole('heading', { name: project })).toBeVisible();
+    const heroBounds = await page.locator('.docker-hero').boundingBox();
+    expect(heroBounds).not.toBeNull();
+    expect(heroBounds.height).toBeLessThan(280);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1))
       .toBe(true);
     modal = await openProjectActions(page);

@@ -1194,6 +1194,11 @@
     flex-direction: column;
   }
 
+  .body-docker .docker-hero > div:first-child {
+    flex-basis: auto;
+    width: 100%;
+  }
+
   .body-docker .docker-hero__actions {
     justify-content: flex-start;
   }
