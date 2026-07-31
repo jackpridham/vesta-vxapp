@@ -138,8 +138,8 @@ vx_compose_rollback_bound() {
     [[ "$expected_current" =~ ^[1-9][0-9]*$
         && "$expected_from_manifest" =~ ^[a-f0-9]{64}$
         && "$expected_to_manifest" =~ ^[a-f0-9]{64}$ ]] || return 1
-    vx_compose_authorize "$actor" "$owner" "$project" rollback || return 1
-    vx_compose_lock_acquire "$owner" "$project" || return 1
+    vx_compose_lock_authorize "$actor" "$owner" "$project" rollback \
+        || return 1
     preview="$(vx_compose_rollback_preview_json \
         "$actor" "$owner" "$project" "$target_revision")" || preview=
     if [[ -z "$preview"

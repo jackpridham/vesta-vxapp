@@ -3,7 +3,7 @@
 vx_compose_drift_observe_json() {
     local owner="$1" project="$2"
     local root runtime docker_bin revision desired_state raw='[]'
-    local container_id evidence digest
+    local container_id evidence digest ps_output
     local -a container_ids=()
 
     vx_compose_require_project "$owner" "$project" || return 1
@@ -12,17 +12,18 @@ vx_compose_drift_observe_json() {
     revision="$(vx_compose_meta_get "$root/project.conf" REVISION)" || return 1
     desired_state="$(vx_compose_meta_get "$root/project.conf" STATE)" || return 1
     docker_bin="$(vx_compose_docker_bin)" || return 1
-    while IFS= read -r container_id; do
-        [[ -z "$container_id" ]] && continue
-        [[ "$container_id" =~ ^[a-f0-9]{12,64}$ ]] || return 1
-        container_ids+=("$container_id")
-    done < <(
+    ps_output="$(
         env -i PATH="$VX_COMPOSE_SAFE_PATH" \
             HOME="$root/runtime/home" \
             DOCKER_CONFIG="$root/runtime/docker-config" \
             "$docker_bin" ps -aq \
             --filter "label=com.docker.compose.project=$runtime"
-    )
+    )" || return 1
+    while IFS= read -r container_id; do
+        [[ -z "$container_id" ]] && continue
+        [[ "$container_id" =~ ^[a-f0-9]{12,64}$ ]] || return 1
+        container_ids+=("$container_id")
+    done <<<"$ps_output"
     if ((${#container_ids[@]} > 0)); then
         raw="$(
             env -i PATH="$VX_COMPOSE_SAFE_PATH" \
@@ -201,8 +202,8 @@ vx_compose_reconcile() {
 
     [[ "$expected_digest" =~ ^[a-f0-9]{64}$
         && "$expected_revision" =~ ^[1-9][0-9]*$ ]] || return 1
-    vx_compose_authorize "$actor" "$owner" "$project" reconcile || return 1
-    vx_compose_lock_acquire "$owner" "$project" || return 1
+    vx_compose_lock_authorize "$actor" "$owner" "$project" reconcile \
+        || return 1
     root="$(vx_compose_project_root "$owner" "$project")"
     actual_revision="$(vx_compose_meta_get "$root/project.conf" REVISION)" \
         || actual_revision=

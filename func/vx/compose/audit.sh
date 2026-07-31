@@ -73,6 +73,18 @@ vx_compose_last_operation_write() {
         rm -f -- "$temp_file"
         return 1
     }
+    if (( EUID == 0 )); then
+        chown 0:0 "$temp_file" || {
+            rm -f -- "$temp_file"
+            return 1
+        }
+    else
+        if [[ "$(stat -c '%u' "$temp_file" 2>/dev/null)" != "$EUID" ]] \
+            || ! chgrp "$(id -g)" "$temp_file"; then
+            rm -f -- "$temp_file"
+            return 1
+        fi
+    fi
     chmod 0600 "$temp_file" || {
         rm -f -- "$temp_file"
         return 1

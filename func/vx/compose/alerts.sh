@@ -25,8 +25,10 @@ vx_compose_alert_notify() {
     local type="$3"
     local value="$4"
     local root routes route category destination delivery_failed=no
+    local contact user_conf subject message safe_value
 
     root="$(vx_compose_project_root "$owner" "$project")"
+    safe_value="$(vx_compose_redact_text "$root" "$value")"
     case "$type" in
         health|cpu|memory|network) category=health ;;
         quota*) category=quota ;;
@@ -39,24 +41,42 @@ vx_compose_alert_notify() {
         {"TYPE":"quota","DESTINATION":"panel"},
         {"TYPE":"backup","DESTINATION":"panel"},
         {"TYPE":"deployment","DESTINATION":"panel"}]'
-    if [[ -f "$root/notification-routes.json"
-        && ! -L "$root/notification-routes.json" ]]; then
+    if [[ -e "$root/notification-routes.json"
+        || -L "$root/notification-routes.json" ]]; then
+        vx_compose_control_file_is_secure \
+            "$root/notification-routes.json" 600 || return 1
         routes="$(jq -c 'select(type=="object" and .SCHEMA==1)
             | .ROUTES | select(type=="array")' \
             "$root/notification-routes.json" 2>/dev/null)" || return 1
     fi
     while IFS= read -r route; do
         destination="$(jq -r '.DESTINATION' <<<"$route")"
+        message="$project: $type ($safe_value)"
+        subject="Compose $category failure"
         if [[ -n "${VX_COMPOSE_NOTIFICATION_COMMAND:-}" ]]; then
             [[ -x "$VX_COMPOSE_NOTIFICATION_COMMAND" ]] \
                 && "$VX_COMPOSE_NOTIFICATION_COMMAND" \
-                    "$owner" "$project" "$type" "$value" "$destination" \
+                    "$owner" "$project" "$type" "$safe_value" "$destination" \
                 || delivery_failed=yes
         elif [[ "$destination" == panel
             && -x "$VESTA/bin/v-add-user-notification" ]]; then
             "$VESTA/bin/v-add-user-notification" "$owner" \
-                "Compose $category failure" \
-                "$project: $type ($value)" error || delivery_failed=yes
+                "$subject" "$message" error || delivery_failed=yes
+        elif [[ "$destination" == account-email ]]; then
+            user_conf="$VESTA/data/users/$owner/user.conf"
+            if [[ ! -f "$user_conf" || -L "$user_conf" ]]; then
+                delivery_failed=yes
+                continue
+            fi
+            contact="$(vx_compose_meta_get "$user_conf" CONTACT 2>/dev/null)" \
+                || contact=
+            if [[ -z "${SENDMAIL:-}" || ! -x "$SENDMAIL"
+                || ! "$contact" =~ ^[^[:space:]@]+@[^[:space:]@]+$ ]]; then
+                delivery_failed=yes
+            elif ! printf '%s\n' "$message" \
+                | "$SENDMAIL" -s "$subject" "$contact" yes; then
+                delivery_failed=yes
+            fi
         else
             delivery_failed=yes
         fi
@@ -67,7 +87,7 @@ vx_compose_alert_notify() {
 
 vx_compose_notification_route_set() {
     local manager="$1" owner="$2" project="$3" type="$4" destination="$5"
-    local root path old updated temp
+    local root path old updated temp existed=no
 
     [[ "$manager" == admin || "$manager" == "$owner" ]] || return 1
     vx_compose_actor_is_active "$manager" || return 1
@@ -78,9 +98,16 @@ vx_compose_notification_route_set() {
     root="$(vx_compose_project_root "$owner" "$project")"
     path="$root/notification-routes.json"
     old='{"SCHEMA":1,"ROUTES":[]}'
-    [[ ! -f "$path" ]] || old="$(jq -c '
-        select(type=="object" and .SCHEMA==1 and (.ROUTES|type=="array"))
-    ' "$path" 2>/dev/null)" || old=
+    if [[ -e "$path" || -L "$path" ]]; then
+        vx_compose_control_file_is_secure "$path" 600 || {
+            vx_compose_lock_release
+            return 1
+        }
+        existed=yes
+        old="$(jq -c '
+            select(type=="object" and .SCHEMA==1 and (.ROUTES|type=="array"))
+        ' "$path" 2>/dev/null)" || old=
+    fi
     if [[ -z "$old" ]]; then
         vx_compose_lock_release
         return 1
@@ -100,14 +127,31 @@ vx_compose_notification_route_set() {
         vx_compose_lock_release
         return 1
     }
-    if jq -S . <<<"$updated" >"$temp" && chmod 0600 "$temp" \
-        && mv -f -- "$temp" "$path" \
-        && vx_compose_audit "$root" notification-route succeeded \
-            "type=$type destination=$destination" 0 '[]' "$manager"; then
+    if ! jq -S . <<<"$updated" >"$temp" \
+        || ! vx_compose_control_file_protect "$temp" 600 \
+        || ! mv -f -- "$temp" "$path"; then
+        rm -f -- "$temp"
+        vx_compose_lock_release
+        return 1
+    fi
+    if vx_compose_audit "$root" notification-route succeeded \
+        "type=$type destination=$destination" 0 '[]' "$manager"; then
         vx_compose_lock_release
         return 0
     fi
-    rm -f -- "$temp"
+    if [[ "$existed" == yes ]]; then
+        temp="$(mktemp "$root/.notification-routes.XXXXXX")" || {
+            vx_compose_lock_release
+            return 1
+        }
+        if ! jq -S . <<<"$old" >"$temp" \
+            || ! vx_compose_control_file_protect "$temp" 600 \
+            || ! mv -f -- "$temp" "$path"; then
+            rm -f -- "$temp"
+        fi
+    else
+        rm -f -- "$path"
+    fi
     vx_compose_lock_release
     return 1
 }
@@ -117,12 +161,16 @@ vx_compose_notification_routes_list_json() {
 
     vx_compose_authorize "$actor" "$owner" "$project" view || return 1
     path="$(vx_compose_project_root "$owner" "$project")/notification-routes.json"
-    [[ -f "$path" && ! -L "$path" ]] || {
+    [[ ! -e "$path" && ! -L "$path" ]] || {
+        vx_compose_control_file_is_secure "$path" 600 || return 1
+        jq -S 'select(type=="object" and .SCHEMA==1
+            and (.ROUTES|type=="array"))' "$path"
+        return
+    }
+    {
         printf '%s\n' '{"SCHEMA":1,"ROUTES":[]}'
         return
     }
-    jq -S 'select(type=="object" and .SCHEMA==1
-        and (.ROUTES|type=="array"))' "$path"
 }
 
 vx_compose_backup_alert_set() {

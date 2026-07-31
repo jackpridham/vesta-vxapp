@@ -6,11 +6,24 @@
       && is_array($docker_project['SERVICES'])
       ? $docker_project['SERVICES']
       : array();
-  $docker_project_can_mutate = vx_compose_actor_can_mutate_project(
-      $docker_project,
-      $user,
-      $docker_project_owner
+  $docker_project_capabilities = isset($docker_project_capabilities)
+      && is_array($docker_project_capabilities)
+      ? $docker_project_capabilities
+      : array();
+  $docker_project_can_lifecycle = !empty(
+      $docker_project_capabilities['lifecycle']
   );
+  $docker_project_can_update = !empty(
+      $docker_project_capabilities['preview']
+  ) && !empty($docker_project_capabilities['deploy']);
+  $docker_project_can_mutate = $docker_project_can_lifecycle
+      || $docker_project_can_update
+      || !empty($docker_project_capabilities['rollback'])
+      || !empty($docker_project_capabilities['backup'])
+      || !empty($docker_project_capabilities['restore'])
+      || !empty($docker_project_capabilities['reconcile'])
+      || !empty($docker_project_capabilities['secret'])
+      || !empty($docker_project_capabilities['remove']);
   $docker_project_ingress = vx_compose_ingress_consumers_payload(
       $docker_project_owner,
       $docker_project_name,
@@ -76,8 +89,10 @@
     <?php if (($user === 'admin' || $user === $docker_project_owner) && !empty($docker_project['IS_SIMPLE'])) { ?>
     <a class="button docker-button docker-button--secondary" href="/edit/docker/?container=<?=urlencode($docker_project_name)?><?=$project_query_owner?>"><?=__('Simple settings')?></a>
     <?php } ?>
-    <?php if ($docker_project_can_mutate) { ?>
+    <?php if ($docker_project_can_update) { ?>
     <a class="button docker-button docker-button--secondary" href="/edit/docker/project/?project=<?=urlencode($docker_project_name)?>&user=<?=urlencode($docker_project_owner)?>"><?=__('Advanced update')?></a>
+    <?php } ?>
+    <?php if ($docker_project_can_lifecycle) { ?>
     <a class="button docker-button docker-button--danger" title="<?=__('Impact: briefly interrupts every service in this project.')?>" href="/restart/docker/?container=<?=urlencode($docker_project_name)?><?=$project_query_owner?>&token=<?=$_SESSION['token']?>"><?=__('Restart project')?></a>
     <?php } ?>
     <a class="button docker-button docker-button--primary" href="javascript:void(0)" onclick="more_button_click(1)"><?=__('Project actions')?></a>

@@ -9,7 +9,9 @@ export VESTA="$test_root/vesta"
 export HOMEDIR="$test_root/home"
 mkdir -p "$VESTA/data/users"/{alice,bob,carol,dave} "$HOMEDIR"/{alice,bob,carol,dave}
 for actor in alice bob carol dave; do
-    printf "SUSPENDED='no'\n" >"$VESTA/data/users/$actor/user.conf"
+    printf "SUSPENDED='no'\nCONTACT='%s@example.test'\n" "$actor" \
+        >"$VESTA/data/users/$actor/user.conf"
+    chmod 0660 "$VESTA/data/users/$actor/user.conf"
 done
 
 fail() {
@@ -85,6 +87,8 @@ base="$(dirname -- "$0")"
 mode="$(cat "$base/docker-mode")"
 if [[ " $* " == *" ps -aq "* ]]; then
     case "$mode" in
+        psfail) exit 43 ;;
+        malformed) printf '%s\n' not-a-container-id ;;
         missing) ;;
         extra) printf '%s\n' aaaaaaaaaaaa bbbbbbbbbbbb ;;
         *) printf '%s\n' aaaaaaaaaaaa ;;
@@ -137,8 +141,10 @@ source "$repo_root/func/vx/compose/main.sh"
 
 # Fine-grained roles, owner/admin override, immediate revocation and actor state.
 vx_compose_role_set alice alice app bob viewer
-[[ "$(stat -c '%a' "$root/roles.json")" == 600 ]] \
-    || fail 'role metadata mode is not 0600'
+expected_authority="$(vx_compose_authority_uid):$(vx_compose_authority_gid)"
+[[ "$(stat -c '%u:%g:%a:%F' "$root/roles.json")" \
+    == "$expected_authority:600:regular file" ]] \
+    || fail 'role metadata protection is not authoritative'
 roles_before_failure="$(sha256sum "$root/roles.json" | awk '{print $1}')"
 if (
     vx_compose_audit() { return 1; }
@@ -184,7 +190,30 @@ printf "SUSPENDED='yes'\n" >"$VESTA/data/users/bob/user.conf"
 if vx_compose_authorize bob alice app view 2>/dev/null; then
     fail 'suspended actor retained access'
 fi
-printf "SUSPENDED='no'\n" >"$VESTA/data/users/bob/user.conf"
+printf "SUSPENDED='no'\nCONTACT='bob@example.test'\n" \
+    >"$VESTA/data/users/bob/user.conf"
+chmod 0660 "$VESTA/data/users/bob/user.conf"
+rm -f "$VESTA/data/users/dave/user.conf"
+if vx_compose_authorize dave alice app view 2>/dev/null; then
+    fail 'actor with missing account authority retained access'
+fi
+printf "CONTACT='dave@example.test'\n" >"$VESTA/data/users/dave/user.conf"
+chmod 0660 "$VESTA/data/users/dave/user.conf"
+if vx_compose_authorize dave alice app view 2>/dev/null; then
+    fail 'actor with missing suspension state retained access'
+fi
+printf "SUSPENDED='no'\nCONTACT='dave@example.test'\n" \
+    >"$VESTA/data/users/dave/user.conf"
+chmod 0660 "$VESTA/data/users/dave/user.conf"
+mv "$VESTA/data/users/dave/user.conf" \
+    "$VESTA/data/users/dave/user.conf.authoritative"
+ln -s user.conf.authoritative "$VESTA/data/users/dave/user.conf"
+if vx_compose_authorize dave alice app view 2>/dev/null; then
+    fail 'actor with linked account authority retained access'
+fi
+rm "$VESTA/data/users/dave/user.conf"
+mv "$VESTA/data/users/dave/user.conf.authoritative" \
+    "$VESTA/data/users/dave/user.conf"
 jq '.ASSIGNMENTS.bob.ROLE="legacy-root"' "$root/roles.json" \
     >"$root/.roles.tmp" && mv "$root/.roles.tmp" "$root/roles.json"
 chmod 0600 "$root/roles.json"
@@ -230,6 +259,51 @@ if vx_compose_rollback_bound admin alice app 1 2 \
     "$(jq -r .TO_MANIFEST_SHA256 <<<"$preview")" >/dev/null 2>&1; then
     fail 'stale rollback manifest was accepted'
 fi
+if vx_compose_rollback_bound admin alice app 1 2 \
+    "$(jq -r .FROM_MANIFEST_SHA256 <<<"$preview")" \
+    "$(printf '0%.0s' {1..64})" >/dev/null 2>&1; then
+    fail 'stale rollback target manifest was accepted'
+fi
+mkdir -p "$VESTA/func"
+ln -s "$repo_root/func/vx" "$VESTA/func/vx"
+cat >"$VESTA/func/main.sh" <<'EOF'
+#!/usr/bin/env bash
+E_ARGS=1 E_INVALID=2 E_UPDATE=3 OK=0 ARGUMENTS=
+check_args() { :; }
+is_format_valid() { :; }
+is_object_valid() { :; }
+is_object_unsuspended() { :; }
+check_result() { printf '%s\n' "${2:-failed}" >&2; exit "${1:-1}"; }
+log_history() { :; }
+log_event() { :; }
+EOF
+if VESTA="$VESTA" HOMEDIR="$HOMEDIR" \
+    bash "$repo_root/bin/v-run-docker-project-action" \
+        carol alice app rollback 1 >/dev/null 2>&1; then
+    fail 'generic action adapter accepted target-only rollback'
+fi
+vx_compose_role_set admin alice app carol deployer
+generic_operation_before="$(sha256sum "$root/runtime/last-operation.json")"
+vx_compose_lock_acquire alice app
+(
+    eval "exec ${VX_COMPOSE_LOCK_FD}>&-"
+    unset VX_COMPOSE_LOCK_FD VX_COMPOSE_LOCK_KEY VX_COMPOSE_LOCK_DEPTH
+    VESTA="$VESTA" HOMEDIR="$HOMEDIR" \
+        bash "$repo_root/bin/v-run-docker-project-action" \
+            carol alice app deploy >/dev/null 2>&1
+) &
+generic_pid=$!
+jq 'del(.ASSIGNMENTS.carol)' "$root/roles.json" \
+    >"$root/.roles-generic-revoked"
+chmod 0600 "$root/.roles-generic-revoked"
+mv -f "$root/.roles-generic-revoked" "$root/roles.json"
+vx_compose_lock_release
+if wait "$generic_pid"; then
+    fail 'generic action crossed the locked revocation barrier'
+fi
+[[ "$(sha256sum "$root/runtime/last-operation.json")" \
+    == "$generic_operation_before" ]] \
+    || fail 'revoked generic action created operation evidence'
 vx_compose_rollback() {
     local mocked_root
     mocked_root="$(vx_compose_project_root "$1" "$2")"
@@ -255,7 +329,11 @@ jq -e '.ACTION=="rollback" and .RESULT=="succeeded"
     || fail 'rollback operation did not survive nested audit'
 
 # Typed operation records redact messages and retain an opaque identifier.
+vx_compose_lock_acquire alice app
 operation_id="$(vx_compose_operation_begin "$root" alice deploy 2)"
+if vx_compose_operation_begin "$root" alice backup 2 >/dev/null 2>&1; then
+    fail 'a second typed operation replaced a running operation'
+fi
 vx_compose_operation_update "$root" "$operation_id" converging 50 \
     'operator-secret-canary is hidden'
 vx_compose_audit "$root" deploy started 'nested lifecycle audit'
@@ -264,6 +342,26 @@ jq -e --arg id "$operation_id" \
     "$root/runtime/last-operation.json" >/dev/null \
     || fail 'nested deploy audit destroyed the running operation record'
 vx_compose_operation_finish "$root" "$operation_id" succeeded complete
+vx_compose_lock_release
+[[ "$(stat -c '%u:%g:%a:%F' "$root/runtime/last-operation.json")" \
+    == "$expected_authority:600:regular file" ]] \
+    || fail 'operation metadata protection is not authoritative'
+cp "$root/runtime/last-operation.json" "$test_root/last-operation.valid"
+printf '{malformed\n' >"$root/runtime/last-operation.json"
+chmod 0600 "$root/runtime/last-operation.json"
+malformed_operation_before="$(
+    sha256sum "$root/runtime/last-operation.json"
+)"
+vx_compose_lock_acquire alice app
+if vx_compose_operation_begin "$root" alice backup 2 >/dev/null 2>&1; then
+    fail 'malformed operation authority was overwritten'
+fi
+vx_compose_lock_release
+[[ "$(sha256sum "$root/runtime/last-operation.json")" \
+    == "$malformed_operation_before" ]] \
+    || fail 'malformed operation authority changed on refusal'
+cp "$test_root/last-operation.valid" "$root/runtime/last-operation.json"
+chmod 0600 "$root/runtime/last-operation.json"
 operation="$(vx_compose_operation_list_json alice alice app)"
 jq -e --arg id "$operation_id" '
     .OPERATION_ID==$id and .PHASE=="complete" and .PERCENT==100
@@ -302,6 +400,16 @@ printf race >"$test_root/docker-mode"
 if vx_compose_drift_observe_json alice app >/dev/null 2>&1; then
     fail 'inspect race produced accepted evidence'
 fi
+for mode in psfail malformed; do
+    printf '%s' "$mode" >"$test_root/docker-mode"
+    operation_before="$(sha256sum "$root/runtime/last-operation.json")"
+    if vx_compose_reconcile_preview_json bob alice app >/dev/null 2>&1; then
+        fail "$mode docker ps evidence was accepted for preview"
+    fi
+    [[ "$(sha256sum "$root/runtime/last-operation.json")" \
+        == "$operation_before" ]] \
+        || fail "$mode docker ps evidence created an operation"
+done
 
 # Reconcile denies stale evidence after re-observation under the project lock.
 printf missing >"$test_root/docker-mode"
@@ -316,6 +424,29 @@ if vx_compose_reconcile bob alice app \
 fi
 grep -Fq 'stale' "$test_root/stale.err" \
     || fail 'stale digest returned the wrong diagnostic'
+exact="$(vx_compose_reconcile_preview_json bob alice app)"
+real_lock_acquire="$(declare -f vx_compose_lock_acquire)"
+eval "${real_lock_acquire/vx_compose_lock_acquire /vx_compose_lock_acquire_real }"
+vx_compose_lock_acquire() {
+    local role_path project_root
+
+    vx_compose_lock_acquire_real "$@" || return 1
+    role_path="$(vx_compose_roles_path alice app)"
+    project_root="$(vx_compose_project_root alice app)"
+    jq 'del(.ASSIGNMENTS.bob)' "$role_path" \
+        >"$project_root/.roles-revoked" \
+        && chmod 0600 "$project_root/.roles-revoked" \
+        && mv -f "$project_root/.roles-revoked" "$role_path"
+}
+if vx_compose_reconcile bob alice app \
+    "$(jq -r .DRIFT_DIGEST <<<"$exact")" 2 >/dev/null 2>&1; then
+    fail 'reconcile crossed the locked revocation barrier'
+fi
+[[ -z "${VX_COMPOSE_LOCK_FD:-}" ]] \
+    || fail 'denied locked authorization leaked the project lock'
+eval "$real_lock_acquire"
+unset -f vx_compose_lock_acquire_real
+vx_compose_role_set alice alice app bob operator
 exact="$(vx_compose_reconcile_preview_json bob alice app)"
 reconcile_output="$(vx_compose_reconcile \
     bob alice app "$(jq -r .DRIFT_DIGEST <<<"$exact")" 2)" \
@@ -333,6 +464,14 @@ printf '%s\n' '#!/usr/bin/env bash' \
     'printf "%s\n" "$*" >>"$(dirname -- "$0")/notify.log"' \
     >"$VX_COMPOSE_NOTIFICATION_COMMAND"
 chmod 0755 "$VX_COMPOSE_NOTIFICATION_COMMAND"
+if (
+    vx_compose_audit() { return 1; }
+    vx_compose_notification_route_set alice alice app health panel
+) 2>/dev/null; then
+    fail 'initial notification route succeeded without durable audit evidence'
+fi
+[[ ! -e "$root/notification-routes.json" ]] \
+    || fail 'failed initial notification audit left route authority'
 vx_compose_notification_route_set alice alice app health panel
 vx_compose_notification_route_set alice alice app health account-email
 routes="$(vx_compose_notification_routes_list_json alice alice app)"
@@ -355,6 +494,42 @@ if vx_compose_alert_notify alice app health unhealthy 2>/dev/null; then
 fi
 [[ "$(wc -l <"$test_root/notify-failure.log")" -eq 2 ]] \
     || fail 'one failed destination prevented notification fan-out'
+routes_before_failure="$(sha256sum "$root/notification-routes.json")"
+if (
+    vx_compose_audit() { return 1; }
+    vx_compose_notification_route_set alice alice app backup account-email
+) 2>/dev/null; then
+    fail 'notification route succeeded without durable audit evidence'
+fi
+[[ "$(sha256sum "$root/notification-routes.json")" \
+    == "$routes_before_failure" ]] \
+    || fail 'failed notification audit left changed route authority'
+[[ "$(stat -c '%u:%g:%a:%F' "$root/notification-routes.json")" \
+    == "$expected_authority:600:regular file" ]] \
+    || fail 'notification route protection is not authoritative'
+unset VX_COMPOSE_NOTIFICATION_COMMAND
+mkdir -p "$VESTA/bin"
+export NATIVE_NOTIFY_LOG="$test_root/native-notify.log"
+cat >"$VESTA/bin/v-add-user-notification" <<'EOF'
+#!/usr/bin/env bash
+printf 'panel:%s\n' "$*" >>"$NATIVE_NOTIFY_LOG"
+EOF
+chmod 0755 "$VESTA/bin/v-add-user-notification"
+export SENDMAIL="$test_root/mail-wrapper"
+cat >"$SENDMAIL" <<'EOF'
+#!/usr/bin/env bash
+body="$(cat)"
+printf 'email:%s body:%s\n' "$*" \
+    "$body" >>"$NATIVE_NOTIFY_LOG"
+EOF
+chmod 0755 "$SENDMAIL"
+vx_compose_alert_notify alice app health operator-secret-canary \
+    || fail 'native panel/account-contact fan-out failed'
+[[ "$(wc -l <"$test_root/native-notify.log")" -eq 2 ]] \
+    || fail 'native notification fan-out missed an approved destination'
+if rg -F 'operator-secret-canary' "$test_root/native-notify.log"; then
+    fail 'native notification delivery leaked a managed secret'
+fi
 if vx_compose_notification_route_set alice alice app health \
     'https://secret.example/token' 2>/dev/null; then
     fail 'secret notification endpoint was accepted'
@@ -363,5 +538,21 @@ if rg -F 'operator-secret-canary' "$root"/{roles.json,notification-routes.json} 
     "$test_root/notify.log"; then
     fail 'operator metadata leaked a managed secret'
 fi
+chmod 0644 "$root/notification-routes.json"
+if vx_compose_notification_routes_list_json alice alice app \
+    >/dev/null 2>&1; then
+    fail 'unsafe notification route metadata was accepted'
+fi
+chmod 0600 "$root/notification-routes.json"
+chmod 0644 "$root/roles.json"
+if vx_compose_authorize bob alice app view >/dev/null 2>&1; then
+    fail 'unsafe delegated role metadata was accepted'
+fi
+chmod 0600 "$root/roles.json"
+chmod 0644 "$root/runtime/last-operation.json"
+if vx_compose_operation_list_json alice alice app >/dev/null 2>&1; then
+    fail 'unsafe operation metadata was accepted'
+fi
+chmod 0600 "$root/runtime/last-operation.json"
 
 echo 'Compose operator control tests passed.'

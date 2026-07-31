@@ -71,8 +71,17 @@ expect_pattern web/templates/docker_list_shared.php \
     'vx_compose_actor_can_mutate_project' \
     'project cards derive mutation controls from project profile authority'
 expect_pattern web/templates/docker_project_shared.php \
-    'vx_compose_actor_can_mutate_project' \
-    'project details derive mutation controls from project profile authority'
+    'docker_project_capabilities' \
+    'project details derive controls from capability-specific authority'
+expect_pattern web/list/docker/project/index.php \
+    'vx_compose_project_action_capabilities' \
+    'project details resolve every action capability for the current actor'
+expect_pattern web/templates/docker_project_shared.php \
+    'docker_project_can_update' \
+    'advanced update visibility requires preview and deploy capabilities'
+expect_pattern web/templates/docker_project_shared.php \
+    'docker_project_can_lifecycle' \
+    'restart visibility requires lifecycle capability'
 for helper in \
     services endpoints routes ingress health resources revisions backups \
     alerts operations events; do
@@ -263,6 +272,12 @@ for action in deploy rollback backup restore remove recreate; do
     expect_pattern "$file" 'myvesta_logged_user' \
         "$action uses the authenticated actor"
 done
+expect_pattern bin/v-run-docker-project-action \
+    'vx_compose_lock_authorize' \
+    'generic actions reauthorize under the exact project lock'
+expect_absent bin/v-run-docker-project-action \
+    '^[[:space:]]*rollback\\)' \
+    'generic actions refuse target-only rollback'
 
 for page in start stop restart; do
     expect_pattern "web/${page}/docker/index.php" \
@@ -467,6 +482,75 @@ if command -v php >/dev/null 2>&1; then
             exit(1);
         }
     ' "$ROOT/web/inc/vx_compose.php" || failures=$((failures + 1))
+    php -d display_errors=1 -r '
+        define("VX_COMPOSE_CONTROLLER_TEST", true);
+        define("VESTA_CMD", "/unused/");
+        $role = "viewer";
+        $active = true;
+        function vx_compose_test_command_json($command, $arguments, $default) {
+            global $role, $active;
+            if ($command !== "v-check-docker-project-capability"
+                || !$active
+                || $role === "revoked") {
+                return $default;
+            }
+            $matrix = array(
+                "viewer" => array(),
+                "operator" => array("lifecycle", "reconcile"),
+                "deployer" => array("preview", "deploy", "rollback"),
+                "backup-operator" => array("backup", "restore"),
+                "secret-manager" => array("secret"),
+            );
+            $capability = $arguments[3];
+            if ($capability === "view"
+                || in_array($capability, $matrix[$role], true)) {
+                return array("AUTHORIZED" => true);
+            }
+            return $default;
+        }
+        require $argv[1];
+        $expected = array(
+            "viewer" => array(),
+            "operator" => array("lifecycle", "reconcile"),
+            "deployer" => array("preview", "deploy", "rollback"),
+            "backup-operator" => array("backup", "restore"),
+            "secret-manager" => array("secret"),
+        );
+        foreach ($expected as $name => $allowed) {
+            $role = $name;
+            $actual = vx_compose_project_action_capabilities(
+                $name,
+                "alice",
+                "app"
+            );
+            foreach ($actual as $capability => $visible) {
+                $want = in_array($capability, $allowed, true);
+                if ($capability === "remove") {
+                    $want = false;
+                }
+                if ($visible !== $want) {
+                    fwrite(STDERR, "FAIL: action visibility mismatch for "
+                        .$name.":".$capability."\n");
+                    exit(1);
+                }
+            }
+        }
+        foreach (array("revoked", "suspended") as $state) {
+            $role = $state === "revoked" ? "revoked" : "operator";
+            $active = $state !== "suspended";
+            if (array_filter(vx_compose_project_action_capabilities(
+                "bob",
+                "alice",
+                "app"
+            ))) {
+                fwrite(STDERR, "FAIL: ".$state
+                    ." actor retained visible detail actions\n");
+                exit(1);
+            }
+        }
+    ' "$ROOT/web/inc/vx_compose.php" || failures=$((failures + 1))
+    php "$ROOT/test/compose/test-web-capability-visibility.php" "$ROOT" \
+        || failures=$((failures + 1))
 fi
 
 if [ "$failures" -ne 0 ]; then

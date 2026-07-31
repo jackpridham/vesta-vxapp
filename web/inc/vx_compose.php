@@ -357,6 +357,30 @@ function vx_compose_actor_has_capability($actor, $owner, $project, $capability)
     return isset($payload['AUTHORIZED']) && $payload['AUTHORIZED'] === true;
 }
 
+function vx_compose_project_action_capabilities($actor, $owner, $project)
+{
+    $capabilities = array();
+    foreach (array(
+        'lifecycle',
+        'preview',
+        'deploy',
+        'rollback',
+        'backup',
+        'restore',
+        'reconcile',
+        'secret',
+    ) as $capability) {
+        $capabilities[$capability] = vx_compose_actor_has_capability(
+            $actor,
+            $owner,
+            $project,
+            $capability
+        );
+    }
+    $capabilities['remove'] = $actor === 'admin' || $actor === $owner;
+    return $capabilities;
+}
+
 function vx_compose_actor_can_manage_profile(
     $actor,
     $owner,

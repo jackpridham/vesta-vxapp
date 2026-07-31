@@ -17,10 +17,10 @@ vx_compose_actor_is_active() {
     [[ "$actor" == admin ]] && return 0
     vx_compose_require_owner "$actor" || return 1
     user_conf="$VESTA/data/users/$actor/user.conf"
-    [[ -f "$user_conf" && ! -L "$user_conf" ]] || return 0
+    [[ -f "$user_conf" && ! -L "$user_conf" ]] || return 1
     suspended="$(vx_compose_meta_get "$user_conf" SUSPENDED 2>/dev/null)" \
-        || suspended=no
-    [[ "$suspended" != yes ]]
+        || return 1
+    [[ "$suspended" == no ]]
 }
 
 vx_compose_role_capability() {
@@ -44,8 +44,7 @@ vx_compose_role_for_actor() {
         return 0
     }
     path="$(vx_compose_roles_path "$owner" "$project")"
-    [[ -f "$path" && ! -L "$path"
-        && "$(stat -c '%a' "$path" 2>/dev/null)" == 600 ]] || return 1
+    vx_compose_control_file_is_secure "$path" 600 || return 1
     role="$(jq -er --arg actor "$actor" '
         select(type == "object" and .SCHEMA == 1)
         | .ASSIGNMENTS[$actor].ROLE
@@ -83,13 +82,24 @@ vx_compose_authorize() {
     }
 }
 
+vx_compose_lock_authorize() {
+    local actor="$1" owner="$2" project="$3" capability="$4"
+
+    vx_compose_lock_acquire "$owner" "$project" || return 1
+    if vx_compose_authorize "$actor" "$owner" "$project" "$capability"; then
+        return 0
+    fi
+    vx_compose_lock_release
+    return 1
+}
+
 vx_compose_role_write() {
     local path="$1" payload="$2" root temp
 
     root="$(dirname -- "$path")"
     temp="$(mktemp "$root/.roles.XXXXXX")" || return 1
     if ! jq -S . <<<"$payload" >"$temp" \
-        || ! chmod 0600 "$temp" \
+        || ! vx_compose_control_file_protect "$temp" 600 \
         || ! mv -f -- "$temp" "$path"; then
         rm -f -- "$temp"
         return 1
@@ -124,7 +134,12 @@ vx_compose_role_set() {
     vx_compose_lock_acquire "$owner" "$project" || return 1
     path="$(vx_compose_roles_path "$owner" "$project")"
     old='{"SCHEMA":1,"ASSIGNMENTS":{}}'
-    if [[ -f "$path" ]]; then
+    if [[ -e "$path" || -L "$path" ]]; then
+        vx_compose_control_file_is_secure "$path" 600 || {
+            vx_compose_lock_release
+            vx_compose_error 'stored Compose role metadata protection is invalid'
+            return 1
+        }
         existed=yes
         old="$(jq -c '
             select(type == "object" and .SCHEMA == 1
@@ -177,7 +192,7 @@ vx_compose_role_delete() {
     vx_compose_lock_acquire "$owner" "$project" || return 1
     root="$(vx_compose_project_root "$owner" "$project")"
     path="$(vx_compose_roles_path "$owner" "$project")"
-    [[ -f "$path" && ! -L "$path" ]] || {
+    vx_compose_control_file_is_secure "$path" 600 || {
         vx_compose_lock_release
         return 1
     }
@@ -217,10 +232,13 @@ vx_compose_roles_list_json() {
     vx_compose_authorize "$actor" "$owner" "$project" view || return 1
     path="$(vx_compose_roles_path "$owner" "$project")"
     payload='{"SCHEMA":1,"ASSIGNMENTS":{}}'
-    [[ ! -f "$path" ]] || payload="$(jq -c '
+    [[ ! -e "$path" && ! -L "$path" ]] || {
+        vx_compose_control_file_is_secure "$path" 600 || return 1
+        payload="$(jq -c '
         select(type=="object" and .SCHEMA==1
             and (.ASSIGNMENTS|type=="object"))
-    ' "$path" 2>/dev/null)" || return 1
+        ' "$path" 2>/dev/null)" || return 1
+    }
     jq -S --arg owner "$owner" --arg project "$project" \
         '{OWNER:$owner,PROJECT:$project,ASSIGNMENTS:.ASSIGNMENTS}' \
         <<<"$payload"

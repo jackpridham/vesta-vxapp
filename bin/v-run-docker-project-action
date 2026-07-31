@@ -17,24 +17,19 @@ check_args '4' "$#" 'ACTOR USER PROJECT ACTION [ARGUMENT] [ARGUMENT2]'
 is_format_valid 'user'
 is_object_valid 'user' 'USER' "$user"
 is_object_unsuspended 'user' 'USER' "$user"
-root="$(vx_compose_project_root "$user" "$compose_project")"
 target_revision=0
 case "$action" in
     start|stop|restart|recreate|alert-acknowledge) capability=lifecycle ;;
     deploy) capability=deploy ;;
-    rollback)
-        capability=rollback
-        target_revision=$argument
-        [[ "$target_revision" =~ ^[1-9][0-9]*$ ]] \
-            || check_result "$E_INVALID" 'rollback target revision is invalid'
-        ;;
     backup) capability=backup ;;
     restore) capability=restore ;;
     secret-add|secret-change|secret-delete) capability=secret ;;
     *) check_result "$E_INVALID" 'unsupported Compose project action' ;;
 esac
-vx_compose_authorize "$compose_actor" "$user" "$compose_project" "$capability" \
+vx_compose_lock_authorize \
+    "$compose_actor" "$user" "$compose_project" "$capability" \
     || check_result "$E_INVALID" 'Compose project capability denied'
+root="$(vx_compose_project_root "$user" "$compose_project")"
 operation_id="$(vx_compose_operation_begin \
     "$root" "$compose_actor" "$action" "$target_revision")" \
     || check_result "$E_UPDATE" 'Compose operation setup failed'
@@ -57,10 +52,6 @@ case "$action" in
         vx_compose_recreate "$user" "$compose_project" "$argument" && result=0
         ;;
     deploy) vx_compose_deploy "$user" "$compose_project" && result=0 ;;
-    rollback)
-        vx_compose_rollback "$user" "$compose_project" "$target_revision" \
-            && result=0
-        ;;
     backup)
         backup_path="$(vx_compose_backup_allocate_path \
             "$user" "$compose_project")" \

@@ -53,6 +53,11 @@ $docker_project_backups = vx_compose_backups_payload(
     $docker_project_name
 );
 $docker_project_revisions = vx_compose_revision_options($docker_project);
+$docker_project_capabilities = vx_compose_project_action_capabilities(
+    $user,
+    $docker_project_owner,
+    $docker_project_name
+);
 
 render_page($user, $TAB, 'docker_project');
 
