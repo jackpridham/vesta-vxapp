@@ -479,9 +479,12 @@ vx_compose_restore_prepare() {
         }
     vx_compose_restore_prepare_secrets \
         "$owner" "$project" "$extracted" "$validation_secrets" || return 1
+    # Stored compose.yaml excludes reserved ownership labels. Regenerate them
+    # from owner/project authority, then require the archived canonical form
+    # to reproduce exactly below.
     vx_compose_prepare_candidate \
         "$owner" "$project" "$extracted/control/compose.yaml" \
-        "$candidate" "$profile" yes "$extracted/binds" "$validation_secrets" \
+        "$candidate" "$profile" no "$extracted/binds" "$validation_secrets" \
         || return 1
     if [[ -f "$extracted/control/backup-policy.conf" ]] \
         && ! vx_compose_backup_policy_sanitize_to \
