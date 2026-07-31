@@ -286,9 +286,38 @@ fi
 mkdir -p "/home/${user_one}/docker/${container_one}/data"
 echo "before-backup" >"$restore_marker_path"
 chown -R "$user_one:$user_one" "/home/${user_one}/docker"
+compose_project_root="$VESTA/data/users/$user_one/docker-projects/$container_one"
+compose_revision_before="$(awk -F"'" '/^REVISION=/{print $2; exit}' \
+    "$compose_project_root/project.conf")"
 
 expect_ok "DOCKER: User backup completes with Docker data" "$V_BIN/v-backup-user $user_one no"
 backup_name="$(awk -F"'" '/^BACKUP=/{print $2; exit}' "$VESTA/data/users/$user_one/backup.conf")"
+
+if [ "$(awk -F"'" '/^STATE=/{print $2; exit}' \
+        "$compose_project_root/project.conf")" = running ] \
+    && [ "$(awk -F"'" '/^REVISION=/{print $2; exit}' \
+        "$compose_project_root/project.conf")" = "$compose_revision_before" ] \
+    && [ ! -e "$compose_project_root/runtime/backup-recovery.conf" ] \
+    && "$V_BIN/v-list-docker-project-health" \
+        "$user_one" "$container_one" json \
+        | jq -e '.STATUS == "healthy"
+            and all(.SERVICES[];
+                .RUNTIME_STATE == "running" and .HEALTH == "healthy")' \
+            >/dev/null; then
+    echo_result "DOCKER: Successful user backup restores exact healthy Compose revision" \
+        0 "$tmpfile" "post-backup runtime verification"
+else
+    printf 'Expected revision=%s\nActual state=%s\nActual revision=%s\nRecovery marker=%s\n' \
+        "$compose_revision_before" \
+        "$(awk -F"'" '/^STATE=/{print $2; exit}' \
+            "$compose_project_root/project.conf")" \
+        "$(awk -F"'" '/^REVISION=/{print $2; exit}' \
+            "$compose_project_root/project.conf")" \
+        "$(test -e "$compose_project_root/runtime/backup-recovery.conf" \
+            && echo present || echo absent)" >"$tmpfile"
+    echo_result "DOCKER: Successful user backup restores exact healthy Compose revision" \
+        1 "$tmpfile" "post-backup runtime verification"
+fi
 
 if [ -z "$backup_name" ] || [ ! -f "${backup_root}/${backup_name}" ]; then
     printf 'Unable to locate backup tarball for %s\n' "$user_one" >"$tmpfile"
@@ -309,6 +338,43 @@ if tar -tf "${backup_root}/${backup_name}" \
 else
     tar -tf "${backup_root}/${backup_name}" >"$tmpfile"
     echo_result "DOCKER: Backup archive includes Compose metadata, alerts, bind root, and route data" 1 "$tmpfile" "tar -tf ${backup_root}/${backup_name}"
+fi
+
+# An unsupported bind member fails only after the cold-backup stop. The user
+# backup must fail, while automatic recovery returns the exact prior revision
+# to running/healthy and removes its scoped marker.
+forced_fifo="/home/${user_one}/docker/${container_one}/binds/data/backup-failure.fifo"
+mkfifo "$forced_fifo"
+chown "$user_one:$user_one" "$forced_fifo"
+run_cmd "$V_BIN/v-backup-user $user_one no" "$stdout_file" "$stderr_file"
+forced_backup_rc=$?
+rm -f -- "$forced_fifo"
+if [ "$forced_backup_rc" -ne 0 ] \
+    && [ "$(awk -F"'" '/^STATE=/{print $2; exit}' \
+        "$compose_project_root/project.conf")" = running ] \
+    && [ "$(awk -F"'" '/^REVISION=/{print $2; exit}' \
+        "$compose_project_root/project.conf")" = "$compose_revision_before" ] \
+    && [ ! -e "$compose_project_root/runtime/backup-recovery.conf" ] \
+    && "$V_BIN/v-list-docker-project-health" \
+        "$user_one" "$container_one" json \
+        | jq -e '.STATUS == "healthy"
+            and all(.SERVICES[];
+                .RUNTIME_STATE == "running" and .HEALTH == "healthy")' \
+            >/dev/null; then
+    echo_result "DOCKER: Failed user backup automatically restores exact healthy revision" \
+        0 "$tmpfile" "forced post-stop backup failure"
+else
+    printf 'Backup rc=%s\nExpected revision=%s\nActual state=%s\nActual revision=%s\nRecovery marker=%s\n' \
+        "$forced_backup_rc" "$compose_revision_before" \
+        "$(awk -F"'" '/^STATE=/{print $2; exit}' \
+            "$compose_project_root/project.conf")" \
+        "$(awk -F"'" '/^REVISION=/{print $2; exit}' \
+            "$compose_project_root/project.conf")" \
+        "$(test -e "$compose_project_root/runtime/backup-recovery.conf" \
+            && echo present || echo absent)" >"$tmpfile"
+    cat "$stderr_file" >>"$tmpfile"
+    echo_result "DOCKER: Failed user backup automatically restores exact healthy revision" \
+        1 "$tmpfile" "forced post-stop backup failure"
 fi
 
 expect_ok "DOCKER: Remove routed proxy before restore" "$V_BIN/v-delete-docker-project-route $user_one $container_one $domain_one"
