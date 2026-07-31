@@ -452,7 +452,7 @@ vx_compose_secret_delete() {
 vx_compose_secret_list_json() {
     local owner="$1"
     local project="$2"
-    local metadata projected name version status
+    local metadata projected name version status legacy_version
 
     vx_compose_require_project "$owner" "$project" || return 1
     metadata="$(vx_compose_secret_metadata_path "$owner" "$project")"
@@ -464,14 +464,20 @@ vx_compose_secret_list_json() {
     while IFS= read -r name; do
         version="$(jq -r --arg name "$name" '.[$name].VERSION // empty' \
             "$metadata")"
+        legacy_version=no
         if [[ ! "$version" =~ ^[a-f0-9]{32}$ ]]; then
-            version="$(vx_compose_secret_version_allocate "$metadata")" \
-                || return 1
+            version=unavailable
+            legacy_version=yes
         fi
-        status=missing
-        [[ -f "$(vx_compose_secret_path "$owner" "$project" "$name")"
-            && ! -L "$(vx_compose_secret_path "$owner" "$project" "$name")" ]] \
-            && status=available
+        if [[ "$legacy_version" == yes ]]; then
+            status=migration-required
+        else
+            status=missing
+            [[ -f "$(vx_compose_secret_path "$owner" "$project" "$name")"
+                && ! -L "$(vx_compose_secret_path \
+                    "$owner" "$project" "$name")" ]] \
+                && status=available
+        fi
         projected="$(jq -c \
             --arg name "$name" \
             --arg target "$(jq -r --arg name "$name" \

@@ -249,14 +249,20 @@ jq '.api_key |= del(.VERSION, .STATUS) |
 mv "$legacy_metadata.new" "$(vx_compose_secret_metadata_path alice app)"
 legacy_before="$(sha256sum "$(vx_compose_secret_metadata_path alice app)")"
 vx_compose_secret_list_json alice app >"$test_root/legacy-list.json"
+vx_compose_secret_list_json alice app >"$test_root/legacy-list-second.json"
 legacy_after="$(sha256sum "$(vx_compose_secret_metadata_path alice app)")"
 [[ "$legacy_before" == "$legacy_after" ]] \
     || fail "legacy read rewrote secret metadata"
+jq -e --slurpfile second "$test_root/legacy-list-second.json" '
+    . == $second[0]
+' "$test_root/legacy-list.json" >/dev/null \
+    || fail "legacy secret compatibility projection was unstable"
 jq -e '
     (.api_key | keys | sort) == [
         "CREATED", "NAME", "ROTATED", "STATUS", "TARGET", "VERSION"
     ]
-    and (.api_key.VERSION | test("^[a-f0-9]{32}$"))
+    and .api_key.VERSION == "unavailable"
+    and .api_key.STATUS == "migration-required"
     and (tostring | contains("aaaaaaaaaaaaaaaa") | not)
 ' "$test_root/legacy-list.json" >/dev/null \
     || fail "legacy secret read exposed an integrity digest"

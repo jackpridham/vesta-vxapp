@@ -25,8 +25,11 @@ without mutation.
 The content SHA-256 used for encrypted backup and restore integrity lives only
 in separate root-owned mode-0600 private metadata. It is never returned by
 list or web surfaces. Read-only listing projects legacy metadata into the
-public schema in memory, including an ephemeral opaque compatibility version
-when required, without exposing its digest or rewriting stored state.
+public schema in memory without exposing its digest or rewriting stored state.
+Legacy entries that predate opaque versions use the stable, non-sensitive
+compatibility projection `VERSION=unavailable` and
+`STATUS=migration-required`. A later explicit create/rotation migration writes
+the first cryptographically random version; read-only listing never does.
 
 ## Mounting
 
