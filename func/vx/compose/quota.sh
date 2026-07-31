@@ -127,6 +127,145 @@ vx_compose_cpu_to_milli() {
     awk -v value="$value" 'BEGIN { printf "%.0f\n", value * 1000 }'
 }
 
+vx_compose_quota_data_value() {
+    local data="$1"
+    local field="$2"
+    local value
+
+    value="$(
+        sed -n "s/^${field}='\\([^']*\\)'$/\\1/p" <<<"$data" | head -n 1
+    )"
+    [[ -n "$value" ]] || return 1
+    printf '%s\n' "$value"
+}
+
+vx_compose_quota_value_normalize() {
+    local field="$1"
+    local value="$2"
+    local allow_unlimited="${3:-yes}"
+    local milli
+
+    if [[ "$allow_unlimited" == yes && "$value" == unlimited ]]; then
+        printf '%s\n' "$value"
+        return
+    fi
+    if [[ "$field" == DOCKER_CPUS ]]; then
+        milli="$(vx_compose_cpu_to_milli "$value")" || return 1
+        printf '%d.%03d\n' "$((milli / 1000))" "$((milli % 1000))"
+        return
+    fi
+    [[ "$value" =~ ^[0-9]+$ ]] || return 1
+    printf '%s\n' "$value"
+}
+
+vx_compose_quota_field_label() {
+    case "$1" in
+        DOCKER_PROJECTS) printf '%s\n' Projects ;;
+        DOCKER_SERVICES) printf '%s\n' Services ;;
+        DOCKER_CPUS) printf '%s\n' CPUs ;;
+        DOCKER_MEMORY_MB) printf '%s\n' Memory ;;
+        DOCKER_PIDS) printf '%s\n' PIDs ;;
+        DOCKER_STORAGE_MB) printf '%s\n' Storage ;;
+        DOCKER_PORTS) printf '%s\n' Ports ;;
+        DOCKER_SECRETS) printf '%s\n' Secrets ;;
+        DOCKER_VOLUMES) printf '%s\n' Volumes ;;
+        *) return 1 ;;
+    esac
+}
+
+vx_compose_quota_field_unit() {
+    case "$1" in
+        DOCKER_CPUS) printf '%s\n' cores ;;
+        DOCKER_MEMORY_MB|DOCKER_STORAGE_MB) printf '%s\n' MiB ;;
+        DOCKER_PROJECTS|DOCKER_SERVICES|DOCKER_PIDS|DOCKER_PORTS|\
+            DOCKER_SECRETS|DOCKER_VOLUMES)
+            printf '%s\n' count
+            ;;
+        *) return 1 ;;
+    esac
+}
+
+vx_compose_quota_diagnostic_json() {
+    local owner="$1"
+    local user_conf="$VESTA/data/users/$owner/user.conf"
+    local package package_file package_data user_data quotas field
+    local package_value effective_value used label unit
+    local -a fields=(
+        DOCKER_PROJECTS
+        DOCKER_SERVICES
+        DOCKER_CPUS
+        DOCKER_MEMORY_MB
+        DOCKER_PIDS
+        DOCKER_STORAGE_MB
+        DOCKER_PORTS
+        DOCKER_SECRETS
+        DOCKER_VOLUMES
+    )
+
+    [[ -f "$user_conf" && ! -L "$user_conf" ]] || {
+        vx_compose_error "Vesta user configuration is missing: $owner"
+        return 1
+    }
+    package="$(vx_compose_meta_get "$user_conf" PACKAGE)" || return 1
+    [[ "$package" =~ ^[A-Za-z0-9._-]+$ ]] || {
+        vx_compose_error 'invalid Vesta package name'
+        return 1
+    }
+    package_file="$VESTA/data/packages/$package.pkg"
+    [[ -f "$package_file" && ! -L "$package_file" ]] || {
+        vx_compose_error "Vesta package configuration is missing: $package"
+        return 1
+    }
+    declare -F vx_compose_package_data_with_defaults >/dev/null 2>&1 || {
+        vx_compose_error 'Compose package compatibility helpers are unavailable'
+        return 1
+    }
+    package_data="$(vx_compose_package_data_with_defaults "$(<"$package_file")")" \
+        || return 1
+    user_data="$(vx_compose_package_data_with_defaults "$(<"$user_conf")")" \
+        || return 1
+
+    quotas="$(
+        for field in "${fields[@]}"; do
+            package_value="$(vx_compose_quota_data_value \
+                "$package_data" "$field")" || return 1
+            effective_value="$(vx_compose_quota_data_value \
+                "$user_data" "$field")" || return 1
+            used="$(vx_compose_quota_data_value \
+                "$user_data" "U_$field" 2>/dev/null || printf '%s\n' 0)"
+            package_value="$(vx_compose_quota_value_normalize \
+                "$field" "$package_value")" || return 1
+            effective_value="$(vx_compose_quota_value_normalize \
+                "$field" "$effective_value")" || return 1
+            used="$(vx_compose_quota_value_normalize \
+                "$field" "$used" no)" || return 1
+            label="$(vx_compose_quota_field_label "$field")" || return 1
+            unit="$(vx_compose_quota_field_unit "$field")" || return 1
+            printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+                "$field" "$label" "$unit" \
+                "$package_value" "$effective_value" "$used"
+        done | jq -Rn '
+            [
+                inputs
+                | split("\t")
+                | {
+                    FIELD: .[0],
+                    LABEL: .[1],
+                    UNIT: .[2],
+                    PACKAGE_VALUE: .[3],
+                    EFFECTIVE_VALUE: .[4],
+                    USED: .[5]
+                }
+            ]
+        '
+    )" || return 1
+    jq -cn \
+        --arg user "$owner" \
+        --arg package "$package" \
+        --argjson quotas "$quotas" \
+        '{USER:$user,PACKAGE:$package,QUOTAS:$quotas}'
+}
+
 vx_compose_quota_compare() {
     local owner="$1"
     local field="$2"

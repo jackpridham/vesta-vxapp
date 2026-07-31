@@ -1,0 +1,35 @@
+#!/bin/bash
+# info: list authoritative Docker Compose quotas for a user
+# options: USER [FORMAT]
+
+user=$1
+format=${2-json}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '1' "$#" 'USER [FORMAT]'
+[ "$#" -le 2 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+
+quota="$(vx_compose_quota_diagnostic_json "$user")" \
+    || check_result "$E_INVALID" 'Docker Compose quota listing failed'
+case "$format" in
+    json) printf '%s\n' "$quota" ;;
+    plain)
+        jq -r '
+            .QUOTAS[]
+            | [
+                .FIELD,
+                .PACKAGE_VALUE,
+                .EFFECTIVE_VALUE,
+                .USED,
+                .UNIT
+            ]
+            | @tsv
+        ' <<<"$quota"
+        ;;
+    *) check_result "$E_INVALID" 'format must be json or plain' ;;
+esac
+exit

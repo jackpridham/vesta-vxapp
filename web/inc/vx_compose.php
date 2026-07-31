@@ -867,12 +867,39 @@ function vx_compose_quota_state($owner, $user_panel = null)
     if (!is_array($user_panel) || empty($user_panel)) {
         $user_panel = vx_docker_get_user_panel($owner);
     }
-    $limit_raw = isset($user_panel['DOCKER_PROJECTS'])
-        ? trim((string) $user_panel['DOCKER_PROJECTS'])
-        : '0';
-    $used = isset($user_panel['U_DOCKER_PROJECTS'])
-        ? (int) $user_panel['U_DOCKER_PROJECTS']
-        : 0;
+    $fields = array(
+        'DOCKER_PROJECTS' => array('label' => 'Projects', 'unit' => 'count'),
+        'DOCKER_SERVICES' => array('label' => 'Services', 'unit' => 'count'),
+        'DOCKER_CPUS' => array('label' => 'CPUs', 'unit' => 'cores'),
+        'DOCKER_MEMORY_MB' => array('label' => 'Memory', 'unit' => 'MiB'),
+        'DOCKER_PIDS' => array('label' => 'PIDs', 'unit' => 'count'),
+        'DOCKER_STORAGE_MB' => array('label' => 'Storage', 'unit' => 'MiB'),
+        'DOCKER_PORTS' => array('label' => 'Ports', 'unit' => 'count'),
+        'DOCKER_SECRETS' => array('label' => 'Secrets', 'unit' => 'count'),
+        'DOCKER_VOLUMES' => array('label' => 'Volumes', 'unit' => 'count'),
+    );
+    $dimensions = array();
+    foreach ($fields as $field => $metadata) {
+        $limit_value = isset($user_panel[$field])
+            ? trim((string) $user_panel[$field])
+            : '0';
+        $used_field = 'U_'.$field;
+        $used_value = isset($user_panel[$used_field])
+            ? trim((string) $user_panel[$used_field])
+            : ($field === 'DOCKER_CPUS' ? '0.000' : '0');
+        $dimensions[$field] = array(
+            'label' => $metadata['label'],
+            'unit' => $metadata['unit'],
+            'limit' => $limit_value,
+            'used' => $used_value,
+            'reached' => (
+                strtolower($limit_value) !== 'unlimited'
+                && (float) $used_value >= (float) $limit_value
+            ),
+        );
+    }
+    $limit_raw = $dimensions['DOCKER_PROJECTS']['limit'];
+    $used = (int) $dimensions['DOCKER_PROJECTS']['used'];
     $limit = null;
     if ($limit_raw !== '' && strtolower($limit_raw) !== 'unlimited') {
         $limit = (int) $limit_raw;
@@ -881,6 +908,7 @@ function vx_compose_quota_state($owner, $user_panel = null)
         'limit' => $limit,
         'used' => $used,
         'reached' => ($limit !== null && $used >= $limit),
+        'dimensions' => $dimensions,
     );
 }
 

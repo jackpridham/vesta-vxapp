@@ -18,6 +18,7 @@
   $docker_show_owner_groups = ($docker_actor_is_admin && $docker_owner === '' && !empty($docker_grouped_data));
   $docker_scope_label = $docker_actor_is_admin ? ($docker_owner !== '' ? $docker_owner : __('All Users')) : $user;
   $docker_quota_limit = (isset($docker_quota['limit']) && $docker_quota['limit'] !== null && $docker_quota['limit'] !== '') ? $docker_quota['limit'] : __('Unlimited');
+  $docker_quota_used = isset($docker_quota['used']) ? (int) $docker_quota['used'] : 0;
   $docker_total_containers = count($data);
   $docker_all_visible_projects_mutable = true;
   foreach ($data as $docker_visible_project) {
@@ -234,10 +235,30 @@
         </article>
         <article class="docker-overview-card">
           <span class="docker-overview-card__label"><?=__('Quota')?></span>
-          <strong class="docker-overview-card__value"><?=$docker_total_containers?> / <?=htmlspecialchars($docker_quota_limit, ENT_QUOTES)?></strong>
+          <strong class="docker-overview-card__value"><?=$docker_quota_used?> / <?=htmlspecialchars($docker_quota_limit, ENT_QUOTES)?></strong>
           <p class="docker-overview-card__meta"><?php if (!empty($docker_quota['reached'])) { ?><?=__('This owner scope is at capacity.')?><?php } else { ?><?=__('Capacity remains for additional managed containers.')?><?php } ?></p>
         </article>
       </div>
+
+      <?php if (!empty($docker_quota['dimensions']) && is_array($docker_quota['dimensions'])) { ?>
+      <section class="docker-section" aria-labelledby="docker-quota-dimensions-title">
+        <div class="docker-section__header">
+          <div>
+            <h2 id="docker-quota-dimensions-title"><?=__('Compose quota dimensions')?></h2>
+            <p><?=__('Authoritative owner usage against the effective package limits.')?></p>
+          </div>
+        </div>
+        <div class="docker-overview-grid">
+          <?php foreach ($docker_quota['dimensions'] as $docker_quota_dimension) { ?>
+          <article class="docker-overview-card">
+            <span class="docker-overview-card__label"><?=htmlspecialchars($docker_quota_dimension['label'], ENT_QUOTES)?></span>
+            <strong class="docker-overview-card__value"><?=htmlspecialchars($docker_quota_dimension['used'], ENT_QUOTES)?> / <?=htmlspecialchars(strtolower($docker_quota_dimension['limit']) === 'unlimited' ? __('Unlimited') : $docker_quota_dimension['limit'], ENT_QUOTES)?></strong>
+            <p class="docker-overview-card__meta"><?=htmlspecialchars($docker_quota_dimension['unit'], ENT_QUOTES)?></p>
+          </article>
+          <?php } ?>
+        </div>
+      </section>
+      <?php } ?>
 
       <section id="docker-unavailable-state" class="docker-state docker-state--warning" <?php if ($docker_primary_state !== 'unavailable') echo 'style="display:none;"'; ?>>
         <div class="docker-state__title"><?=__('Docker is not installed')?></div>

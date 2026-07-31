@@ -72,6 +72,12 @@ expect_pattern web/templates/docker_project_shared.php \
 expect_pattern web/templates/docker_list_shared.php \
     "docker_available.*docker_quota.*docker_can_add_from_scope|docker_available.*reached.*docker_can_add_from_scope" \
     'advanced add follows Docker readiness, quota, and explicit owner scope'
+expect_pattern web/templates/docker_list_shared.php \
+    'docker_quota_used.*docker_quota_limit' \
+    'project quota uses its authoritative usage counter'
+expect_pattern web/templates/docker_list_shared.php \
+    "foreach.*docker_quota\\['dimensions'\\]" \
+    'all Compose quota dimensions are rendered'
 expect_pattern web/templates/docker_project_shared.php 'Advanced update' \
     'standard owners can discover advanced update'
 
