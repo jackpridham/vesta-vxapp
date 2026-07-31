@@ -379,10 +379,32 @@ vx_compose_backup_policy_state_update \
 : >"$test_root/scheduler-runs.log"
 vx_compose_backup_policy_run() {
     printf '%s/%s\n' "$1" "$2" >>"$test_root/scheduler-runs.log"
+    [[ "${BLOCK_SCHEDULER:-no}" != yes ]] \
+        || IFS= read -r _ <&"$scheduler_barrier_fd"
 }
+mkfifo "$test_root/scheduler.fifo"
+exec {scheduler_barrier_fd}<>"$test_root/scheduler.fifo"
+BLOCK_SCHEDULER=yes
+export BLOCK_SCHEDULER
+vx_compose_backup_policies_run_due &
+scheduler_pid=$!
+for _ in $(seq 1 100); do
+    [[ -s "$test_root/scheduler-runs.log" ]] && break
+    sleep 0.01
+done
+[[ "$(cat "$test_root/scheduler-runs.log")" == alice/app ]] \
+    || fail "scheduler concurrency fixture did not enter the due project"
+vx_compose_backup_policies_run_due
+[[ "$(wc -l <"$test_root/scheduler-runs.log")" -eq 1 ]] \
+    || fail "host scheduler lock allowed a duplicate enumeration"
+kill "$scheduler_pid"
+wait "$scheduler_pid" 2>/dev/null || :
+exec {scheduler_barrier_fd}>&-
+unset BLOCK_SCHEDULER
+: >"$test_root/scheduler-runs.log"
 vx_compose_backup_policies_run_due
 [[ "$(cat "$test_root/scheduler-runs.log")" == alice/app ]] \
-    || fail "scheduler did not run exactly the enabled due project"
+    || fail "scheduler did not restart with exactly the enabled due project"
 
 # Typed backup alerts are stable, redacted, idempotent, and close on recovery.
 printf 'typed-alert-secret-canary\n' \
