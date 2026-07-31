@@ -17,7 +17,7 @@ fail() {
 }
 
 fake_docker="$test_root/fake-docker"
-inspect_json='{"Id":"sha256:1234567890abcdef","RepoTags":["example.test/app:1"],"RepoDigests":["aaa.invalid/unrelated@sha256:0000000000000000000000000000000000000000000000000000000000000000","example.test/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"Architecture":"amd64","Os":"linux","Config":{"Labels":{"org.opencontainers.image.source":"https://example.test/source?auth=must-not-copy","org.opencontainers.image.revision":"abc123","org.opencontainers.image.version":"secret token must-not-copy","org.opencontainers.image.vendor":"Vortex","org.opencontainers.image.created":"2026-07-31T00:00:00Z","secret.label":"must-not-copy"}}}'
+inspect_json='{"Id":"sha256:1111111111111111111111111111111111111111111111111111111111111111","RepoTags":["example.test/app:1"],"RepoDigests":["aaa.invalid/unrelated@sha256:0000000000000000000000000000000000000000000000000000000000000000","example.test/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"Architecture":"amd64","Os":"linux","Config":{"Labels":{"org.opencontainers.image.source":"https://example.test/source?auth=must-not-copy","org.opencontainers.image.revision":"abc123","org.opencontainers.image.version":"secret token must-not-copy","org.opencontainers.image.vendor":"Vortex","org.opencontainers.image.created":"2026-07-31T00:00:00Z","secret.label":"must-not-copy"}}}'
 current_manifest_json='[{"Descriptor":{"digest":"sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"},"Platform":{"os":"linux","architecture":"amd64"}},{"Descriptor":{"digest":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},"Platform":{"os":"linux","architecture":"arm64"}}]'
 candidate_manifest_json='[{"Descriptor":{"digest":"sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"},"Platform":{"os":"linux","architecture":"amd64"}},{"Descriptor":{"digest":"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},"Platform":{"os":"linux","architecture":"arm64"}}]'
 {
@@ -30,7 +30,7 @@ candidate_manifest_json='[{"Descriptor":{"digest":"sha256:dddddddddddddddddddddd
     printf '%s\n' 'case " $* " in'
     printf '%s\n' '  *" image inspect "*)'
 : <<'VX_BROKEN_GENERATOR'
-    printf '%s\n' '    printf "%s\n" '"'"'{"Id":"sha256:1234567890abcdef","RepoTags":["example.test/app:1"],"RepoDigests":["example.test/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"Architecture":"amd64","Os":"linux","Config":{"Labels":{"org.opencontainers.image.source":"https://example.test/source","org.opencontainers.image.revision":"abc123","org.opencontainers.image.version":"1","org.opencontainers.image.vendor":"Vortex","org.opencontainers.image.created":"2026-07-31T00:00:00Z","secret.label":"must-not-copy"}}}'"'"'"
+    printf '%s\n' '    printf "%s\n" '"'"'{"Id":"sha256:1111111111111111111111111111111111111111111111111111111111111111","RepoTags":["example.test/app:1"],"RepoDigests":["example.test/app@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"Architecture":"amd64","Os":"linux","Config":{"Labels":{"org.opencontainers.image.source":"https://example.test/source","org.opencontainers.image.revision":"abc123","org.opencontainers.image.version":"1","org.opencontainers.image.vendor":"Vortex","org.opencontainers.image.created":"2026-07-31T00:00:00Z","secret.label":"must-not-copy"}}}'"'"'"
     printf '%s\n' '    ;;'
     printf '%s\n' '  *" manifest inspect "*)'
     printf '%s\n' '    printf "%s\n" '"'"'{"Descriptor":{"digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}}'"'"
@@ -57,7 +57,7 @@ vx_compose_image_pull alice example.test/app:1 >"$test_root/pull.json"
 jq -e '
     .OWNER == "alice"
     and .REFERENCE == "example.test/app:1"
-    and .IMAGE_ID == "sha256:1234567890abcdef"
+    and .IMAGE_ID == "sha256:1111111111111111111111111111111111111111111111111111111111111111"
     and (.IMMUTABLE_REFERENCES | length == 2)
     and .OCI_LABELS.source == ""
     and .OCI_LABELS.version == ""
@@ -90,7 +90,7 @@ printf 'synthetic image archive\n' >"$archive"
 )
 calls_before="$(grep -c '^CALL$' "$test_root/docker.log")"
 vx_compose_image_load alice "$archive" "$checksum" >"$test_root/load.json"
-jq -e '.IMAGE_ID == "sha256:1234567890abcdef"' "$test_root/load.json" >/dev/null \
+jq -e '.IMAGE_ID == "sha256:1111111111111111111111111111111111111111111111111111111111111111"' "$test_root/load.json" >/dev/null \
     || fail "post-load image identity was not inspected"
 [[ ! -e "$archive" && ! -e "$checksum" ]] \
     || fail "successful archive load did not clean staging files"
@@ -120,7 +120,7 @@ printf 'frozen\n' >"$project_root/revisions/000001/images.json"
 vx_compose_resolve_images_to_file \
     alice "$project_root/runtime/canonical.json" standard \
     "$test_root/pending-images.json"
-jq -e '.web.IMAGE_ID == "sha256:1234567890abcdef"' \
+jq -e '.web.IMAGE_ID == "sha256:1111111111111111111111111111111111111111111111111111111111111111"' \
     "$test_root/pending-images.json" >/dev/null \
     || fail "pending candidate image evidence is incomplete"
 [[ "$(cat "$project_root/revisions/000001/images.json")" == frozen ]] \

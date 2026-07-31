@@ -1,0 +1,18 @@
+{
+  "api": {
+    "ARCHITECTURE": "amd64",
+    "IMAGE_ID": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "OS": "linux",
+    "REFERENCE": "registry.example.invalid/vesta/api:stable",
+    "REPO_DIGESTS": [
+      "registry.example.invalid/vesta/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+  },
+  "worker": {
+    "ARCHITECTURE": "amd64",
+    "IMAGE_ID": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    "OS": "linux",
+    "REFERENCE": "vesta-worker:local",
+    "REPO_DIGESTS": []
+  }
+}
