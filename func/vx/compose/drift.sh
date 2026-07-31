@@ -103,7 +103,10 @@ vx_compose_drift_observe_json() {
                   else $mode end
              ),
              PID_MODE:(.HostConfig.PidMode//""),
-             IPC_MODE:(.HostConfig.IpcMode//""),
+             IPC_MODE:(
+                (.HostConfig.IpcMode//"") as $mode
+                | if $mode=="private" then "" else $mode end
+             ),
              DEVICES:([(.HostConfig.Devices//[])[] |
                 (.PathOnHost//"")+":"+(.PathInContainer//"")]
                 | sort)};

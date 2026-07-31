@@ -154,6 +154,45 @@ function runVestaCommand(command, args = []) {
   });
 }
 
+function removeComposeServiceRuntime(owner, project, service) {
+  for (const [name, value] of Object.entries({ owner, project, service })) {
+    if (!/^[a-z][a-z0-9-]{0,62}$/.test(value)) {
+      throw new Error(`Unsafe ${name} for scoped Compose runtime removal.`);
+    }
+  }
+
+  const script = [
+    'set -euo pipefail',
+    `owner=${shellEscape(owner)}`,
+    `project=${shellEscape(project)}`,
+    `service=${shellEscape(service)}`,
+    'mapfile -t ids < <(docker ps -aq \\',
+    '  --filter "label=vx.user=$owner" \\',
+    '  --filter "label=vx.project=$project" \\',
+    '  --filter "label=com.docker.compose.service=$service")',
+    '[[ "${#ids[@]}" -eq 1 ]]',
+    'docker inspect "${ids[0]}" | jq -e \\',
+    '  --arg owner "$owner" --arg project "$project" --arg service "$service" \\',
+    '  \'.[0].Config.Labels["vx.user"] == $owner',
+    '   and .[0].Config.Labels["vx.project"] == $project',
+    '   and .[0].Config.Labels["com.docker.compose.service"] == $service\' >/dev/null',
+    'docker rm -f -- "${ids[0]}" >/dev/null',
+  ].join('\n');
+
+  if (hasRemoteVestaRuntime()) {
+    runRemoteBash(script);
+    return;
+  }
+  if (!hasLocalVestaRuntime()) {
+    throw new Error('A Vesta runtime is required for scoped container removal.');
+  }
+  execFileSync('bash', ['-se'], {
+    encoding: 'utf8',
+    input: script,
+    stdio: ['pipe', 'pipe', 'pipe'],
+  });
+}
+
 function composeProjectDefinition({
   image = 'busybox:1.36.1',
   secretPath = '',
@@ -545,6 +584,7 @@ module.exports = {
   isLocalPanelTarget,
   managedSecretPath,
   readComposeProject,
+  removeComposeServiceRuntime,
   remoteVestaSshArgs,
   remoteVestaSshExecution,
   runVestaCommand,

@@ -120,7 +120,7 @@ if [[ " $* " == *" inspect "* ]]; then
         printf '}},"State":{"Status":"%s"},' "$state"
         printf '"NetworkSettings":{"Networks":{"%s":{}},"Ports":{"80/tcp":[{"HostIp":"127.0.0.1","HostPort":"%s"}]}},' "$network" "$published"
         printf '"Mounts":[{"Name":"%s","Destination":"/data","RW":true}],' "$mount"
-        printf '"HostConfig":{"Privileged":%s,"CapAdd":[],"NetworkMode":"%s","PidMode":"","IpcMode":"","Devices":[]}}' "$privileged" "$network_mode"
+        printf '"HostConfig":{"Privileged":%s,"CapAdd":[],"NetworkMode":"%s","PidMode":"","IpcMode":"private","Devices":[]}}' "$privileged" "$network_mode"
     }
     printf '['
     item aaaaaaaaaaaa "$service"
