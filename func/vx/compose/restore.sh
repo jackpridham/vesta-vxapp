@@ -699,7 +699,7 @@ vx_compose_restore_project_existing() {
     local volume candidate_only volume_archive result=1 recovery_ok=yes
     local prior_stopped=no runtime_touched=no binds_swapped=no secrets_swapped=no
     local volumes_mutated=no candidate_converged=no revision_committed=no
-    local setup_failed=no
+    local setup_failed=no recovery_active_routes
 
     root="$(vx_compose_project_root "$owner" "$project")"
     data_root="$(vx_compose_project_data_root "$owner" "$project")"
@@ -991,13 +991,18 @@ vx_compose_restore_project_existing() {
                     || recovery_ok=no
             done
         fi
+        recovery_active_routes="$root/routes.conf"
+        [[ "$candidate_converged" != yes ]] \
+            || recovery_active_routes="$transaction_root/routes.conf"
         if [[ "$previous_state" == running ]]; then
             VX_COMPOSE_ROUTES_FILE_OVERRIDE="$root/routes.conf" \
+                VX_COMPOSE_ROUTES_ACTIVE_FILE_OVERRIDE="$recovery_active_routes" \
                 VX_COMPOSE_ROUTES_DEFER_COMMIT=yes \
                 vx_compose_deploy "$owner" "$project" || recovery_ok=no
         elif [[ "$runtime_touched" == yes || "$prior_stopped" == yes
             || "$candidate_converged" == yes ]]; then
             VX_COMPOSE_ROUTES_FILE_OVERRIDE="$root/routes.conf" \
+                VX_COMPOSE_ROUTES_ACTIVE_FILE_OVERRIDE="$recovery_active_routes" \
                 VX_COMPOSE_ROUTES_DEFER_COMMIT=yes \
                 vx_compose_deploy "$owner" "$project" \
                 && vx_compose_stop "$owner" "$project" || recovery_ok=no

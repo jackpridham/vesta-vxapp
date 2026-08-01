@@ -122,6 +122,47 @@ grep -Fq 'configtest' "$route_log" \
 grep -Fq 'reload' "$route_log" \
     || fail "proxy was not explicitly reloaded"
 
+# Restore rollback can render candidate routes before evidence fails. It must
+# use that explicit active set to remove candidate-only domains while
+# converging the prior desired set, without committing pending intent.
+printf "DOMAIN='old.example.test' IP='192.0.2.10' SUSPENDED='no'\n" \
+    >>"$VESTA/data/users/alice/web.conf"
+printf "DOMAIN='new.example.test' IP='192.0.2.10' SUSPENDED='no' PROXY='vx-proxy' PROXY_TARGET='http://127.0.0.1:19030'\n" \
+    >>"$VESTA/data/users/alice/web.conf"
+prior_routes="$test_root/prior-routes.json"
+candidate_routes="$test_root/candidate-routes.json"
+jq -n '{
+    "old.example.test": {
+        OWNER: "alice", PROJECT: "app", DOMAIN: "old.example.test",
+        SERVICE: "web", CONTAINER_PORT: 8080, HOST_PORT: 19030,
+        SCHEME: "http", PATH: "/"
+    }
+}' >"$prior_routes"
+jq -n '{
+    "new.example.test": {
+        OWNER: "alice", PROJECT: "app", DOMAIN: "new.example.test",
+        SERVICE: "web", CONTAINER_PORT: 8080, HOST_PORT: 19030,
+        SCHEME: "http", PATH: "/"
+    }
+}' >"$candidate_routes"
+delete_log="$test_root/delete.log"
+fake_delete="$test_root/fake-delete-command"
+# shellcheck disable=SC2016
+printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'printf "DOMAIN=%s\n" "$2" >>"$(dirname -- "$0")/delete.log"' \
+    >"$fake_delete"
+chmod 0755 "$fake_delete"
+VX_COMPOSE_ROUTE_DELETE_COMMAND="$fake_delete" \
+VX_COMPOSE_ROUTES_FILE_OVERRIDE="$prior_routes" \
+VX_COMPOSE_ROUTES_ACTIVE_FILE_OVERRIDE="$candidate_routes" \
+VX_COMPOSE_ROUTES_DEFER_COMMIT=yes \
+    vx_compose_routes_apply alice app
+grep -Fxq 'DOMAIN=new.example.test' "$delete_log" \
+    || fail "route rollback retained a candidate-only rendered domain"
+grep -Fq 'ARG=old.example.test' "$route_log" \
+    || fail "route rollback did not reapply the prior desired domain"
+
 jq '."app.example.test".HOST_PORT = 65535' \
     "$VESTA/data/users/alice/docker-projects/app/routes.conf" \
     >"$test_root/tampered-routes.json"

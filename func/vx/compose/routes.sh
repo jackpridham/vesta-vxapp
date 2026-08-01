@@ -631,7 +631,13 @@ vx_compose_routes_apply_unlocked() {
     local domain target path web_conf snapshot_root domain_list
     local conf snapshot_conf result=0
 
-    active_file="$(vx_compose_routes_path "$owner" "$project")"
+    active_file="${VX_COMPOSE_ROUTES_ACTIVE_FILE_OVERRIDE:-}"
+    [[ -n "$active_file" ]] \
+        || active_file="$(vx_compose_routes_path "$owner" "$project")"
+    if [[ -e "$active_file" || -L "$active_file" ]]; then
+        [[ -f "$active_file" && ! -L "$active_file" ]] || return 1
+        jq -e 'type == "object"' "$active_file" >/dev/null || return 1
+    fi
     candidate_file="$(vx_compose_routes_candidate_path "$owner" "$project")"
     routes_file="$(vx_compose_routes_desired_path "$owner" "$project")"
     [[ -f "$routes_file" ]] || return 0
@@ -681,7 +687,7 @@ vx_compose_routes_apply_unlocked() {
             if ! jq -e --arg domain "$domain" '.[$domain] != null' \
                 "$routes_file" >/dev/null; then
                 vx_compose_route_unapply_domain \
-                    "$owner" "$project" "$domain" no || {
+                    "$owner" "$project" "$domain" no "$active_file" || {
                         result=1
                         break
                     }
@@ -779,10 +785,13 @@ vx_compose_route_unapply_domain() {
     local project="$2"
     local domain="$3"
     local restart="${4:-yes}"
-    local routes_file web_conf target delete_command line
+    local routes_file="${5:-}"
+    local web_conf target delete_command line
 
-    routes_file="$(vx_compose_routes_path "$owner" "$project")"
+    [[ -n "$routes_file" ]] \
+        || routes_file="$(vx_compose_routes_path "$owner" "$project")"
     [[ -f "$routes_file" ]] || return 0
+    [[ ! -L "$routes_file" ]] || return 1
     target="$(jq -er \
         --arg domain "$domain" '
             .[$domain]
