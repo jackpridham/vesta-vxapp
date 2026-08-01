@@ -658,6 +658,25 @@ vx_compose_restore_pending_routes_clear() {
         && vx_compose_fsync_path "$root/runtime"
 }
 
+vx_compose_restore_pending_routes_reinstate() {
+    local root="$1"
+    local snapshot="$2"
+    local pending="$root/runtime/routes.pending.json"
+
+    [[ -d "$root/runtime" && ! -L "$root/runtime" ]] || return 1
+    rm -f -- "$pending" || return 1
+    if [[ -f "$snapshot" && ! -L "$snapshot" ]]; then
+        cp -a -- "$snapshot" "$pending" || return 1
+        cmp -s "$snapshot" "$pending" \
+            && [[ "$(stat -c '%u:%g:%a' "$pending")" \
+                == "$(stat -c '%u:%g:%a' "$snapshot")" ]] \
+            || return 1
+    elif [[ -e "$snapshot" || -L "$snapshot" ]]; then
+        return 1
+    fi
+    vx_compose_fsync_path "$root/runtime"
+}
+
 vx_compose_restore_candidate_binds_secure() {
     local owner="$1"
     local project="$2"
@@ -936,9 +955,6 @@ vx_compose_restore_project_existing() {
                 || cp -a -- "$snapshot_root/control/$volume" "$root/$volume" \
                 || recovery_ok=no
         done
-        [[ ! -f "$snapshot_root/control/routes.pending.json" ]] \
-            || cp -a -- "$snapshot_root/control/routes.pending.json" \
-                "$root/runtime/routes.pending.json" || recovery_ok=no
         if [[ "$revision_committed" == yes ]]; then
             rm -rf -- "$root/revisions/$(
                 printf '%06d' "$next_revision"
@@ -976,11 +992,20 @@ vx_compose_restore_project_existing() {
             done
         fi
         if [[ "$previous_state" == running ]]; then
-            vx_compose_deploy "$owner" "$project" || recovery_ok=no
+            VX_COMPOSE_ROUTES_FILE_OVERRIDE="$root/routes.conf" \
+                VX_COMPOSE_ROUTES_DEFER_COMMIT=yes \
+                vx_compose_deploy "$owner" "$project" || recovery_ok=no
         elif [[ "$runtime_touched" == yes || "$prior_stopped" == yes
             || "$candidate_converged" == yes ]]; then
-            vx_compose_deploy "$owner" "$project" \
+            VX_COMPOSE_ROUTES_FILE_OVERRIDE="$root/routes.conf" \
+                VX_COMPOSE_ROUTES_DEFER_COMMIT=yes \
+                vx_compose_deploy "$owner" "$project" \
                 && vx_compose_stop "$owner" "$project" || recovery_ok=no
+        fi
+        if [[ "$recovery_ok" == yes ]]; then
+            vx_compose_restore_pending_routes_reinstate \
+                "$root" "$snapshot_root/control/routes.pending.json" \
+                || recovery_ok=no
         fi
         if [[ "$recovery_ok" == yes ]]; then
             cp -a -- "$snapshot_root/control/project.conf" \
