@@ -159,6 +159,7 @@ validator_raw_error='docker compose raw parser failure'
 vx_compose_prepare_candidate() {
     local input_file="$3"
     local output_root="$4"
+    local allow_existing_labels="${6:-no}"
     local expected_uid
 
     expected_uid="$(vx_compose_definition_export_expected_uid)"
@@ -169,12 +170,20 @@ vx_compose_prepare_candidate() {
             "$validator_raw_error" >&2
         return 1
     fi
+    if grep -Fq 'vx.managed' "$input_file" \
+        && [[ "$allow_existing_labels" != yes ]]; then
+        return 1
+    fi
     [[ "$(stat -c '%a' "$input_file")" == 600 ]] \
         || fail 'definition export temporary copy is not mode 0600'
     [[ "$(stat -c '%u' "$input_file")" == "$expected_uid" ]] \
         || fail 'definition export temporary copy has the wrong owner'
     mkdir -p "$output_root"
-    printf '{}\n' >"$output_root/canonical.json"
+    if [[ "$allow_existing_labels" == yes ]]; then
+        install -m 0640 "$input_file" "$output_root/canonical.json"
+    else
+        printf '{}\n' >"$output_root/canonical.json"
+    fi
 }
 
 mkdir -p "$root/secrets"
@@ -235,6 +244,67 @@ export_json="$(vx_compose_definition_export_json alice shop)"
 jq -e '.PROFILE == "slave-vxapp"' <<<"$export_json" >/dev/null \
     || fail 'definition export rejected an installed versioned profile'
 sed -i "s/^PROFILE=.*/PROFILE='standard'/" "$root/project.conf"
+
+cat >"$root/compose.yaml" <<'EOF'
+{
+  "name": "vx-alice-shop",
+  "services": {
+    "web": {
+      "image": "example.invalid/web@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "labels": {
+        "custom.label": "retained",
+        "vx.managed": "yes",
+        "vx.user": "alice",
+        "vx.project": "shop"
+      }
+    }
+  },
+  "networks": {
+    "default": {
+      "driver": "bridge",
+      "name": "vx-alice-shop_default",
+      "labels": {
+        "custom.network": "retained",
+        "vx.managed": "yes",
+        "vx.user": "alice",
+        "vx.project": "shop",
+        "vx.network": "default"
+      }
+    }
+  },
+  "volumes": {
+    "cache": {
+      "name": "vx_alice_shop_cache",
+      "labels": {
+        "custom.volume": "retained",
+        "vx.managed": "yes",
+        "vx.user": "alice",
+        "vx.project": "shop",
+        "vx.volume": "cache"
+      }
+    }
+  }
+}
+EOF
+chmod 0640 "$root/compose.yaml"
+export_json="$(vx_compose_definition_export_json alice shop)"
+export_editable="$test_root/export-editable.json"
+jq -rj '.DEFINITION' <<<"$export_json" >"$export_editable"
+jq -e '
+    (has("name") | not)
+    and .services.web.labels == {"custom.label": "retained"}
+    and .networks.default.driver == "bridge"
+    and (.networks.default | has("name") | not)
+    and .networks.default.labels == {"custom.network": "retained"}
+    and (.volumes.cache | has("name") | not)
+    and .volumes.cache.labels == {"custom.volume": "retained"}
+    and ([.. | objects | (.labels? // {}) | keys[]]
+        | all(startswith("vx.") | not))
+' "$export_editable" >/dev/null \
+    || fail 'definition export did not strip only generated identity fields'
+jq -e --arg sha "$(sha256sum "$export_editable" | awk '{print $1}')" \
+    '.SOURCE_SHA256 == $sha' <<<"$export_json" >/dev/null \
+    || fail 'editable definition digest does not bind returned bytes'
 
 export_diagnostics="$test_root/export.err"
 rm -f "$root/compose.yaml"
