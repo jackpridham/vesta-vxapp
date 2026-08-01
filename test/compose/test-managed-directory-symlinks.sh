@@ -224,7 +224,7 @@ if (( EUID == 0 )); then
     # fail-closed marker after rolling back an earlier ownership transition.
     restore_archives="$test_root/restore-transaction"
     mkdir -p "$restore_archives"
-    for restore_project in restore-a restore-b; do
+    for restore_project in restore-a restore-b restore-c; do
         restore_source="$test_root/$restore_project-archive"
         mkdir -p "$restore_source"
         jq -n \
@@ -255,48 +255,66 @@ if (( EUID == 0 )); then
             "$VESTA/data/users/$owner/docker-projects/.legacy-data-authority/$restore_project.conf"
     done
     chown -R "$owner:$owner" "$HOMEDIR/$owner/docker"
-    restore_a_marker="$VESTA/data/users/$owner/docker-projects/.legacy-data-authority/restore-a.conf"
-    restore_a_marker_identity="$(stat -c '%u:%g:%a' "$restore_a_marker")"
-    restore_a_marker_sha="$(sha256sum "$restore_a_marker" | awk '{print $1}')"
-    restore_a_data_identity="$(stat -c '%u:%g:%a' \
+    restore_marker_root="$VESTA/data/users/$owner/docker-projects/.legacy-data-authority"
+    restore_markers_identity="$(stat -c '%u:%g:%a' \
+        "$restore_marker_root/restore-a.conf" \
+        "$restore_marker_root/restore-b.conf")"
+    restore_markers_sha="$(sha256sum \
+        "$restore_marker_root/restore-a.conf" \
+        "$restore_marker_root/restore-b.conf")"
+    restore_data_identity="$(stat -c '%u:%g:%a' \
         "$HOMEDIR/$owner/docker" \
         "$HOMEDIR/$owner/docker/restore-a" \
-        "$HOMEDIR/$owner/docker/restore-a/binds")"
-    mv "$HOMEDIR/$owner/docker/restore-b" \
-        "$HOMEDIR/$owner/docker/restore-b.invalid"
-    ln -s restore-b.invalid "$HOMEDIR/$owner/docker/restore-b"
+        "$HOMEDIR/$owner/docker/restore-a/binds" \
+        "$HOMEDIR/$owner/docker/restore-b" \
+        "$HOMEDIR/$owner/docker/restore-b/binds")"
+    mv "$HOMEDIR/$owner/docker/restore-c" \
+        "$HOMEDIR/$owner/docker/restore-c.invalid"
+    ln -s restore-c.invalid "$HOMEDIR/$owner/docker/restore-c"
     if VX_COMPOSE_TEST_MODE=yes VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \
         vx_compose_restore_user_data_roots_prepare \
             "$owner" "$restore_archives" 2>/dev/null; then
         fail 'partial restore data-root transition unexpectedly succeeded'
     fi
-    [[ "$(sha256sum "$restore_a_marker" | awk '{print $1}')" \
-            == "$restore_a_marker_sha"
-        && "$(stat -c '%u:%g:%a' "$restore_a_marker")" \
-            == "$restore_a_marker_identity"
+    [[ "$(sha256sum \
+                "$restore_marker_root/restore-a.conf" \
+                "$restore_marker_root/restore-b.conf")" \
+            == "$restore_markers_sha"
+        && "$(stat -c '%u:%g:%a' \
+                "$restore_marker_root/restore-a.conf" \
+                "$restore_marker_root/restore-b.conf")" \
+            == "$restore_markers_identity"
         && "$(stat -c '%u:%g:%a' \
                 "$HOMEDIR/$owner/docker" \
                 "$HOMEDIR/$owner/docker/restore-a" \
-                "$HOMEDIR/$owner/docker/restore-a/binds")" \
-            == "$restore_a_data_identity" ]] \
+                "$HOMEDIR/$owner/docker/restore-a/binds" \
+                "$HOMEDIR/$owner/docker/restore-b" \
+                "$HOMEDIR/$owner/docker/restore-b/binds")" \
+            == "$restore_data_identity" ]] \
         || fail 'partial restore rollback changed prior protected authority'
     if mountpoint -q "$HOMEDIR/$owner/docker"; then
         fail 'partial restore rollback retained a managed mount'
     fi
-    if vx_compose_prepare_legacy_project_data_roots \
-        "$owner" restore-a initial 2>/dev/null; then
-        fail 'ordinary lifecycle reopened a rolled-back restore replacement'
-    fi
-    [[ "$(sha256sum "$restore_a_marker" | awk '{print $1}')" \
-        == "$restore_a_marker_sha" ]] \
+    for restore_project in restore-a restore-b; do
+        if vx_compose_prepare_legacy_project_data_roots \
+            "$owner" "$restore_project" initial 2>/dev/null; then
+            fail 'ordinary lifecycle reopened a rolled-back restore replacement'
+        fi
+    done
+    [[ "$(sha256sum \
+            "$restore_marker_root/restore-a.conf" \
+            "$restore_marker_root/restore-b.conf")" \
+        == "$restore_markers_sha" ]] \
         || fail 'ordinary lifecycle changed the restored authority marker'
-    rm "$HOMEDIR/$owner/docker/restore-b"
+    rm "$HOMEDIR/$owner/docker/restore-c"
     rm -rf -- \
         "$HOMEDIR/$owner/docker/restore-a" \
-        "$HOMEDIR/$owner/docker/restore-b.invalid"
+        "$HOMEDIR/$owner/docker/restore-b" \
+        "$HOMEDIR/$owner/docker/restore-c.invalid"
     rm -f -- \
-        "$VESTA/data/users/$owner/docker-projects/.legacy-data-authority/restore-a.conf" \
-        "$VESTA/data/users/$owner/docker-projects/.legacy-data-authority/restore-b.conf"
+        "$restore_marker_root/restore-a.conf" \
+        "$restore_marker_root/restore-b.conf" \
+        "$restore_marker_root/restore-c.conf"
     VX_COMPOSE_TEST_MODE=yes VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \
         vx_compose_prepare_legacy_project_data_roots \
             "$owner" legacy restore \

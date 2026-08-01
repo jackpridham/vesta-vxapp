@@ -108,7 +108,8 @@ $project eq '-' || $project =~ /\A[a-z][a-z0-9_-]{0,62}\z/
 $leaf eq '-' || $leaf =~ /\A[a-z0-9][a-z0-9_-]{0,63}\z/
     or fail('invalid managed bind leaf');
 $transition eq 'normal' || $transition eq 'legacy'
-    || $transition eq 'rollback' || $transition eq 'unmount'
+    || $transition eq 'rollback' || $transition eq 'restore-rollback'
+    || $transition eq 'unmount'
     or fail('invalid managed directory transition');
 $leaf eq '-' || $project ne '-'
     or fail('managed bind leaf requires a project');
@@ -136,8 +137,12 @@ fail('managed owner home has unexpected ownership')
         || $owner_home_stat[4] == $authority_uid;
 
 my @authority_uids = ($authority_uid);
-push @authority_uids, $owner_uid if $transition eq 'legacy';
-my $managed_uid = $transition eq 'rollback' ? $owner_uid : $authority_uid;
+push @authority_uids, $owner_uid
+    if $transition eq 'legacy' || $transition eq 'restore-rollback';
+my $managed_uid = $transition eq 'rollback'
+    || $transition eq 'restore-rollback' ? $owner_uid : $authority_uid;
+my $docker_uid = $transition eq 'restore-rollback'
+    ? $authority_uid : $managed_uid;
 my @managed_uids = $transition eq 'rollback'
     ? ($authority_uid) : @authority_uids;
 my @handles = ($home_root_handle, $owner_home);
@@ -145,7 +150,7 @@ my $docker = prepare_child(
     parent => $owner_home,
     name => 'docker',
     mode => 0750,
-    uid => $managed_uid,
+    uid => $docker_uid,
     gid => $owner_gid,
     allowed_uids => \@managed_uids,
     must_exist => $transition ne 'normal',
@@ -190,7 +195,8 @@ if ($project ne '-') {
         uid => $managed_uid,
         gid => $owner_gid,
         allowed_uids => \@managed_uids,
-        must_exist => $transition eq 'rollback',
+        must_exist => $transition eq 'rollback'
+            || $transition eq 'restore-rollback',
     );
     push @handles, $binds;
     if ($leaf ne '-') {
@@ -230,6 +236,9 @@ if (self_bind_enabled($home_root)) {
             close($handles[$index]);
         }
         self_unbind($docker);
+    } elsif ($transition eq 'restore-rollback') {
+        # A restore transaction rolls back every project while the shared
+        # owner root remains protected, then restores/unmounts that root once.
     } else {
         self_bind($docker);
     }
