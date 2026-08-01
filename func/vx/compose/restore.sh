@@ -1242,8 +1242,9 @@ vx_compose_restore_user_projects() {
 vx_compose_restore_user_data_roots_prepare() {
     local owner="$1"
     local source_root="$2"
-    local archive project data_root work_root result=0 index
-    local -a archives=() projects=() transitioned=()
+    local archive project data_root work_root result=0 index marker marker_snapshot
+    local marker_root rollback_failed=no
+    local -a archives=() projects=() transitioned=() prior_markers=()
 
     vx_compose_require_owner "$owner" || return 1
     [[ ! -e "$source_root" && ! -L "$source_root" ]] && return 0
@@ -1273,6 +1274,20 @@ vx_compose_restore_user_data_roots_prepare() {
     for project in "${projects[@]}"; do
         data_root="$(vx_compose_project_data_root "$owner" "$project")"
         [[ ! -e "$data_root" && ! -L "$data_root" ]] && continue
+        marker_root="$(vx_compose_projects_root "$owner")/.legacy-data-authority"
+        marker="$marker_root/$project.conf"
+        marker_snapshot=-
+        if [[ -e "$marker" || -L "$marker" ]]; then
+            [[ -f "$marker" && ! -L "$marker" ]] || {
+                result=1
+                break
+            }
+            marker_snapshot="$work_root/prior-$project.conf"
+            cp -p -- "$marker" "$marker_snapshot" || {
+                result=1
+                break
+            }
+        fi
         if [[ ! -d "$data_root" || -L "$data_root" ]] \
             || ! vx_compose_prepare_legacy_project_data_roots \
                 "$owner" "$project" restore; then
@@ -1280,13 +1295,21 @@ vx_compose_restore_user_data_roots_prepare() {
             break
         fi
         transitioned+=("$project")
+        prior_markers+=("$marker_snapshot")
     done
     if [[ "$result" -ne 0 ]]; then
         for ((index = ${#transitioned[@]} - 1; index >= 0; index--)); do
-            vx_compose_rollback_legacy_project_data_roots \
-                "$owner" "${transitioned[$index]}" || :
+            if ! vx_compose_restore_rollback_legacy_project_data_roots \
+                "$owner" "${transitioned[$index]}" \
+                "${prior_markers[$index]}"; then
+                rollback_failed=yes
+                vx_compose_error \
+                    "Compose restored data-root rollback failed: $owner/${transitioned[$index]}" \
+                    || :
+            fi
         done
     fi
     rm -rf -- "$work_root"
+    [[ "$rollback_failed" != yes ]] || return 1
     return "$result"
 }
