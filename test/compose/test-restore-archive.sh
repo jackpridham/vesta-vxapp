@@ -23,6 +23,19 @@ grep -Fq 'runtime/routes.pending.json' \
     "$repo_root/func/vx/compose/restore.sh" \
     || fail 'restore does not clear stale pending route state'
 
+authority_source="$test_root/user-restore-authority"
+mkdir -p "$authority_source"
+ln -s "$authority_source" "$test_root/user-restore-authority-link"
+if vx_compose_restore_user_data_roots_prepare \
+    alice "$test_root/user-restore-authority-link" 2>/dev/null; then
+    fail 'restore data-root preparation accepted a linked archive root'
+fi
+ln -s /etc/passwd "$authority_source/linked.tar.gz"
+if vx_compose_restore_user_data_roots_prepare \
+    alice "$authority_source" 2>/dev/null; then
+    fail 'restore data-root preparation accepted a linked project archive'
+fi
+
 expect_invalid_archive() {
     local name="$1"
     local archive="$2"

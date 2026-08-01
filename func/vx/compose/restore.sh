@@ -1238,3 +1238,24 @@ vx_compose_restore_user_projects() {
             || return 1
     done
 }
+
+vx_compose_restore_user_data_roots_prepare() {
+    local owner="$1"
+    local source_root="$2"
+    local archive project data_root
+
+    vx_compose_require_owner "$owner" || return 1
+    [[ ! -e "$source_root" && ! -L "$source_root" ]] && return 0
+    [[ -d "$source_root" && ! -L "$source_root" ]] || return 1
+    for archive in "$source_root"/*.tar.gz; do
+        [[ ! -e "$archive" && ! -L "$archive" ]] && continue
+        [[ -f "$archive" && ! -L "$archive" ]] || return 1
+        project="$(basename -- "$archive" .tar.gz)"
+        vx_compose_require_project_key "$project" || return 1
+        data_root="$(vx_compose_project_data_root "$owner" "$project")"
+        [[ ! -e "$data_root" && ! -L "$data_root" ]] && continue
+        [[ -d "$data_root" && ! -L "$data_root" ]] || return 1
+        vx_compose_prepare_legacy_project_data_roots \
+            "$owner" "$project" restore || return 1
+    done
+}

@@ -181,6 +181,33 @@ if (( EUID == 0 )); then
     fi
     [[ "$(stat -c %u "$HOMEDIR/$owner/docker")" == "$(id -u "$owner")" ]] \
         || fail 'rejected replacement legacy root was mutated'
+    VX_COMPOSE_TEST_MODE=yes VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \
+        vx_compose_prepare_legacy_project_data_roots \
+            "$owner" legacy restore \
+        || fail 'restore boundary could not re-establish managed authority'
+    [[ "$(stat -c %u "$HOMEDIR/$owner/docker")" == "$authority_uid"
+        && "$(cat "$VESTA/data/users/$owner/docker-projects/.legacy-data-authority/legacy.conf")" \
+            == "STATE='complete'" ]] \
+        || fail 'restore boundary did not complete protected authority'
+    umount "$HOMEDIR/$owner/docker"
+    printf '%s\n' "STATE='pending'" \
+        >"$VESTA/data/users/$owner/docker-projects/.legacy-data-authority/legacy.conf"
+    chmod 0600 \
+        "$VESTA/data/users/$owner/docker-projects/.legacy-data-authority/legacy.conf"
+    chown -R "$owner:$owner" "$HOMEDIR/$owner/docker"
+    if vx_compose_prepare_legacy_project_data_roots "$owner" legacy \
+        2>/dev/null; then
+        fail 'ordinary lifecycle accepted interrupted restore authority'
+    fi
+    VX_COMPOSE_TEST_MODE=yes VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \
+        vx_compose_prepare_legacy_project_data_roots \
+            "$owner" legacy restore \
+        || fail 'interrupted restore authority could not retry'
+    [[ "$(stat -c %u "$HOMEDIR/$owner/docker")" == "$authority_uid"
+        && "$(cat "$VESTA/data/users/$owner/docker-projects/.legacy-data-authority/legacy.conf")" \
+            == "STATE='complete'" ]] \
+        || fail 'interrupted restore retry did not complete authority'
+    umount "$HOMEDIR/$owner/docker"
     rm -rf -- "$HOMEDIR/$owner/docker"
     mv "$HOMEDIR/$owner/docker.transitioned" "$HOMEDIR/$owner/docker"
     VX_COMPOSE_TEST_MODE=yes VX_COMPOSE_TEST_ALLOW_SELF_BIND=yes \

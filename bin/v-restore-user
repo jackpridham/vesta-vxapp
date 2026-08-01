@@ -877,6 +877,12 @@ if [ "$docker" != 'no' ] && [ ! -z "$(tar -tf $BACKUP/$backup |grep '^./docker')
         chown -R "$user:$user" "$HOMEDIR/$user/docker"
     fi
 
+    if [ -d "$tmpdir/docker/compose" ]; then
+        vx_compose_restore_user_data_roots_prepare \
+            "$user" "$tmpdir/docker/compose"
+        check_result $? "Docker Compose data-root restore failed"
+    fi
+
     if [ -f "$USER_DATA/docker.conf" ]; then
         docker_count=$(grep -c "^NAME='" "$USER_DATA/docker.conf" 2>/dev/null)
         if [ "$docker_count" -eq 1 ]; then
