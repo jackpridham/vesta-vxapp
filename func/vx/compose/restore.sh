@@ -1242,7 +1242,8 @@ vx_compose_restore_user_projects() {
 vx_compose_restore_user_data_roots_prepare() {
     local owner="$1"
     local source_root="$2"
-    local archive project data_root
+    local archive project data_root work_root result=0 index
+    local -a archives=() projects=() transitioned=()
 
     vx_compose_require_owner "$owner" || return 1
     [[ ! -e "$source_root" && ! -L "$source_root" ]] && return 0
@@ -1252,10 +1253,40 @@ vx_compose_restore_user_data_roots_prepare() {
         [[ -f "$archive" && ! -L "$archive" ]] || return 1
         project="$(basename -- "$archive" .tar.gz)"
         vx_compose_require_project_key "$project" || return 1
+        archives+=("$archive")
+        projects+=("$project")
+    done
+    ((${#archives[@]} > 0)) || return 0
+    work_root="$(mktemp -d)" || return 1
+    chmod 0700 "$work_root" || {
+        rm -rf -- "$work_root"
+        return 1
+    }
+    for index in "${!archives[@]}"; do
+        vx_compose_restore_archive_validate \
+            "$owner" "${projects[$index]}" "${archives[$index]}" \
+            "$work_root/${projects[$index]}" || {
+            rm -rf -- "$work_root"
+            return 1
+        }
+    done
+    for project in "${projects[@]}"; do
         data_root="$(vx_compose_project_data_root "$owner" "$project")"
         [[ ! -e "$data_root" && ! -L "$data_root" ]] && continue
-        [[ -d "$data_root" && ! -L "$data_root" ]] || return 1
-        vx_compose_prepare_legacy_project_data_roots \
-            "$owner" "$project" restore || return 1
+        if [[ ! -d "$data_root" || -L "$data_root" ]] \
+            || ! vx_compose_prepare_legacy_project_data_roots \
+                "$owner" "$project" restore; then
+            result=1
+            break
+        fi
+        transitioned+=("$project")
     done
+    if [[ "$result" -ne 0 ]]; then
+        for ((index = ${#transitioned[@]} - 1; index >= 0; index--)); do
+            vx_compose_rollback_legacy_project_data_roots \
+                "$owner" "${transitioned[$index]}" || :
+        done
+    fi
+    rm -rf -- "$work_root"
+    return "$result"
 }

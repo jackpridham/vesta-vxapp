@@ -101,4 +101,62 @@ VX_COMPOSE_BACKUP_MAX_EXPANDED_BYTES=1024
 expect_invalid_archive expanded "$test_root/expanded.tar.gz"
 VX_COMPOSE_BACKUP_MAX_EXPANDED_BYTES="$old_expanded_limit"
 
+# Generic Vesta restore may re-establish root authority only after every
+# nested project archive is manifest-, checksum-, owner-, and project-bound.
+authority_data="$HOMEDIR/alice/docker/app"
+authority_marker_root="$VESTA/data/users/alice/docker-projects/.legacy-data-authority"
+authority_marker="$authority_marker_root/app.conf"
+mkdir -p "$authority_data/binds" "$authority_marker_root"
+printf '%s\n' "STATE='complete'" >"$authority_marker"
+chmod 0600 "$authority_marker"
+authority_identity="$(stat -c '%d:%i:%u:%g:%a' \
+    "$HOMEDIR/alice/docker" "$authority_data" "$authority_marker")"
+authority_marker_sha="$(sha256sum "$authority_marker" | awk '{print $1}')"
+authority_mount_before="$(
+    mountpoint -q "$HOMEDIR/alice/docker" && printf yes || printf no
+)"
+assert_authority_unchanged() {
+    [[ "$(stat -c '%d:%i:%u:%g:%a' \
+            "$HOMEDIR/alice/docker" "$authority_data" "$authority_marker")" \
+            == "$authority_identity"
+        && "$(sha256sum "$authority_marker" | awk '{print $1}')" \
+            == "$authority_marker_sha"
+        && "$(mountpoint -q "$HOMEDIR/alice/docker" \
+            && printf yes || printf no)" == "$authority_mount_before" ]] \
+        || fail "$1 invalid archive mutated restored data authority"
+}
+
+checksum_authority="$test_root/checksum-authority"
+mkdir -p "$checksum_authority"
+cp "$test_root/checksum.tar.gz" "$checksum_authority/app.tar.gz"
+if vx_compose_restore_user_data_roots_prepare \
+    alice "$checksum_authority" 2>/dev/null; then
+    fail 'checksum-invalid archive authorized restored data roots'
+fi
+assert_authority_unchanged checksum
+
+wrong_binding_source="$test_root/wrong-binding-source"
+wrong_binding_authority="$test_root/wrong-binding-authority"
+mkdir -p "$wrong_binding_source" "$wrong_binding_authority"
+jq -n '{
+    SCHEMA: 1,
+    OWNER: "bob",
+    PROJECT: "other",
+    REVISION: 1,
+    STATE: "stopped",
+    VOLUMES: [],
+    SECRETS: []
+}' >"$wrong_binding_source/manifest.json"
+(
+    cd "$wrong_binding_source"
+    sha256sum manifest.json >manifest.sha256
+)
+tar -czf "$wrong_binding_authority/app.tar.gz" \
+    -C "$wrong_binding_source" manifest.json manifest.sha256
+if vx_compose_restore_user_data_roots_prepare \
+    alice "$wrong_binding_authority" 2>/dev/null; then
+    fail 'wrong-owner/project archive authorized restored data roots'
+fi
+assert_authority_unchanged binding
+
 echo "Compose restore archive rejection tests passed."
