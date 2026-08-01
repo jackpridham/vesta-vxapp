@@ -3,6 +3,8 @@ const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 
+const REMOTE_VESTA_COMMAND_TIMEOUT_MS = 180_000;
+
 function shellEscape(value) {
   return `'${String(value).replace(/'/g, `'\\''`)}'`;
 }
@@ -126,6 +128,7 @@ function runRemoteBash(script) {
     encoding: 'utf8',
     input: execution.input,
     stdio: ['pipe', 'pipe', 'pipe'],
+    timeout: REMOTE_VESTA_COMMAND_TIMEOUT_MS,
   });
 }
 

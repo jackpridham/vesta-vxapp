@@ -685,6 +685,99 @@ function vx_compose_preview_trust($value)
         ? $safe : array();
 }
 
+function vx_compose_preview_image_digest_list($value)
+{
+    if (!is_array($value)) {
+        return null;
+    }
+    $keys = array_keys($value);
+    if ($value !== array() && $keys !== range(0, count($value) - 1)) {
+        return null;
+    }
+    $safe = array();
+    foreach ($value as $digest) {
+        if (!vx_compose_preview_string_is_safe($digest, 1024)) {
+            return null;
+        }
+        $safe[] = $digest;
+    }
+    return $safe;
+}
+
+function vx_compose_preview_image_identity($identity)
+{
+    if (!is_array($identity)) {
+        return array();
+    }
+    $legacy_keys = array(
+        'REFERENCE',
+        'IMAGE_ID',
+        'REPO_DIGESTS',
+        'OS',
+        'ARCHITECTURE',
+    );
+    $schema2_keys = array(
+        'SCHEMA',
+        'REFERENCE',
+        'IMMUTABLE_REFERENCE',
+        'REGISTRY_DIGEST',
+        'IMAGE_ID',
+        'REPO_DIGESTS',
+        'OS',
+        'ARCHITECTURE',
+        'OCI_LABELS',
+        'TRUST',
+    );
+    $schema2 = array_key_exists('SCHEMA', $identity);
+    if ($schema2) {
+        if ($identity['SCHEMA'] !== 2
+            || !vx_compose_array_has_exact_keys($identity, $schema2_keys)) {
+            return array();
+        }
+    } elseif (!vx_compose_array_has_exact_keys($identity, $legacy_keys)) {
+        return array();
+    }
+
+    $safe = array();
+    if ($schema2) {
+        $safe['SCHEMA'] = 2;
+    }
+    $string_keys = $schema2
+        ? array(
+            'REFERENCE',
+            'IMMUTABLE_REFERENCE',
+            'REGISTRY_DIGEST',
+            'IMAGE_ID',
+            'OS',
+            'ARCHITECTURE',
+        )
+        : array('REFERENCE', 'IMAGE_ID', 'OS', 'ARCHITECTURE');
+    foreach ($string_keys as $key) {
+        if (!vx_compose_preview_string_is_safe($identity[$key], 1024)) {
+            return array();
+        }
+        $safe[$key] = $identity[$key];
+    }
+    $repo_digests = vx_compose_preview_image_digest_list(
+        $identity['REPO_DIGESTS']
+    );
+    if ($repo_digests === null) {
+        return array();
+    }
+    $safe['REPO_DIGESTS'] = $repo_digests;
+    if (!$schema2) {
+        return $safe;
+    }
+    $labels = vx_compose_preview_oci_labels($identity['OCI_LABELS']);
+    $trust = vx_compose_preview_trust($identity['TRUST']);
+    if (empty($labels) || empty($trust)) {
+        return array();
+    }
+    $safe['OCI_LABELS'] = $labels;
+    $safe['TRUST'] = $trust;
+    return $safe;
+}
+
 function vx_compose_preview_change_set($value)
 {
     $result = array();
@@ -786,45 +879,9 @@ function vx_compose_preview_payload_sanitize($payload)
                 && is_array($identity)
                 && strcasecmp($reference, 'source') !== 0
                 && !vx_compose_preview_value_is_source_path($reference)) {
-                $safe_identity = array();
-                foreach (
-                    array(
-                        'REFERENCE',
-                        'IMMUTABLE_REFERENCE',
-                        'REGISTRY_DIGEST',
-                        'IMAGE_ID',
-                        'OS',
-                        'ARCHITECTURE',
-                    )
-                    as $key
-                ) {
-                    if (isset($identity[$key])
-                        && vx_compose_preview_string_is_safe(
-                            $identity[$key],
-                            1024
-                        )) {
-                        $safe_identity[$key] = $identity[$key];
-                    }
-                }
-                if (isset($identity['REPO_DIGESTS'])) {
-                    $safe_identity['REPO_DIGESTS'] =
-                        vx_compose_preview_scalar_list(
-                            $identity['REPO_DIGESTS']
-                        );
-                }
-                if (isset($identity['OCI_LABELS'])) {
-                    $labels = vx_compose_preview_oci_labels(
-                        $identity['OCI_LABELS']
-                    );
-                    if (!empty($labels)) {
-                        $safe_identity['OCI_LABELS'] = $labels;
-                    }
-                }
-                if (isset($identity['TRUST'])) {
-                    $trust = vx_compose_preview_trust($identity['TRUST']);
-                    if (!empty($trust)) {
-                        $safe_identity['TRUST'] = $trust;
-                    }
+                $safe_identity = vx_compose_preview_image_identity($identity);
+                if (empty($safe_identity)) {
+                    return array();
                 }
                 $safe['IMAGES']['CURRENT_IDENTITIES'][$reference] =
                     $safe_identity;
