@@ -341,6 +341,32 @@ else
     echo_result "DOCKER: Backup archive includes Compose metadata, alerts, bind root, and route data" 1 "$tmpfile" "tar -tf ${backup_root}/${backup_name}"
 fi
 
+nested_compose_archive="$tmpdir/${container_one}.tar.gz"
+nested_routes="$tmpdir/${container_one}.routes.json"
+if tar -xOf "${backup_root}/${backup_name}" \
+        "./docker/compose/${container_one}.tar.gz" \
+        >"$nested_compose_archive" \
+    && tar -xOf "$nested_compose_archive" ./control/routes.conf \
+        >"$nested_routes" \
+    && jq -e \
+        --arg domain "$domain_one" \
+        --arg owner "$user_one" \
+        --arg project "$container_one" \
+        --arg target "$docker_proxy_target" '
+            .[$domain].OWNER == $owner
+            and .[$domain].PROJECT == $project
+            and (
+                .[$domain].SCHEME + "://127.0.0.1:"
+                + (.[$domain].HOST_PORT | tostring)
+            ) == $target
+        ' "$nested_routes" >/dev/null; then
+    echo_result "DOCKER: Backup Compose archive retains exact route authority" \
+        0 "$tmpfile" "nested Compose route verification"
+else
+    echo_result "DOCKER: Backup Compose archive retains exact route authority" \
+        1 "$tmpfile" "nested Compose route verification"
+fi
+
 # An unsupported bind member fails only after the cold-backup stop. The user
 # backup must fail, while automatic recovery returns the exact prior revision
 # to running/healthy and removes its scoped marker.
@@ -403,7 +429,42 @@ restored_proxy_target="$(json_field "$tmpdir/restored-domain.json" 'PROXY_TARGET
 if [ -n "$docker_proxy_target" ] && [ "$restored_proxy_target" = "$docker_proxy_target" ]; then
     echo_result "DOCKER: Restore re-establishes the routed PROXY_TARGET" 0 "$tmpfile" "restored PROXY_TARGET comparison"
 else
-    printf 'Expected restored PROXY_TARGET=%s\nActual restored PROXY_TARGET=%s\n' "$docker_proxy_target" "$restored_proxy_target" >"$tmpfile"
+    restored_routes_file="$VESTA/data/users/$user_one/docker-projects/$container_one/routes.conf"
+    restored_route_authority=no
+    restored_route_count=missing
+    restored_revision_route_count=missing
+    if [ -f "$restored_routes_file" ]; then
+        restored_route_count="$(jq -r 'length' "$restored_routes_file" 2>/dev/null \
+            || echo invalid)"
+    fi
+    restored_revision="$(awk -F"'" '/^REVISION=/{print $2; exit}' \
+        "$VESTA/data/users/$user_one/docker-projects/$container_one/project.conf")"
+    printf -v restored_revision_name '%06d' "$restored_revision"
+    restored_revision_routes="$VESTA/data/users/$user_one/docker-projects/$container_one/revisions/$restored_revision_name/routes.conf"
+    if [ -f "$restored_revision_routes" ]; then
+        restored_revision_route_count="$(jq -r 'length' \
+            "$restored_revision_routes" 2>/dev/null || echo invalid)"
+    fi
+    if jq -e \
+        --arg domain "$domain_one" \
+        --arg owner "$user_one" \
+        --arg project "$container_one" \
+        --arg target "$docker_proxy_target" '
+            .[$domain].OWNER == $owner
+            and .[$domain].PROJECT == $project
+            and (
+                .[$domain].SCHEME + "://127.0.0.1:"
+                + (.[$domain].HOST_PORT | tostring)
+            ) == $target
+        ' "$restored_routes_file" >/dev/null 2>&1; then
+        restored_route_authority=yes
+    fi
+    printf 'Expected restored PROXY_TARGET=%s\nActual restored PROXY_TARGET=%s\nRestored route authority matches=%s\nRestored route count=%s\nRestored revision route count=%s\nPending route state=%s\n' \
+        "$docker_proxy_target" "$restored_proxy_target" \
+        "$restored_route_authority" "$restored_route_count" \
+        "$restored_revision_route_count" \
+        "$(test -e "$VESTA/data/users/$user_one/docker-projects/$container_one/runtime/routes.pending.json" \
+            && echo present || echo absent)" >"$tmpfile"
     echo_result "DOCKER: Restore re-establishes the routed PROXY_TARGET" 1 "$tmpfile" "restored PROXY_TARGET comparison"
 fi
 

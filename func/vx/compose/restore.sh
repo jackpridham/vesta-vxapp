@@ -650,6 +650,14 @@ vx_compose_restore_install_active() {
     [[ "$own_transaction" != yes ]] || rm -rf -- "$transaction_root"
 }
 
+vx_compose_restore_pending_routes_clear() {
+    local root="$1"
+
+    [[ -d "$root/runtime" && ! -L "$root/runtime" ]] || return 1
+    rm -f -- "$root/runtime/routes.pending.json" \
+        && vx_compose_fsync_path "$root/runtime"
+}
+
 vx_compose_restore_candidate_binds_secure() {
     local owner="$1"
     local project="$2"
@@ -869,7 +877,8 @@ vx_compose_restore_project_existing() {
         revision_committed=yes
         if install -m 0600 \
             "$candidate/variables.env" "$root/.variables.env.restore" \
-            && mv -- "$root/.variables.env.restore" "$root/variables.env"; then
+            && mv -- "$root/.variables.env.restore" "$root/variables.env" \
+            && vx_compose_restore_pending_routes_clear "$root"; then
             result=0
         else
             setup_failed=yes
