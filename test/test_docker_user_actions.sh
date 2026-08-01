@@ -285,7 +285,8 @@ fi
 
 mkdir -p "/home/${user_one}/docker/${container_one}/data"
 echo "before-backup" >"$restore_marker_path"
-chown -R "$user_one:$user_one" "/home/${user_one}/docker"
+chown -R "$user_one:$user_one" \
+    "/home/${user_one}/docker/${container_one}/data"
 compose_project_root="$VESTA/data/users/$user_one/docker-projects/$container_one"
 compose_revision_before="$(awk -F"'" '/^REVISION=/{print $2; exit}' \
     "$compose_project_root/project.conf")"
