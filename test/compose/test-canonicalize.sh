@@ -139,6 +139,14 @@ vx_compose_prepare_candidate \
     alice web "$candidate/compose.yaml" "$existing" standard yes
 cmp -s "$candidate/canonical.json" "$existing/canonical.json" \
     || fail "stored canonical Compose input does not revalidate deterministically"
+stored_label_drift="$test_root/stored-label-drift.yaml"
+sed 's/vx.user: alice/vx.user: mallory/' \
+    "$candidate/compose.yaml" >"$stored_label_drift"
+if vx_compose_prepare_candidate \
+    alice web "$stored_label_drift" "$test_root/stored-label-drift" \
+    standard yes 2>/dev/null; then
+    fail "stored ownership-label drift was accepted"
+fi
 
 unsafe="$test_root/unsafe.yaml"
 printf '%s\n' \

@@ -352,6 +352,22 @@ vx_compose_restore_prepare_secrets() {
         }
 }
 
+vx_compose_restore_prepare_candidate() {
+    local owner="$1"
+    local project="$2"
+    local extracted="$3"
+    local candidate="$4"
+    local profile="$5"
+    local validation_secrets="$6"
+
+    # Stored compose.yaml contains only control-plane-generated ownership
+    # labels. Require every service/network/volume label to match the archive
+    # owner/project authority before accepting the candidate.
+    vx_compose_prepare_candidate \
+        "$owner" "$project" "$extracted/control/compose.yaml" \
+        "$candidate" "$profile" yes "$extracted/binds" "$validation_secrets"
+}
+
 vx_compose_restore_install_secrets() {
     local root="$1"
     local secret_source="$2"
@@ -479,12 +495,9 @@ vx_compose_restore_prepare() {
         }
     vx_compose_restore_prepare_secrets \
         "$owner" "$project" "$extracted" "$validation_secrets" || return 1
-    # Stored compose.yaml excludes reserved ownership labels. Regenerate them
-    # from owner/project authority, then require the archived canonical form
-    # to reproduce exactly below.
-    vx_compose_prepare_candidate \
-        "$owner" "$project" "$extracted/control/compose.yaml" \
-        "$candidate" "$profile" no "$extracted/binds" "$validation_secrets" \
+    vx_compose_restore_prepare_candidate \
+        "$owner" "$project" "$extracted" \
+        "$candidate" "$profile" "$validation_secrets" \
         || return 1
     if [[ -f "$extracted/control/backup-policy.conf" ]] \
         && ! vx_compose_backup_policy_sanitize_to \
@@ -1259,14 +1272,16 @@ vx_compose_restore_user_data_roots_prepare() {
     done
     ((${#archives[@]} > 0)) || return 0
     work_root="$(mktemp -d)" || return 1
-    chmod 0700 "$work_root" || {
+    if ! chmod 0700 "$work_root" \
+        || ! install -d -m 0700 \
+            "$work_root/validation" "$work_root/snapshots"; then
         rm -rf -- "$work_root"
         return 1
-    }
+    fi
     for index in "${!archives[@]}"; do
         vx_compose_restore_archive_validate \
             "$owner" "${projects[$index]}" "${archives[$index]}" \
-            "$work_root/${projects[$index]}" || {
+            "$work_root/validation/${projects[$index]}" || {
             rm -rf -- "$work_root"
             return 1
         }
@@ -1278,7 +1293,7 @@ vx_compose_restore_user_data_roots_prepare() {
             result=1
             break
         fi
-        marker_snapshot="$work_root/prior-$project"
+        marker_snapshot="$work_root/snapshots/$project"
         install -d -m 0700 "$marker_snapshot" || {
             result=1
             break
