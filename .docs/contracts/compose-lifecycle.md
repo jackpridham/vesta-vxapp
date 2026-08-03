@@ -45,6 +45,19 @@ operation was authorized.
    header.
 9. Commit the candidate revision and state only after all gates pass.
 
+An exact-profile transition may use an internal transaction-only definition
+migration context while converging the already policy-checked candidate. This
+context skips only comparison of the active definition with the successor
+profile. Candidate convergence binds post-validation to the protected staged
+canonical definition, schema-2 evidence, successor image authority, and target
+revision. Ownership, profile authorization, host-port ownership, approved image
+metadata and mutable-tag identity, managed binds and secrets, candidate policy,
+and exact post-convergence identity remain mandatory. The public Compose loader
+clears the context and rejects unknown modes. Failed convergence uses a
+distinct recovery mode that accepts only the active manifest-verified prior
+revision and its schema-2 image identity; runtime platform, security, health,
+mount, secret, dialplan, and log checks still run before recovery succeeds.
+
 On validation, startup, health, or route failure:
 
 - capture redacted diagnostics;
