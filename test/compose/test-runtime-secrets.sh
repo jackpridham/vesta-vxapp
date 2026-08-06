@@ -115,6 +115,31 @@ if (( EUID != 0 )); then
         || fail 'secret directory race changed active runtime authority'
 fi
 
+touch "$runtime_parent/unknown"
+if /usr/bin/python3 "$helper" clear "$project" >/dev/null 2>&1; then
+    fail 'runtime secret clear accepted an unknown member'
+fi
+[[ "$(<"$runtime_secret")" == rotated-value ]] \
+    || fail 'unknown-member clear failure changed the active runtime copy'
+rm -f -- "$runtime_parent/unknown"
+
+ln -s current "$runtime_parent/.next.invalid"
+if /usr/bin/python3 "$helper" clear "$project" >/dev/null 2>&1; then
+    fail 'runtime secret clear followed a symlinked generation'
+fi
+[[ -f "$runtime_secret" ]] \
+    || fail 'symlinked-generation clear failure changed active authority'
+rm -f -- "$runtime_parent/.next.invalid"
+
+if (( EUID != 0 )); then
+    if VX_COMPOSE_RUNTIME_SECRET_TEST_FAIL=clear-fsync \
+        /usr/bin/python3 "$helper" clear "$project" >/dev/null 2>&1; then
+        fail 'injected runtime secret clear fsync failure succeeded'
+    fi
+    [[ -f "$runtime_secret" ]] \
+        || fail 'clear fsync failure changed active authority'
+fi
+
 /usr/bin/python3 "$helper" clear "$project" \
     || fail 'generic transition did not clear runtime workload secrets'
 [[ ! -e "$runtime_parent" ]] \

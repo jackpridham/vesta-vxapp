@@ -120,7 +120,7 @@ vx_compose_bundle_compatibility_validate() {
 
 vx_compose_bundle_candidate_prepare() {
     local owner="$1" project="$2" extracted="$3" candidate="$4"
-    local profile image_id reference resolved_id validation_secrets secret_name transformed
+    local profile image_id reference validation_secrets secret_name transformed
     profile="$(jq -r '.profile.name' "$extracted/workload.json")" || return 1
     vx_compose_bundle_compatibility_validate "$extracted/workload.json" || return 1
     image_id="$(jq -r '.image.id' "$extracted/workload.json")" || return 1
@@ -144,13 +144,12 @@ vx_compose_bundle_candidate_prepare() {
     vx_compose_bundle_manifest_check_compose \
         "$extracted/workload.json" "$candidate/canonical.json" \
         "$candidate/policy.conf" "$profile" || return 1
-    resolved_id="$(vx_compose_image_approval_require \
+    vx_compose_image_approval_require \
         "$owner" "$reference" "$image_id" \
         "$(jq -r '.image.os' "$extracted/workload.json")" \
         "$(jq -r '.image.architecture' "$extracted/workload.json")" \
-        "$profile" "$(jq -r '.profile.version' "$extracted/workload.json")")" \
+        "$profile" "$(jq -r '.profile.version' "$extracted/workload.json")" \
         || return 1
-    [[ "$resolved_id" == "$image_id" ]] || return 1
     jq -S --arg id "$image_id" '.services |= with_entries(.value.image=$id)' \
         "$candidate/canonical.json" >"$candidate/.canonical.json" || return 1
     mv -f -- "$candidate/.canonical.json" "$candidate/canonical.json"
@@ -266,7 +265,8 @@ vx_compose_runtime_secrets_materialize() {
         && ! -e "$authority_root/workload-evidence.json"
         && ! -e "$authority_root/workload-manifest.sha256" ]]; then
         env -i PATH="$VX_COMPOSE_SAFE_PATH" /usr/bin/python3 \
-            "$VX_COMPOSE_LIB_DIR/runtime-secrets.py" clear "$root"
+            "$VX_COMPOSE_LIB_DIR/runtime-secrets.py" clear "$root" \
+            || return 1
         canonical="${VX_COMPOSE_INVOKE_CANONICAL_OVERRIDE:-$root/runtime/canonical.json}"
         runtime_root="$root/runtime/workload-secrets/current/"
         if [[ -f "$canonical" && ! -L "$canonical" ]] \
@@ -280,7 +280,9 @@ vx_compose_runtime_secrets_materialize() {
     fi
     [[ -f "$workload" && ! -L "$workload" ]] || return 1
     env -i PATH="$VX_COMPOSE_SAFE_PATH" /usr/bin/python3 \
-        "$VX_COMPOSE_LIB_DIR/runtime-secrets.py" "$root" "$workload"
+        "$VX_COMPOSE_LIB_DIR/runtime-secrets.py" "$root" "$workload" \
+        || return 1
+    VX_COMPOSE_RUNTIME_SECRETS_REFRESHED=yes
 }
 
 vx_compose_workload_authority_validate() {

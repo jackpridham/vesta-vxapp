@@ -267,7 +267,7 @@ vx_compose_image_approval_require() {
         vx_compose_error 'approved local Docker image identity has changed'
         return 1
     }
-    printf '%s\n' "$image_id"
+    return 0
 }
 
 vx_compose_image_approval_delete() {

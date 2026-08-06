@@ -92,6 +92,7 @@ vx_compose_runtime_identity_preflight() {
         --arg owner "$owner" \
         --arg project "$project" \
         --arg runtime "$runtime" \
+        --arg root "$root" \
         --slurpfile canonical "$canonical" '
         type == "array"
         and all(.[];
@@ -104,14 +105,18 @@ vx_compose_runtime_identity_preflight() {
                 | $service != null
                 and $canonical[0].services[$service] != null
                 and (. as $container
-                    | all(($canonical[0].services[$service].secrets // [])[];
-                        . as $secret
+                    | ([($canonical[0].services[$service].secrets // [])[]
+                        | . as $secret
                         | ($secret.source // $secret) as $name
-                        | ($secret.target // ("/run/secrets/"+$name)) as $target
-                        | any(($container.Mounts // [])[];
-                            .Source == $canonical[0].secrets[$name].file
-                            and .Destination == $target
-                            and .RW == false)))
+                        | {SOURCE:$canonical[0].secrets[$name].file,
+                           TARGET:($secret.target // ("/run/secrets/"+$name)),
+                           READ_ONLY:true}] | sort_by(.TARGET,.SOURCE))
+                      == ([($container.Mounts // [])[]
+                        | select((.Source // "")
+                            | startswith($root+"/runtime/workload-secrets/current/"))
+                        | {SOURCE:(.Source//""),TARGET:(.Destination//""),
+                           READ_ONLY:(.RW == false)}]
+                          | sort_by(.TARGET,.SOURCE)))
             )
         )
         and (
@@ -262,6 +267,8 @@ vx_compose_run_lifecycle() {
     local prior_state evidence_ok=yes candidate_authority=no
     local runtime_recovery_ok=yes legacy_images_resolved=no
     local -a lifecycle_args=("$@")
+
+    unset VX_COMPOSE_RUNTIME_SECRETS_REFRESHED
 
     vx_compose_require_project "$owner" "$project" || return 1
     case "$action" in
@@ -426,6 +433,12 @@ vx_compose_run_lifecycle() {
         lifecycle_args=(
             up -d --remove-orphans --wait
             --wait-timeout "$(vx_compose_convergence_timeout "$owner" "$project")"
+        )
+    fi
+    if [[ "${VX_COMPOSE_RUNTIME_SECRETS_REFRESHED:-no}" == yes ]]; then
+        lifecycle_args=(
+            up -d --remove-orphans --force-recreate --wait
+            --wait-timeout "$timeout"
         )
     fi
     started_ms="$(date +%s%3N)"

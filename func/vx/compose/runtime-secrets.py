@@ -63,11 +63,18 @@ def clear_runtime(project_root):
     if not stat.S_ISDIR(state.st_mode) or (state.st_mode & 0o777) != 0o700 \
             or state.st_uid != os.geteuid() or state.st_gid != os.getegid():
         raise ValueError("runtime secret parent authority is invalid")
-    for entry in os.listdir(parent_fd):
-        if entry in ("current", "previous") or entry.startswith(".next."):
-            remove_directory(parent_fd, entry)
-        else:
+    if os.geteuid() != 0 \
+            and os.environ.get("VX_COMPOSE_RUNTIME_SECRET_TEST_FAIL") == "clear-fsync":
+        raise OSError("injected runtime secret clear fsync failure")
+    entries = os.listdir(parent_fd)
+    for entry in entries:
+        if entry not in ("current", "previous") and not entry.startswith(".next."):
             raise ValueError("runtime secret parent contains an unknown member")
+        entry_state = os.stat(entry, dir_fd=parent_fd, follow_symlinks=False)
+        if not stat.S_ISDIR(entry_state.st_mode) or stat.S_ISLNK(entry_state.st_mode):
+            raise ValueError("runtime secret generation authority is invalid")
+    for entry in entries:
+        remove_directory(parent_fd, entry)
     os.close(parent_fd)
     os.rmdir("workload-secrets", dir_fd=runtime_fd)
     os.fsync(runtime_fd)

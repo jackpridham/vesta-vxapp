@@ -465,7 +465,7 @@ vx_compose_probe_run() {
     }
     if ! vx_compose_image_approval_require \
             "$owner" "$image_reference" "$image_id" "$image_os" \
-            "$image_architecture" "$profile" "$profile_version" \
+            "$image_architecture" "$profile" "$profile_version" >/dev/null \
         || [[ "$(vx_compose_runtime_identity_preflight \
             "$owner" "$project")" != complete ]]; then
         vx_compose_lock_release

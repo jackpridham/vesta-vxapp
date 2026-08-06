@@ -112,8 +112,19 @@ elif [[ " $* " == *" inspect aaaaaaaaaaaa "* \
     printf '"NetworkSettings":{"Networks":{"vx-alice-%s_default":{}},"Ports":{}},' "$project"
     printf '"HostConfig":{"Privileged":false,"CapAdd":[],"NetworkMode":"vx-alice-%s_default","PidMode":"","IpcMode":"private","Devices":[]},' "$project"
     if [[ -f "$(dirname -- "$0")/secret-runtime" && "$project" == web ]]; then
-        printf '"Mounts":[{"Source":"%s","Destination":"/run/secrets/credential","RW":false}]' \
-            "$(dirname -- "$0")/vesta/data/users/alice/docker-projects/web/runtime/workload-secrets/current/credential"
+        mount_rw=false
+        [[ ! -f "$(dirname -- "$0")/secret-mount-rw" ]] || mount_rw=true
+        printf '"Mounts":[{"Source":"%s","Destination":"/run/secrets/credential","RW":%s}' \
+            "$(dirname -- "$0")/vesta/data/users/alice/docker-projects/web/runtime/workload-secrets/current/credential" \
+            "$mount_rw"
+        if [[ -f "$(dirname -- "$0")/secret-mount-extra" ]]; then
+            printf ',{"Source":"%s","Destination":"/run/secrets/extra","RW":false}' \
+                "$(dirname -- "$0")/vesta/data/users/alice/docker-projects/web/runtime/workload-secrets/current/extra"
+        fi
+        if [[ -f "$(dirname -- "$0")/named-volume" ]]; then
+            printf ',{"Name":"vx_alice_web_state","Source":"/var/lib/docker/volumes/vx_alice_web_state/_data","Destination":"/state","RW":true}'
+        fi
+        printf ']'
     else
         printf '"Mounts":[]'
     fi
@@ -563,6 +574,35 @@ vx_compose_drift_observe_json alice web | jq -e '
     and .DESIRED[0].MOUNTS[0].READ_ONLY == true
     and .OBSERVED[0].MOUNTS[0].READ_ONLY == true
 ' >/dev/null || fail 'runtime secret mount produced false drift'
+touch "$test_root/secret-mount-rw"
+if vx_compose_runtime_identity_preflight alice web \
+    "$project_root/runtime/canonical.json" "$project_root/images.json" 1 \
+    >/dev/null 2>&1; then
+    fail 'writable runtime secret mount passed exact preflight'
+fi
+rm -f -- "$test_root/secret-mount-rw"
+touch "$test_root/secret-mount-extra"
+if vx_compose_runtime_identity_preflight alice web \
+    "$project_root/runtime/canonical.json" "$project_root/images.json" 1 \
+    >/dev/null 2>&1; then
+    fail 'extra runtime secret mount passed exact preflight'
+fi
+rm -f -- "$test_root/secret-mount-extra"
+
+cp -p -- "$project_root/runtime/canonical.json" \
+    "$test_root/canonical.before-volume-drift"
+jq '.volumes={state:{}}
+    | .services.web.volumes=[{type:"volume",source:"state",target:"/state"}]' \
+    "$test_root/canonical.before-volume-drift" \
+    >"$test_root/canonical.with-volume"
+install -m 0640 "$test_root/canonical.with-volume" \
+    "$project_root/runtime/canonical.json"
+touch "$test_root/named-volume"
+vx_compose_drift_observe_json alice web | jq -e '.MATCH == true' >/dev/null \
+    || fail 'Compose-prefixed named volume produced false drift'
+rm -f -- "$test_root/named-volume"
+install -m 0640 "$test_root/canonical.before-volume-drift" \
+    "$project_root/runtime/canonical.json"
 [[ ! -e "$revision_root/runtime" ]] \
     && ! grep -R -Fq 'lifecycle-secret' "$revision_root" \
     || fail 'immutable revision retained a disposable runtime secret copy'
@@ -570,10 +610,14 @@ vx_compose_drift_observe_json alice web | jq -e '
     -gt "$tag_lookups_before" ]] \
     || fail 'bundle refresh inspected the canonical digest instead of accepted tag'
 printf 'rotated-lifecycle-secret\n' >"$project_root/secrets/credential"
+force_recreate_before="$(grep -c '^ARG=--force-recreate$' "$docker_log" || :)"
 vx_compose_restart alice web \
     || fail 'restart did not converge after authoritative secret rotation'
 [[ "$(<"$runtime_secret")" == rotated-lifecycle-secret ]] \
     || fail 'restart did not refresh the runtime secret copy'
+[[ "$(grep -c '^ARG=--force-recreate$' "$docker_log" || :)" \
+    -eq $((force_recreate_before + 1)) ]] \
+    || fail 'secret refresh did not force exact container recreation'
 printf '%s\n' 'sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd' \
     >"$test_root/image-id"
 if vx_compose_restart alice web 2>/dev/null; then
@@ -597,6 +641,13 @@ canonical_sha="$(sha256sum "$project_root/runtime/canonical.json" | awk '{print 
 sed "s/^CANONICAL_SHA256=.*/CANONICAL_SHA256='$canonical_sha'/" \
     "$project_root/project.conf" >"$test_root/project.generic"
 install -m 0640 "$test_root/project.generic" "$project_root/project.conf"
+touch "$project_root/runtime/workload-secrets/unknown"
+if vx_compose_start alice web >/dev/null 2>&1; then
+    fail 'generic lifecycle ignored runtime-secret clear failure'
+fi
+[[ -f "$runtime_secret" ]] \
+    || fail 'failed generic clear changed active runtime-secret authority'
+rm -f -- "$project_root/runtime/workload-secrets/unknown"
 vx_compose_start alice web \
     || fail 'workload-to-generic lifecycle transition failed'
 [[ ! -e "$project_root/runtime/workload-secrets" ]] \

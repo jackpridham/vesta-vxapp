@@ -75,9 +75,11 @@ jq -e \
         and .EXPIRES == $expires
     ' "$approval" >/dev/null || fail 'approval authority is incomplete'
 
-[[ "$(vx_compose_image_approval_require \
-    alice "$reference" "$image_id" linux amd64 standard 2)" == "$image_id" ]] \
+approval_output="$(vx_compose_image_approval_require \
+    alice "$reference" "$image_id" linux amd64 standard 2)" \
     || fail 'valid local image approval was rejected'
+[[ -z "$approval_output" ]] \
+    || fail 'internal image approval check emitted output'
 
 if vx_compose_image_approval_require \
     bob "$reference" "$image_id" linux amd64 standard 2 2>/dev/null; then

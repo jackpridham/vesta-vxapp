@@ -118,11 +118,17 @@ vx_compose_drift_observe_json() {
                 if . == ($runtime+"_default") then "default"
                 elif startswith($runtime+"_") then ltrimstr($runtime+"_")
                 else . end] | sort;
-        def actualmounts:
+        def actualmounts($root):
             [(.Mounts // [])[] | {
                 SOURCE:(
                     (.Name // .Source // "") as $source
-                    | if ($source|startswith($runtime+"_"))
+                    | (($runtime|gsub("-";"_"))+"_") as $prefix
+                    | ($source|ltrimstr($prefix)) as $logical
+                    | if ($source|startswith($prefix))
+                        and $root.volumes[$logical] != null
+                      then $logical
+                      elif ($source|startswith($runtime+"_"))
+                        and $root.volumes[($source|ltrimstr($runtime+"_"))] != null
                       then ($source|ltrimstr($runtime+"_"))
                       else $source end
                 ),
@@ -174,7 +180,7 @@ vx_compose_drift_observe_json() {
             IMAGE:(.Image//""),
             STATE:(.State.Status//"unknown"),
             NETWORKS:actualnetworks,
-            MOUNTS:actualmounts,
+            MOUNTS:actualmounts($canonical[0]),
             PORTS:actualports,
             SECURITY:actualsecurity
         }) | sort_by(.SERVICE)) as $actual
