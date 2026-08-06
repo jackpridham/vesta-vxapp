@@ -119,15 +119,24 @@ vx_compose_drift_observe_json() {
                 elif startswith($runtime+"_") then ltrimstr($runtime+"_")
                 else . end] | sort;
         def actualmounts($root):
-            [(.Mounts // [])[] | {
+            . as $container
+            | [(.Mounts // [])[] | {
                 SOURCE:(
                     (.Name // .Source // "") as $source
-                    | (($runtime|gsub("-";"_"))+"_") as $prefix
+                    | ("vx_"+$owner+"_"+$project+"_") as $prefix
                     | ($source|ltrimstr($prefix)) as $logical
-                    | if ($source|startswith($prefix))
+                    | if $container.Config.Labels["com.docker.compose.project"] == $runtime
+                        and $container.Config.Labels["vx.managed"] == "yes"
+                        and $container.Config.Labels["vx.user"] == $owner
+                        and $container.Config.Labels["vx.project"] == $project
+                        and ($source|startswith($prefix))
                         and $root.volumes[$logical] != null
                       then $logical
-                      elif ($source|startswith($runtime+"_"))
+                      elif $container.Config.Labels["com.docker.compose.project"] == $runtime
+                        and $container.Config.Labels["vx.managed"] == "yes"
+                        and $container.Config.Labels["vx.user"] == $owner
+                        and $container.Config.Labels["vx.project"] == $project
+                        and ($source|startswith($runtime+"_"))
                         and $root.volumes[($source|ltrimstr($runtime+"_"))] != null
                       then ($source|ltrimstr($runtime+"_"))
                       else $source end

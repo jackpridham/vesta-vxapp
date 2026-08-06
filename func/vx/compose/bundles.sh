@@ -282,7 +282,9 @@ vx_compose_runtime_secrets_materialize() {
     env -i PATH="$VX_COMPOSE_SAFE_PATH" /usr/bin/python3 \
         "$VX_COMPOSE_LIB_DIR/runtime-secrets.py" "$root" "$workload" \
         || return 1
-    VX_COMPOSE_RUNTIME_SECRETS_REFRESHED=yes
+    if jq -e '.secrets | length > 0' "$workload" >/dev/null; then
+        VX_COMPOSE_RUNTIME_SECRETS_REFRESHED=yes
+    fi
 }
 
 vx_compose_workload_authority_validate() {

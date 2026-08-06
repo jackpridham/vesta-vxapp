@@ -31,9 +31,9 @@ authority clears the entire disposable runtime-copy directory before generic
 lifecycle convergence. Activation becomes successful once the complete new
 directory rename is fsynced; cleanup of the protected prior directory is
 best-effort after that durable commit and cannot turn a successful activation
-into a reported failure. Successful refresh forces exact container recreation
-before convergence so every secret bind is attached to the newly activated
-file generation rather than a replaced inode.
+into a reported failure. Successful refresh of a non-empty declared secret set
+forces exact container recreation before convergence so every secret bind is
+attached to the newly activated file generation rather than a replaced inode.
 
 Public metadata contains exactly secret name, target path, availability
 status, opaque version, creation time, and rotation time. Versions are

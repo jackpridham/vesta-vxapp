@@ -87,8 +87,13 @@ elif [[ " $* " == *" ps -aq "* ]] \
     && [[ " $* " == *" label=com.docker.compose.project=vx-alice-legacy "* ]]; then
     mode="$(cat "$(dirname -- "$0")/runtime-mode")"
     [[ "$mode" == absent ]] || printf '%s\n' bbbbbbbbbbbb
+elif [[ " $* " == *" ps -aq "* ]] \
+    && [[ " $* " == *" label=com.docker.compose.project=vx-alice-web-api "* ]]; then
+    mode="$(cat "$(dirname -- "$0")/runtime-mode")"
+    [[ "$mode" == absent ]] || printf '%s\n' cccccccccccc
 elif [[ " $* " == *" inspect aaaaaaaaaaaa "* \
-    || " $* " == *" inspect bbbbbbbbbbbb "* ]]; then
+    || " $* " == *" inspect bbbbbbbbbbbb "* \
+    || " $* " == *" inspect cccccccccccc "* ]]; then
     mode="$(cat "$(dirname -- "$0")/runtime-mode")"
     user=alice
     revision=1
@@ -98,6 +103,9 @@ elif [[ " $* " == *" inspect aaaaaaaaaaaa "* \
     if [[ " $* " == *" inspect bbbbbbbbbbbb "* ]]; then
         project=legacy
         container=bbbbbbbbbbbb
+    elif [[ " $* " == *" inspect cccccccccccc "* ]]; then
+        project=web-api
+        container=cccccccccccc
     fi
     [[ "$mode" != foreign ]] || user=bob
     [[ "$mode" != incomplete ]] || revision=
@@ -121,10 +129,20 @@ elif [[ " $* " == *" inspect aaaaaaaaaaaa "* \
             printf ',{"Source":"%s","Destination":"/run/secrets/extra","RW":false}' \
                 "$(dirname -- "$0")/vesta/data/users/alice/docker-projects/web/runtime/workload-secrets/current/extra"
         fi
+        if [[ -f "$(dirname -- "$0")/secret-mount-previous" ]]; then
+            printf ',{"Source":"%s","Destination":"/run/secrets/credential","RW":false}' \
+                "$(dirname -- "$0")/vesta/data/users/alice/docker-projects/web/runtime/workload-secrets/previous/credential"
+        fi
+        if [[ -f "$(dirname -- "$0")/secret-mount-foreign" ]]; then
+            printf ',{"Source":"/foreign/credential","Destination":"/run/secrets/credential","RW":false}'
+        fi
         if [[ -f "$(dirname -- "$0")/named-volume" ]]; then
             printf ',{"Name":"vx_alice_web_state","Source":"/var/lib/docker/volumes/vx_alice_web_state/_data","Destination":"/state","RW":true}'
         fi
         printf ']'
+    elif [[ -f "$(dirname -- "$0")/hyphenated-named-volume" \
+        && "$project" == web-api ]]; then
+        printf '"Mounts":[{"Name":"vx_alice_web-api_state","Source":"/var/lib/docker/volumes/vx_alice_web-api_state/_data","Destination":"/state","RW":true}]'
     else
         printf '"Mounts":[]'
     fi
@@ -588,6 +606,20 @@ if vx_compose_runtime_identity_preflight alice web \
     fail 'extra runtime secret mount passed exact preflight'
 fi
 rm -f -- "$test_root/secret-mount-extra"
+touch "$test_root/secret-mount-previous"
+if vx_compose_runtime_identity_preflight alice web \
+    "$project_root/runtime/canonical.json" "$project_root/images.json" 1 \
+    >/dev/null 2>&1; then
+    fail 'stale runtime secret generation passed exact preflight'
+fi
+rm -f -- "$test_root/secret-mount-previous"
+touch "$test_root/secret-mount-foreign"
+if vx_compose_runtime_identity_preflight alice web \
+    "$project_root/runtime/canonical.json" "$project_root/images.json" 1 \
+    >/dev/null 2>&1; then
+    fail 'foreign source at a declared secret target passed exact preflight'
+fi
+rm -f -- "$test_root/secret-mount-foreign"
 
 cp -p -- "$project_root/runtime/canonical.json" \
     "$test_root/canonical.before-volume-drift"
@@ -603,6 +635,27 @@ vx_compose_drift_observe_json alice web | jq -e '.MATCH == true' >/dev/null \
 rm -f -- "$test_root/named-volume"
 install -m 0640 "$test_root/canonical.before-volume-drift" \
     "$project_root/runtime/canonical.json"
+
+# Compose replaces only its owner/project separators with underscores; hyphens
+# inside a valid project key remain part of the managed volume prefix.
+vx_compose_store_new alice web-api standard "$candidate"
+vx_compose_deploy alice web-api
+hyphen_root="$(vx_compose_project_root alice web-api)"
+jq '.volumes={state:{}}
+    | .services.web.volumes=[{type:"volume",source:"state",target:"/state"}]' \
+    "$hyphen_root/runtime/canonical.json" \
+    >"$test_root/hyphenated-canonical"
+install -m 0640 "$test_root/hyphenated-canonical" \
+    "$hyphen_root/runtime/canonical.json"
+touch "$test_root/hyphenated-named-volume"
+vx_compose_drift_observe_json alice web-api | jq -e '
+    .MATCH == true
+    and .DESIRED[0].MOUNTS[0].SOURCE == "state"
+    and .OBSERVED[0].MOUNTS[0].SOURCE == "state"
+' >/dev/null || fail 'hyphenated project named volume produced false drift'
+rm -f -- "$test_root/hyphenated-named-volume"
+install -m 0640 "$candidate/canonical.json" \
+    "$hyphen_root/runtime/canonical.json"
 [[ ! -e "$revision_root/runtime" ]] \
     && ! grep -R -Fq 'lifecycle-secret' "$revision_root" \
     || fail 'immutable revision retained a disposable runtime secret copy'
@@ -618,12 +671,35 @@ vx_compose_restart alice web \
 [[ "$(grep -c '^ARG=--force-recreate$' "$docker_log" || :)" \
     -eq $((force_recreate_before + 1)) ]] \
     || fail 'secret refresh did not force exact container recreation'
+printf '%s\n' SERVICE_SCOPED_SECRET_RECREATE >>"$docker_log"
+vx_compose_recreate alice web web \
+    || fail 'service-scoped recreate failed after secret materialization'
+service_scope_args="$(awk '
+    /^SERVICE_SCOPED_SECRET_RECREATE$/ { seen=1; next }
+    seen && /^ARG=up$/ { capture=1 }
+    capture { print }
+    capture && /^END$/ { exit }
+' "$docker_log")"
+[[ "$service_scope_args" == $'ARG=up\nARG=-d\nARG=--force-recreate\nARG=--wait\nARG=--wait-timeout\nARG=60\nARG=web\nEND' ]] \
+    || fail 'secret materialization broadened service-scoped recreate argv'
 printf '%s\n' 'sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd' \
     >"$test_root/image-id"
 if vx_compose_restart alice web 2>/dev/null; then
     fail 'moved accepted image tag passed workload lifecycle refresh'
 fi
 printf '%s\n' "$image_id" >"$test_root/image-id"
+
+cp -p -- "$project_root/workload.json" "$test_root/workload.with-secret"
+printf '%s\n' '{"secrets":[]}' >"$project_root/workload.json"
+chmod 0600 "$project_root/workload.json"
+unset VX_COMPOSE_RUNTIME_SECRETS_REFRESHED
+vx_compose_runtime_secrets_materialize alice web \
+    || fail 'zero-secret runtime generation failed'
+[[ "${VX_COMPOSE_RUNTIME_SECRETS_REFRESHED:-no}" != yes ]] \
+    || fail 'zero-secret generation requested needless container recreation'
+install -m 0600 "$test_root/workload.with-secret" "$project_root/workload.json"
+vx_compose_runtime_secrets_materialize alice web \
+    || fail 'declared runtime secret was not restored after zero-secret check'
 
 # Transitioning to a generic project removes workload-only paths and clears
 # the disposable runtime secret authority before the next start.

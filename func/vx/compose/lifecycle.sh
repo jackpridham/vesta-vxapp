@@ -110,10 +110,15 @@ vx_compose_runtime_identity_preflight() {
                         | ($secret.source // $secret) as $name
                         | {SOURCE:$canonical[0].secrets[$name].file,
                            TARGET:($secret.target // ("/run/secrets/"+$name)),
-                           READ_ONLY:true}] | sort_by(.TARGET,.SOURCE))
+                           READ_ONLY:true}] | sort_by(.TARGET,.SOURCE)) as $desired
+                    | $desired
                       == ([($container.Mounts // [])[]
-                        | select((.Source // "")
-                            | startswith($root+"/runtime/workload-secrets/current/"))
+                        | . as $mount
+                        | select(
+                            ((.Source // "")
+                                | startswith($root+"/runtime/workload-secrets/"))
+                            or any($desired[];
+                                .TARGET == ($mount.Destination // "")))
                         | {SOURCE:(.Source//""),TARGET:(.Destination//""),
                            READ_ONLY:(.RW == false)}]
                           | sort_by(.TARGET,.SOURCE)))
@@ -436,10 +441,24 @@ vx_compose_run_lifecycle() {
         )
     fi
     if [[ "${VX_COMPOSE_RUNTIME_SECRETS_REFRESHED:-no}" == yes ]]; then
-        lifecycle_args=(
-            up -d --remove-orphans --force-recreate --wait
-            --wait-timeout "$timeout"
-        )
+        case "$action" in
+            deploy)
+                lifecycle_args=(
+                    up -d --remove-orphans --force-recreate --wait
+                    --wait-timeout "$timeout"
+                )
+                ;;
+            start|restart)
+                lifecycle_args=(
+                    up -d --remove-orphans --force-recreate --wait
+                    --wait-timeout "$timeout"
+                )
+                ;;
+            recreate)
+                # The caller already supplies `up --force-recreate` and any
+                # validated service scope; preserve that exact scope.
+                ;;
+        esac
     fi
     started_ms="$(date +%s%3N)"
     if ! vx_compose_audit "$root" "$action" started '' 0 "$services"; then
