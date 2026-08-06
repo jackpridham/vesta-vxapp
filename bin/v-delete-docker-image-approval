@@ -1,0 +1,25 @@
+#!/bin/bash
+# info: revoke a local Docker image approval without removing image data
+# options: ACTOR USER IMAGE_ID PROFILE PROFILE_VERSION
+
+compose_actor=$1
+user=$2
+image_id=$3
+profile=$4
+profile_version=$5
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '5' "$#" 'ACTOR USER IMAGE_ID PROFILE PROFILE_VERSION'
+[ "$#" -le 5 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+
+vx_compose_image_approval_delete \
+    "$compose_actor" "$user" "$image_id" "$profile" "$profile_version" \
+    || check_result "$E_INVALID" 'local Docker image approval revocation failed'
+
+log_history "revoked local Docker image approval $image_id for $user/$profile"
+log_event "$OK" "$ARGUMENTS"
+exit

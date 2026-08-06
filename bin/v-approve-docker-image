@@ -1,0 +1,33 @@
+#!/bin/bash
+# info: approve an expiring inspected local Docker image identity
+# options: ACTOR USER IMAGE_REFERENCE IMAGE_ID OS ARCHITECTURE PROFILE PROFILE_VERSION EXPIRES
+
+compose_actor=$1
+user=$2
+image_reference=$3
+image_id=$4
+image_os=$5
+architecture=$6
+profile=$7
+profile_version=$8
+expires=$9
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '9' "$#" \
+    'ACTOR USER IMAGE_REFERENCE IMAGE_ID OS ARCHITECTURE PROFILE PROFILE_VERSION EXPIRES'
+[ "$#" -le 9 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+
+vx_compose_image_approval_add \
+    "$compose_actor" "$user" "$image_reference" "$image_id" \
+    "$image_os" "$architecture" "$profile" "$profile_version" "$expires" \
+    >/dev/null \
+    || check_result "$E_INVALID" 'local Docker image approval failed'
+
+log_history "approved local Docker image identity $image_id for $user/$profile"
+log_event "$OK" "$ARGUMENTS"
+exit
