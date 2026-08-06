@@ -139,6 +139,7 @@
                                     <tr>
                                         <td class="step-left">
                                             <input type="text" size="20" class="vst-input" name="v_proxy_target" value="<?=htmlentities($v_proxy_target)?>" placeholder="http://127.0.0.1:3000">
+                                            <div class="vst-text" style="padding-top: 6px; color: #555;"><?php print __('When set, Nginx forwards this website to the target instead of serving its public_html directory.');?></div>
                                         </td>
                                     </tr>
                                     <tr>
@@ -188,6 +189,7 @@
                                     <tr>
                                         <td class="step-left">
                                             <textarea data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false" size="20" class="vst-textinput" name="v_proxy_headers"><?=htmlentities($v_proxy_headers)?></textarea>
+                                            <div class="vst-text" style="padding-top: 6px; color: #555;"><?php print __('Enter one request header per line as Name: Value.');?></div>
                                         </td>
                                     </tr>
                                 </table>
