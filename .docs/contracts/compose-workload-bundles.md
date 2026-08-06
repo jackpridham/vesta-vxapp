@@ -8,8 +8,9 @@ does not bypass canonical Compose rendering, profile assignment, image
 approval, policy, quota, secret, revision, lock, or lifecycle checks. Vesta
 remains authoritative for project ownership and accepted desired state.
 
-The archive is a tar file containing exactly these three root-level regular
-files, once each and with no other entries:
+The wire format is one deterministic gzip-compressed POSIX ustar archive
+containing exactly these three root-level regular files, once each and with no
+other entries:
 
 ```text
 workload.json
@@ -17,10 +18,19 @@ compose.yaml
 manifest.sha256
 ```
 
-Directories, links, devices, FIFOs, sparse files, path separators, absolute or
-dot-prefixed paths, duplicate names, extended headers, and trailing archive
-members are rejected. Member order is not authority; deterministic identity
-comes from the member bytes and hashes.
+The ustar members occur in ASCII lexical order: `compose.yaml`,
+`manifest.sha256`, then `workload.json`. Every header uses mode `0600`, numeric
+UID/GID `0`, size from the member bytes, modification time `0`, regular-file
+type, and empty owner/group names. It contains no PAX, GNU, sparse, extension,
+or long-name headers and ends with exactly two zero blocks. Directories,
+links, devices, FIFOs, path separators, absolute or dot-prefixed paths,
+duplicate names, and trailing tar blocks or data are rejected.
+
+The gzip wrapper is one non-concatenated stream with the fixed ten-byte header
+`1f 8b 08 00 00 00 00 00 02 03`: deflate, no optional fields, modification
+time zero, maximum-compression flag, Unix origin. Its CRC32 and input-size
+trailer must match the single expanded ustar stream. Concatenated members,
+optional gzip headers, and bytes after the one gzip trailer are rejected.
 
 ## Protected input and extraction
 
@@ -32,25 +42,28 @@ lowercase 64-character SHA-256 value, two spaces, the basename, and one final
 newline. The archive is hashed from one opened file descriptor and verified
 before it is inspected or extracted.
 
-The default hard limits are:
+The hard limits are:
 
-- archive: 64 MiB;
+- compressed archive: 64 MiB;
+- expanded ustar stream: 4 MiB;
 - `workload.json`: 256 KiB;
 - `compose.yaml`: 1 MiB;
 - `manifest.sha256`: 256 bytes;
 - total extracted regular-file bytes: 2 MiB;
 - validation or plan output: 32 KiB.
 
-An administrator may configure smaller limits, never larger ones. Listing and
-extraction run without caller environment or tenant-controlled options in a
-new root-owned mode-0700 directory on the same filesystem as protected
-staging. The controller validates the archive member table before extraction,
-extracts without following or preserving links, ownership, permissions,
-extended attributes, ACLs, capabilities, or timestamps, and then revalidates
-the exact regular-file set, ownership, modes, byte counts, and opened-file
-identities. Files become root-owned mode `0600`. Any limit, identity, member,
-type, parser, or checksum failure removes the disposable extraction directory
-and causes no project, image, secret, route, or runtime mutation.
+An administrator may configure smaller limits, never larger ones. Decompression,
+listing, and extraction run without caller environment or tenant-controlled
+options in a new root-owned mode-0700 directory on the same filesystem as
+protected staging. The controller bounds compressed bytes before parsing and
+expanded bytes while inflating, validates the single gzip stream and complete
+ustar member table before extraction, extracts without following or preserving
+links, ownership, permissions, extended attributes, ACLs, capabilities, or
+timestamps, and then revalidates the exact regular-file set, ownership, modes,
+byte counts, and opened-file identities. Files become root-owned mode `0600`.
+Any limit, identity, gzip, member, type, parser, or checksum failure removes
+the disposable extraction directory and causes no project, image, secret,
+route, or runtime mutation.
 
 `manifest.sha256` contains exactly two lines, in this order, with one final
 newline:
@@ -86,15 +99,15 @@ non-canonical workload JSON.
     "version": 3
   },
   "image": {
-    "reference": "repository/name@sha256:immutable-digest",
-    "id": "sha256:local-image-id",
+    "reference": "local/application:release-1",
+    "id": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
     "os": "linux",
     "architecture": "amd64"
   },
   "services": [
     {
       "name": "service",
-      "image": "repository/name@sha256:immutable-digest"
+      "image": "local/application:release-1"
     }
   ],
   "resources": {
@@ -148,9 +161,19 @@ Arrays are non-empty where the workload declares the corresponding resource,
 contain no duplicates, and are sorted by their stable identity. Service,
 image, port, secret, and volume declarations must exactly match the rendered
 Compose policy view; aggregate resources must exactly equal the sums of the
-rendered per-service limits. The single immutable image declaration applies
-to every service in schema 1. Its reference and local ID must match a current
-local approval as well as Docker inspection.
+rendered per-service limits. The single image declaration applies to every
+service in schema 1. `reference` may be a validated local tag only as lookup
+intent. It and the declared image ID/platform must match a current local
+approval and Docker inspection.
+
+Under the project lock, Vesta resolves the submitted reference again, requires
+the exact approved `sha256:<64 lowercase hex>` image ID, operating system, and
+architecture, and rewrites every persisted and runtime Compose service image
+to that exact image ID. The canonical Compose hash is calculated only after
+this rewrite. The submitted tag remains bounded workload intent; it is never
+deployment, revision, rollback, or runtime authority. A moved or ambiguous
+tag, a missing image ID, or any platform mismatch fails before persistence or
+runtime mutation.
 
 Ports use explicit IP, integer host/container port, and `tcp` or `udp`.
 Secrets declare names and absolute in-container targets only; values, content
@@ -160,6 +183,12 @@ application data never enter the bundle archive. Health timeout is an integer
 from 1 through 900 seconds. Probe names are lowercase ASCII slugs; their
 service and fixed argv are persisted as immutable revision authority under
 the project-probe contract.
+
+Each probe argv has 1 through 16 elements. Each UTF-8 element is 1 through 256
+bytes, the sum of element bytes is at most 2048, and the first element is an
+absolute in-container executable path. NUL, control characters, invalid UTF-8,
+and empty elements are rejected. Arguments are data passed directly to exec;
+shell parsing, interpolation, and caller additions are forbidden.
 
 Compatibility metadata is declarative, not an exemption. Vesta accepts only
 supported orchestrator API, policy schema, and validator ranges and still

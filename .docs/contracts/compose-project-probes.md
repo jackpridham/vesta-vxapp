@@ -20,20 +20,41 @@ capabilities.
 
 Vesta resolves exactly one running container whose Compose and Vesta ownership
 labels match the selected project and declared service. It executes the
-persisted argv directly without a shell, with stdin closed, an empty
-environment, inherited file descriptors closed, no TTY, and no privilege or
-user override. The execution starts only after acquiring a bounded read-side
-project/revision identity check and rechecks container identity before
-returning a result.
+persisted argv directly without a shell, with stdin closed, inherited file
+descriptors closed, no TTY, and no privilege or user override. Docker exec
+inherits the already validated container environment from the approved image
+and canonical Compose revision. Vesta supplies no environment additions or
+overrides, and the caller cannot supply any. The execution starts only after
+acquiring a bounded read-side project/revision identity check and rechecks
+container identity before returning a result.
 
-Manifest timeouts are integers from 1 through 60 seconds. Manifest output
-limits are integers from 256 through 8192 bytes. The controller independently
-enforces those ceilings, captures stdout and stderr separately in protected
-mode-0600 temporary files, kills only the exact timed-out exec process, and
-removes capture files on every exit. Truncation is a non-pass state. Raw
-stderr is never returned. No probe can run concurrently more than once per
-project, and global/per-owner concurrency limits prevent probe execution from
-becoming a host resource-amplification path.
+Manifest timeouts are integers from 1 through 60 seconds. The approved image's
+probe executable must enforce that deadline internally, terminate all work it
+starts, and exit no later than the declared timeout. Manifest argv has 1
+through 16 UTF-8 elements, each 1 through 256 bytes and at most 2048 bytes in
+total; its first element is an absolute path and no element may contain NUL or
+control characters. Manifest output limits are integers from 256 through 8192
+bytes.
+
+The host controller applies the declared timeout plus a fixed two-second
+transport grace as an independent backstop. It retains the Docker Engine exec
+ID and uses exec inspection to determine whether that exact exec is still
+running; Docker does not expose a supported operation to signal or kill an
+individual exec process, so the controller never claims that it did. A result
+received after the declared deadline is `timeout` even if the exec exits
+during the transport grace. If it remains running at the backstop, the
+controller records `unavailable`, latches probes unavailable for the project,
+and launches no further probe until that exec is observed stopped or an
+operator restarts the container. Vesta does not restart or mutate the workload
+automatically. An image whose probe violates its self-timeout contract is not
+eligible for a passing readiness decision.
+
+The controller captures stdout and stderr separately in protected mode-0600
+temporary files and removes completed capture files on every exit. Truncation
+is a non-pass state and raw stderr is never returned. No probe can run
+concurrently more than once per project, and fixed global/per-owner concurrency
+limits prevent probe execution from becoming a host resource-amplification
+path.
 
 ## Workload output schema 1
 

@@ -59,14 +59,17 @@ The protected approval binds all of:
 - approving actor;
 - creation UTC timestamp and mandatory expiry UTC timestamp.
 
-The reference cannot be a mutable substitute for the image ID. Approval is
-valid only while Docker inspection returns the exact same reference, ID,
-operating system, and architecture and the recorded profile, policy, and
-validator versions remain installed and supported. Expired, missing,
-mismatched, ambiguous, or replaced identities fail closed before candidate
-persistence or runtime mutation. Approval does not waive registry trust when
-the selected trust mode requires registry evidence, and it never authorizes a
-build on the managed host.
+For a loaded local image, the reference may be a tag only as lookup intent; it
+is never deployment authority or a mutable substitute for the image ID.
+Approval is valid only while Docker inspection resolves that reference to the
+exact recorded ID, operating system, and architecture and the recorded
+profile, policy, and validator versions remain installed and supported. Under
+the project lock, bundle import resolves it again and rewrites persisted and
+runtime Compose image fields to the exact `sha256:<64 lowercase hex>` image
+ID. Expired, missing, mismatched, ambiguous, or replaced identities fail
+closed before candidate persistence or runtime mutation. Approval does not
+waive registry trust when the selected trust mode requires registry evidence,
+and it never authorizes a build on the managed host.
 
 Approvals live in root-owned mode-0700 control storage outside tenant data and
 backups; each record is a regular non-symlink mode-0600 file. List and audit
