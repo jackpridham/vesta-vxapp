@@ -54,6 +54,20 @@ That snapshot protects the exact domain record, production ACME account,
 cron authority, certificate/key/chain, domain renders, `public_html`, metadata,
 hashes, and baseline HTTP/HTTPS bodies.
 
+The later real-create remediation used a separate comprehensive mode-0700,
+root-owned rollback:
+
+```text
+/root/vesta-backups/native-web-proxy-create-20260806T090216Z
+```
+
+Its 2,211 file hashes and metadata cover the complete administrator
+web/user/cron authority, SSL and ACME files, IP counters, entire domain tree,
+all administrator render files and symlinks, aggregate Apache/Nginx authority,
+domain logs, matching PHP pools, and baseline bodies. Restoration was scoped
+to the exact paths affected by public delete/create commands; unrelated live
+logs and other domains were not overwritten from the broader rollback.
+
 The first overlay transaction was rejected locally by the command safety
 filter before transfer. A corrected transaction then stopped before its
 install boundary because its generated manifest was mistakenly placed inside
@@ -76,12 +90,25 @@ An isolated Python echo service listened only on `127.0.0.1:18420`. It logged
 request paths, forwarded-header facts, and a Boolean disposable-GUID match; it
 never logged a GUID value.
 
-- **Create-equivalent:** Because the authorized domain already existed, the
-  create-equivalent path disabled then enabled native proxy support through
-  `v-change-web-domain-proxy-options`. List JSON, `web.conf`, HTTP and SSL
-  renders agreed on target/profile/timeout/header, `nginx -t` passed, and the
-  HTTP request preserved path/query, Host, all expected `X-Forwarded-*`
-  fields, and the disposable GUID. A first command attempt lacked exported
+- **Real CLI create:** Earlier preliminary evidence used a
+  disable-then-change create-equivalent because the authorized domain already
+  existed; that did not prove the documented public create adapter. The final
+  remediation first verified the domain had no aliases, FTP users, stats, or
+  backend object, took the comprehensive rollback above, and removed only the
+  exact web-domain object through `v-delete-web-domain`. It then executed the
+  real documented `v-add-web-domain` form with administrator, domain, staging
+  IP, `no`, `none`, an empty extension argument, and the exact
+  `--proxy-target`, `--proxy-mode`, `--proxy-profile`,
+  `--proxy-preserve-host`, `--proxy-timeout`, and `--header` options. List
+  JSON, `web.conf`, and generated HTTP/SSL `vx-proxy` renders agreed on the
+  target, profile, timeout, and disposable header. `nginx -t`, reload, and an
+  HTTP request proved path/query, Host, every expected `X-Forwarded-*` fact,
+  and the disposable GUID at the echo backend. The disposable created object
+  was supported-deleted before exact scoped restoration. The original record,
+  all affected hashes, production certificate fingerprint, baseline HTTP and
+  HTTPS bodies, services, and original port-8420 listener were exact. The
+  already-approved ACME issuance/renewal lifecycle below was not repeated.
+  An earlier command attempt in the preliminary lifecycle lacked exported
   `VESTA` and failed before mutation.
 - **Issuance:** The production-bound ACME KID was protected and temporarily
   removed so `LE_STAGING=yes v-add-letsencrypt-domain` could register against
@@ -171,7 +198,7 @@ Restoration proved:
 The echo services, echo files, fixture directory, marker file, ACME/SSL test
 duplicates, panel sessions, one-time credentials, browser state, temporary
 authentication hash, temporary manifests, failed staging trees, and payloads
-were removed. Only the two protected rollback/evidence roots above were
+were removed. Only the three protected rollback/evidence roots above were
 retained. The final deployed control-plane runtime remains `7beba3ca`; the
 original administrator authentication, domain workload, and domain authority
 are restored exactly. No Milestone 3 blocker remains.
