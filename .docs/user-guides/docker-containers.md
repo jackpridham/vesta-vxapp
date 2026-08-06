@@ -4,7 +4,7 @@
 > container field model retained for audit history. The current panel manages
 > Docker Compose projects, while the simple add/change compatibility path now
 > generates a constrained Compose project.
-> Follow the [authoritative status](../status/2026-07-25-compose-orchestration.md)
+> Follow the [operator architecture](../../docs/container-orchestration.md)
 > and [current Compose project guide](docker-compose-projects.md) for current
 > operation.
 

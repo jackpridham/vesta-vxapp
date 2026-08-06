@@ -1,8 +1,8 @@
 # Docker Container Ownership And Panel Management Implementation Plan
 
 > **Historical completed plan:** This records the direct-container MVP. Its
-> architecture is superseded for new work by
-> [2026-07-25-compose-orchestration.md](2026-07-25-compose-orchestration.md).
+> architecture is superseded for new work by the
+> [operator architecture](../../docs/container-orchestration.md).
 > Preserve this file as checkpoint evidence; do not infer current Compose
 > readiness from its completed checkboxes.
 

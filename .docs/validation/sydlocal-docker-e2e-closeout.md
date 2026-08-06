@@ -2,8 +2,8 @@
 
 > **Historical validation:** This report proves the legacy direct-container
 > MVP only. It is not evidence for Docker Compose orchestration. Current
-> implementation/staging evidence is indexed by
-> [the Compose status](../status/2026-07-25-compose-orchestration.md).
+> implementation guidance is indexed by
+> [the operator architecture](../../docs/container-orchestration.md).
 
 Date: `2026-06-27`
 Panel URL: `https://192.168.100.100:8083`
