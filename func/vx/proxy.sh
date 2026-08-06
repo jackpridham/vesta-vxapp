@@ -148,6 +148,9 @@ vx_proxy_validate_headers() {
     [ -n "$PROXY_HEADERS" ] || return 0
     while IFS= read -r header; do
         [ -n "$header" ] || continue
+        if [[ "$header" != *:* ]]; then
+            check_result "$E_INVALID" "proxy header format is invalid"
+        fi
         name="${header%%:*}"
         value="${header#*:}"
         value="${value# }"
