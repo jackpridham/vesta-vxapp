@@ -553,7 +553,8 @@ vx_compose_probe_run() {
     if jq -nS --arg container_id "$(jq -r '.ID' <<<"$before")" \
         --arg container_started_at "$(jq -r '.STARTED_AT // ""' <<<"$before")" \
         --arg workload_sha256 "$workload_sha" \
-        --argjson argv "$(printf '%s\0' "${argv[@]}" | jq -Rs 'split("\u0000")[:-1]')" \
+        --argjson argv "$(jq -c --arg probe "$probe" \
+            '.probes[$probe].argv' "$workload")" \
         --argjson revision "$revision" \
         --argjson timeout "$timeout_seconds" \
         --argjson grace "$VX_COMPOSE_PROBE_TRANSPORT_GRACE_SECONDS" \

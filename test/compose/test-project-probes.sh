@@ -201,6 +201,13 @@ source "$repo_root/func/vx/compose/common.sh"
 source "$repo_root/func/vx/compose/audit.sh"
 source "$repo_root/func/vx/compose/probes.sh"
 
+grep -Fq "'.probes[\$probe].argv' \"\$workload\"" \
+    "$repo_root/func/vx/compose/probes.sh" \
+    || fail 'probe argv is not serialized directly from validated workload authority'
+if grep -Fq 'split("\u0000")' "$repo_root/func/vx/compose/probes.sh"; then
+    fail 'probe argv uses jq 1.6-incompatible NUL stream serialization'
+fi
+
 vx_compose_project_root() {
     printf '%s/data/users/%s/docker-projects/%s\n' "$VESTA" "$1" "$2"
 }
