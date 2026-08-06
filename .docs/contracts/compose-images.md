@@ -44,6 +44,41 @@ Archives are not committed or placed in user backups. Temporary archives are
 removed after a successful load unless the operator requests retained
 quarantine storage.
 
+## Local image approvals
+
+Loading an archive makes image bytes available to Docker; it does not grant a
+project permission to use them. A separate administrator action may approve
+one inspected local identity for one owner and one installed profile version.
+The protected approval binds all of:
+
+- owner;
+- submitted image reference and exact local `sha256` image ID;
+- inspected operating system and architecture;
+- profile name and version;
+- policy schema and validator version;
+- approving actor;
+- creation UTC timestamp and mandatory expiry UTC timestamp.
+
+The reference cannot be a mutable substitute for the image ID. Approval is
+valid only while Docker inspection returns the exact same reference, ID,
+operating system, and architecture and the recorded profile, policy, and
+validator versions remain installed and supported. Expired, missing,
+mismatched, ambiguous, or replaced identities fail closed before candidate
+persistence or runtime mutation. Approval does not waive registry trust when
+the selected trust mode requires registry evidence, and it never authorizes a
+build on the managed host.
+
+Approvals live in root-owned mode-0700 control storage outside tenant data and
+backups; each record is a regular non-symlink mode-0600 file. List and audit
+surfaces return only the bound identity and versions, actor, timestamps,
+expiry state, and redacted decision. Revocation removes authority for future
+validation and start-like actions but never removes image layers, revisions,
+containers, or project data. Image removal and global prune remain separate
+and are not implied.
+
+Schema-1 workload bundles consume this authority as defined by
+[Compose workload bundles](compose-workload-bundles.md).
+
 ## Updates and rollback
 
 Update resolves/pulls images before runtime mutation. The prior revision

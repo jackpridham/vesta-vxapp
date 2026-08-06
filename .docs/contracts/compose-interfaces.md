@@ -62,6 +62,8 @@ Image/registry/secret commands:
 ```text
 v-pull-docker-image USER IMAGE
 v-load-docker-image USER ARCHIVE CHECKSUM
+v-approve-docker-image ACTOR USER IMAGE_REFERENCE IMAGE_ID OS ARCHITECTURE PROFILE PROFILE_VERSION EXPIRES
+v-delete-docker-image-approval ACTOR USER IMAGE_ID PROFILE PROFILE_VERSION
 v-add-docker-registry USER REGISTRY USERNAME PASSWORD_FILE
 v-delete-docker-registry USER REGISTRY
 v-list-docker-registries USER [FORMAT]
@@ -78,6 +80,11 @@ v-approve-docker-project-profile USER PROJECT PROFILE EXPIRES
 v-delete-docker-project-profile USER PROJECT
 v-list-docker-project-audit USER PROJECT [FORMAT]
 ```
+
+Local image approval is administrator-only and binds the exact inspected
+identity, owner, profile/version, current policy/validator versions, actor, and
+expiry defined by [Compose images](compose-images.md). Neither approval nor
+revocation loads, removes, starts, stops, or rebuilds an image or project.
 
 `v-approve-docker-project-profile` accepts installed versioned administrator
 profiles, including the bridge-only `slave-vxapp` compatibility profile.
@@ -154,6 +161,28 @@ candidate platform digests, update availability, and `MUTATED:false`. Neither
 command returns adapter stderr, attachment content, registry credentials, or
 tenant paths. The full evidence and fail-closed contract is
 [Compose trusted delivery](compose-trusted-delivery.md).
+
+Protected workload-bundle and project-probe interfaces are:
+
+```text
+v-plan-docker-workload-bundle ACTOR USER PROJECT ARCHIVE CHECKSUM MODE [FORMAT]
+v-import-docker-workload-bundle ACTOR USER PROJECT ARCHIVE CHECKSUM MODE EXPECTED_CURRENT_REVISION
+v-run-docker-project-probe ACTOR USER PROJECT PROBE [FORMAT]
+```
+
+`MODE` is exactly `add` or `change`. Planning is non-mutating. Import
+revalidates the separately checksummed, exact three-member archive and all
+external authority under the project lock before using the ordinary project
+lifecycle transaction. Both bundle commands accept only protected regular
+non-symlink mode-0600 archive and checksum inputs; their archive, manifest,
+schema, size, deterministic-hash, redaction, and audit boundaries are defined
+by [Compose workload bundles](compose-workload-bundles.md).
+
+The probe caller supplies only a persisted probe name. Service, argv, timeout,
+and output bound come from the current immutable workload manifest. Execution
+and stable schema-1 JSON output follow
+[Compose project probes](compose-project-probes.md). Bundle and probe
+interfaces never accept or expose secret values.
 
 ## JSON
 

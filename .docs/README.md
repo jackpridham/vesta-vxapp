@@ -10,6 +10,8 @@ Current documents:
 - [Native web-domain proxy validation](validation/2026-08-06-native-web-proxy-release.md)
 - [Self-service staging evidence](status/2026-07-29-compose-self-service-task7-staging-evidence.md)
 - [Compose contracts](contracts/)
+- [Application-neutral workload bundles](contracts/compose-workload-bundles.md)
+- [Bounded managed-project probes](contracts/compose-project-probes.md)
 
 ## Document classes
 
@@ -30,5 +32,7 @@ migration history and do not override current `compose-*` contracts.
 The Compose implementation supports owner-only `standard` self-service,
 immutable preview/apply, administrator-approved profiles, trusted image
 delivery, managed backup and restore, and native Vesta ingress integration.
+The workload-bundle and project-probe contracts define the protected generic
+interfaces for application-owned release metadata and diagnostics.
 Production mutation always requires separate explicit authorization naming the
 target, release, and workload scope.
