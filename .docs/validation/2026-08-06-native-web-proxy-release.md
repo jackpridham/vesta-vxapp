@@ -4,9 +4,9 @@
 - **Authorized host:** `debian@192.168.200.100` (`dev.jackpridham.com`)
 - **Authorized domain:** `admin/slave.jackpridham.com`
 - **Initial candidate:** `3fdd617d12ebe903a7480d405e17a1a262717abc`
-- **Validated successor:** `7beba3ca6cf0d7dc72c02f3aafb4740e28ebfd6f`
-- **Runtime version:** `0.9.9-0-16+vxapp.7beba3ca`
-- **Runtime build date:** `2026-08-06T08:28:06Z`
+- **Validated successor:** `a357eb6649979130c71752b24cdf79cece98032a`
+- **Runtime version:** `0.9.9-0-16+vxapp.a357eb66`
+- **Runtime build date:** `2026-08-06T09:20:46Z`
 - **Outcome:** all CLI, authenticated panel, state, render, HTTP, ACME
   staging, HTTPS, renewal, rebuild, disable, restoration, authentication
   restoration, and cleanup gates passed.
@@ -180,6 +180,43 @@ test. `bash -n`, `bash test/test_web_domain_proxy.sh`,
 one-file runtime promotion. The live marker, version, and build date were
 advanced atomically under the existing release lock.
 
+## Final-review authority parsing correction
+
+Final code review found that native target validation did not validate an
+explicit port and that the Host-header helper reduced a bracketed IPv6 target
+to a single `[`. Commit `a357eb6649979130c71752b24cdf79cece98032a` closes
+that release blocker with one shared HTTP(S) authority parser in
+`func/vx/proxy.sh`. It requires a host, accepts ordinary hostname/IPv4 and
+bracketed IPv6 authorities, retains the existing path/query behavior, rejects
+unbracketed IPv6 and malformed brackets, and rejects empty, nonnumeric, zero,
+or greater-than-65535 explicit ports. No catalog, approval, or policy layer
+was added. Focused tests cover loopback, HTTPS, bracketed IPv6, Host rendering,
+all required invalid port classes, oversized numeric input, and malformed
+brackets.
+
+Only the committed helper was promoted to the authorized dev host under
+`/run/lock/vesta-vxapp-release.lock`. Its deployed SHA-256 is
+`1ea77efd1e64bf039b2087f47c02d06c05cc5ba91cb040190ba0886637a06db2`,
+matching the committed file exactly; it is `root:root` mode 0644. The exact
+prior helper, full marker, version, and build date are protected in the
+root-owned mode-0700 rollback directory:
+
+```text
+/root/vesta-backups/native-web-proxy-authority-a357eb66
+```
+
+Remote `bash -n` and source-level valid/invalid authority cases passed,
+including an exact `[::1]` Host result. Nginx and Apache syntax passed, all
+three Nginx, Apache, and Vesta services remained active, and both host-local
+and public checks retained HTTP 301 and HTTPS 200 for
+`slave.jackpridham.com`. The first pre-deployment `nginx -t`, run at the SSH
+session's default file-descriptor limit, reproduced the already documented
+`Too many open files` failure; rerunning with the host's established
+`ulimit -n 65535` passed before and after deployment. The initial deployment
+write used a placeholder `2026-08-06T12:00:00Z` build value; it was corrected
+under the same release lock to the actual UTC deployment time above. Neither
+attempt changed domain/user authentication, workload state, or production.
+
 ## Exact restoration and cleanup
 
 The protected archive restored the original domain record, production ACME
@@ -198,8 +235,8 @@ Restoration proved:
 The echo services, echo files, fixture directory, marker file, ACME/SSL test
 duplicates, panel sessions, one-time credentials, browser state, temporary
 authentication hash, temporary manifests, failed staging trees, and payloads
-were removed. Only the three protected rollback/evidence roots above were
-retained. The final deployed control-plane runtime remains `7beba3ca`; the
+were removed. Only the protected rollback/evidence roots documented above were
+retained. The final deployed control-plane runtime is `a357eb66`; the
 original administrator authentication, domain workload, and domain authority
 are restored exactly. No Milestone 3 blocker remains.
 
@@ -235,3 +272,7 @@ documentation. It adds no upstream catalog, URL/header approval layer,
 protected proxy specification, duplicate state store, or panel redesign. No
 production mutation was authorized or performed, and the optional production
 comparison was not run.
+
+After the final-review correction, the complete Task 6 gate was rerun and
+again passed with the exact results above. `git diff --check` also passed for
+the code/test commit and the subsequent evidence update.
