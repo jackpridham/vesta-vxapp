@@ -33,13 +33,6 @@ assert_file_contains() {
     grep -Fq -- "$needle" "$file" || fail "$message"
 }
 
-assert_file_matches() {
-    local file="$1"
-    local pattern="$2"
-    local message="$3"
-    grep -Eq -- "$pattern" "$file" || fail "$message"
-}
-
 check_result() {
     exit "$1"
 }
@@ -80,6 +73,9 @@ assert_target_valid 'https://backend.example.test/app'
 assert_target_invalid 'ftp://backend.example.test'
 assert_target_invalid 'http://backend.example.test/a path'
 assert_target_invalid 'http://backend.example.test/;return'
+assert_target_invalid 'http:///path'
+assert_target_invalid 'https://:443'
+assert_target_invalid 'http://?query'
 assert_target_invalid ''
 
 PROXY_HEADERS='X-Business-GUID: EXAMPLE-GUID'
@@ -179,21 +175,161 @@ vx_proxy_prepare_template_values
 assert_contains "$VX_PROXY_LOCATION_BLOCK" 'location / {' 'native proxy is not an ordinary catch-all prefix location'
 [[ "$VX_PROXY_LOCATION_BLOCK" != *'location ^~ /'* ]] || fail 'native proxy would suppress the ACME regex location'
 
-# SSL installation must reload the owned domain record, render the native
-# proxy SSL template, and leave proxy authority untouched.
-SSL_COMMAND="$ROOT/bin/v-add-web-domain-ssl"
-assert_file_contains "$SSL_COMMAND" "get_domain_values 'web'" 'SSL command does not load domain proxy state'
-assert_file_contains "$SSL_COMMAND" 'add_web_config "$PROXY_SYSTEM" "$PROXY.stpl"' 'SSL command does not render the enabled proxy SSL template'
-if grep -Eq 'vx_proxy_clear_web_conf|update_object_value.*PROXY_(TARGET|HEADERS)' "$SSL_COMMAND"; then
-    fail 'SSL command clears or rewrites native proxy target/header authority'
-fi
+TEST_TMP=$(mktemp -d)
+trap 'rm -rf "$TEST_TMP"' EXIT
 
-# Renewal eligibility remains state- and window-bound and renewal delegates to
-# the standard issuance command.
-RENEW_COMMAND="$ROOT/bin/v-update-letsencrypt-ssl"
-assert_file_contains "$RENEW_COMMAND" "search_objects 'web' 'LETSENCRYPT' 'yes' 'DOMAIN'" 'renewal does not select letsencrypt-enabled domains'
-assert_file_matches "$RENEW_COMMAND" 'if \[\[ "\$days_valid" -lt 31 \]\]; then' 'renewal window is not constrained to certificates below 31 days'
-assert_file_contains "$RENEW_COMMAND" 'v-add-letsencrypt-domain $user $domain $aliases' 'renewal does not delegate to v-add-letsencrypt-domain'
+run_ssl_behavior_test() {
+    local fixture="$TEST_TMP/ssl"
+    local vesta="$fixture/vesta"
+    local home="$fixture/home"
+    local certs="$fixture/certs"
+    local log="$fixture/calls.log"
+    local test_domain='proxy.example.test'
+
+    mkdir -p "$vesta/func" "$vesta/conf" "$vesta/data/users/alice/ssl" \
+        "$vesta/bin" "$home/alice/conf/web" "$certs"
+    printf '%s\n' certificate > "$certs/$test_domain.crt"
+    printf '%s\n' private-key > "$certs/$test_domain.key"
+
+    cat > "$vesta/func/main.sh" <<'EOF'
+USER_DATA="$VESTA/data/users/$user"
+BIN="$VESTA/bin"
+check_args() { :; }
+is_format_valid() { :; }
+is_system_enabled() { :; }
+is_object_valid() { :; }
+is_object_unsuspended() { :; }
+is_object_value_empty() { :; }
+is_web_domain_cert_valid() { :; }
+format_domain() { :; }
+format_domain_idn() { :; }
+get_domain_values() {
+    IP='192.0.2.10'
+    TPL='default'
+    PROXY='vx-proxy'
+    PROXY_TARGET='http://127.0.0.1:8420'
+    PROXY_HEADERS='X-Business-GUID: EXAMPLE-GUID'
+}
+get_real_ip() { printf '%s\n' "$1"; }
+prepare_web_domain_values() { :; }
+add_web_config() {
+    printf 'render|%s|%s|%s|%s\n' "$1" "$2" "$PROXY_TARGET" "$PROXY_HEADERS" >> "$TEST_LOG"
+}
+increase_user_value() { :; }
+update_object_value() {
+    case "$4" in
+        '$PROXY_TARGET'|'$PROXY_HEADERS')
+            printf 'unexpected-proxy-update|%s\n' "$4" >> "$TEST_LOG"
+            ;;
+    esac
+}
+check_result() { return "$1"; }
+log_history() { :; }
+log_event() {
+    printf 'final|%s|%s\n' "$PROXY_TARGET" "$PROXY_HEADERS" >> "$TEST_LOG"
+}
+EOF
+    : > "$vesta/func/domain.sh"
+    : > "$vesta/func/ip.sh"
+    cat > "$vesta/conf/vesta.conf" <<EOF
+HOMEDIR='$home'
+WEB_SYSTEM='nginx'
+WEB_SSL='yes'
+PROXY_SYSTEM='nginx'
+VESTA_CERTIFICATE=''
+MAIL_CERTIFICATE=''
+UPDATE_HOSTNAME_SSL=''
+EOF
+    printf '#!/bin/sh\nexit 0\n' > "$vesta/bin/v-restart-web"
+    printf '#!/bin/sh\nexit 0\n' > "$vesta/bin/v-restart-proxy"
+    chmod +x "$vesta/bin/v-restart-web" "$vesta/bin/v-restart-proxy"
+
+    TEST_LOG="$log" VESTA="$vesta" "$ROOT/bin/v-add-web-domain-ssl" \
+        alice "$test_domain" "$certs" same no >/dev/null 2>&1 || {
+        fail 'stubbed v-add-web-domain-ssl execution failed'
+        return
+    }
+
+    assert_file_contains "$log" \
+        'render|nginx|vx-proxy.stpl|http://127.0.0.1:8420|X-Business-GUID: EXAMPLE-GUID' \
+        'enabled native proxy did not render PROXY.stpl with its persisted values'
+    assert_file_contains "$log" \
+        'final|http://127.0.0.1:8420|X-Business-GUID: EXAMPLE-GUID' \
+        'SSL installation did not preserve proxy target and headers'
+    if grep -Fq 'unexpected-proxy-update|' "$log"; then
+        fail 'SSL installation rewrote proxy target or header authority'
+    fi
+}
+
+run_renewal_behavior_test() {
+    local fixture="$TEST_TMP/renewal"
+    local vesta="$fixture/vesta"
+    local log="$fixture/calls.log"
+    local cert_dir="$vesta/data/users/alice/ssl"
+    local state="$fixture/web.state"
+
+    mkdir -p "$vesta/func" "$vesta/conf" "$vesta/bin" "$cert_dir"
+    cat > "$state" <<'EOF'
+renew.example.test|yes
+future.example.test|yes
+disabled.example.test|no
+EOF
+    cat > "$vesta/func/main.sh" <<'EOF'
+search_objects() {
+    local state_domain state_letsencrypt
+    printf 'search|%s|%s|%s|%s\n' "$1" "$2" "$3" "$4" >> "$TEST_LOG"
+    if [ "$1|$2|$3|$4" = 'web|LETSENCRYPT|yes|DOMAIN' ]; then
+        while IFS='|' read -r state_domain state_letsencrypt; do
+            [ "$state_letsencrypt" = "$3" ] && printf '%s\n' "$state_domain"
+        done < "$TEST_STATE"
+    fi
+}
+get_web_counter() { printf '0\n'; }
+alter_web_counter() { printf '1\n'; }
+send_email_to_admin() { :; }
+EOF
+    cat > "$vesta/conf/vesta.conf" <<EOF
+BIN='$vesta/bin'
+EOF
+    cat > "$vesta/bin/v-list-users" <<'EOF'
+#!/bin/sh
+printf 'alice\n'
+EOF
+    cat > "$vesta/bin/v-add-letsencrypt-domain" <<'EOF'
+#!/bin/sh
+printf 'renew|%s|%s|%s\n' "$1" "$2" "$3" >> "$TEST_LOG"
+EOF
+    chmod +x "$vesta/bin/v-list-users" "$vesta/bin/v-add-letsencrypt-domain"
+
+    openssl req -x509 -newkey rsa:2048 -nodes -days 1 \
+        -subj '/CN=renew.example.test' \
+        -addext 'subjectAltName=DNS:renew.example.test,DNS:www.renew.example.test' \
+        -keyout "$fixture/renew.key" -out "$cert_dir/renew.example.test.crt" >/dev/null 2>&1
+    openssl req -x509 -newkey rsa:2048 -nodes -days 90 \
+        -subj '/CN=future.example.test' \
+        -addext 'subjectAltName=DNS:future.example.test' \
+        -keyout "$fixture/future.key" -out "$cert_dir/future.example.test.crt" >/dev/null 2>&1
+
+    TEST_LOG="$log" TEST_STATE="$state" VESTA="$vesta" "$ROOT/bin/v-update-letsencrypt-ssl" \
+        >/dev/null 2>"$fixture/stderr.log" || {
+        fail 'stubbed v-update-letsencrypt-ssl execution failed'
+        return
+    }
+
+    assert_file_contains "$log" 'search|web|LETSENCRYPT|yes|DOMAIN' \
+        'renewal did not select through LETSENCRYPT=yes domain state'
+    assert_file_contains "$log" 'renew|alice|renew.example.test|www.renew.example.test' \
+        'in-window certificate did not delegate to v-add-letsencrypt-domain'
+    if grep -Fq 'renew|alice|future.example.test|' "$log"; then
+        fail 'out-of-window certificate was renewed'
+    fi
+    if grep -Fq 'disabled.example.test' "$log"; then
+        fail 'domain outside the LETSENCRYPT=yes selection was renewed'
+    fi
+}
+
+run_ssl_behavior_test
+run_renewal_behavior_test
 
 if [ "$FAILED" -ne 0 ]; then
     exit "$FAILED"
