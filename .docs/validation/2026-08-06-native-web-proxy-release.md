@@ -202,3 +202,36 @@ were removed. Only the three protected rollback/evidence roots above were
 retained. The final deployed control-plane runtime remains `7beba3ca`; the
 original administrator authentication, domain workload, and domain authority
 are restored exactly. No Milestone 3 blocker remains.
+
+## Final local release gate
+
+The complete Task 6 affected-system gate ran from the repository root on
+2026-08-06 and passed:
+
+- `bash -n` accepted `bin/v-add-web-domain`,
+  `bin/v-change-web-domain-proxy-options`,
+  `bin/v-delete-web-domain-proxy`, `bin/v-add-letsencrypt-domain`,
+  `bin/v-add-web-domain-ssl`, `bin/v-update-letsencrypt-ssl`,
+  `func/vx/proxy.sh`, and `test/test_web_domain_proxy.sh` with exit 0.
+- `php -l` reported no syntax errors for `web/inc/vx_proxy_form.php`,
+  `web/add/web/index.php`, and `web/edit/web/index.php`.
+- `bash test/test_web_domain_proxy.sh` reported
+  `Web domain proxy tests passed.`
+- `php test/test_web_proxy_form.php` reported
+  `Web proxy form tests passed.`
+- `bash test/compose/test-routes.sh` reported
+  `Compose route tests passed.`
+- `bash test/compose/test-ingress-consumers.sh` reported
+  `Compose ingress consumer tests passed.`
+- `bash test/compose/test-web-ui.sh` reported
+  `Compose web UI static tests passed.`
+- `bash test/test_compose_docs.sh` reported
+  `Compose documentation consistency checks passed.`
+- `git diff --check` completed with exit 0 and no output.
+
+The final release diff adds regression coverage, the two approved panel help
+messages, the proxy-disable correction, this validation record, and operator
+documentation. It adds no upstream catalog, URL/header approval layer,
+protected proxy specification, duplicate state store, or panel redesign. No
+production mutation was authorized or performed, and the optional production
+comparison was not run.
