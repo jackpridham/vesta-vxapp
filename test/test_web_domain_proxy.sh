@@ -171,6 +171,15 @@ assert_file_contains "$INSTALL_STPL" 'include %home%/%user%/conf/web/snginx.%dom
 # plain catch-all prefix for HTTP-01 to be answered locally.
 LE_COMMAND="$ROOT/bin/v-add-letsencrypt-domain"
 assert_file_contains "$LE_COMMAND" 'location ~ "^/\.well-known/acme-challenge/(.*)$" {' 'ACME command does not generate its HTTP-01 regex location'
+DELETE_COMMAND="$ROOT/bin/v-delete-web-domain-proxy"
+assert_file_contains "$DELETE_COMMAND" 'restored_proxy=$(get_user_value '\''$PROXY_TEMPLATE'\'')' \
+    'native proxy disable does not resolve the ordinary owner proxy template'
+assert_file_contains "$DELETE_COMMAND" 'add_web_config "$PROXY_SYSTEM" "$restored_proxy.tpl"' \
+    'native proxy disable does not restore the ordinary HTTP frontend'
+assert_file_contains "$DELETE_COMMAND" 'add_web_config "$PROXY_SYSTEM" "$restored_proxy.stpl"' \
+    'native proxy disable does not restore the ordinary HTTPS frontend'
+assert_file_contains "$DELETE_COMMAND" 'vx_proxy_clear_web_conf' \
+    'native proxy disable does not clear native target/header state'
 PROXY_MODE='proxy'
 PROXY_TARGET='http://127.0.0.1:8420'
 PROXY_PRESERVE_HOST='yes'

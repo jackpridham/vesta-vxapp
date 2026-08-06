@@ -18,6 +18,7 @@ restart=$3
 # Includes
 source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
+source $VESTA/func/ip.sh
 source $VESTA/func/vx/proxy.sh
 source "$VESTA/func/vx/compose/routes.sh"
 source $VESTA/conf/vesta.conf
@@ -53,11 +54,32 @@ fi
 
 # Defining domain parameters
 get_domain_values 'web'
+deleted_proxy="$PROXY"
 del_web_config "$PROXY_SYSTEM" "$PROXY.tpl"
 
 # Checking SSL
 if [ "$SSL" = 'yes' ]; then
     del_web_config "$PROXY_SYSTEM" "$PROXY.stpl"
+fi
+
+# Native reverse-proxy support replaces the ordinary Vesta frontend template.
+# Restore that template when the native target is disabled so both HTTP and
+# HTTPS return to the domain's normal public_html-backed web vhost.
+restored_proxy=''
+restored_proxy_ext=''
+if [ "$deleted_proxy" = "$VX_PROXY_TEMPLATE" ]; then
+    restored_proxy=$(get_user_value '$PROXY_TEMPLATE')
+    if [ -n "$restored_proxy" ] && [ "$restored_proxy" != "$VX_PROXY_TEMPLATE" ]; then
+        is_proxy_template_valid "$restored_proxy"
+        restored_proxy_ext="jpg,jpeg,gif,png,ico,svg,css,zip,tgz,gz,rar,bz2,doc,xls,exe,pdf,ppt,txt,odt,ods,odp,odf,tar,wav,bmp,rtf,js,mp3,avi,mpeg,flv,woff,woff2"
+        PROXY_EXT="$restored_proxy_ext"
+        prepare_web_domain_values
+        local_ip=$(get_real_ip $IP)
+        add_web_config "$PROXY_SYSTEM" "$restored_proxy.tpl"
+        if [ "$SSL" = 'yes' ]; then
+            add_web_config "$PROXY_SYSTEM" "$restored_proxy.stpl"
+        fi
+    fi
 fi
 
 
@@ -66,8 +88,8 @@ fi
 #----------------------------------------------------------#
 
 # Update config
-update_object_value 'web' 'DOMAIN' "$domain" '$PROXY' ''
-update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_EXT' ''
+update_object_value 'web' 'DOMAIN' "$domain" '$PROXY' "$restored_proxy"
+update_object_value 'web' 'DOMAIN' "$domain" '$PROXY_EXT' "$restored_proxy_ext"
 vx_proxy_clear_web_conf
 
 # Restart proxy server
