@@ -119,6 +119,14 @@ images, registries, secrets, backup, restore, adoption, migration, and web
 source handling. The complete command surface is documented in
 [Compose interfaces](../.docs/contracts/compose-interfaces.md).
 
+Application-owned releases may use the protected workload-bundle interface.
+An administrator first approves one exact inspected local image identity, then
+plans and imports the deterministic bundle. A managed project exposes only the
+bounded probe names declared by its current immutable workload revision; Vesta
+executes a selected probe without accepting a command or arguments from the
+caller. These interfaces remain subject to ordinary profile, policy, secret,
+revision, lifecycle, rollback, backup, and authorization controls.
+
 ## Validation
 
 Run focused shell suites for every changed contract, syntax-check all touched

@@ -1,0 +1,31 @@
+#!/bin/bash
+# info: validate and plan a protected Docker workload bundle
+# options: ACTOR USER PROJECT ARCHIVE CHECKSUM MODE [FORMAT]
+
+compose_actor=$1
+user=$2
+compose_project=$3
+archive=$4
+checksum=$5
+mode=$6
+format=${7-json}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '6' "$#" 'ACTOR USER PROJECT ARCHIVE CHECKSUM MODE [FORMAT]'
+[ "$#" -le 7 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+[[ "$compose_actor" == admin ]] \
+    || check_result "$E_INVALID" 'administrator authorization is required'
+payload="$(vx_compose_bundle_plan "$compose_actor" "$user" "$compose_project" \
+    "$archive" "$checksum" "$mode")" \
+    || check_result "$E_INVALID" 'Docker workload bundle plan failed'
+case "$format" in
+    json) printf '%s\n' "$payload" ;;
+    plain) jq -r '[.OWNER,.PROJECT,.MODE,.PROFILE,.CANONICAL_SHA256,
+        .WORKLOAD.ID,.WORKLOAD.RELEASE,.IMAGE_ID]|@tsv' <<<"$payload" ;;
+    *) check_result "$E_INVALID" 'format must be json or plain' ;;
+esac
+exit

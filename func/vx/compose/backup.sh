@@ -378,7 +378,7 @@ vx_compose_backup_copy_control() {
     install -d -m 0700 "$destination" "$destination/revisions"
     for name in \
         compose.yaml project.conf policy.conf backup-policy.conf variables.env images.json \
-        audit.log routes.conf simple.json alerts.conf; do
+        audit.log routes.conf simple.json alerts.conf workload.json workload-evidence.json workload-manifest.sha256; do
         [[ -f "$root/$name" && ! -L "$root/$name" ]] || continue
         install -m 0600 "$root/$name" "$destination/$name"
     done
@@ -427,7 +427,7 @@ vx_compose_backup_copy_control() {
         install -d -m 0700 "$destination_revision"
         for name in \
             compose.yaml canonical.json manifest.sha256 policy.conf \
-            images.json routes.conf simple.json alerts.conf; do
+            images.json routes.conf simple.json alerts.conf workload.json workload-evidence.json workload-manifest.sha256; do
             [[ -f "$source_revision/$name" && ! -L "$source_revision/$name" ]] \
                 || continue
             install -m 0600 \

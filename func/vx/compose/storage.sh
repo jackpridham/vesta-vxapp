@@ -486,6 +486,17 @@ vx_compose_install_revision_files() {
         install -m 0640 "$candidate/alerts.conf" "$revision_root/alerts.conf" \
             || return 1
     fi
+    if [[ -f "$candidate/workload.json" && ! -L "$candidate/workload.json"
+        && -f "$candidate/workload-evidence.json"
+        && ! -L "$candidate/workload-evidence.json"
+        && -f "$candidate/workload-manifest.sha256"
+        && ! -L "$candidate/workload-manifest.sha256" ]]; then
+        install -m 0600 "$candidate/workload.json" "$revision_root/workload.json" \
+            && install -m 0600 "$candidate/workload-evidence.json" \
+                "$revision_root/workload-evidence.json" || return 1
+        install -m 0600 "$candidate/workload-manifest.sha256" \
+            "$revision_root/workload-manifest.sha256" || return 1
+    fi
 }
 
 vx_compose_fsync_path() {
@@ -691,6 +702,18 @@ vx_compose_active_revision_verify() {
             return 1
         }
     fi
+    for optional_member in workload.json workload-evidence.json workload-manifest.sha256; do
+        if [[ -f "$revision_root/$optional_member" || -f "$root/$optional_member" ]]; then
+            [[ -f "$revision_root/$optional_member"
+                && ! -L "$revision_root/$optional_member"
+                && -f "$root/$optional_member" && ! -L "$root/$optional_member"
+                && "$(sha256sum "$revision_root/$optional_member" | awk '{print $1}')" \
+                    == "$(sha256sum "$root/$optional_member" | awk '{print $1}')" ]] || {
+                vx_compose_error 'active Compose workload evidence does not match the finalized revision'
+                return 1
+            }
+        fi
+    done
 }
 
 vx_compose_stage_candidate_revision() {
@@ -722,6 +745,18 @@ vx_compose_stage_candidate_revision() {
                 rm -rf -- "$transaction_root"
                 return 1
             }
+    fi
+    if [[ -f "$candidate/workload.json" && ! -L "$candidate/workload.json"
+        && -f "$candidate/workload-evidence.json"
+        && ! -L "$candidate/workload-evidence.json"
+        && -f "$candidate/workload-manifest.sha256" ]]; then
+        install -m 0600 "$candidate/workload.json" "$transaction_root/workload.json" \
+            && install -m 0600 "$candidate/workload-evidence.json" \
+                "$transaction_root/workload-evidence.json" \
+            && install -m 0600 "$candidate/workload-manifest.sha256" \
+                "$transaction_root/workload-manifest.sha256" || {
+            rm -rf -- "$transaction_root"; return 1;
+        }
     fi
     if [[ -f "$candidate/alerts.conf" && ! -L "$candidate/alerts.conf" ]]; then
         install -m 0640 "$candidate/alerts.conf" "$transaction_root/alerts.conf" \
@@ -811,6 +846,14 @@ vx_compose_commit_staged_revision() {
             || install -m 0640 "$root/$name" "$snapshot_root/$name" \
             || setup_failed=yes
     done
+    for name in workload.json workload-evidence.json workload-manifest.sha256; do
+        [[ "$setup_failed" == yes || ! -f "$root/$name" ]] \
+            || install -m 0600 "$root/$name" "$snapshot_root/$name" \
+            || setup_failed=yes
+        [[ "$setup_failed" == yes || ! -f "$transaction_root/$name" ]] \
+            || install -m 0600 "$transaction_root/$name" "$root/.$name.new" \
+            || setup_failed=yes
+    done
     [[ "$setup_failed" == yes || ! -f "$root/simple.json" ]] \
         || install -m 0600 "$root/simple.json" "$snapshot_root/simple.json" \
         || setup_failed=yes
@@ -867,6 +910,15 @@ vx_compose_commit_staged_revision() {
             rm -f -- "$root/alerts.conf"
         fi
     fi
+    if [[ "$switch_failed" != yes ]]; then
+        for name in workload.json workload-evidence.json workload-manifest.sha256; do
+            if [[ -f "$transaction_root/$name" ]]; then
+                mv -- "$root/.$name.new" "$root/$name" || switch_failed=yes
+            else
+                rm -f -- "$root/$name" || switch_failed=yes
+            fi
+        done
+    fi
     [[ "$switch_failed" == yes ]] \
         || mv -- "$root/runtime/.canonical.json.new" \
             "$root/runtime/canonical.json" || switch_failed=yes
@@ -914,6 +966,13 @@ vx_compose_commit_staged_revision() {
         for name in images.json routes.conf alerts.conf; do
             if [[ -f "$snapshot_root/$name" ]]; then
                 install -m 0640 "$snapshot_root/$name" "$root/$name"
+            else
+                rm -f -- "$root/$name"
+            fi
+        done
+        for name in workload.json workload-evidence.json workload-manifest.sha256; do
+            if [[ -f "$snapshot_root/$name" ]]; then
+                install -m 0600 "$snapshot_root/$name" "$root/$name"
             else
                 rm -f -- "$root/$name"
             fi
@@ -1029,6 +1088,49 @@ vx_compose_store_new() {
     install -m 0640 "$candidate/canonical.json" "$temp_root/runtime/canonical.json"
     install -m 0640 "$candidate/policy.conf" "$temp_root/policy.conf"
     install -m 0640 "$candidate/images.json" "$temp_root/images.json"
+    if [[ -f "$candidate/workload.json" && ! -L "$candidate/workload.json"
+        && -f "$candidate/workload-evidence.json"
+        && ! -L "$candidate/workload-evidence.json" ]]; then
+        install -m 0600 "$candidate/workload.json" "$temp_root/workload.json"
+        install -m 0600 "$candidate/workload-evidence.json" \
+            "$temp_root/workload-evidence.json"
+        install -m 0600 "$candidate/workload-manifest.sha256" \
+            "$temp_root/workload-manifest.sha256"
+    fi
+    if [[ -d "$candidate/secrets" && ! -L "$candidate/secrets" ]]; then
+        local secret_name secret_path secret_sha now secret_install_failed=no
+        now="$(vx_compose_now)"
+        printf '{}\n' >"$temp_root/secrets.json"
+        printf '{}\n' >"$temp_root/secret-integrity.json"
+        chmod 0600 "$temp_root/secrets.json" "$temp_root/secret-integrity.json"
+        while IFS= read -r secret_name; do
+            secret_path="$candidate/secrets/$secret_name"
+            if ! vx_compose_secret_name_is_valid "$secret_name" \
+                || ! vx_compose_control_file_is_secure "$secret_path" 600 \
+                || ! install -m 0600 "$secret_path" "$temp_root/secrets/$secret_name"; then
+                secret_install_failed=yes; break
+            fi
+            secret_sha="$(sha256sum "$secret_path" | awk '{print $1}')"
+            jq -S --arg name "$secret_name" --arg now "$now" \
+                --arg target "$(jq -r --arg n "$secret_name" '.secrets[]|select(.name==$n).target' "$candidate/workload.json")" \
+                '.[$name]={NAME:$name,TARGET:$target,STATUS:"available",VERSION:"1",CREATED:$now,ROTATED:""}' \
+                "$temp_root/secrets.json" >"$temp_root/.secrets.json" \
+                && mv "$temp_root/.secrets.json" "$temp_root/secrets.json" \
+                || { secret_install_failed=yes; break; }
+            jq -S --arg name "$secret_name" --arg sha "$secret_sha" \
+                '.[$name]={SHA256:$sha}' "$temp_root/secret-integrity.json" >"$temp_root/.integrity.json" \
+                && mv "$temp_root/.integrity.json" "$temp_root/secret-integrity.json" \
+                || { secret_install_failed=yes; break; }
+            chmod 0600 "$temp_root/secrets.json" "$temp_root/secret-integrity.json"
+        done < <(find "$candidate/secrets" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
+        if [[ "$secret_install_failed" == yes ]]; then
+            rm -rf -- "$temp_root"
+            vx_compose_owner_quota_lock_release
+            vx_compose_ports_lock_release
+            vx_compose_lock_release
+            return 1
+        fi
+    fi
     if [[ -f "$candidate/simple.json" && ! -L "$candidate/simple.json" ]]; then
         install -m 0600 "$candidate/simple.json" "$temp_root/simple.json"
     fi
@@ -1213,6 +1315,14 @@ vx_compose_store_revision() {
         install -m 0640 "$candidate/alerts.conf" "$root/.alerts.conf.new"
         mv -f "$root/.alerts.conf.new" "$root/alerts.conf"
     fi
+    for name in workload.json workload-evidence.json workload-manifest.sha256; do
+        if [[ -f "$candidate/$name" && ! -L "$candidate/$name" ]]; then
+            install -m 0600 "$candidate/$name" "$root/.$name.new"
+            mv -f "$root/.$name.new" "$root/$name"
+        else
+            rm -f -- "$root/$name"
+        fi
+    done
     rm -f -- "$root/images.json"
 
     created="$(vx_compose_meta_get "$metadata" CREATED)"

@@ -1,0 +1,28 @@
+#!/bin/bash
+# info: import a protected Docker workload bundle
+# options: ACTOR USER PROJECT ARCHIVE CHECKSUM MODE EXPECTED_CURRENT_REVISION [SECRETS_DIRECTORY]
+
+compose_actor=$1
+user=$2
+compose_project=$3
+archive=$4
+checksum=$5
+mode=$6
+expected_revision=$7
+secrets_directory=${8-}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '7' "$#" 'ACTOR USER PROJECT ARCHIVE CHECKSUM MODE EXPECTED_CURRENT_REVISION [SECRETS_DIRECTORY]'
+[ "$#" -le 8 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+[[ "$compose_actor" == admin ]] \
+    || check_result "$E_INVALID" 'administrator authorization is required'
+vx_compose_bundle_import "$compose_actor" "$user" "$compose_project" \
+    "$archive" "$checksum" "$mode" "$expected_revision" "$secrets_directory" \
+    || check_result "$E_INVALID" 'Docker workload bundle import failed'
+log_history "imported Docker workload bundle for $compose_project"
+log_event "$OK" "$ARGUMENTS"
+exit

@@ -20,6 +20,11 @@ vx_compose_rollback_snapshot_active() {
     [[ ! -f "$root/simple.json" ]] \
         || install -m 0600 "$root/simple.json" "$snapshot_root/simple.json" \
         || return 1
+    for name in workload.json workload-evidence.json workload-manifest.sha256; do
+        [[ ! -f "$root/$name" ]] \
+            || install -m 0600 "$root/$name" "$snapshot_root/$name" \
+            || return 1
+    done
     [[ ! -f "$root/runtime/routes.pending.json" ]] \
         || install -m 0640 "$root/runtime/routes.pending.json" \
             "$snapshot_root/routes.pending.json"
@@ -49,6 +54,13 @@ vx_compose_rollback_restore_active() {
     else
         rm -f -- "$root/simple.json" || return 1
     fi
+    for name in workload.json workload-evidence.json workload-manifest.sha256; do
+        if [[ -f "$snapshot_root/$name" ]]; then
+            install -m 0600 "$snapshot_root/$name" "$root/$name" || return 1
+        else
+            rm -f -- "$root/$name" || return 1
+        fi
+    done
     rm -f -- "$root/runtime/routes.pending.json"
 }
 
@@ -86,6 +98,14 @@ vx_compose_rollback_activate() {
             "$candidate/simple.json" "$root/.simple.json.rollback" \
             || switch_failed=yes
     fi
+    if [[ "$switch_failed" != yes ]]; then
+        for name in workload.json workload-evidence.json workload-manifest.sha256; do
+            if [[ -f "$candidate/$name" && ! -L "$candidate/$name" ]]; then
+                install -m 0600 "$candidate/$name" "$root/.$name.rollback" \
+                    || switch_failed=yes
+            fi
+        done
+    fi
     [[ "$switch_failed" == yes ]] \
         || mv -f -- "$root/.compose.yaml.rollback" "$root/compose.yaml" \
         || switch_failed=yes
@@ -108,6 +128,16 @@ vx_compose_rollback_activate() {
         else
             rm -f -- "$root/routes.conf" || switch_failed=yes
         fi
+    fi
+    if [[ "$switch_failed" != yes ]]; then
+        for name in workload.json workload-evidence.json workload-manifest.sha256; do
+            if [[ -f "$candidate/$name" ]]; then
+                mv -f -- "$root/.$name.rollback" "$root/$name" \
+                    || switch_failed=yes
+            else
+                rm -f -- "$root/$name" || switch_failed=yes
+            fi
+        done
     fi
     if [[ "$switch_failed" != yes ]]; then
         if [[ -f "$candidate/simple.json" ]]; then
@@ -143,6 +173,7 @@ vx_compose_rollback_activate() {
         "$root/.compose.yaml.rollback" "$root/.policy.conf.rollback" \
         "$root/.images.json.rollback" "$root/.alerts.conf.rollback" \
         "$root/.routes.conf.rollback" "$root/.simple.json.rollback" \
+        "$root/.workload.json.rollback" "$root/.workload-evidence.json.rollback" \
         "$root/runtime/.canonical.json.rollback"
     [[ "$switch_failed" != yes ]] || return 1
     vx_compose_active_revision_verify "$owner" "$project"
@@ -273,6 +304,14 @@ vx_compose_rollback() {
             printf '{}\n' >"$rollback_root/routes.conf" \
                 && chmod 0640 "$rollback_root/routes.conf"
         fi
+    }; then
+        :
+    elif ! {
+        for optional_member in workload.json workload-evidence.json workload-manifest.sha256; do
+            [[ ! -f "$revision_root/$optional_member" ]] \
+                || install -m 0600 "$revision_root/$optional_member" \
+                    "$rollback_root/$optional_member" || return 1
+        done
     }; then
         :
     elif ! {

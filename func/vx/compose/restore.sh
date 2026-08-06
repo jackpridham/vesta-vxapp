@@ -34,7 +34,7 @@ vx_compose_backup_member_is_expected() {
         control/project.conf|control/policy.conf|control/backup-policy.conf|control/variables.env|\
         control/images.json|control/secrets.json|\
         control/secret-integrity.json|control/audit.log|\
-        control/routes.conf|control/simple.json|control/alerts.conf|\
+        control/routes.conf|control/simple.json|control/alerts.conf|control/workload.json|control/workload-evidence.json|control/workload-manifest.sha256|\
         control/revisions|\
         control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]|\
         control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]/compose.yaml|\
@@ -45,6 +45,9 @@ vx_compose_backup_member_is_expected() {
         control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]/routes.conf|\
         control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]/alerts.conf|\
         control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]/simple.json|\
+        control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]/workload.json|\
+        control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]/workload-evidence.json|\
+        control/revisions/[0-9][0-9][0-9][0-9][0-9][0-9]/workload-manifest.sha256|\
         binds|binds/*|volumes|volumes/[a-z][a-z0-9_-]*.tar.gz)
             return 0
             ;;
@@ -499,6 +502,15 @@ vx_compose_restore_prepare() {
         "$owner" "$project" "$extracted" \
         "$candidate" "$profile" "$validation_secrets" \
         || return 1
+    if [[ -f "$extracted/control/workload.json"
+        && -f "$extracted/control/workload-evidence.json"
+        && -f "$extracted/control/workload-manifest.sha256" ]]; then
+        install -m 0600 "$extracted/control/workload.json" "$candidate/workload.json"
+        install -m 0600 "$extracted/control/workload-evidence.json" \
+            "$candidate/workload-evidence.json"
+        install -m 0600 "$extracted/control/workload-manifest.sha256" \
+            "$candidate/workload-manifest.sha256"
+    fi
     if [[ -f "$extracted/control/backup-policy.conf" ]] \
         && ! vx_compose_backup_policy_sanitize_to \
             "$extracted/control/backup-policy.conf" \

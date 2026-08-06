@@ -3,7 +3,9 @@
 vx_compose_drift_observe_json() {
     local owner="$1" project="$2"
     local root runtime docker_bin revision desired_state raw='[]'
-    local container_id evidence digest ps_output
+    local container_id evidence digest ps_output revision_root workload_current workload_revision workload_match
+    local workload_evidence_current workload_evidence_revision
+    local workload_manifest_current workload_manifest_revision
     local -a container_ids=()
 
     vx_compose_require_project "$owner" "$project" || return 1
@@ -11,6 +13,34 @@ vx_compose_drift_observe_json() {
     runtime="$(vx_compose_runtime_name "$owner" "$project")"
     revision="$(vx_compose_meta_get "$root/project.conf" REVISION)" || return 1
     desired_state="$(vx_compose_meta_get "$root/project.conf" STATE)" || return 1
+    printf -v revision_root '%s/revisions/%06d' "$root" "$revision"
+    workload_current=''
+    workload_revision=''
+    if [[ -f "$root/workload.json" && ! -L "$root/workload.json" ]]; then
+        workload_current="$(sha256sum "$root/workload.json" | awk '{print $1}')" || return 1
+    fi
+    if [[ -f "$revision_root/workload.json"
+        && ! -L "$revision_root/workload.json" ]]; then
+        workload_revision="$(sha256sum "$revision_root/workload.json" | awk '{print $1}')" || return 1
+    fi
+    workload_match=false
+    [[ "$workload_current" == "$workload_revision" ]] && workload_match=true
+    workload_evidence_current=''
+    workload_evidence_revision=''
+    [[ ! -f "$root/workload-evidence.json" ]] \
+        || workload_evidence_current="$(sha256sum "$root/workload-evidence.json" | awk '{print $1}')" \
+        || return 1
+    [[ ! -f "$revision_root/workload-evidence.json" ]] \
+        || workload_evidence_revision="$(sha256sum "$revision_root/workload-evidence.json" | awk '{print $1}')" \
+        || return 1
+    [[ "$workload_evidence_current" == "$workload_evidence_revision" ]] \
+        || workload_match=false
+    workload_manifest_current=''; workload_manifest_revision=''
+    [[ ! -f "$root/workload-manifest.sha256" ]] \
+        || workload_manifest_current="$(sha256sum "$root/workload-manifest.sha256" | awk '{print $1}')" || return 1
+    [[ ! -f "$revision_root/workload-manifest.sha256" ]] \
+        || workload_manifest_revision="$(sha256sum "$revision_root/workload-manifest.sha256" | awk '{print $1}')" || return 1
+    [[ "$workload_manifest_current" == "$workload_manifest_revision" ]] || workload_match=false
     docker_bin="$(vx_compose_docker_bin)" || return 1
     ps_output="$(
         env -i PATH="$VX_COMPOSE_SAFE_PATH" \
@@ -36,6 +66,13 @@ vx_compose_drift_observe_json() {
     evidence="$(jq -S -n \
         --arg owner "$owner" --arg project "$project" \
         --arg runtime "$runtime" --arg desired_state "$desired_state" \
+        --arg workload_current "$workload_current" \
+        --arg workload_revision "$workload_revision" \
+        --arg workload_evidence_current "$workload_evidence_current" \
+        --arg workload_evidence_revision "$workload_evidence_revision" \
+        --arg workload_manifest_current "$workload_manifest_current" \
+        --arg workload_manifest_revision "$workload_manifest_revision" \
+        --argjson workload_match "$workload_match" \
         --argjson revision "$revision" \
         --slurpfile canonical "$root/runtime/canonical.json" \
         --slurpfile images "$root/images.json" \
@@ -135,6 +172,12 @@ vx_compose_drift_observe_json() {
         | {
             SCHEMA:1, OWNER:$owner, PROJECT:$project,
             CURRENT_REVISION:$revision, DESIRED_STATE:$desired_state,
+            WORKLOAD:{MATCH:$workload_match,CURRENT_SHA256:$workload_current,
+                REVISION_SHA256:$workload_revision,
+                CURRENT_EVIDENCE_SHA256:$workload_evidence_current,
+                REVISION_EVIDENCE_SHA256:$workload_evidence_revision,
+                CURRENT_MANIFEST_SHA256:$workload_manifest_current,
+                REVISION_MANIFEST_SHA256:$workload_manifest_revision},
             DESIRED:$desired, OBSERVED:$actual,
             EXCLUDED_VOLATILE_FIELDS:[
                 "container id","container name","created/started timestamps",
@@ -180,6 +223,7 @@ vx_compose_drift_observe_json() {
             (.MISSING_SERVICES|length)==0
             and (.EXTRA_SERVICES|length)==0
             and (.CHANGED_SERVICES|length)==0
+            and .WORKLOAD.MATCH
         )
     ')" || return 1
     digest="$(jq -cS 'del(.DRIFT_DIGEST)' <<<"$evidence" \
