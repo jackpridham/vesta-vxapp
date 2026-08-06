@@ -8,8 +8,38 @@ import struct
 import sys
 import time
 
-SOCKET = os.environ.get("VX_COMPOSE_PROBE_TEST_SOCKET", "/var/run/docker.sock")
+SOCKET = "/var/run/docker.sock"
+if os.geteuid() != 0 and os.environ.get("VX_COMPOSE_PROBE_TEST_SOCKET"):
+    candidate = os.path.realpath(os.environ["VX_COMPOSE_PROBE_TEST_SOCKET"])
+    if candidate.startswith("/tmp/") and os.path.basename(candidate):
+        SOCKET = candidate
 API = "/v1.41"
+
+
+def write_result(path, payload, create=False):
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    target = path if create else f"{path}.tmp.{os.getpid()}"
+    fd = os.open(target, flags, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(payload, handle, sort_keys=True, separators=(",", ":"))
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        if not create:
+            os.replace(target, path)
+        directory = os.open(os.path.dirname(path), os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    except Exception:
+        if not create:
+            try:
+                os.unlink(target)
+            except FileNotFoundError:
+                pass
+        raise
 
 
 def connect(timeout):
@@ -120,11 +150,13 @@ def main():
     if sys.argv[1] == "inspect":
         exec_id, result_path = sys.argv[2:4]
         inspected = read_response("GET", f"/exec/{exec_id}/json", None, 5)
+        exit_code = inspected.get("ExitCode")
+        pid = inspected.get("Pid")
         result = {"EXEC_ID": exec_id, "RUNNING": inspected.get("Running") is True,
-                  "EXIT_CODE": inspected.get("ExitCode"), "PID": inspected.get("Pid")}
-        fd = os.open(result_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(result, handle, sort_keys=True, separators=(",", ":")); handle.write("\n")
+                  "EXIT_CODE": exit_code if isinstance(exit_code, int)
+                  and 0 <= exit_code <= 255 else None,
+                  "PID": pid if isinstance(pid, int) and pid >= 0 else None}
+        write_result(result_path, result, create=True)
         return
     request_path, stdout_path, stderr_path, result_path = sys.argv[1:5]
     with open(request_path, encoding="utf-8") as handle:
@@ -139,6 +171,18 @@ def main():
     if not isinstance(exec_id, str) or len(exec_id) != 64 \
             or any(c not in "0123456789abcdef" for c in exec_id):
         raise RuntimeError("engine returned an invalid exec id")
+    context = {
+        "EXEC_ID": exec_id,
+        "CONTAINER_ID": spec["container_id"],
+        "STARTED_AT": spec["container_started_at"],
+        "REVISION": spec["revision"],
+        "WORKLOAD_SHA256": spec["workload_sha256"],
+    }
+    write_result(result_path, {
+        **context, "COMPLETE": False, "RUNNING": None, "PID": None,
+        "EXIT_CODE": None, "TRANSPORT_TIMEOUT": False,
+        "DECLARED_TIMEOUT": False, "TRUNCATED": False,
+    }, create=True)
     started = time.monotonic()
     timed_out, truncated = start_exec(
         exec_id, started + timeout + grace, output_limit, stdout_path, stderr_path)
@@ -147,14 +191,13 @@ def main():
     exit_code = inspected.get("ExitCode")
     declared_timeout = (time.monotonic() - started) > timeout
     pid = inspected.get("Pid")
-    result = {"EXEC_ID": exec_id, "RUNNING": running,
+    result = {**context, "COMPLETE": True, "RUNNING": running,
               "PID": pid if isinstance(pid, int) and pid >= 0 else None,
-              "EXIT_CODE": exit_code if isinstance(exit_code, int) else None,
+              "EXIT_CODE": exit_code if isinstance(exit_code, int)
+              and 0 <= exit_code <= 255 else None,
               "TRANSPORT_TIMEOUT": timed_out, "DECLARED_TIMEOUT": declared_timeout,
               "TRUNCATED": truncated}
-    fd = os.open(result_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        json.dump(result, handle, sort_keys=True, separators=(",", ":")); handle.write("\n")
+    write_result(result_path, result)
 
 
 if __name__ == "__main__":

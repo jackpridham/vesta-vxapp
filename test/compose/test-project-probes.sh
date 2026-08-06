@@ -139,7 +139,11 @@ cat >"$fake_engine" <<'EOF'
 set -Eeuo pipefail
 base="$(dirname -- "$0")"
 if [[ "$1" == inspect ]]; then
-    printf '%s\n' '{"EXEC_ID":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","RUNNING":true,"EXIT_CODE":null,"PID":42}' >"$3"
+    printf '%s\n' "$2" >>"$base/inspect-exec.log"
+    running=true
+    [[ "$(<"$base/docker-mode")" != stale-stopped ]] || running=false
+    jq -nS --arg exec_id "$2" --argjson running "$running" \
+      '{EXEC_ID:$exec_id,RUNNING:$running,EXIT_CODE:null,PID:42}' >"$3"
     chmod 0600 "$3"
     exit 0
 fi
@@ -148,24 +152,50 @@ mode="$(<"$base/docker-mode")"
 jq -r '.argv[]|"ARG="+.' "$request" >"$base/argv.log"
 exit_code=0 running=false transport=false declared=false truncated=false
 case "$mode" in
-  pass|identity|restart) printf '%s\n' '{"schema":1,"state":"pass","summary":"ready","observations":{"check":"ok"}}' >"$stdout" ;;
+  pass|identity|restart|stale-stopped) printf '%s\n' '{"schema":1,"state":"pass","summary":"ready","observations":{"check":"ok"}}' >"$stdout" ;;
   fail) printf '%s\n' '{"schema":1,"state":"fail","summary":"not ready","observations":{"check":"pending"}}' >"$stdout" ;;
   secret) printf '%s\n' '{"schema":1,"state":"pass","summary":"synthetic-probe-secret","observations":{"check":"ok"}}' >"$stdout" ;;
   duplicate) printf '%s\n' '{"schema":1,"schema":1,"state":"pass","summary":"ready","observations":{"check":"ok"}}' >"$stdout" ;;
   credential) printf '%s\n' '{"schema":1,"state":"pass","summary":"authorization ready","observations":{"check":"ok"}}' >"$stdout" ;;
+  secretkey) printf '%s\n' '{"schema":1,"state":"pass","summary":"ready","observations":{"access-token-state":"ok"}}' >"$stdout" ;;
+  hostpath) printf '%s\n' '{"schema":1,"state":"pass","summary":"found (/srv/application/state)","observations":{"check":"ok"}}' >"$stdout" ;;
+  leading) printf ' %s\n' '{"schema":1,"state":"pass","summary":"ready","observations":{"check":"ok"}}' >"$stdout" ;;
+  trailing) printf '%s \n' '{"schema":1,"state":"pass","summary":"ready","observations":{"check":"ok"}}' >"$stdout" ;;
+  multiple) printf '%s\n%s\n' '{"schema":1,"state":"pass","summary":"ready","observations":{"check":"ok"}}' '{"schema":1,"state":"pass","summary":"ready","observations":{"check":"ok"}}' >"$stdout" ;;
   nonzero) printf '%s\n' 'synthetic-probe-secret from stderr' >"$stderr"; printf '%s\n' '{"schema":1,"state":"pass","summary":"ready","observations":{"check":"ok"}}' >"$stdout"; exit_code=7 ;;
   slow) printf '%s\n' '{"schema":1,"state":"pass","summary":"late","observations":{"check":"ok"}}' >"$stdout"; declared=true ;;
   hang) transport=true; running=true ;;
+  postcreate)
+    jq -nS --arg exec_id "$(printf 'b%.0s' {1..64})" \
+      --arg container_id "$(jq -r '.container_id' "$request")" \
+      --arg started_at "$(jq -r '.container_started_at' "$request")" \
+      --arg workload "$(jq -r '.workload_sha256' "$request")" \
+      --argjson revision "$(jq -r '.revision' "$request")" \
+      '{COMPLETE:false,CONTAINER_ID:$container_id,DECLARED_TIMEOUT:false,
+      EXEC_ID:$exec_id,EXIT_CODE:null,PID:null,REVISION:$revision,RUNNING:null,
+      STARTED_AT:$started_at,TRANSPORT_TIMEOUT:false,TRUNCATED:false,
+      WORKLOAD_SHA256:$workload}' >"$result"
+    chmod 0600 "$result"
+    exit 125
+    ;;
 esac
-jq -nS --argjson exit "$exit_code" --argjson running "$running" \
+jq -nS --arg exec_id "$(printf 'b%.0s' {1..64})" \
+  --arg container_id "$(jq -r '.container_id' "$request")" \
+  --arg started_at "$(jq -r '.container_started_at' "$request")" \
+  --arg workload "$(jq -r '.workload_sha256' "$request")" \
+  --argjson revision "$(jq -r '.revision' "$request")" \
+  --argjson exit "$exit_code" --argjson running "$running" \
   --argjson transport "$transport" --argjson declared "$declared" \
-  --argjson truncated "$truncated" '{EXEC_ID:"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-  RUNNING:$running,PID:42,EXIT_CODE:$exit,TRANSPORT_TIMEOUT:$transport,
-  DECLARED_TIMEOUT:$declared,TRUNCATED:$truncated}' >"$result"
+  --argjson truncated "$truncated" '{COMPLETE:true,
+  CONTAINER_ID:$container_id,DECLARED_TIMEOUT:$declared,EXEC_ID:$exec_id,
+  EXIT_CODE:$exit,PID:42,REVISION:$revision,RUNNING:$running,
+  STARTED_AT:$started_at,TRANSPORT_TIMEOUT:$transport,TRUNCATED:$truncated,
+  WORKLOAD_SHA256:$workload}' >"$result"
 chmod 0600 "$result"
 EOF
 chmod 0755 "$fake_engine"
-export VX_COMPOSE_PROBE_ENGINE_HELPER="$fake_engine"
+export VX_COMPOSE_PROBE_TEST_ROOT="$test_root"
+export VX_COMPOSE_PROBE_TEST_ENGINE_HELPER="$fake_engine"
 
 source "$repo_root/func/vx/compose/common.sh"
 source "$repo_root/func/vx/compose/audit.sh"
@@ -234,6 +264,15 @@ payload="$(run_probe)" || fail 'credential-like output did not produce a result'
 jq -e '.STATE == "invalid-output"' <<<"$payload" >/dev/null \
     || fail 'credential-like output was accepted'
 
+for disclosure_mode in secretkey hostpath leading trailing multiple; do
+    printf '%s' "$disclosure_mode" >"$mode_file"
+    payload="$(run_probe)" \
+        || fail "$disclosure_mode output did not produce a result"
+    jq -e '.STATE == "invalid-output" and .OBSERVATIONS == {}' \
+        <<<"$payload" >/dev/null \
+        || fail "$disclosure_mode output framing/disclosure was accepted"
+done
+
 printf nonzero >"$mode_file"
 payload="$(run_probe)" || fail 'process failure did not produce a result'
 jq -e '.STATE == "unavailable" and .EXIT_CODE == 7
@@ -253,17 +292,50 @@ jq -e '.STATE == "unavailable" and .EXIT_CODE == null' \
     <<<"$payload" >/dev/null || fail 'transport deadline was not unavailable'
 [[ "$(stat -c '%a' "$root/runtime/probes/unavailable.json")" == 600 ]] \
     || fail 'probe-unavailable latch is not protected'
+jq '.REVISION=999 | .WORKLOAD_SHA256=("c" * 64)' \
+    "$root/runtime/probes/unavailable.json" \
+    >"$root/runtime/probes/.stale-latch"
+chmod 0600 "$root/runtime/probes/.stale-latch"
+mv -f -- "$root/runtime/probes/.stale-latch" \
+    "$root/runtime/probes/unavailable.json"
 if run_probe >"$test_root/latched-output" 2>"$test_root/latched-error"; then
-    fail 'latched project launched another probe'
+    fail 'stale-authority running exec launched another probe'
 fi
 [[ ! -s "$test_root/latched-output" ]] \
     || fail 'latched probe returned workload output'
+grep -Fxq 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' \
+    "$test_root/inspect-exec.log" \
+    || fail 'stale latch did not inspect its exact Engine exec ID'
+printf stale-stopped >"$mode_file"
+payload="$(run_probe)" || fail 'stopped stale exec did not clear its latch'
+jq -e '.STATE == "pass"' <<<"$payload" >/dev/null \
+    || fail 'probe did not continue after exact stale exec stopped'
+[[ ! -e "$root/runtime/probes/unavailable.json" ]] \
+    || fail 'stopped stale exec retained its latch'
+
+printf hang >"$mode_file"
+payload="$(run_probe)" || fail 'second transport deadline lacked a result'
 printf restart >"$mode_file"
 payload="$(run_probe)" || fail 'container restart did not clear probe latch'
 jq -e '.STATE == "pass"' <<<"$payload" >/dev/null \
     || fail 'probe did not recover after container restart'
 [[ ! -e "$root/runtime/probes/unavailable.json" ]] \
     || fail 'stale probe-unavailable latch was retained after restart'
+
+printf postcreate >"$mode_file"
+payload="$(run_probe)" || fail 'post-create Engine failure lacked a result'
+jq -e '.STATE == "unavailable" and .EXIT_CODE == null' \
+    <<<"$payload" >/dev/null \
+    || fail 'post-create Engine failure was not unavailable'
+[[ -f "$root/runtime/probes/unavailable.json" ]] \
+    || fail 'post-create Engine failure did not persist its exec latch'
+if run_probe >/dev/null 2>"$test_root/postcreate-latched-error"; then
+    fail 'post-create running exec permitted overlapping probe execution'
+fi
+printf restart >"$mode_file"
+payload="$(run_probe)" || fail 'restart did not clear post-create exec latch'
+jq -e '.STATE == "pass"' <<<"$payload" >/dev/null \
+    || fail 'probe did not recover from post-create latch after restart'
 
 printf identity >"$mode_file"
 printf 0 >"$inspect_count"

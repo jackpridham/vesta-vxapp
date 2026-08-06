@@ -3,12 +3,31 @@
 VX_COMPOSE_PROBE_TRANSPORT_GRACE_SECONDS=2
 
 vx_compose_probe_engine_call() {
-    if [[ -n "${VX_COMPOSE_PROBE_ENGINE_HELPER:-}" ]]; then
-        env -i PATH="$VX_COMPOSE_SAFE_PATH" "$VX_COMPOSE_PROBE_ENGINE_HELPER" "$@"
-    else
-        env -i PATH="$VX_COMPOSE_SAFE_PATH" /usr/bin/python3 \
-            "$VX_COMPOSE_LIB_DIR/probe-exec.py" "$@"
+    local helper="$VX_COMPOSE_LIB_DIR/probe-exec.py" test_root test_helper
+
+    if (( EUID != 0 )) && [[ "$VESTA" != /usr/local/vesta \
+        && -n "${VX_COMPOSE_PROBE_TEST_ROOT:-}" \
+        && -n "${VX_COMPOSE_PROBE_TEST_ENGINE_HELPER:-}" ]]; then
+        test_root="$(readlink -f -- "$VX_COMPOSE_PROBE_TEST_ROOT")" \
+            || return 1
+        test_helper="$(readlink -f -- "$VX_COMPOSE_PROBE_TEST_ENGINE_HELPER")" \
+            || return 1
+        [[ "$VESTA" == "$test_root/vesta"
+            && "$test_helper" == "$test_root/"*
+            && "$test_helper" != "$test_root"
+            && ! -L "$VX_COMPOSE_PROBE_TEST_ENGINE_HELPER"
+            && "$(stat -c '%u:%g:%a:%F' "$test_root" 2>/dev/null)" \
+                == "$EUID:$(id -g):700:directory"
+            && "$(stat -c '%u:%g:%a:%F' "$test_helper" 2>/dev/null)" \
+                == "$EUID:$(id -g):755:regular file" ]] || return 1
+        env -i PATH="$VX_COMPOSE_SAFE_PATH" "$test_helper" "$@"
+        return
     fi
+    [[ -f "$helper" && ! -L "$helper"
+        && "$(stat -c '%u:%g:%a:%F' "$helper" 2>/dev/null)" \
+            == "$(vx_compose_authority_uid):$(vx_compose_authority_gid):755:regular file" ]] \
+        || return 1
+    env -i PATH="$VX_COMPOSE_SAFE_PATH" /usr/bin/python3 "$helper" "$@"
 }
 
 vx_compose_probe_name_is_valid() {
@@ -184,13 +203,17 @@ vx_compose_probe_contains_protected_bytes() {
 
 vx_compose_probe_output_validate() {
     local root="$1" output="$2" max_bytes="$3" canary_file="${4:-}" duplicate_path strings
-    local parsed redacted
+    local parsed redacted path_scan
 
     [[ "$(stat -c '%s' "$output" 2>/dev/null)" -le "$max_bytes"
         && "$(stat -c '%s' "$output" 2>/dev/null)" -le 4096 ]] || return 1
     iconv -f UTF-8 -t UTF-8 "$output" >/dev/null 2>&1 || return 1
-    [[ "$(tail -c 1 "$output" 2>/dev/null | od -An -tuC | tr -d ' ')" == 10 ]] \
+    [[ "$(head -c 1 "$output" 2>/dev/null)" == '{'
+        && "$(tail -c 2 "$output" 2>/dev/null \
+            | od -An -tuC | tr -s ' ' | sed 's/^ //')" == '125 10' ]] \
         || return 1
+    jq -e -s '(length == 1) and (.[0] | type == "object")' \
+        "$output" >/dev/null 2>&1 || return 1
     duplicate_path="$(jq --stream -c \
         'select(length == 2) | .[0] | @json' "$output" 2>/dev/null \
         | LC_ALL=C sort | uniq -d | head -n 1)"
@@ -222,8 +245,19 @@ vx_compose_probe_output_validate() {
         .summary,
         (.observations | to_entries[] | .key, .value)
     ' "$output" 2>/dev/null)" || return 1
+    path_scan="$(sed -E \
+        's#[a-zA-Z][a-zA-Z0-9+.-]*://[^[:space:]]+#uri#g' <<<"$strings")"
+    if LC_ALL=C grep -Eq \
+        '(^|[[:space:][:punct:]])/(([A-Za-z0-9._-]+/)*[A-Za-z0-9._-]+)?($|[[:space:][:punct:]])' \
+        <<<"$path_scan"; then
+        return 1
+    fi
+    jq -e '
+        any(.observations | keys[];
+            test("password|passwd|secret|token|auth|authorization|bearer|private-key|access-key|api-key|session|cookie|credential"; "i"))
+    ' "$output" >/dev/null 2>&1 && return 1
     if LC_ALL=C grep -Eiq \
-        '(^|[^a-z0-9])(password|passwd|secret|token|auth|authorization|bearer|private[ _-]*key|access[ _-]*key|api[ _-]*key|session|cookie|credential)([^a-z0-9]|$)|[a-z][a-z0-9+.-]*://[^/@[:space:]]+:[^/@[:space:]]+@|(^|[[:space:]])/(home|root|tmp|etc)(/|$)|(^|[[:space:]])/usr/local/vesta(/|$)|(^|[[:space:]])/var/lib/docker(/|$)' \
+        '(^|[^a-z0-9])(password|passwd|passphrase|secret(s|value)?|token|auth(entication|orization)?|authorization|bearer|private[ _-]*key|access[ _-]*(key|token)|api[ _-]*key|client[ _-]*secret|session([ _-]*id)?|cookie|credential(s)?)([^a-z0-9]|$)|[a-z][a-z0-9+.-]*://[^/@[:space:]]+:[^/@[:space:]]+@|(^|[[:space:][:punct:]])/(bin|boot|dev|etc|home|lib|lib64|media|mnt|opt|proc|root|run|sbin|srv|sys|tmp|usr|var)(/|$)' \
         <<<"$strings"; then
         return 1
     fi
@@ -255,15 +289,105 @@ vx_compose_probe_result_json() {
         }'
 }
 
+vx_compose_probe_exec_authority_validate() {
+    local path="$1"
+
+    vx_compose_control_file_is_secure "$path" 600 || return 1
+    jq -e '
+        (keys | sort) == [
+            "COMPLETE", "CONTAINER_ID", "DECLARED_TIMEOUT", "EXEC_ID",
+            "EXIT_CODE", "PID", "REVISION", "RUNNING", "STARTED_AT",
+            "TRANSPORT_TIMEOUT", "TRUNCATED", "WORKLOAD_SHA256"
+        ]
+        and (.EXEC_ID | type == "string" and test("^[a-f0-9]{64}$"))
+        and (.CONTAINER_ID | type == "string"
+            and test("^[a-f0-9]{12,64}$"))
+        and (.STARTED_AT | type == "string" and length > 0 and length <= 64)
+        and (.REVISION | type == "number" and . == floor and . >= 1)
+        and (.WORKLOAD_SHA256 | type == "string"
+            and test("^[a-f0-9]{64}$"))
+        and (.COMPLETE | type == "boolean")
+        and (.RUNNING == null or (.RUNNING | type == "boolean"))
+        and (.PID == null or (.PID | type == "number" and . == floor and . >= 0))
+        and (.EXIT_CODE == null or (.EXIT_CODE | type == "number"
+            and . == floor and . >= 0 and . <= 255))
+        and (.TRANSPORT_TIMEOUT | type == "boolean")
+        and (.DECLARED_TIMEOUT | type == "boolean")
+        and (.TRUNCATED | type == "boolean")
+    ' "$path" >/dev/null 2>&1
+}
+
+vx_compose_probe_exec_running() {
+    local root="$1" exec_id="$2" inspect_root inspect_path inspected result=2
+
+    inspect_root="$(mktemp -d "$root/runtime/probes/.inspect.XXXXXX")" \
+        || return 2
+    chmod 0700 "$inspect_root" || {
+        rmdir -- "$inspect_root" 2>/dev/null || :
+        return 2
+    }
+    inspect_path="$inspect_root/result.json"
+    if vx_compose_probe_engine_call inspect "$exec_id" "$inspect_path" \
+        && vx_compose_control_file_is_secure "$inspect_path" 600; then
+        inspected="$(jq -ce --arg exec_id "$exec_id" '
+            select((keys | sort) == ["EXEC_ID", "EXIT_CODE", "PID", "RUNNING"])
+            | select(.EXEC_ID == $exec_id)
+            | select(.RUNNING | type == "boolean")
+            | select(.EXIT_CODE == null or (.EXIT_CODE | type == "number"
+                and . == floor and . >= 0 and . <= 255))
+            | select(.PID == null or (.PID | type == "number"
+                and . == floor and . >= 0))
+        ' "$inspect_path" 2>/dev/null)" || inspected=
+        if [[ -n "$inspected" ]]; then
+            [[ "$(jq -r '.RUNNING' <<<"$inspected")" == true ]] \
+                && result=0 || result=1
+        fi
+    fi
+    [[ ! -f "$inspect_path" ]] || rm -f -- "$inspect_path"
+    rmdir -- "$inspect_root" 2>/dev/null || :
+    return "$result"
+}
+
+vx_compose_probe_existing_exec_allows_run() {
+    local root="$1" before="$2" authority container_id started_at exec_id
+    local running_status
+
+    for authority in \
+        "$root/runtime/probes/unavailable.json" \
+        "$root/runtime/probes/active-exec.json"; do
+        [[ ! -e "$authority" && ! -L "$authority" ]] && continue
+        vx_compose_probe_exec_authority_validate "$authority" || return 1
+        container_id="$(jq -r '.CONTAINER_ID' "$authority")"
+        started_at="$(jq -r '.STARTED_AT' "$authority")"
+        if [[ "$container_id" != "$(jq -r '.ID' <<<"$before")" \
+            || "$started_at" != "$(jq -r '.STARTED_AT // ""' <<<"$before")" ]]; then
+            rm -f -- "$authority"
+            continue
+        fi
+        exec_id="$(jq -r '.EXEC_ID' "$authority")"
+        if vx_compose_probe_exec_running "$root" "$exec_id"; then
+            running_status=0
+        else
+            running_status=$?
+        fi
+        if (( running_status == 1 )); then
+            rm -f -- "$authority"
+            continue
+        fi
+        return 1
+    done
+}
+
 vx_compose_probe_run() {
     local actor="$1" owner="$2" project="$3" probe="$4"
     local root revision revision_root workload workload_sha profile service
     local timeout_seconds max_output image_id image_reference image_os
-    local image_architecture profile_version before after engine_helper
-    local capture_root stdout_file stderr_file request_file engine_result canary_file start_ms end_ms duration_ms
+    local image_architecture profile_version before after
+    local capture_root stdout_file stderr_file request_file engine_result
+    local canary_file start_ms end_ms duration_ms running_status
     local execution_status state summary observations parsed exit_code category
     local global_lock owner_lock project_probe_lock result result_temp
-    local observed_at
+    local observed_at engine_complete=no engine_authority=no
     local -a argv=()
 
     vx_compose_probe_name_is_valid "$probe" || {
@@ -402,47 +526,12 @@ vx_compose_probe_run() {
         vx_compose_error 'Compose project probe service is unavailable'
         return 1
     }
-    if [[ -f "$root/runtime/probes/unavailable.json" ]]; then
-        vx_compose_control_file_is_secure \
-            "$root/runtime/probes/unavailable.json" 600 || {
-            exec {project_probe_lock}>&- {owner_lock}>&- {global_lock}>&-
-            vx_compose_lock_release
-            vx_compose_error 'Compose project probe latch authority is invalid'
-            return 1
-        }
-        jq -e --arg revision "$revision" --arg workload "$workload_sha" '
-            keys == ["CONTAINER_ID","EXEC_ID","OBSERVED_AT","REVISION","STARTED_AT","WORKLOAD_SHA256"]
-            and (.EXEC_ID|test("^[a-f0-9]{64}$"))
-            and (.CONTAINER_ID|test("^[a-f0-9]{12,64}$"))
-            and .REVISION == ($revision|tonumber)
-            and .WORKLOAD_SHA256 == $workload
-        ' "$root/runtime/probes/unavailable.json" >/dev/null 2>&1 || {
-            exec {project_probe_lock}>&- {owner_lock}>&- {global_lock}>&-
-            vx_compose_lock_release
-            vx_compose_error 'Compose project probe latch authority is invalid'
-            return 1
-        }
-        if jq -e --arg id "$(jq -r '.ID' <<<"$before")" \
-            --arg started "$(jq -r '.STARTED_AT // ""' <<<"$before")" \
-            '.CONTAINER_ID == $id and .STARTED_AT == $started' \
-            "$root/runtime/probes/unavailable.json" >/dev/null 2>&1; then
-            engine_helper="${VX_COMPOSE_PROBE_ENGINE_HELPER:-$VX_COMPOSE_LIB_DIR/probe-exec.py}"
-            engine_result="$(mktemp -u "$root/runtime/probes/.inspect.XXXXXX")"
-            if ! vx_compose_probe_engine_call inspect \
-                    "$(jq -r '.EXEC_ID' "$root/runtime/probes/unavailable.json")" \
-                    "$engine_result" \
-                || ! vx_compose_control_file_is_secure "$engine_result" 600 \
-                || jq -e '.RUNNING == true' "$engine_result" >/dev/null 2>&1; then
-                [[ ! -f "$engine_result" ]] || rm -f -- "$engine_result"
-                exec {project_probe_lock}>&- {owner_lock}>&- {global_lock}>&-
-                vx_compose_lock_release
-                vx_compose_error 'Compose project probes are latched unavailable'
-                return 1
-            fi
-            rm -f -- "$engine_result"
-        fi
-        rm -f -- "$root/runtime/probes/unavailable.json"
-    fi
+    vx_compose_probe_existing_exec_allows_run "$root" "$before" || {
+        exec {project_probe_lock}>&- {owner_lock}>&- {global_lock}>&-
+        vx_compose_lock_release
+        vx_compose_error 'Compose project probes are latched unavailable'
+        return 1
+    }
 
     capture_root="$(mktemp -d "$root/runtime/probes/.capture.XXXXXX")" || {
         exec {project_probe_lock}>&- {owner_lock}>&- {global_lock}>&-
@@ -453,7 +542,7 @@ vx_compose_probe_run() {
     stdout_file="$capture_root/stdout"
     stderr_file="$capture_root/stderr"
     request_file="$capture_root/request.json"
-    engine_result="$capture_root/engine-result.json"
+    engine_result="$root/runtime/probes/active-exec.json"
     canary_file="$capture_root/disclosure-canary"
     : >"$stdout_file"
     : >"$stderr_file"
@@ -461,20 +550,31 @@ vx_compose_probe_run() {
     printf 'VX-PROBE-CANARY-%s' "$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')" \
         >"$canary_file"
     chmod 0600 "$canary_file"
-    engine_helper="${VX_COMPOSE_PROBE_ENGINE_HELPER:-$VX_COMPOSE_LIB_DIR/probe-exec.py}"
-    jq -nS --arg container_id "$(jq -r '.ID' <<<"$before")" \
+    if jq -nS --arg container_id "$(jq -r '.ID' <<<"$before")" \
+        --arg container_started_at "$(jq -r '.STARTED_AT // ""' <<<"$before")" \
+        --arg workload_sha256 "$workload_sha" \
         --argjson argv "$(printf '%s\0' "${argv[@]}" | jq -Rs 'split("\u0000")[:-1]')" \
+        --argjson revision "$revision" \
         --argjson timeout "$timeout_seconds" \
         --argjson grace "$VX_COMPOSE_PROBE_TRANSPORT_GRACE_SECONDS" \
-        --argjson max_output "$max_output" '{container_id:$container_id,argv:$argv,
-          timeout_seconds:$timeout,transport_grace_seconds:$grace,max_output_bytes:$max_output}' \
-        >"$request_file" || execution_status=125
-    chmod 0600 "$request_file"
-    start_ms="$(date +%s%3N)"
-    vx_compose_probe_engine_call \
-        "$request_file" "$stdout_file" "$stderr_file" "$engine_result" \
-        >/dev/null 2>>"$stderr_file"
-    execution_status=$?
+        --argjson max_output "$max_output" '{
+          container_id:$container_id,container_started_at:$container_started_at,
+          revision:$revision,workload_sha256:$workload_sha256,argv:$argv,
+          timeout_seconds:$timeout,transport_grace_seconds:$grace,
+          max_output_bytes:$max_output}' \
+        >"$request_file" && chmod 0600 "$request_file"; then
+        start_ms="$(date +%s%3N)"
+        if vx_compose_probe_engine_call \
+            "$request_file" "$stdout_file" "$stderr_file" "$engine_result" \
+            >/dev/null 2>>"$stderr_file"; then
+            execution_status=0
+        else
+            execution_status=$?
+        fi
+    else
+        execution_status=125
+        start_ms="$(date +%s%3N)"
+    fi
     end_ms="$(date +%s%3N)"
     duration_ms=$((end_ms - start_ms))
     observed_at="$(vx_compose_now)"
@@ -484,8 +584,30 @@ vx_compose_probe_run() {
     exit_code=
     category=invalid-output
 
-    if (( execution_status != 0 )) \
-        || ! vx_compose_control_file_is_secure "$engine_result" 600; then
+    if [[ -f "$engine_result" ]] \
+        && vx_compose_probe_exec_authority_validate "$engine_result"; then
+        engine_authority=yes
+        [[ "$(jq -r '.COMPLETE' "$engine_result")" == true ]] \
+            && engine_complete=yes
+    fi
+    if [[ "$engine_authority" == yes \
+        && ( "$execution_status" -ne 0 || "$engine_complete" != yes ) ]]; then
+        if vx_compose_probe_exec_running \
+            "$root" "$(jq -r '.EXEC_ID' "$engine_result")"; then
+            running_status=0
+        else
+            running_status=$?
+        fi
+        if (( running_status == 1 )); then
+            rm -f -- "$engine_result"
+            engine_authority=no
+        else
+            mv -f -- "$engine_result" \
+                "$root/runtime/probes/unavailable.json" || :
+            engine_result="$root/runtime/probes/unavailable.json"
+        fi
+    fi
+    if (( execution_status != 0 )) || [[ "$engine_complete" != yes ]]; then
         state=unavailable
         summary='Probe engine execution was unavailable'
         observations='{}'
@@ -493,35 +615,36 @@ vx_compose_probe_run() {
     else
         exit_code="$(jq -r '.EXIT_CODE // empty' "$engine_result")"
     fi
-    if [[ -f "$engine_result" ]] \
-        && jq -e '.TRANSPORT_TIMEOUT == true and .RUNNING == true' \
+    if [[ "$engine_complete" == yes && -f "$engine_result" ]] \
+        && jq -e '.RUNNING == true' \
             "$engine_result" >/dev/null 2>&1; then
         state=unavailable
-        summary='Probe execution did not stop at the transport deadline'
-        observations='{}'; exit_code=; category=transport-deadline
-        jq -nS --arg exec_id "$(jq -r '.EXEC_ID' "$engine_result")" \
-            --arg container_id "$(jq -r '.ID' <<<"$before")" \
-            --arg started_at "$(jq -r '.STARTED_AT // ""' <<<"$before")" \
-            --arg revision "$revision" --arg workload "$workload_sha" \
-            --arg observed_at "$observed_at" '{EXEC_ID:$exec_id,
-                CONTAINER_ID:$container_id,STARTED_AT:$started_at,
-                REVISION:($revision|tonumber),WORKLOAD_SHA256:$workload,
-                OBSERVED_AT:$observed_at
-            }' >"$root/runtime/probes/unavailable.json"
-        vx_compose_control_file_protect \
-            "$root/runtime/probes/unavailable.json" 600 || :
-    elif [[ -f "$engine_result" ]] \
+        observations='{}'
+        exit_code=
+        if jq -e '.TRANSPORT_TIMEOUT == true' \
+            "$engine_result" >/dev/null 2>&1; then
+            summary='Probe execution did not stop at the transport deadline'
+            category=transport-deadline
+        else
+            summary='Probe execution remained active after transport ended'
+            category=exec-still-running
+        fi
+        mv -f -- "$engine_result" "$root/runtime/probes/unavailable.json" || :
+        engine_result="$root/runtime/probes/unavailable.json"
+    elif [[ "$engine_complete" == yes && -f "$engine_result" ]] \
         && jq -e '.DECLARED_TIMEOUT == true' "$engine_result" >/dev/null 2>&1; then
         state=timeout
         summary='Probe exceeded its declared deadline'
         observations='{}'
         category=declared-timeout
-    elif { [[ -f "$engine_result" ]] \
+    elif [[ "$engine_complete" == yes ]] && {
+        { [[ -f "$engine_result" ]] \
             && jq -e '.TRUNCATED == true' "$engine_result" >/dev/null 2>&1; } \
         || [[ "$(stat -c '%s' "$stdout_file")" -gt "$max_output" \
-        || "$(stat -c '%s' "$stderr_file")" -gt "$max_output" ]]; then
+            || "$(stat -c '%s' "$stderr_file")" -gt "$max_output" ]];
+    }; then
         category=truncated-output
-    elif parsed="$(vx_compose_probe_output_validate \
+    elif [[ "$engine_complete" == yes ]] && parsed="$(vx_compose_probe_output_validate \
         "$root" "$stdout_file" "$max_output" "$canary_file")"; then
         state="$(jq -r '.state' <<<"$parsed")"
         summary="$(jq -r '.summary' <<<"$parsed")"
@@ -533,7 +656,8 @@ vx_compose_probe_run() {
             observations='{}'
             category=process-failure
         fi
-    elif [[ -n "$exit_code" && "$exit_code" -ne 0 ]]; then
+    elif [[ "$engine_complete" == yes \
+        && -n "$exit_code" && "$exit_code" -ne 0 ]]; then
         state=unavailable
         summary='Probe process failed'
         observations='{}'
@@ -571,7 +695,12 @@ vx_compose_probe_run() {
         vx_compose_audit "$root" probe succeeded \
         "probe=$probe workload_sha256=$workload_sha state=$state exit_code=${exit_code:-null} category=$category" \
         "$duration_ms" "[\"$service\"]" "$actor" >/dev/null 2>&1 || :
-    rm -f -- "$stdout_file" "$stderr_file" "$request_file" "$engine_result" "$canary_file"
+    rm -f -- "$stdout_file" "$stderr_file" "$request_file" "$canary_file"
+    if [[ "$engine_result" == "$root/runtime/probes/active-exec.json" \
+        && "$engine_complete" == yes && -f "$engine_result" ]] \
+        && jq -e '.RUNNING == false' "$engine_result" >/dev/null 2>&1; then
+        rm -f -- "$engine_result"
+    fi
     rmdir -- "$capture_root" 2>/dev/null || :
     exec {project_probe_lock}>&- {owner_lock}>&- {global_lock}>&-
     vx_compose_lock_release

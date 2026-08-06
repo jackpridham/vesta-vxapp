@@ -40,6 +40,8 @@ thread=threading.Thread(target=server); thread.start()
 request_path=os.path.join(root,"request.json"); stdout_path=os.path.join(root,"stdout")
 stderr_path=os.path.join(root,"stderr"); result_path=os.path.join(root,"result.json")
 with open(request_path,"w") as f: json.dump({"container_id":"a"*64,
+  "container_started_at":"2026-08-07T00:00:00Z","revision":3,
+  "workload_sha256":"c"*64,
   "argv":["/usr/local/bin/health","--json"],"timeout_seconds":2,
   "transport_grace_seconds":2,"max_output_bytes":512},f)
 env={"PATH":os.environ.get("PATH","/usr/bin:/bin"),"VX_COMPOSE_PROBE_TEST_SOCKET":sock_path}
@@ -54,4 +56,32 @@ assert requests[2][0] == "GET /v1.41/exec/"+"b"*64+"/json HTTP/1.1"
 assert open(stdout_path,"rb").read().endswith(b"\n")
 assert open(stderr_path,"rb").read() == b"bounded diagnostic"
 result=json.load(open(result_path)); assert result["EXEC_ID"] == "b"*64 and result["RUNNING"] is False and result["EXIT_CODE"] == 0
+assert result["COMPLETE"] is True and result["REVISION"] == 3
+
+# An exec ID is durable before start, so a post-create failure remains
+# inspectable and can be latched by the controller.
+failure_sock=os.path.join(root,"failure-engine.sock")
+def failure_server():
+    listener=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
+    listener.bind(failure_sock); listener.listen(2)
+    for index in range(2):
+        conn,_=listener.accept(); data=b""
+        while b"\r\n\r\n" not in data: data += conn.recv(4096)
+        if index == 0:
+            response(conn,b"201 Created",json.dumps({"Id":"d"*64}).encode())
+        else:
+            response(conn,b"500 Internal Server Error",b'{"message":"failed"}')
+        conn.close()
+    listener.close()
+failure_result=os.path.join(root,"failure-result.json")
+failure_thread=threading.Thread(target=failure_server); failure_thread.start()
+failure_env={"PATH":os.environ.get("PATH","/usr/bin:/bin"),
+             "VX_COMPOSE_PROBE_TEST_SOCKET":failure_sock}
+failed=subprocess.run(["/usr/bin/python3",helper,request_path,stdout_path,
+                       stderr_path,failure_result],env=failure_env,
+                      stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+failure_thread.join(timeout=5)
+assert failed.returncode == 125
+failure=json.load(open(failure_result))
+assert failure["EXEC_ID"] == "d"*64 and failure["COMPLETE"] is False
 print("PASS: probe Engine API helper")

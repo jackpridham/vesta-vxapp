@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import struct
 import sys
 import zlib
@@ -147,9 +148,8 @@ def validate_manifest(data):
             fail("probe output limit is invalid")
     exact_keys(data["compatibility"], ["orchestrator_api", "policy_schema", "validator_min", "validator_max"], "compatibility")
     comp = data["compatibility"]
-    if any(not isinstance(comp[k], int) or isinstance(comp[k], bool) for k in comp) \
-            or comp["orchestrator_api"] != 1 or comp["policy_schema"] != 1 \
-            or not comp["validator_min"] <= 1 <= comp["validator_max"]:
+    if any(not isinstance(comp[k], int) or isinstance(comp[k], bool) or comp[k] < 1 for k in comp) \
+            or comp["validator_min"] > comp["validator_max"]:
         fail("workload compatibility is unsupported")
 
 
@@ -161,13 +161,27 @@ def octal(field):
 
 def parse_bundle(archive, checksum, output):
     basename = os.path.basename(archive)
-    with open(checksum, "rb") as handle:
-        wanted = handle.read()
+    authority_uid, authority_gid = os.geteuid(), os.getegid()
+    archive_fd = os.open(archive, os.O_RDONLY | os.O_NOFOLLOW)
+    checksum_fd = os.open(checksum, os.O_RDONLY | os.O_NOFOLLOW)
+    archive_before, checksum_before = os.fstat(archive_fd), os.fstat(checksum_fd)
+    for state in (archive_before, checksum_before):
+        if not stat.S_ISREG(state.st_mode) or (state.st_mode & 0o777) != 0o600 \
+                or state.st_uid != authority_uid or state.st_gid != authority_gid:
+            fail("bundle input authority is invalid")
+    with os.fdopen(checksum_fd, "rb", closefd=False) as handle:
+        wanted = handle.read(1024)
     match = re.fullmatch(rb"([a-f0-9]{64})  " + re.escape(basename.encode()) + rb"\n", wanted)
     if not match:
         fail("bundle checksum file is invalid")
-    with open(archive, "rb") as handle:
+    with os.fdopen(archive_fd, "rb", closefd=False) as handle:
         raw = handle.read(67108865)
+    identity = lambda s: (s.st_dev, s.st_ino, s.st_mode, s.st_uid, s.st_gid,
+                          s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+    if identity(os.fstat(archive_fd)) != identity(archive_before) \
+            or identity(os.fstat(checksum_fd)) != identity(checksum_before):
+        fail("bundle input identity changed during validation")
+    os.close(archive_fd); os.close(checksum_fd)
     if len(raw) > 67108864 or hashlib.sha256(raw).hexdigest().encode() != match.group(1):
         fail("bundle checksum does not match")
     if raw[:10] != bytes.fromhex("1f8b0800000000000203") or len(raw) < 18:
@@ -247,7 +261,23 @@ def parse_bundle(archive, checksum, output):
 
 if __name__ == "__main__":
     try:
-        parse_bundle(sys.argv[1], sys.argv[2], sys.argv[3])
+        if sys.argv[1] == "workload":
+            fd = os.open(sys.argv[2], os.O_RDONLY | os.O_NOFOLLOW)
+            state = os.fstat(fd)
+            if not stat.S_ISREG(state.st_mode) or (state.st_mode & 0o777) != 0o600 \
+                    or state.st_uid != os.geteuid() or state.st_gid != os.getegid():
+                fail("workload authority is invalid")
+            with os.fdopen(fd, "rb") as handle:
+                raw = handle.read(262145)
+            value = json.loads(raw.decode("utf-8"), object_pairs_hook=pairs_unique,
+                               parse_float=lambda _: fail("non-integer JSON number"),
+                               parse_constant=lambda _: fail("invalid JSON number"))
+            if (json.dumps(value, ensure_ascii=False, sort_keys=True,
+                           separators=(",", ":")) + "\n").encode() != raw:
+                fail("workload JSON is not canonical")
+            validate_manifest(value)
+        else:
+            parse_bundle(sys.argv[1], sys.argv[2], sys.argv[3])
     except (ValueError, OSError, IndexError) as exc:
         print(f"workload bundle rejected: {exc}", file=sys.stderr)
         sys.exit(1)

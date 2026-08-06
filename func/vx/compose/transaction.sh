@@ -174,6 +174,7 @@ vx_compose_rollback_activate() {
         "$root/.images.json.rollback" "$root/.alerts.conf.rollback" \
         "$root/.routes.conf.rollback" "$root/.simple.json.rollback" \
         "$root/.workload.json.rollback" "$root/.workload-evidence.json.rollback" \
+        "$root/.workload-manifest.sha256.rollback" \
         "$root/runtime/.canonical.json.rollback"
     [[ "$switch_failed" != yes ]] || return 1
     vx_compose_active_revision_verify "$owner" "$project"
@@ -338,6 +339,11 @@ vx_compose_rollback() {
     elif ! vx_compose_routes_validate_reservations \
         "$owner" "$project" "$rollback_root/routes.conf"; then
         :
+    elif [[ -f "$rollback_root/workload.json" ]] \
+        && ! vx_compose_workload_image_approval_require_files \
+            "$owner" "$rollback_root/workload.json" \
+            "$rollback_root/canonical.json"; then
+        :
     elif ! vx_compose_rollback_snapshot_active "$root" "$snapshot_root"; then
         :
     elif ! vx_compose_audit "$root" rollback started \
@@ -348,6 +354,7 @@ vx_compose_rollback() {
         if VX_COMPOSE_INVOKE_CANONICAL_OVERRIDE="$rollback_root/canonical.json" \
             VX_COMPOSE_INVOKE_IMAGES_OVERRIDE="$rollback_root/images.json" \
             VX_COMPOSE_INVOKE_REVISION_OVERRIDE="$revision" \
+            VX_COMPOSE_WORKLOAD_OVERRIDE="$rollback_root/workload.json" \
             VX_COMPOSE_POLICY_OVERRIDE="$rollback_root/policy.conf" \
             VX_COMPOSE_ROUTES_FILE_OVERRIDE="$rollback_root/routes.conf" \
             VX_COMPOSE_ROUTES_DEFER_COMMIT=yes \
@@ -527,6 +534,7 @@ vx_compose_transaction_update() {
         elif VX_COMPOSE_INVOKE_CANONICAL_OVERRIDE="$transaction_root/canonical.json" \
             VX_COMPOSE_INVOKE_IMAGES_OVERRIDE="$transaction_root/images.json" \
             VX_COMPOSE_INVOKE_REVISION_OVERRIDE="$next_revision" \
+            VX_COMPOSE_WORKLOAD_OVERRIDE="$transaction_root/workload.json" \
             VX_COMPOSE_POLICY_OVERRIDE="$transaction_root/policy.conf" \
             VX_COMPOSE_ROUTES_FILE_OVERRIDE="$transaction_root/routes.conf" \
             VX_COMPOSE_ROUTES_DEFER_COMMIT=yes \
@@ -538,6 +546,7 @@ vx_compose_transaction_update() {
                     || VX_COMPOSE_INVOKE_CANONICAL_OVERRIDE="$transaction_root/canonical.json" \
                         VX_COMPOSE_INVOKE_IMAGES_OVERRIDE="$transaction_root/images.json" \
                         VX_COMPOSE_INVOKE_REVISION_OVERRIDE="$next_revision" \
+                        VX_COMPOSE_WORKLOAD_OVERRIDE="$transaction_root/workload.json" \
                         VX_COMPOSE_POLICY_OVERRIDE="$transaction_root/policy.conf" \
                         VX_COMPOSE_ROUTES_FILE_OVERRIDE="$transaction_root/routes.conf" \
                         VX_COMPOSE_ROUTES_DEFER_COMMIT=yes \

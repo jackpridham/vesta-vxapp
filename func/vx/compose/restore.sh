@@ -511,6 +511,13 @@ vx_compose_restore_prepare() {
         install -m 0600 "$extracted/control/workload-manifest.sha256" \
             "$candidate/workload-manifest.sha256"
     fi
+    if [[ -e "$candidate/workload.json" || -e "$candidate/workload-evidence.json"
+        || -e "$candidate/workload-manifest.sha256" ]]; then
+        vx_compose_workload_authority_validate "$owner" "$candidate" || {
+            vx_compose_error 'restore workload authority is invalid'
+            return 1
+        }
+    fi
     if [[ -f "$extracted/control/backup-policy.conf" ]] \
         && ! vx_compose_backup_policy_sanitize_to \
             "$extracted/control/backup-policy.conf" \
@@ -876,6 +883,7 @@ vx_compose_restore_project_existing() {
         && VX_COMPOSE_INVOKE_CANONICAL_OVERRIDE="$transaction_root/canonical.json" \
             VX_COMPOSE_INVOKE_IMAGES_OVERRIDE="$transaction_root/images.json" \
             VX_COMPOSE_INVOKE_REVISION_OVERRIDE="$next_revision" \
+            VX_COMPOSE_WORKLOAD_OVERRIDE="$transaction_root/workload.json" \
             VX_COMPOSE_INVOKE_ENV_OVERRIDE="$candidate/variables.env" \
             VX_COMPOSE_POLICY_OVERRIDE="$transaction_root/policy.conf" \
             VX_COMPOSE_ROUTES_FILE_OVERRIDE="$transaction_root/routes.conf" \
@@ -890,6 +898,7 @@ vx_compose_restore_project_existing() {
         && ! VX_COMPOSE_INVOKE_CANONICAL_OVERRIDE="$transaction_root/canonical.json" \
             VX_COMPOSE_INVOKE_IMAGES_OVERRIDE="$transaction_root/images.json" \
             VX_COMPOSE_INVOKE_REVISION_OVERRIDE="$next_revision" \
+            VX_COMPOSE_WORKLOAD_OVERRIDE="$transaction_root/workload.json" \
             VX_COMPOSE_INVOKE_ENV_OVERRIDE="$candidate/variables.env" \
             VX_COMPOSE_RUNTIME_PREFLIGHT_CANDIDATE=yes \
             vx_compose_stop "$owner" "$project"; then
@@ -929,6 +938,7 @@ vx_compose_restore_project_existing() {
             VX_COMPOSE_INVOKE_CANONICAL_OVERRIDE="$transaction_root/canonical.json" \
                 VX_COMPOSE_INVOKE_IMAGES_OVERRIDE="$transaction_root/images.json" \
                 VX_COMPOSE_INVOKE_REVISION_OVERRIDE="$next_revision" \
+                VX_COMPOSE_WORKLOAD_OVERRIDE="$transaction_root/workload.json" \
                 VX_COMPOSE_INVOKE_ENV_OVERRIDE="$candidate/variables.env" \
                 vx_compose_invoke "$owner" "$project" down --remove-orphans \
                 >/dev/null 2>&1 || recovery_ok=no

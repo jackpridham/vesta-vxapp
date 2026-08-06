@@ -1,5 +1,15 @@
 #!/usr/bin/env bash
 
+vx_compose_convergence_timeout() {
+    local owner="$1" project="$2" workload
+    workload="${VX_COMPOSE_WORKLOAD_OVERRIDE:-$(vx_compose_project_root "$owner" "$project")/workload.json}"
+    if [[ -f "$workload" && ! -L "$workload" ]]; then
+        jq -er '.health_timeout_seconds | select(type=="number" and floor==. and .>=1 and .<=900)' \
+            "$workload" && return
+    fi
+    printf '%s\n' "$VX_COMPOSE_WAIT_TIMEOUT"
+}
+
 vx_compose_runtime_definition_prepare() {
     local owner="$1"
     local project="$2"
@@ -269,6 +279,13 @@ vx_compose_run_lifecycle() {
         vx_compose_lock_release
         return 1
     fi
+    if [[ "$action" =~ ^(deploy|start|restart|recreate)$ ]] \
+        && ! vx_compose_current_workload_image_approval_require \
+            "$owner" "$project"; then
+        vx_compose_lock_release
+        vx_compose_error 'current workload image approval is unavailable'
+        return 1
+    fi
     active_canonical="$root/runtime/canonical.json"
     active_images="$root/images.json"
     active_revision="$(vx_compose_meta_get "$root/project.conf" REVISION)" || {
@@ -382,7 +399,7 @@ vx_compose_run_lifecycle() {
     if [[ "$action" == start && "$runtime_identity" != complete ]]; then
         lifecycle_args=(
             up -d --remove-orphans --wait
-            --wait-timeout "$VX_COMPOSE_WAIT_TIMEOUT"
+            --wait-timeout "$(vx_compose_convergence_timeout "$owner" "$project")"
         )
     fi
     started_ms="$(date +%s%3N)"
@@ -452,7 +469,7 @@ vx_compose_run_lifecycle() {
                         if ! vx_compose_invoke \
                             "$owner" "$project" \
                             up -d --remove-orphans --wait \
-                            --wait-timeout "$VX_COMPOSE_WAIT_TIMEOUT" \
+                            --wait-timeout "$(vx_compose_convergence_timeout "$owner" "$project")" \
                             >/dev/null 2>&1 \
                             || [[ "$(vx_compose_runtime_identity_preflight \
                                 "$owner" "$project" "$active_canonical" \
@@ -513,7 +530,7 @@ vx_compose_run_lifecycle() {
 vx_compose_deploy() {
     vx_compose_run_lifecycle \
         "$1" "$2" deploy running \
-        up -d --remove-orphans --wait --wait-timeout "$VX_COMPOSE_WAIT_TIMEOUT"
+        up -d --remove-orphans --wait --wait-timeout "$(vx_compose_convergence_timeout "$1" "$2")"
 }
 
 vx_compose_start() {
@@ -537,7 +554,7 @@ vx_compose_recreate() {
 
     vx_compose_require_project "$owner" "$project" || return 1
     root="$(vx_compose_project_root "$owner" "$project")"
-    args=(up -d --force-recreate --wait --wait-timeout "$VX_COMPOSE_WAIT_TIMEOUT")
+    args=(up -d --force-recreate --wait --wait-timeout "$(vx_compose_convergence_timeout "$owner" "$project")")
     if [[ -n "$service" ]]; then
         jq -e --arg service "$service" '.services[$service] != null' \
             "$root/runtime/canonical.json" >/dev/null \
@@ -615,12 +632,13 @@ vx_compose_inspect_json() {
     local project="$2"
     local root metadata services service_summary images image_identities
     local routes health health_observation resources
-    local simple last_operation drift workload
+    local simple last_operation drift workload last_probe current_revision
     local revisions revision_root revision
 
     vx_compose_require_project "$owner" "$project" || return 1
     root="$(vx_compose_project_root "$owner" "$project")"
     metadata="$root/project.conf"
+    current_revision="$(vx_compose_meta_get "$metadata" REVISION)" || return 1
     services="$(jq -c '.services | keys' "$root/runtime/canonical.json")"
     service_summary="$(jq -c '
         .services
@@ -723,10 +741,28 @@ vx_compose_inspect_json() {
             PROBES:(.probes|keys),LAST_PROBE_RESULT:null
         }' "$root/workload.json" 2>/dev/null)" || workload=null
         if [[ "$workload" != null && -f "$root/runtime/last-probe.json"
-            && ! -L "$root/runtime/last-probe.json" ]]; then
-            workload="$(jq -c --argjson result "$(cat "$root/runtime/last-probe.json")" \
-                '.LAST_PROBE_RESULT=$result' <<<"$workload" 2>/dev/null)" \
-                || workload=null
+            && ! -L "$root/runtime/last-probe.json" ]] \
+            && vx_compose_control_file_is_secure \
+                "$root/runtime/last-probe.json" 600; then
+            last_probe="$(jq -ce \
+                --argjson revision "$current_revision" \
+                --arg owner "$owner" --arg project "$project" \
+                --arg workload_sha "$(jq -r '.WORKLOAD_SHA256' <<<"$workload")" '
+                select(type == "object")
+                | select((keys | sort) == [
+                    "DURATION_MS", "EXIT_CODE", "OBSERVATIONS", "OBSERVED_AT",
+                    "OWNER", "PROBE", "PROJECT", "REVISION", "SCHEMA",
+                    "SERVICE", "STATE", "SUMMARY", "WORKLOAD_SHA256"
+                ])
+                | select(.SCHEMA == 1 and .OWNER == $owner
+                    and .PROJECT == $project and .REVISION == $revision
+                    and .WORKLOAD_SHA256 == $workload_sha)
+            ' "$root/runtime/last-probe.json" 2>/dev/null)" || last_probe=
+            if [[ -n "$last_probe" ]]; then
+                workload="$(jq -c --argjson result "$last_probe" \
+                    '.LAST_PROBE_RESULT=$result' <<<"$workload")" \
+                    || workload=null
+            fi
         fi
     fi
     drift="$(vx_compose_drift_observe_json \

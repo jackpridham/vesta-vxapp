@@ -36,6 +36,31 @@ inspect="$(vx_compose_inspect_json alice app)"
 jq -e '.WORKLOAD.ID=="example" and .WORKLOAD.RELEASE=="one"
   and .WORKLOAD.PROBES==[] and .WORKLOAD.LAST_PROBE_RESULT==null' \
   <<<"$inspect" >/dev/null || fail 'safe workload inspection is incomplete'
+workload_sha="$(jq -r '.WORKLOAD_SHA256' "$root/workload-evidence.json")"
+jq -nS --arg workload_sha "$workload_sha" '{
+  SCHEMA:1,OWNER:"alice",PROJECT:"app",PROBE:"ready",SERVICE:"service",
+  REVISION:1,WORKLOAD_SHA256:$workload_sha,STATE:"pass",SUMMARY:"ready",
+  OBSERVATIONS:{check:"ok"},EXIT_CODE:0,DURATION_MS:12,
+  OBSERVED_AT:"2026-08-07T00:00:00Z"
+}' >"$root/runtime/last-probe.json"
+chmod 0600 "$root/runtime/last-probe.json"
+inspect="$(vx_compose_inspect_json alice app)"
+jq -e '.WORKLOAD.LAST_PROBE_RESULT.REVISION==1
+  and .WORKLOAD.LAST_PROBE_RESULT.WORKLOAD_SHA256==.WORKLOAD.WORKLOAD_SHA256' \
+  <<<"$inspect" >/dev/null || fail 'current probe result was not exposed'
+jq '.REVISION=2' "$root/runtime/last-probe.json" \
+  >"$root/runtime/.last-probe" && chmod 0600 "$root/runtime/.last-probe" \
+  && mv -f -- "$root/runtime/.last-probe" "$root/runtime/last-probe.json"
+inspect="$(vx_compose_inspect_json alice app)"
+jq -e '.WORKLOAD.LAST_PROBE_RESULT==null' <<<"$inspect" >/dev/null \
+  || fail 'stale-revision probe result was exposed'
+jq --arg sha "$(printf '%064d' 9)" '.REVISION=1|.WORKLOAD_SHA256=$sha' \
+  "$root/runtime/last-probe.json" >"$root/runtime/.last-probe" \
+  && chmod 0600 "$root/runtime/.last-probe" \
+  && mv -f -- "$root/runtime/.last-probe" "$root/runtime/last-probe.json"
+inspect="$(vx_compose_inspect_json alice app)"
+jq -e '.WORKLOAD.LAST_PROBE_RESULT==null' <<<"$inspect" >/dev/null \
+  || fail 'stale-workload probe result was exposed'
 printf '{"image":{"id":"sha256:%064d"},"probes":{},"profile":{"name":"standard","version":2},"schema":1,"workload":{"id":"example","release":"tampered"}}\n' 1 >"$root/workload.json"
 chmod 0600 "$root/workload.json"
 if vx_compose_active_revision_verify alice app 2>/dev/null; then

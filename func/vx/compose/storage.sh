@@ -888,6 +888,8 @@ vx_compose_commit_staged_revision() {
             "$root/.compose.yaml.new" "$root/.policy.conf.new" \
             "$root/.images.json.new" "$root/.routes.conf.new" \
             "$root/.alerts.conf.new" "$root/.simple.json.new" \
+            "$root/.workload.json.new" "$root/.workload-evidence.json.new" \
+            "$root/.workload-manifest.sha256.new" \
             "$root/runtime/.canonical.json.new"
         rm -rf -- "$snapshot_root" "$root/revisions/$revision_name"
         return 1
@@ -936,6 +938,10 @@ vx_compose_commit_staged_revision() {
         || switch_failed=yes
     for name in compose.yaml policy.conf images.json routes.conf; do
         [[ "$switch_failed" == yes ]] \
+            || vx_compose_fsync_path "$root/$name" || switch_failed=yes
+    done
+    for name in workload.json workload-evidence.json workload-manifest.sha256; do
+        [[ "$switch_failed" == yes || ! -f "$root/$name" ]] \
             || vx_compose_fsync_path "$root/$name" || switch_failed=yes
     done
     if [[ "$switch_failed" != yes && -f "$root/alerts.conf" ]]; then
@@ -987,6 +993,8 @@ vx_compose_commit_staged_revision() {
             "$root/.compose.yaml.new" "$root/.policy.conf.new" \
             "$root/.images.json.new" "$root/.routes.conf.new" \
             "$root/.alerts.conf.new" "$root/.simple.json.new" \
+            "$root/.workload.json.new" "$root/.workload-evidence.json.new" \
+            "$root/.workload-manifest.sha256.new" \
             "$root/runtime/.canonical.json.new"
         rm -rf -- "$root/revisions/$revision_name"
         return 1

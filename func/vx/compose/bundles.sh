@@ -54,9 +54,11 @@ vx_compose_bundle_extract() {
 
 vx_compose_bundle_manifest_check_compose() {
     local workload="$1" canonical="$2" policy="$3" profile="$4"
+    local accepted="${5:-no}"
     local profile_version
     profile_version="$(vx_compose_profile_version "$profile")" || return 1
     jq -e --arg profile "$profile" --argjson profile_version "$profile_version" \
+        --arg accepted "$accepted" \
         --slurpfile compose "$canonical" --rawfile policy "$policy" '
         def fact($name): ($policy | capture("(?m)^"+$name+"=\\x27(?<v>[^\\x27]*)\\x27$").v);
         def endpoints($value):
@@ -71,7 +73,18 @@ vx_compose_bundle_manifest_check_compose() {
              | {service:$s.key,host_ip:(.host_ip // "0.0.0.0"),host_port:$published[$i],
                 container_port:($targets[$i] // $targets[0]),protocol:(.protocol // "tcp")}
              end] | sort_by(.service,.host_ip,.host_port,.container_port,.protocol);
-        .profile.name == $profile and .profile.version == $profile_version
+        def secret_mounts:
+          [.services | to_entries[] | .value.secrets[]?
+           | if type=="string" then {name:.,target:("/run/secrets/"+.)}
+             else {name:.source,target:(.target // ("/run/secrets/"+.source))} end]
+          | sort_by(.name,.target);
+        def volume_mounts:
+          [.services | to_entries[] as $s | $s.value.volumes[]?
+           | select(.type=="volume")
+           | {name:.source,service:$s.key,target:.target}]
+          | sort_by(.name,.service,.target);
+        . as $workload
+        | .profile.name == $profile and .profile.version == $profile_version
         and ([.services[].name] == ($compose[0].services|keys))
         and all(.services[]; .image == .image)
         and (.resources.memory_mib == (fact("MEMORY_MB")|tonumber))
@@ -80,24 +93,36 @@ vx_compose_bundle_manifest_check_compose() {
         and (.ports == ($compose[0] | ports))
         and ([.secrets[].name] == (($compose[0].secrets // {})|keys))
         and ([.volumes[].name] == (($compose[0].volumes // {})|keys))
-        and all(.services[] as $declared; $compose[0].services[$declared.name].image == $declared.image)
-        and all(.secrets[] as $declared;
-          any($compose[0].services[]?.secrets[]?;
-            ((if type=="string" then . else .source end) == $declared.name)
-            and ((if type=="string" then "/run/secrets/"+. else (.target // "/run/secrets/"+.source) end) == $declared.target)))
-        and all(.volumes[] as $declared;
-          any($compose[0].services[$declared.service].volumes[]?;
-            .type == "volume" and .source == $declared.name and .target == $declared.target))
+        and all(.services[]; . as $declared
+          | $compose[0].services[$declared.name].image ==
+            (if $accepted=="yes" then $workload.image.id else $declared.image end))
+        and ((.secrets|sort_by(.name,.target)) == ($compose[0]|secret_mounts))
+        and ((.volumes|sort_by(.name,.service,.target)) == ($compose[0]|volume_mounts))
     ' "$workload" >/dev/null || {
         vx_compose_error 'workload manifest does not match rendered Compose facts'
         return 1
     }
 }
 
+vx_compose_bundle_compatibility_validate() {
+    jq -e --argjson orchestrator "$VX_COMPOSE_SCHEMA_VERSION" \
+        --argjson policy "$VX_COMPOSE_POLICY_SCHEMA_VERSION" \
+        --argjson validator "$VX_COMPOSE_POLICY_VALIDATOR_VERSION" '
+        .compatibility.orchestrator_api == $orchestrator
+        and .compatibility.policy_schema == $policy
+        and .compatibility.validator_min <= $validator
+        and .compatibility.validator_max >= $validator
+    ' "$1" >/dev/null || {
+        vx_compose_error 'workload compatibility does not match the installed orchestrator'
+        return 1
+    }
+}
+
 vx_compose_bundle_candidate_prepare() {
     local owner="$1" project="$2" extracted="$3" candidate="$4"
-    local profile image_id reference resolved_id validation_secrets secret_name
+    local profile image_id reference resolved_id validation_secrets secret_name transformed
     profile="$(jq -r '.profile.name' "$extracted/workload.json")" || return 1
+    vx_compose_bundle_compatibility_validate "$extracted/workload.json" || return 1
     image_id="$(jq -r '.image.id' "$extracted/workload.json")" || return 1
     reference="$(jq -r '.image.reference' "$extracted/workload.json")" || return 1
     validation_secrets="$(vx_compose_project_root "$owner" "$project")/secrets"
@@ -109,8 +134,12 @@ vx_compose_bundle_candidate_prepare() {
                 && chmod 0600 "$validation_secrets/$secret_name" || return 1
         done < <(jq -r '.secrets[].name' "$extracted/workload.json")
     fi
+    transformed="$extracted/managed.compose.json"
+    vx_compose_bundle_secret_definition_rewrite "$owner" "$project" \
+        "$extracted/compose.yaml" "$extracted/workload.json" "$transformed" \
+        || return 1
     vx_compose_prepare_candidate "$owner" "$project" \
-        "$extracted/compose.yaml" "$candidate" "$profile" no '' \
+        "$transformed" "$candidate" "$profile" no '' \
         "$validation_secrets" || return 1
     vx_compose_bundle_manifest_check_compose \
         "$extracted/workload.json" "$candidate/canonical.json" \
@@ -135,7 +164,38 @@ vx_compose_bundle_candidate_prepare() {
         "$extracted/workload-evidence.json" >"$candidate/workload-evidence.json"
     chmod 0600 "$candidate/workload-evidence.json"
     vx_compose_bundle_image_evidence_to_file "$owner" "$reference" "$image_id" \
-        "$profile" "$candidate/canonical.json" "$candidate/images.json"
+        "$profile" "$candidate/canonical.json" "$candidate/images.json" \
+        && vx_compose_workload_authority_validate "$owner" "$candidate"
+}
+
+vx_compose_bundle_secret_definition_rewrite() {
+    local owner="$1" project="$2" compose="$3" workload="$4" output="$5"
+    local work_root docker_bin raw expected actual
+    work_root="$(mktemp -d "$(dirname -- "$compose")/.render.XXXXXX")" || return 1
+    install -d -m 0700 "$work_root/home" "$work_root/docker-config"
+    : >"$work_root/variables.env"; chmod 0600 "$work_root/variables.env"
+    docker_bin="$(vx_compose_docker_bin)" || { rm -rf -- "$work_root"; return 1; }
+    raw="$work_root/raw.json"
+    env -i PATH="$VX_COMPOSE_SAFE_PATH" HOME="$work_root/home" \
+        DOCKER_CONFIG="$work_root/docker-config" "$docker_bin" compose \
+        --project-name "$(vx_compose_runtime_name "$owner" "$project")" \
+        --project-directory "$(dirname -- "$compose")" \
+        --env-file "$work_root/variables.env" --file "$compose" \
+        config --format json >"$raw" || { rm -rf -- "$work_root"; return 1; }
+    expected="$(jq -c '[.secrets[].name]|sort' "$workload")" || return 1
+    actual="$(jq -c '((.secrets//{})|keys|sort)' "$raw")" || return 1
+    [[ "$actual" == "$expected" ]] || {
+        rm -rf -- "$work_root"
+        vx_compose_error 'bundle Compose secrets do not exactly match the workload manifest'
+        return 1
+    }
+    jq -e 'all((.secrets//{})[]; (.external//false)==true)' "$raw" >/dev/null \
+        || { rm -rf -- "$work_root"; vx_compose_error 'bundle secrets must be abstract external declarations'; return 1; }
+    jq -S --arg root "$(vx_compose_project_root "$owner" "$project")/secrets" '
+        .secrets |= with_entries(.value={file:($root+"/"+.key)})
+    ' "$raw" >"$output" || { rm -rf -- "$work_root"; return 1; }
+    chmod 0600 "$output"
+    rm -rf -- "$work_root"
 }
 
 vx_compose_bundle_image_evidence_to_file() {
@@ -162,6 +222,72 @@ vx_compose_bundle_image_evidence_to_file() {
     done < <(jq -r '.services|keys[]' "$canonical")
     jq -S . <<<"$evidence" >"$output" && chmod 0640 "$output" \
         && vx_compose_image_evidence_current_validate "$output"
+}
+
+vx_compose_workload_image_approval_require_files() {
+    local owner="$1" workload="$2" canonical="$3" profile profile_version image_id
+    [[ -f "$workload" && ! -L "$workload" && -f "$canonical" && ! -L "$canonical" ]] \
+        || return 1
+    vx_compose_bundle_compatibility_validate "$workload" || return 1
+    profile="$(jq -r '.profile.name' "$workload")" || return 1
+    profile_version="$(jq -r '.profile.version' "$workload")" || return 1
+    image_id="$(jq -r '.image.id' "$workload")" || return 1
+    vx_compose_image_approval_require "$owner" \
+        "$(jq -r '.image.reference' "$workload")" "$image_id" \
+        "$(jq -r '.image.os' "$workload")" \
+        "$(jq -r '.image.architecture' "$workload")" \
+        "$profile" "$profile_version" >/dev/null || return 1
+    jq -e --arg id "$image_id" 'all(.services[]; .image==$id)' \
+        "$canonical" >/dev/null
+}
+
+vx_compose_current_workload_image_approval_require() {
+    local owner="$1" project="$2" root workload evidence manifest canonical authority_root
+    root="$(vx_compose_project_root "$owner" "$project")"
+    workload="${VX_COMPOSE_WORKLOAD_OVERRIDE:-$root/workload.json}"
+    authority_root="$(dirname -- "$workload")"
+    evidence="$authority_root/workload-evidence.json"
+    manifest="$authority_root/workload-manifest.sha256"
+    canonical="${VX_COMPOSE_INVOKE_CANONICAL_OVERRIDE:-$root/runtime/canonical.json}"
+    if [[ ! -e "$workload" && ! -e "$evidence" && ! -e "$manifest" ]]; then
+        return 0
+    fi
+    vx_compose_workload_image_approval_require_files \
+        "$owner" "$workload" "$canonical"
+}
+
+vx_compose_workload_authority_validate() {
+    local owner="$1" candidate="$2" workload evidence manifest
+    local workload_sha compose_sha manifest_sha canonical_sha profile expected path
+    workload="$candidate/workload.json"
+    evidence="$candidate/workload-evidence.json"
+    manifest="$candidate/workload-manifest.sha256"
+    for path in "$workload" "$evidence" "$manifest"; do
+        vx_compose_control_file_is_secure "$path" 600 || return 1
+    done
+    env -i PATH="$VX_COMPOSE_SAFE_PATH" /usr/bin/python3 \
+        "$VX_COMPOSE_LIB_DIR/bundle-validator.py" workload "$workload" || return 1
+    jq -e 'keys==["ARCHIVE_SHA256","CANONICAL_SHA256","COMPOSE_SHA256",
+        "MANIFEST_SHA256","WORKLOAD_SHA256"]
+        and all(.[]; type=="string" and test("^[a-f0-9]{64}$"))' \
+        "$evidence" >/dev/null || return 1
+    workload_sha="$(sha256sum "$workload" | awk '{print $1}')"
+    compose_sha="$(jq -r '.COMPOSE_SHA256' "$evidence")"
+    manifest_sha="$(sha256sum "$manifest" | awk '{print $1}')"
+    canonical_sha="$(sha256sum "$candidate/canonical.json" | awk '{print $1}')"
+    expected="${workload_sha}  workload.json
+${compose_sha}  compose.yaml"
+    [[ "$(cat "$manifest")" == "$expected"
+        && "$(jq -r '.WORKLOAD_SHA256' "$evidence")" == "$workload_sha"
+        && "$(jq -r '.MANIFEST_SHA256' "$evidence")" == "$manifest_sha"
+        && "$(jq -r '.CANONICAL_SHA256' "$evidence")" == "$canonical_sha" ]] \
+        || return 1
+    profile="$(jq -r '.profile.name' "$workload")"
+    vx_compose_bundle_compatibility_validate "$workload" \
+        && vx_compose_bundle_manifest_check_compose "$workload" \
+            "$candidate/canonical.json" "$candidate/policy.conf" "$profile" yes \
+        && vx_compose_workload_image_approval_require_files \
+            "$owner" "$workload" "$candidate/canonical.json"
 }
 
 vx_compose_bundle_plan() {
@@ -209,6 +335,8 @@ vx_compose_bundle_import() {
     local expected="$7" secrets_dir="${8:-}" extracted candidate profile root result=1
     [[ "$actor" == admin && "$mode" =~ ^(add|change)$ ]] || return 1
     [[ "$expected" =~ ^[0-9]+$ ]] || return 1
+    vx_compose_require_owner "$owner" || return 1
+    vx_compose_require_project_key "$project" || return 1
     extracted="$(mktemp -u "$(dirname -- "$archive")/.bundle.extract.XXXXXX")"
     candidate="$(mktemp -u "$(dirname -- "$archive")/.bundle.candidate.XXXXXX")"
     vx_compose_lock_acquire "$owner" "$project" || return 1
@@ -248,27 +376,12 @@ vx_compose_bundle_import() {
 }
 
 vx_compose_bundle_stage_secrets() {
-    local workload="$1" source_dir="$2" candidate="$3" count name path total=0
-    local directory_identity file_identity
-    local -A identities=()
+    local workload="$1" source_dir="$2" candidate="$3" count
     count="$(jq '.secrets|length' "$workload")" || return 1
     if (( count == 0 )); then [[ -z "$source_dir" ]]; return; fi
     [[ -n "$source_dir" ]] \
         && vx_compose_bundle_secrets_dir_is_secure "$source_dir" || return 1
-    [[ "$(find "$source_dir" -mindepth 1 -maxdepth 1 | wc -l)" -eq "$count" ]] || return 1
-    directory_identity="$(stat -Lc '%d:%i:%u:%g:%a:%F' "$source_dir")" || return 1
-    install -d -m 0700 "$candidate/secrets"
-    while IFS= read -r name; do
-        path="$source_dir/$name"
-        vx_compose_secret_name_is_valid "$name" && vx_compose_control_file_is_secure "$path" 600 \
-            && vx_compose_secret_input_validate "$path" || return 1
-        file_identity="$(stat -Lc '%d:%i:%u:%g:%a:%s:%F' "$path")" || return 1
-        [[ -z "${identities[$file_identity]:-}" ]] || return 1
-        identities[$file_identity]=yes
-        total=$((total + $(stat -c '%s' "$path"))); (( total <= 8388608 )) || return 1
-        install -m 0600 "$path" "$candidate/secrets/$name" || return 1
-        [[ "$(stat -Lc '%d:%i:%u:%g:%a:%s:%F' "$path")" == "$file_identity" ]] \
-            || return 1
-    done < <(jq -r '.secrets[].name' "$workload")
-    [[ "$(stat -Lc '%d:%i:%u:%g:%a:%F' "$source_dir")" == "$directory_identity" ]]
+    env -i PATH="$VX_COMPOSE_SAFE_PATH" /usr/bin/python3 \
+        "$VX_COMPOSE_LIB_DIR/bundle-secrets.py" \
+        "$workload" "$source_dir" "$candidate/secrets"
 }
