@@ -605,6 +605,37 @@ eval "$original_routes_apply"
 eval "$original_project_resolve_images"
 unset -f vx_compose_test_verifier_result
 
+# Bundle backups retain the approved lookup tag in image evidence while their
+# canonical runtime definition is pinned to the accepted image ID.
+(
+    restore_image_root="$test_root/bundle-restore-image"
+    mkdir -p "$restore_image_root"
+    accepted_id="sha256:$(printf 'a%.0s' {1..64})"
+    moved_id="sha256:$(printf 'b%.0s' {1..64})"
+    printf '%s\n' \
+        "{\"services\":{\"worker\":{\"image\":\"$accepted_id\"}}}" \
+        >"$restore_image_root/canonical.json"
+    jq -n --arg id "$accepted_id" '{worker:{
+        REFERENCE:"example.test/worker:approved",IMAGE_ID:$id,
+        OS:"linux",ARCHITECTURE:"amd64"
+    }}' >"$restore_image_root/images.json"
+    vx_compose_image_evidence_kind() { printf '%s\n' 2; }
+    resolved_id="$accepted_id"
+    vx_compose_image_inspect() {
+        jq -n --arg id "$resolved_id" \
+            '{Id:$id,Os:"linux",Architecture:"amd64"}'
+    }
+    vx_compose_restore_verify_images alice \
+        "$restore_image_root/canonical.json" "$restore_image_root/images.json" \
+        || fail 'digest-pinned bundle backup failed restore image validation'
+    resolved_id="$moved_id"
+    if vx_compose_restore_verify_images alice \
+        "$restore_image_root/canonical.json" "$restore_image_root/images.json" \
+        >/dev/null 2>&1; then
+        fail 'moved approved tag passed bundle restore image validation'
+    fi
+) || exit 1
+
 # A legacy SHA-only source is projected into a digest-free public manifest and
 # a private integrity manifest without rewriting the source during backup.
 legacy_control="$test_root/legacy-control"

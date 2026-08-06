@@ -215,28 +215,49 @@ vx_compose_restore_verify_images() {
     local owner="$1"
     local canonical="$2"
     local images="$3"
-    local service reference expected_id inspection
+    local service canonical_image reference expected_id expected_os
+    local expected_architecture inspection
 
     [[ -f "$images" && ! -L "$images" ]] \
         || {
             vx_compose_error 'restore image identity manifest is missing'
             return 1
         }
-    while IFS=$'\t' read -r service reference; do
-        expected_id="$(jq -er \
-            --arg service "$service" \
-            --arg reference "$reference" '
+    vx_compose_image_evidence_kind "$images" >/dev/null || {
+        vx_compose_error 'restore image identity manifest is incomplete'
+        return 1
+    }
+    jq -e --slurpfile canonical "$canonical" '
+        (keys | sort) == ($canonical[0].services | keys | sort)
+    ' "$images" >/dev/null || {
+        vx_compose_error 'restore image identity manifest is incomplete'
+        return 1
+    }
+    while IFS=$'\t' read -r service canonical_image; do
+        IFS=$'\t' read -r reference expected_id expected_os expected_architecture \
+            < <(jq -er --arg service "$service" '
                 .[$service]
-                | select(.REFERENCE == $reference)
-                | .IMAGE_ID
-                | select(type == "string" and length > 0)
-            ' "$images")" \
-            || {
-                vx_compose_error 'restore image identity manifest is incomplete'
+                | [.REFERENCE,.IMAGE_ID,.OS,.ARCHITECTURE]
+                | select(all(.[]; type == "string" and length > 0))
+                | @tsv
+            ' "$images") || {
+            vx_compose_error 'restore image identity manifest is incomplete'
+            return 1
+        }
+        if [[ "$canonical_image" == sha256:* ]]; then
+            [[ "$canonical_image" == "$expected_id" ]] || {
+                vx_compose_error 'restore canonical image identity does not match evidence'
                 return 1
             }
+        elif [[ "$canonical_image" != "$reference" ]]; then
+            vx_compose_error 'restore canonical image reference does not match evidence'
+            return 1
+        fi
         inspection="$(vx_compose_image_inspect "$owner" "$reference")" || return 1
-        [[ "$(jq -r '.Id' <<<"$inspection")" == "$expected_id" ]] \
+        [[ "$(jq -r '.Id' <<<"$inspection")" == "$expected_id"
+            && "$(jq -r '.Os' <<<"$inspection")" == "$expected_os"
+            && "$(jq -r '.Architecture' <<<"$inspection")" \
+                == "$expected_architecture" ]] \
             || {
                 vx_compose_error 'restore image identity is unavailable'
                 return 1
