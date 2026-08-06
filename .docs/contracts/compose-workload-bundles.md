@@ -209,6 +209,45 @@ hash evidence with the immutable revision, and uses the existing lifecycle
 transaction for convergence or rollback. Secret values are provisioned only
 through the protected secret interfaces and are never bundle members.
 
+For `MODE=add`, a manifest that declares secrets requires one separately
+supplied `SECRETS_DIRECTORY`; a manifest without secrets rejects it. The
+directory is forbidden for `MODE=change`, which reuses the current project's
+managed secret values. The supplied path must resolve directly inside an
+accepted protected staging root to an authority-owned actual directory, not a
+symlink, with mode `0700`. Production authority is root; non-root tests use
+their configured test authority.
+
+The directory contains exactly one entry per declared secret name and no
+other entry. Each entry name exactly matches the manifest name and is an
+authority-owned regular non-symlink mode-`0600` file. Nested directories,
+links, devices, FIFOs, sockets, undeclared names, missing names, and duplicate
+filesystem identities are rejected. Each file is at most 1 MiB and aggregate
+secret input is at most 8 MiB; administrators may configure smaller limits,
+never larger ones.
+
+Under the project lock, the importer opens the directory without following
+links, snapshots its descriptor identity, opens and snapshots every input file
+without following links, and verifies directory and file identities before
+and after copying. It validates each name and value through the existing
+managed-secret helpers, then atomically installs the values into the new
+project's temporary root before that root is published or deployment begins.
+A failure removes the unpublished project root and installs no partial
+project. The import transaction never places secret values in bundle members,
+revision files, or backup payloads.
+
+The importer neither changes nor removes the caller-supplied directory. The
+caller owns cleanup after every success or failure; an application CLI that
+creates the directory must install an exit/signal trap before writing values
+and remove only that exact validated temporary directory. Planning has no
+secret-directory input and never opens or reads secret values.
+
+The supplied directory path, file paths, values, content hashes, and private
+validation details never appear in stdout, stderr, plans, list output, audit,
+operation state, revision metadata, or public/private bundle metadata. Only
+declared secret names, in-container targets, availability, and the ordinary
+opaque managed-secret versions may be retained under the existing secret
+contract. Values are never command-line arguments.
+
 Bundle metadata, plans, list output, and audit contain only bounded workload
 identity, release, profile and validator versions, immutable image identity,
 declared names/targets, resource and port summaries, hashes, actor, result,

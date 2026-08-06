@@ -166,7 +166,7 @@ Protected workload-bundle and project-probe interfaces are:
 
 ```text
 v-plan-docker-workload-bundle ACTOR USER PROJECT ARCHIVE CHECKSUM MODE [FORMAT]
-v-import-docker-workload-bundle ACTOR USER PROJECT ARCHIVE CHECKSUM MODE EXPECTED_CURRENT_REVISION
+v-import-docker-workload-bundle ACTOR USER PROJECT ARCHIVE CHECKSUM MODE EXPECTED_CURRENT_REVISION [SECRETS_DIRECTORY]
 v-run-docker-project-probe ACTOR USER PROJECT PROBE [FORMAT]
 ```
 
@@ -178,11 +178,19 @@ non-symlink mode-0600 archive and checksum inputs; their archive, manifest,
 schema, size, deterministic-hash, redaction, and audit boundaries are defined
 by [Compose workload bundles](compose-workload-bundles.md).
 
+`SECRETS_DIRECTORY` is accepted only for an `add` manifest that declares
+secrets. It is a protected directory path, never a secret value. An `add`
+manifest with secrets requires it; an `add` manifest without secrets rejects
+it. `change` rejects the argument and reuses the current project's managed
+secrets. The directory shape, ownership, input lifetime, atomic installation,
+size, and non-disclosure rules are defined by the workload-bundle contract.
+
 The probe caller supplies only a persisted probe name. Service, argv, timeout,
 and output bound come from the current immutable workload manifest. Execution
 and stable schema-1 JSON output follow
 [Compose project probes](compose-project-probes.md). Bundle and probe
-interfaces never accept or expose secret values.
+interfaces never accept secret values through argv or expose them. Bundle
+import may accept only the protected directory path described above.
 
 ## JSON
 
