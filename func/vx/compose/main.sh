@@ -61,10 +61,16 @@ source "$_vx_compose_dir/quota.sh"
 source "$_vx_compose_dir/registry.sh"
 # shellcheck source=func/vx/compose/images.sh
 source "$_vx_compose_dir/images.sh"
+# shellcheck source=func/vx/compose/image-approvals.sh
+source "$_vx_compose_dir/image-approvals.sh"
 # shellcheck source=func/vx/compose/trust.sh
 source "$_vx_compose_dir/trust.sh"
 # shellcheck source=func/vx/compose/secrets.sh
 source "$_vx_compose_dir/secrets.sh"
+# shellcheck source=func/vx/compose/bundles.sh
+source "$_vx_compose_dir/bundles.sh"
+# shellcheck source=func/vx/compose/probes.sh
+source "$_vx_compose_dir/probes.sh"
 # shellcheck source=func/vx/compose/restore.sh
 source "$_vx_compose_dir/restore.sh"
 # shellcheck source=func/vx/compose/backup.sh

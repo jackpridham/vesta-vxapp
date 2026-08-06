@@ -68,6 +68,11 @@ commands=(
     v-web-change-docker-container
     v-verify-docker-image-trust
     v-list-docker-image-update-candidate
+    v-approve-docker-image
+    v-delete-docker-image-approval
+    v-plan-docker-workload-bundle
+    v-import-docker-workload-bundle
+    v-run-docker-project-probe
 )
 
 for command_name in "${commands[@]}"; do
@@ -116,6 +121,18 @@ grep -Fq '# options: USER IMAGE [FORMAT]' \
 grep -Fq 'vx_compose_image_update_candidate' \
     "$repo_root/bin/v-list-docker-image-update-candidate" \
     || fail "image update command is not a thin helper adapter"
+grep -Fq '# options: ACTOR USER IMAGE_REFERENCE IMAGE_ID OS ARCHITECTURE PROFILE PROFILE_VERSION EXPIRES' \
+    "$repo_root/bin/v-approve-docker-image" \
+    || fail 'local image approval options are incorrect'
+grep -Fq '# options: ACTOR USER PROJECT ARCHIVE CHECKSUM MODE [FORMAT]' \
+    "$repo_root/bin/v-plan-docker-workload-bundle" \
+    || fail 'workload bundle plan options are incorrect'
+grep -Fq '# options: ACTOR USER PROJECT ARCHIVE CHECKSUM MODE EXPECTED_CURRENT_REVISION [SECRETS_DIRECTORY]' \
+    "$repo_root/bin/v-import-docker-workload-bundle" \
+    || fail 'workload bundle import options are incorrect'
+grep -Fq '# options: ACTOR USER PROJECT PROBE [FORMAT]' \
+    "$repo_root/bin/v-run-docker-project-probe" \
+    || fail 'project probe options are incorrect'
 
 fixture="$(mktemp -d)"
 trap 'rm -rf -- "$fixture"' EXIT

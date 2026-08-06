@@ -98,6 +98,15 @@
     <a class="button docker-button docker-button--primary" href="javascript:void(0)" onclick="more_button_click(1)"><?=__('Project actions')?></a>
   </div>
 
+  <?php if (!empty($docker_project['WORKLOAD'])) { ?>
+  <section class="docker-panel">
+    <div class="docker-panel__header"><h2 class="docker-panel__title"><?=__('Managed workload')?></h2></div>
+    <p class="docker-panel__copy"><?=htmlspecialchars($docker_project['WORKLOAD']['ID'].' '.$docker_project['WORKLOAD']['RELEASE'], ENT_QUOTES)?></p>
+    <p class="docker-panel__copy"><?=__('Declared probes')?>: <?=htmlspecialchars(implode(', ', $docker_project['WORKLOAD']['PROBES']), ENT_QUOTES)?></p>
+    <details class="docker-advanced-json"><summary><?=__('Advanced JSON')?></summary><pre class="docker-mono"><?=htmlspecialchars(vx_compose_pretty_json($docker_project['WORKLOAD']), ENT_QUOTES)?></pre></details>
+  </section>
+  <?php } ?>
+
   <?php if ($docker_project_can_mutate) { ?>
   <aside class="docker-impact-note" aria-label="<?=__('Mutation impact')?>">
     <strong><?=__('Mutation impact')?></strong>

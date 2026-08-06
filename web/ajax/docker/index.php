@@ -90,6 +90,9 @@ if ($container_name === '') {
     echo myvesta_get_element('button_gray', '', 'docker_secrets', __('Secret metadata'), null, 'width: 300px;', 'add');
     echo myvesta_get_element('button_gray', '', 'docker_images', __('Image identities'), null, 'width: 300px;', 'add');
     echo myvesta_get_element('button_gray', '', 'docker_drift', __('Desired/runtime drift'), null, 'width: 300px;', 'add');
+    if (!empty($selected_project['WORKLOAD']['PROBES'])) {
+        echo myvesta_get_element('button_gray', '', 'docker_probe', __('Run project probe'), null, 'width: 300px;', 'add');
+    }
     echo myvesta_get_element('button_gray', '', 'docker_roles', __('Project roles'), null, 'width: 300px;', 'add');
     if ($can_mutate_project) {
         echo myvesta_get_element('button_gray', '', 'docker_recreate', __('Recreate service'), null, 'width: 300px;', 'add');

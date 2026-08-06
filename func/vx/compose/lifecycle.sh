@@ -615,7 +615,7 @@ vx_compose_inspect_json() {
     local project="$2"
     local root metadata services service_summary images image_identities
     local routes health health_observation resources
-    local simple last_operation drift
+    local simple last_operation drift workload
     local revisions revision_root revision
 
     vx_compose_require_project "$owner" "$project" || return 1
@@ -707,6 +707,28 @@ vx_compose_inspect_json() {
         last_operation="$(jq -c . "$root/runtime/last-operation.json" \
             2>/dev/null)" || last_operation='{}'
     fi
+    workload='null'
+    if [[ -f "$root/workload.json" && ! -L "$root/workload.json"
+        && -f "$root/workload-evidence.json"
+        && ! -L "$root/workload-evidence.json" ]]; then
+        workload="$(jq -c --slurpfile evidence "$root/workload-evidence.json" \
+            --slurpfile images "$root/images.json" '{
+            SCHEMA:.schema,ID:.workload.id,RELEASE:.workload.release,
+            WORKLOAD_SHA256:$evidence[0].WORKLOAD_SHA256,
+            ARCHIVE_SHA256:$evidence[0].ARCHIVE_SHA256,
+            CANONICAL_SHA256:$evidence[0].CANONICAL_SHA256,
+            IMAGE_TRUST:{STATE:"accepted-revision",IMAGE_ID:.image.id,
+              PROFILE:.profile.name,PROFILE_VERSION:.profile.version,
+              EVIDENCE:([$images[0][]?.TRUST|{MODE,DECISION,EXCEPTION}]|unique)},
+            PROBES:(.probes|keys),LAST_PROBE_RESULT:null
+        }' "$root/workload.json" 2>/dev/null)" || workload=null
+        if [[ "$workload" != null && -f "$root/runtime/last-probe.json"
+            && ! -L "$root/runtime/last-probe.json" ]]; then
+            workload="$(jq -c --argjson result "$(cat "$root/runtime/last-probe.json")" \
+                '.LAST_PROBE_RESULT=$result' <<<"$workload" 2>/dev/null)" \
+                || workload=null
+        fi
+    fi
     drift="$(vx_compose_drift_observe_json \
         "$owner" "$project" 2>/dev/null)" \
         || drift='{"STATUS":"unavailable","MATCH":false}'
@@ -744,6 +766,7 @@ vx_compose_inspect_json() {
         --argjson simple "$simple" \
         --argjson last_operation "$last_operation" \
         --argjson drift "$drift" \
+        --argjson workload "$workload" \
         '{
             OWNER: $owner,
             PROJECT: $project,
@@ -766,7 +789,8 @@ vx_compose_inspect_json() {
             RESOURCES: $resources,
             SIMPLE: $simple,
             LAST_OPERATION: $last_operation,
-            DRIFT: $drift
+            DRIFT: $drift,
+            WORKLOAD: $workload
         }'
 }
 

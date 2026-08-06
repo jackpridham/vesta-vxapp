@@ -1,0 +1,36 @@
+#!/bin/bash
+# info: run an immutable Docker Compose project probe
+# options: ACTOR USER PROJECT PROBE [FORMAT]
+
+compose_actor=$1
+user=$2
+compose_project=$3
+probe=$4
+format=${5-json}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '4' "$#" 'ACTOR USER PROJECT PROBE [FORMAT]'
+[ "$#" -le 5 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+case "$format" in
+    json|plain) ;;
+    *) check_result "$E_INVALID" 'format must be json or plain' ;;
+esac
+payload="$(vx_compose_probe_run \
+    "$compose_actor" "$user" "$compose_project" "$probe")" \
+    || check_result "$E_INVALID" 'Docker Compose project probe failed'
+case "$format" in
+    json) printf '%s\n' "$payload" ;;
+    plain)
+        jq -r '[.OWNER,.PROJECT,.PROBE,.SERVICE,(.REVISION|tostring),
+            .STATE,.SUMMARY,(.EXIT_CODE // "" | tostring),
+            (.DURATION_MS|tostring),.OBSERVED_AT,
+            (.OBSERVATIONS|tojson)] | @tsv' <<<"$payload"
+        ;;
+esac
+log_history "ran Compose project probe $compose_project/$probe"
+log_event "$OK" "$ARGUMENTS"
+exit
