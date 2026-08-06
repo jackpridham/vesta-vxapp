@@ -258,6 +258,7 @@ vx_compose_current_workload_image_approval_require() {
 
 vx_compose_runtime_secrets_materialize() {
     local owner="$1" project="$2" root workload authority_root canonical runtime_root
+    local materialize_status=0
     root="$(vx_compose_project_root "$owner" "$project")"
     workload="${VX_COMPOSE_WORKLOAD_OVERRIDE:-$root/workload.json}"
     authority_root="$(dirname -- "$workload")"
@@ -281,10 +282,12 @@ vx_compose_runtime_secrets_materialize() {
     [[ -f "$workload" && ! -L "$workload" ]] || return 1
     env -i PATH="$VX_COMPOSE_SAFE_PATH" /usr/bin/python3 \
         "$VX_COMPOSE_LIB_DIR/runtime-secrets.py" "$root" "$workload" \
-        || return 1
-    if jq -e '.secrets | length > 0' "$workload" >/dev/null; then
-        VX_COMPOSE_RUNTIME_SECRETS_REFRESHED=yes
-    fi
+        || materialize_status=$?
+    case "$materialize_status" in
+        0) VX_COMPOSE_RUNTIME_SECRETS_REFRESHED=yes ;;
+        20) return 0 ;;
+        *) return 1 ;;
+    esac
 }
 
 vx_compose_workload_authority_validate() {

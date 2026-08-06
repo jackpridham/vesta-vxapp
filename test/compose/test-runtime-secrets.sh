@@ -43,6 +43,14 @@ printf '%s\n' '{"secrets":[{"name":"credential","target":"/run/secrets/credentia
     && -f "$project/secrets/retired" \
     && "$(stat -c '%a' "$project/secrets/credential")" == 600 ]] \
     || fail 'rotation did not refresh the runtime-only copy'
+unchanged_inode="$(stat -c '%d:%i' "$runtime_secret")"
+set +e
+/usr/bin/python3 "$helper" "$project" "$test_root/workload.json"
+unchanged_status=$?
+set -e
+[[ "$unchanged_status" -eq 20 \
+    && "$(stat -c '%d:%i' "$runtime_secret")" == "$unchanged_inode" ]] \
+    || fail 'unchanged runtime secret generation was replaced'
 
 if (( EUID != 0 )); then
     printf 'failed-value\n' >"$project/secrets/credential"

@@ -11,6 +11,7 @@ import time
 
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 CLEANUP = None
+UNCHANGED = 20
 
 
 def identity(value):
@@ -45,6 +46,52 @@ def remove_directory(parent_fd, name):
         os.unlink(entry, dir_fd=directory_fd)
     os.close(directory_fd)
     os.rmdir(name, dir_fd=parent_fd)
+
+
+def generation_matches(parent_fd, temporary_fd, names, uid, gid):
+    if not names:
+        try:
+            os.stat("current", dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            return True
+    try:
+        current_fd = os.open(
+            "current", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+            dir_fd=parent_fd)
+    except FileNotFoundError:
+        return False
+    try:
+        current_state = os.fstat(current_fd)
+        if (current_state.st_mode & 0o777) != 0o700 \
+                or current_state.st_uid != uid or current_state.st_gid != gid \
+                or sorted(os.listdir(current_fd)) != names:
+            return False
+        for name in names:
+            current_secret = os.open(
+                name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=current_fd)
+            candidate_secret = os.open(
+                name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=temporary_fd)
+            try:
+                current_state = os.fstat(current_secret)
+                candidate_state = os.fstat(candidate_secret)
+                if not stat.S_ISREG(current_state.st_mode) \
+                        or (current_state.st_mode & 0o777) != 0o444 \
+                        or current_state.st_uid != uid or current_state.st_gid != gid \
+                        or current_state.st_size != candidate_state.st_size:
+                    return False
+                while True:
+                    current_chunk = os.read(current_secret, 65536)
+                    candidate_chunk = os.read(candidate_secret, 65536)
+                    if current_chunk != candidate_chunk:
+                        return False
+                    if not current_chunk:
+                        break
+            finally:
+                os.close(candidate_secret)
+                os.close(current_secret)
+        return True
+    finally:
+        os.close(current_fd)
 
 
 def clear_runtime(project_root):
@@ -178,7 +225,6 @@ def main():
     if identity(os.fstat(source_fd)) != identity(source_before):
         raise ValueError("managed secret directory changed during materialization")
     os.fsync(temporary_fd)
-    os.close(temporary_fd)
 
     test_failure = os.environ.get("VX_COMPOSE_RUNTIME_SECRET_TEST_FAIL", "") \
         if authority_uid != 0 else ""
@@ -194,6 +240,18 @@ def main():
     if binding(os.stat("secrets", dir_fd=project_fd, follow_symlinks=False)) \
             != binding(source_before):
         raise ValueError("managed secret binding changed during materialization")
+    if generation_matches(
+            secret_parent_fd, temporary_fd, names, authority_uid, authority_gid):
+        os.close(temporary_fd)
+        remove_directory(secret_parent_fd, temporary)
+        CLEANUP = None
+        os.fsync(secret_parent_fd)
+        os.close(secret_parent_fd)
+        os.close(runtime_fd)
+        os.close(source_fd)
+        os.close(project_fd)
+        return False
+    os.close(temporary_fd)
 
     try:
         os.stat("previous", dir_fd=secret_parent_fd, follow_symlinks=False)
@@ -235,11 +293,12 @@ def main():
     os.close(runtime_fd)
     os.close(source_fd)
     os.close(project_fd)
+    return True
 
 
 if __name__ == "__main__":
     try:
-        main()
+        changed = main()
     except Exception:
         if CLEANUP is not None:
             try:
@@ -248,3 +307,5 @@ if __name__ == "__main__":
                 pass
         print("runtime secret materialization failed", file=sys.stderr)
         sys.exit(1)
+    if changed is False:
+        sys.exit(UNCHANGED)

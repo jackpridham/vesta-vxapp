@@ -442,21 +442,11 @@ vx_compose_run_lifecycle() {
     fi
     if [[ "${VX_COMPOSE_RUNTIME_SECRETS_REFRESHED:-no}" == yes ]]; then
         case "$action" in
-            deploy)
+            deploy|start|restart|recreate)
                 lifecycle_args=(
                     up -d --remove-orphans --force-recreate --wait
                     --wait-timeout "$timeout"
                 )
-                ;;
-            start|restart)
-                lifecycle_args=(
-                    up -d --remove-orphans --force-recreate --wait
-                    --wait-timeout "$timeout"
-                )
-                ;;
-            recreate)
-                # The caller already supplies `up --force-recreate` and any
-                # validated service scope; preserve that exact scope.
                 ;;
         esac
     fi

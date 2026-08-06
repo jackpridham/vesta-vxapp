@@ -47,6 +47,12 @@ VX_TEST_DOCKER_LOG="$(dirname -- "$0")/docker.log"
     printf 'ARG=%s\n' "$@"
     printf '%s\n' END
 } >>"$VX_TEST_DOCKER_LOG"
+if [[ " $* " == *" compose "* && " $* " == *" up "* \
+    && -f "$(dirname -- "$0")/vesta/data/users/alice/docker-projects/web/runtime/workload-secrets/current/credential" ]]; then
+    printf 'RUNTIME_SECRET_SHA=%s\n' \
+        "$(sha256sum "$(dirname -- "$0")/vesta/data/users/alice/docker-projects/web/runtime/workload-secrets/current/credential" | awk '{print $1}')" \
+        >>"$VX_TEST_DOCKER_LOG"
+fi
 previous=
 for argument in "$@"; do
     if [[ "$previous" == --file && -f "$argument" ]]; then
@@ -82,7 +88,11 @@ if [[ " $* " == *" image inspect "* ]]; then
 elif [[ " $* " == *" ps -aq "* ]] \
     && [[ " $* " == *" label=com.docker.compose.project=vx-alice-web "* ]]; then
     mode="$(cat "$(dirname -- "$0")/runtime-mode")"
-    [[ "$mode" == absent ]] || printf '%s\n' aaaaaaaaaaaa
+    if [[ "$mode" != absent ]]; then
+        printf '%s\n' aaaaaaaaaaaa
+        [[ ! -f "$(dirname -- "$0")/multi-service" ]] \
+            || printf '%s\n' dddddddddddd
+    fi
 elif [[ " $* " == *" ps -aq "* ]] \
     && [[ " $* " == *" label=com.docker.compose.project=vx-alice-legacy "* ]]; then
     mode="$(cat "$(dirname -- "$0")/runtime-mode")"
@@ -146,7 +156,20 @@ elif [[ " $* " == *" inspect aaaaaaaaaaaa "* \
     else
         printf '"Mounts":[]'
     fi
-    printf '}]\n'
+    printf '}'
+    if [[ -f "$(dirname -- "$0")/multi-service" && "$project" == web ]]; then
+        printf ',{"Id":"dddddddddddd","Image":"%s","Config":{"Labels":{' "$image"
+        printf '"com.docker.compose.project":"vx-alice-web",'
+        printf '"com.docker.compose.service":"worker",'
+        printf '"vx.managed":"yes","vx.user":"%s","vx.project":"web",' "$user"
+        printf '"vx.revision":"%s","vx.image-id":"%s"' "$revision" "$image"
+        printf '}},"State":{"Status":"running"},'
+        printf '"NetworkSettings":{"Networks":{"vx-alice-web_default":{}},"Ports":{}},'
+        printf '"HostConfig":{"Privileged":false,"CapAdd":[],"NetworkMode":"vx-alice-web_default","PidMode":"","IpcMode":"private","Devices":[]},'
+        printf '"Mounts":[{"Source":"%s","Destination":"/run/secrets/credential","RW":false}]}' \
+            "$(dirname -- "$0")/vesta/data/users/alice/docker-projects/web/runtime/workload-secrets/current/credential"
+    fi
+    printf ']\n'
 fi
 EOF
 chmod 0755 "$fake_docker"
@@ -556,10 +579,15 @@ for canonical_path in \
         --arg source "$project_root/runtime/workload-secrets/current/credential" '
         .services.web.image=$id
         | .services.web.secrets=[{source:"credential",target:"/run/secrets/credential"}]
+        | .services.worker=.services.web
         | .secrets={credential:{file:$source}}
     ' "$canonical_path" \
         >"$test_root/canonical.updated"
     install -m 0640 "$test_root/canonical.updated" "$canonical_path"
+done
+for images_path in "$project_root/images.json" "$revision_root/images.json"; do
+    jq '.worker=.web' "$images_path" >"$test_root/images.updated"
+    install -m 0640 "$test_root/images.updated" "$images_path"
 done
 canonical_sha="$(sha256sum "$project_root/runtime/canonical.json" | awk '{print $1}')"
 sed "s/^CANONICAL_SHA256=.*/CANONICAL_SHA256='$canonical_sha'/" \
@@ -578,7 +606,7 @@ rm -f -- "$revision_root/manifest.sha256"
 vx_compose_revision_manifest_write "$revision_root"
 vx_compose_current_workload_image_approval_require() { return 0; }
 printf absent >"$test_root/runtime-mode"
-touch "$test_root/secret-runtime"
+touch "$test_root/secret-runtime" "$test_root/multi-service"
 tag_lookups_before="$(grep -c '^ARG=example.test/web:v1$' "$docker_log" || :)"
 vx_compose_deploy alice web \
     || fail 'immutable canonical deploy did not resolve its accepted tag authority'
@@ -672,6 +700,7 @@ vx_compose_restart alice web \
     -eq $((force_recreate_before + 1)) ]] \
     || fail 'secret refresh did not force exact container recreation'
 printf '%s\n' SERVICE_SCOPED_SECRET_RECREATE >>"$docker_log"
+unchanged_generation_inode="$(stat -c '%d:%i' "$runtime_secret")"
 vx_compose_recreate alice web web \
     || fail 'service-scoped recreate failed after secret materialization'
 service_scope_args="$(awk '
@@ -682,6 +711,29 @@ service_scope_args="$(awk '
 ' "$docker_log")"
 [[ "$service_scope_args" == $'ARG=up\nARG=-d\nARG=--force-recreate\nARG=--wait\nARG=--wait-timeout\nARG=60\nARG=web\nEND' ]] \
     || fail 'secret materialization broadened service-scoped recreate argv'
+[[ "$(stat -c '%d:%i' "$runtime_secret")" == "$unchanged_generation_inode" ]] \
+    || fail 'unchanged secret bytes replaced the active generation inode'
+
+printf 'worker-visible-secret\n' >"$project_root/secrets/credential"
+expected_secret_sha="$(sha256sum "$project_root/secrets/credential" | awk '{print $1}')"
+printf '%s\n' CHANGED_SERVICE_SCOPED_SECRET_RECREATE >>"$docker_log"
+vx_compose_recreate alice web web \
+    || fail 'changed secret generation did not converge every consumer'
+changed_scope_args="$(awk '
+    /^CHANGED_SERVICE_SCOPED_SECRET_RECREATE$/ { seen=1; next }
+    seen && /^ARG=up$/ { capture=1 }
+    capture { print }
+    capture && /^END$/ { exit }
+' "$docker_log")"
+[[ "$changed_scope_args" == $'ARG=up\nARG=-d\nARG=--remove-orphans\nARG=--force-recreate\nARG=--wait\nARG=--wait-timeout\nARG=60\nEND' ]] \
+    || fail 'changed generation retained stale service-scoped convergence'
+observed_secret_sha="$(awk '
+    /^CHANGED_SERVICE_SCOPED_SECRET_RECREATE$/ { seen=1; next }
+    seen && /^RUNTIME_SECRET_SHA=/ { sub(/^RUNTIME_SECRET_SHA=/, ""); print; exit }
+' "$docker_log")"
+[[ "$observed_secret_sha" == "$expected_secret_sha"
+    && "$(sha256sum "$runtime_secret" | awk '{print $1}')" == "$expected_secret_sha" ]] \
+    || fail 'multi-service convergence did not observe the changed generation'
 printf '%s\n' 'sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd' \
     >"$test_root/image-id"
 if vx_compose_restart alice web 2>/dev/null; then
@@ -695,6 +747,11 @@ chmod 0600 "$project_root/workload.json"
 unset VX_COMPOSE_RUNTIME_SECRETS_REFRESHED
 vx_compose_runtime_secrets_materialize alice web \
     || fail 'zero-secret runtime generation failed'
+[[ "${VX_COMPOSE_RUNTIME_SECRETS_REFRESHED:-no}" == yes ]] \
+    || fail 'removing the declared secret set did not mark generation change'
+unset VX_COMPOSE_RUNTIME_SECRETS_REFRESHED
+vx_compose_runtime_secrets_materialize alice web \
+    || fail 'unchanged zero-secret runtime generation failed'
 [[ "${VX_COMPOSE_RUNTIME_SECRETS_REFRESHED:-no}" != yes ]] \
     || fail 'zero-secret generation requested needless container recreation'
 install -m 0600 "$test_root/workload.with-secret" "$project_root/workload.json"
@@ -706,12 +763,17 @@ vx_compose_runtime_secrets_materialize alice web \
 for canonical_path in \
     "$project_root/runtime/canonical.json" "$revision_root/canonical.json"; do
     jq '.services.web.image="example.test/web:v1"
-        | del(.services.web.secrets,.secrets)' "$canonical_path" \
+        | del(.services.web.secrets,.services.worker,.secrets)' "$canonical_path" \
         >"$test_root/canonical.generic"
     install -m 0640 "$test_root/canonical.generic" "$canonical_path"
 done
+for images_path in "$project_root/images.json" "$revision_root/images.json"; do
+    jq 'del(.worker)' "$images_path" >"$test_root/images.generic"
+    install -m 0640 "$test_root/images.generic" "$images_path"
+done
 rm -f -- "$project_root/workload.json" "$revision_root/workload.json" \
-    "$revision_root/manifest.sha256" "$test_root/secret-runtime"
+    "$revision_root/manifest.sha256" "$test_root/secret-runtime" \
+    "$test_root/multi-service"
 vx_compose_revision_manifest_write "$revision_root"
 canonical_sha="$(sha256sum "$project_root/runtime/canonical.json" | awk '{print $1}')"
 sed "s/^CANONICAL_SHA256=.*/CANONICAL_SHA256='$canonical_sha'/" \
