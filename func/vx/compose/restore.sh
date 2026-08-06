@@ -216,17 +216,23 @@ vx_compose_restore_verify_images() {
     local canonical="$2"
     local images="$3"
     local service canonical_image reference expected_id expected_os
-    local expected_architecture inspection
+    local expected_architecture expected_immutable inspection evidence_kind
 
     [[ -f "$images" && ! -L "$images" ]] \
         || {
             vx_compose_error 'restore image identity manifest is missing'
             return 1
         }
-    vx_compose_image_evidence_kind "$images" >/dev/null || {
+    evidence_kind="$(vx_compose_image_evidence_kind "$images")" || {
         vx_compose_error 'restore image identity manifest is incomplete'
         return 1
     }
+    if jq -e 'any(.services[]; .image | startswith("sha256:"))' \
+        "$canonical" >/dev/null \
+        && [[ "$evidence_kind" != "$VX_COMPOSE_IMAGE_EVIDENCE_SCHEMA_VERSION" ]]; then
+        vx_compose_error 'restore digest-pinned image evidence is not current'
+        return 1
+    fi
     jq -e --slurpfile canonical "$canonical" '
         (keys | sort) == ($canonical[0].services | keys | sort)
     ' "$images" >/dev/null || {
@@ -235,17 +241,20 @@ vx_compose_restore_verify_images() {
     }
     while IFS=$'\t' read -r service canonical_image; do
         IFS=$'\t' read -r reference expected_id expected_os expected_architecture \
+            expected_immutable \
             < <(jq -er --arg service "$service" '
                 .[$service]
-                | [.REFERENCE,.IMAGE_ID,.OS,.ARCHITECTURE]
-                | select(all(.[]; type == "string" and length > 0))
+                | [.REFERENCE,.IMAGE_ID,.OS,.ARCHITECTURE,
+                    (.IMMUTABLE_REFERENCE // "")]
+                | select(all(.[0:4][]; type == "string" and length > 0))
                 | @tsv
             ' "$images") || {
             vx_compose_error 'restore image identity manifest is incomplete'
             return 1
         }
         if [[ "$canonical_image" == sha256:* ]]; then
-            [[ "$canonical_image" == "$expected_id" ]] || {
+            [[ "$canonical_image" == "$expected_id"
+                && -n "$expected_immutable" ]] || {
                 vx_compose_error 'restore canonical image identity does not match evidence'
                 return 1
             }

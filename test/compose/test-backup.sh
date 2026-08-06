@@ -616,10 +616,15 @@ unset -f vx_compose_test_verifier_result
         "{\"services\":{\"worker\":{\"image\":\"$accepted_id\"}}}" \
         >"$restore_image_root/canonical.json"
     jq -n --arg id "$accepted_id" '{worker:{
-        REFERENCE:"example.test/worker:approved",IMAGE_ID:$id,
+        SCHEMA:2,REFERENCE:"example.test/worker:approved",IMAGE_ID:$id,
+        IMMUTABLE_REFERENCE:("example.test/worker@"+$id),
+        REGISTRY_DIGEST:$id,REPO_DIGESTS:[("example.test/worker@"+$id)],
+        OCI_LABELS:{created:"",revision:"",source:"",vendor:"",version:""},
+        TRUST:{MODE:"disabled",DECISION:"disabled",EXCEPTION:false,
+            PROFILE:"standard",PROFILE_VERSION:1,POLICY_VERSION:2,
+            SIGNATURE:{STATE:"not-run"},VULNERABILITY:{STATE:"not-run"}},
         OS:"linux",ARCHITECTURE:"amd64"
     }}' >"$restore_image_root/images.json"
-    vx_compose_image_evidence_kind() { printf '%s\n' 2; }
     resolved_id="$accepted_id"
     vx_compose_image_inspect() {
         jq -n --arg id "$resolved_id" \
@@ -634,6 +639,45 @@ unset -f vx_compose_test_verifier_result
         >/dev/null 2>&1; then
         fail 'moved approved tag passed bundle restore image validation'
     fi
+    resolved_id="$accepted_id"
+    jq '{worker:(.worker | {
+        REFERENCE,IMAGE_ID,REPO_DIGESTS,OS,ARCHITECTURE
+    })}' "$restore_image_root/images.json" \
+        >"$restore_image_root/legacy-images.json"
+    if vx_compose_restore_verify_images alice \
+        "$restore_image_root/canonical.json" \
+        "$restore_image_root/legacy-images.json" >/dev/null 2>&1; then
+        fail 'legacy evidence authorized a digest-pinned bundle restore'
+    fi
+    jq '.worker.SCHEMA=1' "$restore_image_root/images.json" \
+        >"$restore_image_root/wrong-schema-images.json"
+    if vx_compose_restore_verify_images alice \
+        "$restore_image_root/canonical.json" \
+        "$restore_image_root/wrong-schema-images.json" >/dev/null 2>&1; then
+        fail 'wrong-schema evidence authorized a digest-pinned bundle restore'
+    fi
+    jq 'del(.worker.TRUST)' "$restore_image_root/images.json" \
+        >"$restore_image_root/missing-trust-images.json"
+    if vx_compose_restore_verify_images alice \
+        "$restore_image_root/canonical.json" \
+        "$restore_image_root/missing-trust-images.json" >/dev/null 2>&1; then
+        fail 'trust-incomplete evidence authorized a digest-pinned bundle restore'
+    fi
+    jq '.worker.IMMUTABLE_REFERENCE="" | .worker.REGISTRY_DIGEST=""' \
+        "$restore_image_root/images.json" \
+        >"$restore_image_root/missing-immutable-images.json"
+    if vx_compose_restore_verify_images alice \
+        "$restore_image_root/canonical.json" \
+        "$restore_image_root/missing-immutable-images.json" >/dev/null 2>&1; then
+        fail 'immutable-incomplete evidence authorized a digest-pinned bundle restore'
+    fi
+    printf '%s\n' \
+        '{"services":{"worker":{"image":"example.test/worker:approved"}}}' \
+        >"$restore_image_root/tag-canonical.json"
+    vx_compose_restore_verify_images alice \
+        "$restore_image_root/tag-canonical.json" \
+        "$restore_image_root/legacy-images.json" \
+        || fail 'protected legacy tag restore compatibility was rejected'
 ) || exit 1
 
 # A legacy SHA-only source is projected into a digest-free public manifest and
