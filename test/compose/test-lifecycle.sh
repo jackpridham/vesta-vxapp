@@ -108,7 +108,16 @@ elif [[ " $* " == *" inspect aaaaaaaaaaaa "* \
     printf '"vx.managed":"yes","vx.user":"%s","vx.project":"%s",' \
         "$user" "$project"
     printf '"vx.revision":"%s","vx.image-id":"%s"' "$revision" "$image"
-    printf '}},"State":{"Status":"running"}}]\n'
+    printf '}},"State":{"Status":"running"},'
+    printf '"NetworkSettings":{"Networks":{"vx-alice-%s_default":{}},"Ports":{}},' "$project"
+    printf '"HostConfig":{"Privileged":false,"CapAdd":[],"NetworkMode":"vx-alice-%s_default","PidMode":"","IpcMode":"private","Devices":[]},' "$project"
+    if [[ -f "$(dirname -- "$0")/secret-runtime" && "$project" == web ]]; then
+        printf '"Mounts":[{"Source":"%s","Destination":"/run/secrets/credential","RW":false}]' \
+            "$(dirname -- "$0")/vesta/data/users/alice/docker-projects/web/runtime/workload-secrets/current/credential"
+    else
+        printf '"Mounts":[]'
+    fi
+    printf '}]\n'
 fi
 EOF
 chmod 0755 "$fake_docker"
@@ -514,7 +523,12 @@ revision_root="$project_root/revisions/000001"
 image_id="sha256:fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"
 for canonical_path in \
     "$project_root/runtime/canonical.json" "$revision_root/canonical.json"; do
-    jq --arg id "$image_id" '.services.web.image=$id' "$canonical_path" \
+    jq --arg id "$image_id" \
+        --arg source "$project_root/runtime/workload-secrets/current/credential" '
+        .services.web.image=$id
+        | .services.web.secrets=[{source:"credential",target:"/run/secrets/credential"}]
+        | .secrets={credential:{file:$source}}
+    ' "$canonical_path" \
         >"$test_root/canonical.updated"
     install -m 0640 "$test_root/canonical.updated" "$canonical_path"
 done
@@ -535,6 +549,7 @@ rm -f -- "$revision_root/manifest.sha256"
 vx_compose_revision_manifest_write "$revision_root"
 vx_compose_current_workload_image_approval_require() { return 0; }
 printf absent >"$test_root/runtime-mode"
+touch "$test_root/secret-runtime"
 tag_lookups_before="$(grep -c '^ARG=example.test/web:v1$' "$docker_log" || :)"
 vx_compose_deploy alice web \
     || fail 'immutable canonical deploy did not resolve its accepted tag authority'
@@ -543,6 +558,11 @@ runtime_secret="$project_root/runtime/workload-secrets/current/credential"
     && "$(stat -c '%a' "$project_root/secrets/credential")" == 600 \
     && "$(stat -c '%a' "$runtime_secret")" == 444 ]] \
     || fail 'deploy did not materialize its protected runtime secret copy'
+vx_compose_drift_observe_json alice web | jq -e '
+    .MATCH == true
+    and .DESIRED[0].MOUNTS[0].READ_ONLY == true
+    and .OBSERVED[0].MOUNTS[0].READ_ONLY == true
+' >/dev/null || fail 'runtime secret mount produced false drift'
 [[ ! -e "$revision_root/runtime" ]] \
     && ! grep -R -Fq 'lifecycle-secret' "$revision_root" \
     || fail 'immutable revision retained a disposable runtime secret copy'
@@ -560,6 +580,27 @@ if vx_compose_restart alice web 2>/dev/null; then
     fail 'moved accepted image tag passed workload lifecycle refresh'
 fi
 printf '%s\n' "$image_id" >"$test_root/image-id"
+
+# Transitioning to a generic project removes workload-only paths and clears
+# the disposable runtime secret authority before the next start.
+for canonical_path in \
+    "$project_root/runtime/canonical.json" "$revision_root/canonical.json"; do
+    jq '.services.web.image="example.test/web:v1"
+        | del(.services.web.secrets,.secrets)' "$canonical_path" \
+        >"$test_root/canonical.generic"
+    install -m 0640 "$test_root/canonical.generic" "$canonical_path"
+done
+rm -f -- "$project_root/workload.json" "$revision_root/workload.json" \
+    "$revision_root/manifest.sha256" "$test_root/secret-runtime"
+vx_compose_revision_manifest_write "$revision_root"
+canonical_sha="$(sha256sum "$project_root/runtime/canonical.json" | awk '{print $1}')"
+sed "s/^CANONICAL_SHA256=.*/CANONICAL_SHA256='$canonical_sha'/" \
+    "$project_root/project.conf" >"$test_root/project.generic"
+install -m 0640 "$test_root/project.generic" "$project_root/project.conf"
+vx_compose_start alice web \
+    || fail 'workload-to-generic lifecycle transition failed'
+[[ ! -e "$project_root/runtime/workload-secrets" ]] \
+    || fail 'generic lifecycle retained stale workload runtime secrets'
 
 # A failed tombstone deletion must fail the command and restore a discoverable
 # normal control root while leaving owner data/runtime scope untouched. The

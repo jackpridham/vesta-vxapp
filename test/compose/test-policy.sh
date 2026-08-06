@@ -180,6 +180,23 @@ expect_rejection sysctl SYSCTL \
 expect_rejection secret SECRET \
     '.secrets.token.file = "/tmp/must-not-leak"
      | .services.app.secrets = [{source: "token"}]'
+managed_root="$VESTA/data/users/alice/docker-projects/runtime-policy"
+mkdir -p "$managed_root/secrets"
+chmod 0700 "$managed_root/secrets"
+printf 'value\n' >"$managed_root/secrets/token"
+chmod 0600 "$managed_root/secrets/token"
+runtime_secret_model="$test_root/runtime-secret-model.json"
+jq -n --arg source "$managed_root/runtime/workload-secrets/current/token" '{
+  secrets:{token:{file:$source}},
+  services:{app:{secrets:[{source:"token",target:"/run/secrets/token"}]}}
+}' >"$runtime_secret_model"
+if vx_compose_policy_check_managed_secrets \
+    "$runtime_secret_model" alice runtime-policy 2>/dev/null; then
+    fail 'generic project policy accepted a workload runtime secret path'
+fi
+vx_compose_policy_check_managed_secrets \
+    "$runtime_secret_model" alice runtime-policy '' yes \
+    || fail 'validated workload authority could not use its runtime secret path'
 expect_rejection config CONFIG \
     '.configs.app.file = "/tmp/must-not-leak" | .services.app.configs = ["app"]'
 expect_rejection unbounded_logging LOGGING \

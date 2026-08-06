@@ -47,8 +47,39 @@ def remove_directory(parent_fd, name):
     os.rmdir(name, dir_fd=parent_fd)
 
 
+def clear_runtime(project_root):
+    project_fd = os.open(project_root, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    runtime_fd = os.open("runtime", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                         dir_fd=project_fd)
+    try:
+        parent_fd = os.open(
+            "workload-secrets", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+            dir_fd=runtime_fd)
+    except FileNotFoundError:
+        os.close(runtime_fd)
+        os.close(project_fd)
+        return
+    state = os.fstat(parent_fd)
+    if not stat.S_ISDIR(state.st_mode) or (state.st_mode & 0o777) != 0o700 \
+            or state.st_uid != os.geteuid() or state.st_gid != os.getegid():
+        raise ValueError("runtime secret parent authority is invalid")
+    for entry in os.listdir(parent_fd):
+        if entry in ("current", "previous") or entry.startswith(".next."):
+            remove_directory(parent_fd, entry)
+        else:
+            raise ValueError("runtime secret parent contains an unknown member")
+    os.close(parent_fd)
+    os.rmdir("workload-secrets", dir_fd=runtime_fd)
+    os.fsync(runtime_fd)
+    os.close(runtime_fd)
+    os.close(project_fd)
+
+
 def main():
     global CLEANUP
+    if sys.argv[1] == "clear":
+        clear_runtime(sys.argv[2])
+        return
     project_root, workload_path = sys.argv[1:3]
     authority_uid, authority_gid = os.geteuid(), os.getegid()
     workload_fd = os.open(workload_path, os.O_RDONLY | os.O_NOFOLLOW)
@@ -77,7 +108,7 @@ def main():
             or (source_before.st_mode & 0o777) != 0o700 \
             or source_before.st_uid != authority_uid \
             or source_before.st_gid != authority_gid \
-            or sorted(os.listdir(source_fd)) != names:
+            or any(name not in os.listdir(source_fd) for name in names):
         raise ValueError("managed secret authority is invalid")
 
     runtime_fd = os.open("runtime", os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
@@ -173,6 +204,8 @@ def main():
         os.rename(temporary, "current", src_dir_fd=secret_parent_fd,
                   dst_dir_fd=secret_parent_fd)
         activated = True
+        if test_failure == "final-fsync":
+            raise OSError("injected final fsync failure")
         os.fsync(secret_parent_fd)
     except Exception:
         if activated:
@@ -184,8 +217,13 @@ def main():
         raise
     CLEANUP = None
     if had_current:
-        remove_directory(secret_parent_fd, "previous")
-        os.fsync(secret_parent_fd)
+        try:
+            if test_failure == "cleanup":
+                raise OSError("injected old-set cleanup failure")
+            remove_directory(secret_parent_fd, "previous")
+            os.fsync(secret_parent_fd)
+        except Exception:
+            pass
     os.close(secret_parent_fd)
     os.close(runtime_fd)
     os.close(source_fd)

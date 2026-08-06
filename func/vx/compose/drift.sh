@@ -82,15 +82,23 @@ vx_compose_drift_observe_json() {
             elif ($service.networks|type)=="array" then $service.networks
             else ($service.networks|keys)
             end | sort;
-        def mounts($service):
-            [($service.volumes // [])[] |
+        def mounts($root;$service):
+            ([($service.volumes // [])[] |
                 if type=="string" then
                     (split(":")) as $p
                     | {SOURCE:($p[0]//""),TARGET:($p[1]//""),
                        READ_ONLY:(($p[2]//"")|contains("ro"))}
                 else {SOURCE:(.source//""),TARGET:(.target//""),
                       READ_ONLY:(.read_only//false)}
-                end] | sort_by(.TARGET,.SOURCE);
+                end]
+            + [($service.secrets // [])[] |
+                if type=="string" then
+                    {SOURCE:($root.secrets[.].file//""),
+                     TARGET:("/run/secrets/"+.),READ_ONLY:true}
+                else
+                    {SOURCE:($root.secrets[.source].file//""),
+                     TARGET:(.target//("/run/secrets/"+.source)),READ_ONLY:true}
+                end]) | sort_by(.TARGET,.SOURCE);
         def ports($service):
             [($service.ports // [])[] |
                 if type=="string" then .
@@ -119,7 +127,8 @@ vx_compose_drift_observe_json() {
                       else $source end
                 ),
                 TARGET:(.Destination // ""),
-                READ_ONLY:((.RW // true) | not)
+                READ_ONLY:(if has("RW") and (.RW|type)=="boolean"
+                    then (.RW|not) else false end)
             }] | sort_by(.TARGET,.SOURCE);
         def actualports:
             [(.NetworkSettings.Ports // {} | to_entries[]) as $entry |
@@ -151,7 +160,7 @@ vx_compose_drift_observe_json() {
             SERVICE:.key,
             IMAGE:($images[0][.key].IMAGE_ID // .value.image // ""),
             NETWORKS:netkeys(.value),
-            MOUNTS:mounts(.value),
+            MOUNTS:mounts($canonical[0];.value),
             PORTS:ports(.value),
             SECURITY:security(.value)
         }) | sort_by(.SERVICE)) as $desired

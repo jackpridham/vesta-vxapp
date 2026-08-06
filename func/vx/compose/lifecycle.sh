@@ -103,6 +103,15 @@ vx_compose_runtime_identity_preflight() {
                 .Config.Labels["com.docker.compose.service"] as $service
                 | $service != null
                 and $canonical[0].services[$service] != null
+                and (. as $container
+                    | all(($canonical[0].services[$service].secrets // [])[];
+                        . as $secret
+                        | ($secret.source // $secret) as $name
+                        | ($secret.target // ("/run/secrets/"+$name)) as $target
+                        | any(($container.Mounts // [])[];
+                            .Source == $canonical[0].secrets[$name].file
+                            and .Destination == $target
+                            and .RW == false)))
             )
         )
         and (

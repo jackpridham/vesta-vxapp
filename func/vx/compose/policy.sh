@@ -327,6 +327,7 @@ vx_compose_policy_check_managed_secrets() {
     local owner="${2:-}"
     local project="${3:-}"
     local validation_secret_root="${4:-}"
+    local allow_runtime_secret_path="${5:-no}"
     local secret_name configured_path expected_path runtime_path validation_path
 
     if jq -e '
@@ -379,7 +380,8 @@ vx_compose_policy_check_managed_secrets() {
             validation_path="$validation_secret_root/$secret_name"
         fi
         [[ ( "$configured_path" == "$expected_path"
-                || "$configured_path" == "$runtime_path" )
+                || ( "$allow_runtime_secret_path" == yes
+                    && "$configured_path" == "$runtime_path" ) )
             && -f "$validation_path"
             && ! -L "$validation_path"
             && "$(stat -c '%a' "$validation_path")" == 600 ]] \
@@ -399,6 +401,7 @@ vx_compose_policy_evaluate() {
     local project="${4:-}"
     local validation_bind_root="${5:-}"
     local validation_secret_root="${6:-}"
+    local allow_runtime_secret_path="${7:-no}"
 
     vx_compose_profile_is_available "$profile" \
         || {
@@ -454,6 +457,7 @@ vx_compose_policy_evaluate() {
         'all(.services[]; ((.tmpfs // []) | length == 0))' || return 1
     vx_compose_policy_check_managed_secrets \
         "$canonical_json" "$owner" "$project" "$validation_secret_root" \
+        "$allow_runtime_secret_path" \
         || return 1
     vx_compose_policy_require "$canonical_json" CONFIG \
         'Compose configs are not enabled in this checkpoint' \

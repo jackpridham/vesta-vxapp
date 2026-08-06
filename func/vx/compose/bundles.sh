@@ -140,7 +140,7 @@ vx_compose_bundle_candidate_prepare() {
         || return 1
     vx_compose_prepare_candidate "$owner" "$project" \
         "$transformed" "$candidate" "$profile" no '' \
-        "$validation_secrets" || return 1
+        "$validation_secrets" enforce yes || return 1
     vx_compose_bundle_manifest_check_compose \
         "$extracted/workload.json" "$candidate/canonical.json" \
         "$candidate/policy.conf" "$profile" || return 1
@@ -258,13 +258,24 @@ vx_compose_current_workload_image_approval_require() {
 }
 
 vx_compose_runtime_secrets_materialize() {
-    local owner="$1" project="$2" root workload authority_root
+    local owner="$1" project="$2" root workload authority_root canonical runtime_root
     root="$(vx_compose_project_root "$owner" "$project")"
     workload="${VX_COMPOSE_WORKLOAD_OVERRIDE:-$root/workload.json}"
     authority_root="$(dirname -- "$workload")"
     if [[ ! -e "$workload"
         && ! -e "$authority_root/workload-evidence.json"
         && ! -e "$authority_root/workload-manifest.sha256" ]]; then
+        env -i PATH="$VX_COMPOSE_SAFE_PATH" /usr/bin/python3 \
+            "$VX_COMPOSE_LIB_DIR/runtime-secrets.py" clear "$root"
+        canonical="${VX_COMPOSE_INVOKE_CANONICAL_OVERRIDE:-$root/runtime/canonical.json}"
+        runtime_root="$root/runtime/workload-secrets/current/"
+        if [[ -f "$canonical" && ! -L "$canonical" ]] \
+            && jq -e --arg root "$runtime_root" '
+                any((.secrets // {})[]?; (.file // "") | startswith($root))
+            ' "$canonical" >/dev/null; then
+            vx_compose_error 'runtime secret paths require workload authority'
+            return 1
+        fi
         return 0
     fi
     [[ -f "$workload" && ! -L "$workload" ]] || return 1
@@ -304,7 +315,7 @@ vx_compose_workload_authority_validate() {
         && vx_compose_bundle_manifest_check_compose "$workload" \
             "$candidate/canonical.json" "$candidate/policy.conf" "$profile" yes \
         && vx_compose_workload_image_approval_require_files \
-            "$owner" "$workload" "$candidate/canonical.json"
+            "$owner" "$workload" "$candidate/canonical.json" >/dev/null
 }
 
 vx_compose_bundle_plan() {

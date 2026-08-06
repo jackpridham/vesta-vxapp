@@ -9,8 +9,10 @@ project="$test_root/project"
 mkdir -m 0750 "$project" "$project/runtime"
 mkdir -m 0700 "$project/secrets"
 printf 'first-value\n' >"$project/secrets/credential"
+printf 'retired-value\n' >"$project/secrets/retired"
 chmod 0600 "$project/secrets/credential"
-printf '%s\n' '{"secrets":[{"name":"credential","target":"/run/secrets/credential"}]}' \
+chmod 0600 "$project/secrets/retired"
+printf '%s\n' '{"secrets":[{"name":"credential","target":"/run/secrets/credential"},{"name":"retired","target":"/run/secrets/retired"}]}' \
     >"$test_root/workload.json"
 chmod 0600 "$test_root/workload.json"
 
@@ -26,13 +28,19 @@ runtime_secret="$runtime_parent/current/credential"
     && "$(stat -c '%a' "$runtime_secret")" == 444
     && "$(<"$runtime_secret")" == first-value ]] \
     || fail 'runtime and authoritative secret modes/bytes are incorrect'
+[[ -f "$runtime_parent/current/retired" ]] \
+    || fail 'declared second secret was not materialized'
 [[ "$(stat -c '%u:%g' "$runtime_secret")" \
     == "$(id -u):$(id -g)" ]] || fail 'runtime secret ownership is incorrect'
 
 printf 'rotated-value\n' >"$project/secrets/credential"
+printf '%s\n' '{"secrets":[{"name":"credential","target":"/run/secrets/credential"}]}' \
+    >"$test_root/workload.json"
 /usr/bin/python3 "$helper" "$project" "$test_root/workload.json" \
     || fail 'rotated runtime secret materialization failed'
 [[ "$(<"$runtime_secret")" == rotated-value \
+    && ! -e "$runtime_parent/current/retired" \
+    && -f "$project/secrets/retired" \
     && "$(stat -c '%a' "$project/secrets/credential")" == 600 ]] \
     || fail 'rotation did not refresh the runtime-only copy'
 
@@ -48,6 +56,25 @@ if (( EUID != 0 )); then
             -name '.next.*' -print -quit)" ]] \
         || fail 'failed materialization changed authority or leaked staging'
     printf 'rotated-value\n' >"$project/secrets/credential"
+fi
+
+if (( EUID != 0 )); then
+    printf 'fsync-value\n' >"$project/secrets/credential"
+    if VX_COMPOSE_RUNTIME_SECRET_TEST_FAIL=final-fsync \
+        /usr/bin/python3 "$helper" "$project" "$test_root/workload.json" \
+        >/dev/null 2>&1; then
+        fail 'injected final fsync failure succeeded'
+    fi
+    [[ "$(<"$runtime_secret")" == rotated-value ]] \
+        || fail 'pre-commit fsync failure activated the new set'
+    printf 'cleanup-value\n' >"$project/secrets/credential"
+    VX_COMPOSE_RUNTIME_SECRET_TEST_FAIL=cleanup \
+        /usr/bin/python3 "$helper" "$project" "$test_root/workload.json" \
+        || fail 'post-commit cleanup failure was reported as activation failure'
+    [[ "$(<"$runtime_secret")" == cleanup-value ]] \
+        || fail 'post-commit cleanup did not leave the new complete set active'
+    printf 'rotated-value\n' >"$project/secrets/credential"
+    /usr/bin/python3 "$helper" "$project" "$test_root/workload.json"
 fi
 
 mv "$project/secrets/credential" "$project/secrets/credential.real"
@@ -87,5 +114,10 @@ if (( EUID != 0 )); then
             -name '.next.*' -print -quit)" ]] \
         || fail 'secret directory race changed active runtime authority'
 fi
+
+/usr/bin/python3 "$helper" clear "$project" \
+    || fail 'generic transition did not clear runtime workload secrets'
+[[ ! -e "$runtime_parent" ]] \
+    || fail 'generic transition retained stale runtime workload secrets'
 
 echo 'Compose runtime secret tests passed.'

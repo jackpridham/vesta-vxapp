@@ -108,6 +108,7 @@ vx_compose_prepare_candidate() {
     local validation_bind_root="${7:-}"
     local validation_secret_root="${8:-}"
     local authorization_mode="${9:-enforce}"
+    local allow_runtime_secret_path="${10:-no}"
     local work_root raw_json override_file
     local -a canonical_files
 
@@ -198,7 +199,8 @@ vx_compose_prepare_candidate() {
         "$output_root/canonical.json" "$owner" "$project" || return 1
     vx_compose_policy_evaluate \
         "$output_root/canonical.json" "$profile" "$owner" "$project" \
-        "$validation_bind_root" "$validation_secret_root" || return 1
+        "$validation_bind_root" "$validation_secret_root" \
+        "$allow_runtime_secret_path" || return 1
     vx_compose_ports_check_conflicts \
         "$owner" "$project" "$output_root/canonical.json" || return 1
     vx_compose_write_policy_facts \

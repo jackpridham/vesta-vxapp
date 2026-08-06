@@ -25,6 +25,13 @@ can mount each declared file read-only. A failed refresh leaves the previous
 complete set active. These copies are disposable runtime state: revisions,
 backups, restore payloads, UI, audit, logs, and exported definitions exclude
 them, and project removal removes them with the runtime control root.
+Authoritative values that are no longer declared remain available for later
+operator use but are omitted from the active runtime copy. Removing workload
+authority clears the entire disposable runtime-copy directory before generic
+lifecycle convergence. Activation becomes successful once the complete new
+directory rename is fsynced; cleanup of the protected prior directory is
+best-effort after that durable commit and cannot turn a successful activation
+into a reported failure.
 
 Public metadata contains exactly secret name, target path, availability
 status, opaque version, creation time, and rotation time. Versions are

@@ -362,13 +362,21 @@ vx_compose_restore_prepare_candidate() {
     local candidate="$4"
     local profile="$5"
     local validation_secrets="$6"
+    local allow_runtime_secret_path=no
+
+    if [[ -f "$extracted/control/workload.json"
+        && -f "$extracted/control/workload-evidence.json"
+        && -f "$extracted/control/workload-manifest.sha256" ]]; then
+        allow_runtime_secret_path=yes
+    fi
 
     # Stored compose.yaml contains only control-plane-generated ownership
     # labels. Require every service/network/volume label to match the archive
     # owner/project authority before accepting the candidate.
     vx_compose_prepare_candidate \
         "$owner" "$project" "$extracted/control/compose.yaml" \
-        "$candidate" "$profile" yes "$extracted/binds" "$validation_secrets"
+        "$candidate" "$profile" yes "$extracted/binds" "$validation_secrets" \
+        enforce "$allow_runtime_secret_path"
 }
 
 vx_compose_restore_install_secrets() {

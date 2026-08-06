@@ -225,6 +225,9 @@ run_probe() {
 }
 
 payload="$(run_probe)" || fail 'passing probe was rejected'
+[[ "$(wc -l <<<"$payload")" == 1 \
+    && "$(head -c 1 <<<"$payload")" == '{' ]] \
+    || fail 'probe controller emitted output outside its one JSON object'
 jq -e '
     .SCHEMA == 1 and .OWNER == "alice" and .PROJECT == "app"
     and .PROBE == "ready" and .SERVICE == "service"
