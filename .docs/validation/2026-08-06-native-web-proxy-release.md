@@ -7,10 +7,9 @@
 - **Validated successor:** `7beba3ca6cf0d7dc72c02f3aafb4740e28ebfd6f`
 - **Runtime version:** `0.9.9-0-16+vxapp.7beba3ca`
 - **Runtime build date:** `2026-08-06T08:28:06Z`
-- **Outcome:** all CLI, state, render, HTTP, ACME staging, HTTPS,
-  renewal, rebuild, disable, restoration, and cleanup gates passed. The
-  authenticated panel preload/save gate remains blocked because the existing
-  protected local credentials are not valid on this dev host.
+- **Outcome:** all CLI, authenticated panel, state, render, HTTP, ACME
+  staging, HTTPS, renewal, rebuild, disable, restoration, authentication
+  restoration, and cleanup gates passed.
 
 ## Authorization and boundaries
 
@@ -96,11 +95,36 @@ never logged a GUID value.
 - **CLI edit:** A disposable header change through
   `v-change-web-domain-proxy-options` replaced the old value in state and both
   renders, and the backend matched the new value.
-- **Authenticated panel:** Playwright used the existing mode-0600 local
-  environment file against `https://192.168.200.100:8083`. Login timed out
-  before the edit page loaded because those credentials are not valid on this
-  server. No form was loaded or saved, and administrator authentication was
-  not reset or changed. This is the sole unresolved milestone blocker.
+- **Authenticated panel:** The first Playwright attempt used the existing
+  mode-0600 local environment file against
+  `https://192.168.200.100:8083`; those credentials were not valid on this
+  server, so it stopped at login without loading or saving the form. The user
+  then explicitly authorized a temporary, reversible dev-only administrator
+  password rotation. Before rotation, a root-only snapshot captured the exact
+  `admin` shadow line, shadow metadata, `user.conf`, and the session inventory
+  reported by PHP CLI. The live panel used Vesta's separate
+  `/usr/local/vesta/data/sessions` path; the browser's exact session identifier
+  was therefore captured directly and only that validated file was removed.
+  `chpasswd` received a one-time password only through stdin; the password was
+  never placed in argv, environment, output, logs, evidence, or repository
+  files. The public password command was deliberately not used, so RKEY and
+  `user.conf` remained byte-identical. Real Chromium authentication then
+  loaded the edit page, verified Proxy Support, target, profile,
+  preserve-Host, timeout, and one protected `X-Business-GUID` value, submitted
+  a new disposable header through the real CSRF form, and reloaded the saved
+  value. `web.conf`, both renders, Nginx, and the redacting echo backend agreed
+  on the change. The exact Vesta PHP session was removed. An
+  `lckpwdf`-protected atomic replacement restored only the original admin
+  shadow line while preserving every other current shadow entry. A final real
+  panel login rejected the one-time password, its failed-login session was
+  removed, the original shadow line matched exactly, and `user.conf`/RKEY
+  remained unchanged. Temporary password and browser-state files were
+  destroyed. Two earlier rejection verifiers were retained as failed attempts:
+  Python lacked its optional `crypt` module, and Unix `su` was not a valid
+  login surface for this panel-only administrator. The latter attempt was
+  detected while its fresh temporary shadow was active and triggered an
+  immediate exact restoration before the successful panel-native rejection
+  proof.
 - **Rebuild:** The repository has the canonical public
   `v-rebuild-web-domains`, not a singular `v-rebuild-web-domain`. The
   administrator rebuild preserved the complete `web.conf` byte-for-byte,
@@ -144,15 +168,10 @@ Restoration proved:
   remained active;
 - the original loopback port 8420 listener remained present.
 
-The echo service, echo files, fixture directory, marker file, ACME/SSL test
-duplicates, temporary manifests, failed staging trees, and payloads were
-removed. Only the two protected rollback/evidence roots above were retained.
-The final deployed control-plane runtime remains `7beba3ca`; the original
-domain workload and authority are restored exactly.
-
-## Remaining blocker
-
-Milestone 3 is not fully closed until an authorized valid dev-panel
-administrator credential can complete authenticated preload/change/save and
-the domain is again restored exactly afterward. Do not reset the administrator
-password merely to close this evidence gap.
+The echo services, echo files, fixture directory, marker file, ACME/SSL test
+duplicates, panel sessions, one-time credentials, browser state, temporary
+authentication hash, temporary manifests, failed staging trees, and payloads
+were removed. Only the two protected rollback/evidence roots above were
+retained. The final deployed control-plane runtime remains `7beba3ca`; the
+original administrator authentication, domain workload, and domain authority
+are restored exactly. No Milestone 3 blocker remains.
