@@ -134,7 +134,7 @@ vx_proxy_validate_timeout() {
 }
 
 vx_proxy_validate_target() {
-    local authority
+    local authority host_port host
 
     if [ -z "$PROXY_TARGET" ]; then
         check_result "$E_INVALID" "proxy target is required"
@@ -144,7 +144,9 @@ vx_proxy_validate_target() {
     fi
     authority="${PROXY_TARGET#*://}"
     authority="${authority%%[/?#]*}"
-    if [ -z "$authority" ] || [[ "$authority" == :* ]]; then
+    host_port="${authority##*@}"
+    host="${host_port%%:*}"
+    if [ -z "$authority" ] || [ -z "$host" ] || [[ "$host_port" == :* ]]; then
         check_result "$E_INVALID" "proxy target URL is invalid"
     fi
 }
