@@ -133,8 +133,44 @@ vx_proxy_validate_timeout() {
     fi
 }
 
+vx_proxy_parse_target_authority() {
+    local target="$1"
+    local authority host_port host port="" port_number has_port="no"
+
+    authority="${target#*://}"
+    authority="${authority%%[/?#]*}"
+    host_port="${authority##*@}"
+
+    if [[ "$host_port" == \[* ]]; then
+        if [[ "$host_port" =~ ^\[([^][]+)\](:([0-9]+))?$ ]]; then
+            host="${BASH_REMATCH[1]}"
+            port="${BASH_REMATCH[3]}"
+            [ -n "${BASH_REMATCH[2]}" ] && has_port="yes"
+            [[ "$host" == *:* ]] && [[ "$host" =~ ^[0-9A-Fa-f:.]+$ ]] || return 1
+            VX_PROXY_TARGET_HOST="[$host]"
+        else
+            return 1
+        fi
+    else
+        [[ "$host_port" != *'['* && "$host_port" != *']'* ]] || return 1
+        host="${host_port%%:*}"
+        if [[ "$host_port" == *:* ]]; then
+            port="${host_port#*:}"
+            has_port="yes"
+            [[ "$port" != *:* ]] || return 1
+        fi
+        [ -n "$host" ] || return 1
+        VX_PROXY_TARGET_HOST="$host"
+    fi
+
+    if [ "$has_port" = "yes" ]; then
+        [[ "$port" =~ ^[0-9]+$ ]] && [ "${#port}" -le 5 ] || return 1
+        port_number=$((10#$port))
+        [ "$port_number" -ge 1 ] && [ "$port_number" -le 65535 ] || return 1
+    fi
+}
+
 vx_proxy_validate_target() {
-    local authority host_port host
 
     if [ -z "$PROXY_TARGET" ]; then
         check_result "$E_INVALID" "proxy target is required"
@@ -142,11 +178,7 @@ vx_proxy_validate_target() {
     if ! [[ "$PROXY_TARGET" =~ ^https?://[^[:space:]\'\"\;\{\}\#\|]+$ ]]; then
         check_result "$E_INVALID" "proxy target URL is invalid"
     fi
-    authority="${PROXY_TARGET#*://}"
-    authority="${authority%%[/?#]*}"
-    host_port="${authority##*@}"
-    host="${host_port%%:*}"
-    if [ -z "$authority" ] || [ -z "$host" ] || [[ "$host_port" == :* ]]; then
+    if ! vx_proxy_parse_target_authority "$PROXY_TARGET"; then
         check_result "$E_INVALID" "proxy target URL is invalid"
     fi
 }
@@ -194,7 +226,8 @@ vx_proxy_validate() {
 }
 
 vx_proxy_target_host() {
-    echo "$PROXY_TARGET" | sed -E 's|^https?://([^/:]+).*$|\1|'
+    vx_proxy_parse_target_authority "$PROXY_TARGET" || return 1
+    printf '%s\n' "$VX_PROXY_TARGET_HOST"
 }
 
 vx_proxy_is_native() {

@@ -69,7 +69,11 @@ assert_target_invalid() {
 }
 
 assert_target_valid 'http://127.0.0.1:8420'
+assert_target_valid 'http://127.0.0.1'
 assert_target_valid 'https://backend.example.test/app'
+assert_target_valid 'https://backend.example.test:443/app?source=test'
+assert_target_valid 'http://[::1]:8420/app'
+assert_target_valid 'https://[2001:db8::10]/app?source=test'
 assert_target_invalid 'ftp://backend.example.test'
 assert_target_invalid 'http://backend.example.test/a path'
 assert_target_invalid 'http://backend.example.test/;return'
@@ -79,7 +83,28 @@ assert_target_invalid 'http://?query'
 assert_target_invalid 'http://@/path'
 assert_target_invalid 'http://user@/path'
 assert_target_invalid 'http://user@:8420/path'
+assert_target_invalid 'http://backend.example.test:'
+assert_target_invalid 'http://backend.example.test:abc'
+assert_target_invalid 'http://backend.example.test:0'
+assert_target_invalid 'http://backend.example.test:65536'
+assert_target_invalid 'http://backend.example.test:70000'
+assert_target_invalid 'http://backend.example.test:999999999999999999999999'
+assert_target_invalid 'http://2001:db8::10/path'
+assert_target_invalid 'http://[::1/path'
+assert_target_invalid 'http://::1]/path'
+assert_target_invalid 'http://[]:8420/path'
+assert_target_invalid 'http://[backend.example.test]:8420/path'
 assert_target_invalid ''
+
+for target_and_host in \
+    'http://127.0.0.1:8420|127.0.0.1' \
+    'https://backend.example.test/app|backend.example.test' \
+    'http://[::1]:8420/app|[::1]' \
+    'https://[2001:db8::10]/app|[2001:db8::10]'; do
+    PROXY_TARGET="${target_and_host%%|*}"
+    assert_equal "${target_and_host#*|}" "$(vx_proxy_target_host)" \
+        "target host was parsed incorrectly for $PROXY_TARGET"
+done
 
 PROXY_HEADERS='X-Business-GUID: EXAMPLE-GUID'
 vx_proxy_validate_headers >/dev/null 2>&1 || fail 'valid business GUID header was rejected'
@@ -141,6 +166,10 @@ assert_contains "$rendered" 'proxy_set_header X-Another-Header "example";' 'seco
 PROXY_PRESERVE_HOST='no'
 vx_proxy_prepare_template_values
 assert_contains "$VX_PROXY_LOCATION_BLOCK" 'proxy_set_header Host 127.0.0.1;' 'upstream Host was not rendered when preservation was disabled'
+
+PROXY_TARGET='http://[::1]:8420'
+vx_proxy_prepare_template_values
+assert_contains "$VX_PROXY_LOCATION_BLOCK" 'proxy_set_header Host [::1];' 'bracketed IPv6 Host was not rendered when preservation was disabled'
 
 PROXY_MODE='redirect'
 PROXY_TARGET='https://redirect.example.test'
