@@ -254,7 +254,7 @@ vx_compose_restore_verify_images() {
             vx_compose_error 'restore image identity manifest is incomplete'
             return 1
         }
-        if [[ "$canonical_image" == sha256:* ]]; then
+        if [[ "$canonical_image" =~ ^sha256:[a-f0-9]{64}$ ]]; then
             [[ "$canonical_image" == "$expected_id"
                 && -n "$expected_immutable" ]] || {
                 vx_compose_error 'restore canonical image identity does not match evidence'

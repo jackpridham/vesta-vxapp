@@ -690,6 +690,16 @@ unset -f vx_compose_test_verifier_result
         "$restore_image_root/tag-canonical.json" \
         "$restore_image_root/legacy-images.json" \
         || fail 'protected legacy tag restore compatibility was rejected'
+    printf '%s\n' \
+        '{"services":{"worker":{"image":"sha256:latest"}}}' \
+        >"$restore_image_root/sha256-name-tag-canonical.json"
+    jq '.worker.REFERENCE="sha256:latest"' \
+        "$restore_image_root/legacy-images.json" \
+        >"$restore_image_root/sha256-name-tag-legacy-images.json"
+    vx_compose_restore_verify_images alice \
+        "$restore_image_root/sha256-name-tag-canonical.json" \
+        "$restore_image_root/sha256-name-tag-legacy-images.json" \
+        || fail 'mutable sha256 repository tag was misclassified as an image ID'
 ) || exit 1
 
 # A legacy SHA-only source is projected into a digest-free public manifest and
