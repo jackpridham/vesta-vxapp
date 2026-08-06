@@ -384,6 +384,36 @@ vx_compose_write_metadata \
     "$root" alice app standard running 2 \
     2026-01-01T00:00:00Z 2026-01-01T00:00:00Z "$current_sha"
 
+# Rollback rejects incomplete and tampered workload authority before runtime.
+deploy_calls=0
+vx_compose_deploy() { deploy_calls=$((deploy_calls + 1)); }
+for authority_case in incomplete tampered; do
+    rm -f -- "$root/revisions/000001/manifest.sha256"
+    printf '{}\n' >"$root/revisions/000001/workload.json"
+    chmod 0600 "$root/revisions/000001/workload.json"
+    if [[ "$authority_case" == tampered ]]; then
+        printf '{}\n' >"$root/revisions/000001/workload-evidence.json"
+        printf '%064d  workload.json\n%064d  compose.yaml\n' 0 0 \
+            >"$root/revisions/000001/workload-manifest.sha256"
+        chmod 0600 "$root/revisions/000001/workload-evidence.json" \
+            "$root/revisions/000001/workload-manifest.sha256"
+    fi
+    vx_compose_revision_manifest_write "$root/revisions/000001"
+    if vx_compose_rollback alice app 1 2>/dev/null; then
+        echo "FAIL: rollback accepted $authority_case workload authority" >&2
+        exit 1
+    fi
+    [[ "$deploy_calls" == 0 ]] || {
+        echo "FAIL: $authority_case rollback reached runtime" >&2
+        exit 1
+    }
+    rm -f -- "$root/revisions/000001/manifest.sha256" \
+        "$root/revisions/000001/workload.json" \
+        "$root/revisions/000001/workload-evidence.json" \
+        "$root/revisions/000001/workload-manifest.sha256"
+    vx_compose_revision_manifest_write "$root/revisions/000001"
+done
+
 # Historical route reservations are revalidated under the owner route lock
 # before rollback changes active definition, canonical state, or metadata.
 claimed_domain=claimed.example.test

@@ -192,7 +192,8 @@ vx_compose_bundle_secret_definition_rewrite() {
     jq -e 'all((.secrets//{})[]; (.external//false)==true)' "$raw" >/dev/null \
         || { rm -rf -- "$work_root"; vx_compose_error 'bundle secrets must be abstract external declarations'; return 1; }
     jq -S --arg root "$(vx_compose_project_root "$owner" "$project")/secrets" '
-        .secrets |= with_entries(.value={file:($root+"/"+.key)})
+        .secrets = ((.secrets // {})
+          | with_entries(.value={file:($root+"/"+.key)}))
     ' "$raw" >"$output" || { rm -rf -- "$work_root"; return 1; }
     chmod 0600 "$output"
     rm -rf -- "$work_root"
@@ -275,13 +276,14 @@ vx_compose_workload_authority_validate() {
     compose_sha="$(jq -r '.COMPOSE_SHA256' "$evidence")"
     manifest_sha="$(sha256sum "$manifest" | awk '{print $1}')"
     canonical_sha="$(sha256sum "$candidate/canonical.json" | awk '{print $1}')"
-    expected="${workload_sha}  workload.json
-${compose_sha}  compose.yaml"
-    [[ "$(cat "$manifest")" == "$expected"
-        && "$(jq -r '.WORKLOAD_SHA256' "$evidence")" == "$workload_sha"
+    [[ "$(jq -r '.WORKLOAD_SHA256' "$evidence")" == "$workload_sha"
         && "$(jq -r '.MANIFEST_SHA256' "$evidence")" == "$manifest_sha"
         && "$(jq -r '.CANONICAL_SHA256' "$evidence")" == "$canonical_sha" ]] \
         || return 1
+    cmp -s "$manifest" <(
+        printf '%s  workload.json\n%s  compose.yaml\n' \
+            "$workload_sha" "$compose_sha"
+    ) || return 1
     profile="$(jq -r '.profile.name' "$workload")"
     vx_compose_bundle_compatibility_validate "$workload" \
         && vx_compose_bundle_manifest_check_compose "$workload" \

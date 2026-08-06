@@ -166,6 +166,12 @@ vx_compose_rollback_activate() {
         [[ ! -f "$root/simple.json" ]] \
             || vx_compose_fsync_path "$root/simple.json" \
             || switch_failed=yes
+        for name in \
+            workload.json workload-evidence.json workload-manifest.sha256; do
+            [[ ! -f "$root/$name" ]] \
+                || vx_compose_fsync_path "$root/$name" \
+                || switch_failed=yes
+        done
         vx_compose_fsync_path "$root/runtime" || switch_failed=yes
         vx_compose_fsync_path "$root" || switch_failed=yes
     fi
@@ -339,10 +345,11 @@ vx_compose_rollback() {
     elif ! vx_compose_routes_validate_reservations \
         "$owner" "$project" "$rollback_root/routes.conf"; then
         :
-    elif [[ -f "$rollback_root/workload.json" ]] \
-        && ! vx_compose_workload_image_approval_require_files \
-            "$owner" "$rollback_root/workload.json" \
-            "$rollback_root/canonical.json"; then
+    elif [[ -e "$rollback_root/workload.json"
+        || -e "$rollback_root/workload-evidence.json"
+        || -e "$rollback_root/workload-manifest.sha256" ]] \
+        && ! vx_compose_workload_authority_validate \
+            "$owner" "$rollback_root"; then
         :
     elif ! vx_compose_rollback_snapshot_active "$root" "$snapshot_root"; then
         :

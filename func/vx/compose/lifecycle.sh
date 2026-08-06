@@ -247,7 +247,7 @@ vx_compose_run_lifecycle() {
     local success_state="$4"
     shift 4
     local root result profile ports_locked=no quota_locked=no
-    local started_ms finished_ms duration_ms
+    local started_ms finished_ms duration_ms timeout index
     local services runtime_identity error_file diagnostic invoke_result
     local canonical active_canonical active_images active_revision
     local prior_state evidence_ok=yes candidate_authority=no
@@ -285,6 +285,17 @@ vx_compose_run_lifecycle() {
         vx_compose_lock_release
         vx_compose_error 'current workload image approval is unavailable'
         return 1
+    fi
+    if [[ "$action" =~ ^(deploy|start|restart|recreate)$ ]]; then
+        timeout="$(vx_compose_convergence_timeout "$owner" "$project")" || {
+            vx_compose_lock_release
+            return 1
+        }
+        for index in "${!lifecycle_args[@]}"; do
+            [[ "${lifecycle_args[$index]}" \
+                != __VX_COMPOSE_WAIT_TIMEOUT__ ]] \
+                || lifecycle_args[$index]="$timeout"
+        done
     fi
     active_canonical="$root/runtime/canonical.json"
     active_images="$root/images.json"
@@ -530,7 +541,7 @@ vx_compose_run_lifecycle() {
 vx_compose_deploy() {
     vx_compose_run_lifecycle \
         "$1" "$2" deploy running \
-        up -d --remove-orphans --wait --wait-timeout "$(vx_compose_convergence_timeout "$1" "$2")"
+        up -d --remove-orphans --wait --wait-timeout __VX_COMPOSE_WAIT_TIMEOUT__
 }
 
 vx_compose_start() {
@@ -554,7 +565,7 @@ vx_compose_recreate() {
 
     vx_compose_require_project "$owner" "$project" || return 1
     root="$(vx_compose_project_root "$owner" "$project")"
-    args=(up -d --force-recreate --wait --wait-timeout "$(vx_compose_convergence_timeout "$owner" "$project")")
+    args=(up -d --force-recreate --wait --wait-timeout __VX_COMPOSE_WAIT_TIMEOUT__)
     if [[ -n "$service" ]]; then
         jq -e --arg service "$service" '.services[$service] != null' \
             "$root/runtime/canonical.json" >/dev/null \

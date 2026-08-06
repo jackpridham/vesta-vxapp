@@ -142,12 +142,23 @@ if vx_compose_workload_authority_validate alice "$authority" 2>/dev/null; then
 fi
 mv "$authority/evidence.saved" "$authority/workload-evidence.json"
 chmod 0600 "$authority/workload-evidence.json"
+printf '\n' >>"$authority/workload-manifest.sha256"
+manifest_sha="$(sha256sum "$authority/workload-manifest.sha256" | awk '{print $1}')"
+jq --arg manifest "$manifest_sha" '.MANIFEST_SHA256=$manifest' \
+    "$authority/workload-evidence.json" >"$authority/.evidence" \
+    && mv "$authority/.evidence" "$authority/workload-evidence.json"
+chmod 0600 "$authority/workload-evidence.json"
+if vx_compose_workload_authority_validate alice "$authority" 2>/dev/null; then
+    fail 'workload manifest with an extra trailing newline was accepted'
+fi
 
 fake_docker="$test_root/fake-docker"
 cat >"$fake_docker" <<'EOF'
 #!/usr/bin/env bash
 base="$(dirname -- "$0")"
-if [[ -f "$base/extra-secret" ]]; then
+if [[ -f "$base/zero-secret" ]]; then
+  printf '%s\n' '{"services":{"service":{"image":"local/example:release-1"}}}'
+elif [[ -f "$base/extra-secret" ]]; then
   printf '%s\n' '{"services":{"service":{"image":"local/example:release-1","secrets":[{"source":"credential","target":"/run/secrets/credential"}]}},"secrets":{"credential":{"external":true},"undeclared":{"external":true}}}'
 else
   printf '%s\n' '{"services":{"service":{"image":"local/example:release-1","secrets":[{"source":"credential","target":"/run/secrets/credential"}]}},"secrets":{"credential":{"external":true}}}'
@@ -156,6 +167,14 @@ EOF
 chmod 0755 "$fake_docker"
 export VX_COMPOSE_DOCKER_BIN="$fake_docker"
 vx_compose_project_root() { printf '%s/data/users/%s/docker-projects/%s\n' "$VESTA" "$1" "$2"; }
+touch "$test_root/zero-secret"
+vx_compose_bundle_secret_definition_rewrite alice app \
+    "$test_root/extracted/compose.yaml" "$test_root/extracted/workload.json" \
+    "$test_root/zero-managed-compose.json" \
+    || fail 'zero-secret workload rewrite was rejected'
+jq -e '.secrets=={}' "$test_root/zero-managed-compose.json" >/dev/null \
+    || fail 'zero-secret workload was not normalized exactly'
+rm -f -- "$test_root/zero-secret"
 jq '.secrets=[{"name":"credential","target":"/run/secrets/credential"}]' \
     "$test_root/extracted/workload.json" >"$test_root/secret-workload.json"
 vx_compose_bundle_secret_definition_rewrite alice app \
@@ -239,11 +258,82 @@ for malformed in extra traversal link duplicate-json; do
     fi
 done
 
+if (( EUID != 0 )); then
+    VX_COMPOSE_BUNDLE_VALIDATOR_TEST_PAUSE=yes /usr/bin/python3 \
+        "$repo_root/func/vx/compose/bundle-validator.py" \
+        "$test_root/input/bundle.tar.gz" "$test_root/input/bundle.sha256" \
+        "$test_root/swapped-output" >/dev/null 2>"$test_root/swap-error" &
+    validator_pid=$!
+    for _ in {1..100}; do
+        [[ -e "$test_root/.bundle-validator-test-ready" ]] && break
+        sleep 0.01
+    done
+    [[ -e "$test_root/.bundle-validator-test-ready" ]] \
+        || fail 'validator parent-swap test did not reach descriptor snapshot'
+    mv "$test_root/input" "$test_root/input-held"
+    mkdir -m 0700 "$test_root/input"
+    if wait "$validator_pid"; then
+        fail 'validator accepted a replaced input parent directory'
+    fi
+    [[ ! -e "$test_root/swapped-output" \
+        && "$(<"$test_root/swap-error")" == 'workload bundle rejected' ]] \
+        || fail 'parent replacement leaked output or internal details'
+    rmdir "$test_root/input"
+    mv "$test_root/input-held" "$test_root/input"
+fi
+
 chmod 0644 "$test_root/input/bundle.tar.gz"
 if vx_compose_bundle_extract "$test_root/input/bundle.tar.gz" \
     "$test_root/input/bundle.sha256" "$test_root/insecure" 2>/dev/null; then
     fail 'insecure archive was accepted'
 fi
+
+validator_error="$(/usr/bin/python3 \
+    "$repo_root/func/vx/compose/bundle-validator.py" \
+    "$test_root/input/private-missing.tar.gz" \
+    "$test_root/input/private-missing.sha256" \
+    "$test_root/private-output" 2>&1 || :)"
+[[ "$validator_error" == 'workload bundle rejected' \
+    && "$validator_error" != *private-missing* \
+    && "$validator_error" != *Traceback* ]] \
+    || fail 'validator disclosed an internal path or exception detail'
+
+(
+    import_root="$test_root/import-project"
+    vx_compose_project_root() { printf '%s\n' "$import_root"; }
+    vx_compose_lock_acquire() { :; }
+    vx_compose_lock_release() { :; }
+    vx_compose_bundle_extract() {
+        mkdir -m 0700 "$3"
+        install -m 0600 "$test_root/extracted/workload.json" \
+            "$3/workload.json"
+    }
+    vx_compose_bundle_candidate_prepare() { mkdir -m 0700 "$4"; }
+    vx_compose_store_new() {
+        mkdir -m 0750 "$import_root"
+        printf "REVISION='1'\nPROFILE='admin-approved'\n" \
+            >"$import_root/project.conf"
+    }
+    vx_compose_deploy() { :; }
+    vx_compose_meta_get() {
+        case "$2" in
+            REVISION) printf '1\n' ;;
+            PROFILE) printf 'admin-approved\n' ;;
+            *) return 1 ;;
+        esac
+    }
+    vx_compose_transaction_update() {
+        printf '%s\n' called >"$test_root/change-import-called"
+    }
+    vx_compose_bundle_import admin alice app \
+        "$test_root/input/bundle.tar.gz" "$test_root/input/bundle.sha256" \
+        add 0 '' || fail 'zero-secret add import was rejected'
+    vx_compose_bundle_import admin alice app \
+        "$test_root/input/bundle.tar.gz" "$test_root/input/bundle.sha256" \
+        change 1 '' || fail 'zero-secret change import was rejected'
+)
+[[ -s "$test_root/change-import-called" ]] \
+    || fail 'zero-secret change import did not reach its transaction'
 
 lock_marker="$test_root/invalid-import.locked"
 vx_compose_lock_acquire() { touch "$lock_marker"; return 1; }

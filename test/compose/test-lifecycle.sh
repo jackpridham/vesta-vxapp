@@ -507,6 +507,41 @@ jq -e '
 ' <<<"$inspect_json" >/dev/null \
     || fail "inspect output omitted the safe service/revision summary"
 
+# Bundle-managed canonical runtime definitions use immutable IDs, while
+# refresh must inspect the accepted tag reference and reject a moved tag.
+project_root="$(vx_compose_project_root alice web)"
+revision_root="$project_root/revisions/000001"
+image_id="sha256:fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"
+for canonical_path in \
+    "$project_root/runtime/canonical.json" "$revision_root/canonical.json"; do
+    jq --arg id "$image_id" '.services.web.image=$id' "$canonical_path" \
+        >"$test_root/canonical.updated"
+    install -m 0640 "$test_root/canonical.updated" "$canonical_path"
+done
+canonical_sha="$(sha256sum "$project_root/runtime/canonical.json" | awk '{print $1}')"
+sed "s/^CANONICAL_SHA256=.*/CANONICAL_SHA256='$canonical_sha'/" \
+    "$project_root/project.conf" >"$test_root/project.updated"
+install -m 0640 "$test_root/project.updated" "$project_root/project.conf"
+printf '{}\n' >"$project_root/workload.json"
+chmod 0600 "$project_root/workload.json"
+install -m 0600 "$project_root/workload.json" "$revision_root/workload.json"
+rm -f -- "$revision_root/manifest.sha256"
+vx_compose_revision_manifest_write "$revision_root"
+vx_compose_current_workload_image_approval_require() { return 0; }
+printf absent >"$test_root/runtime-mode"
+tag_lookups_before="$(grep -c '^ARG=example.test/web:v1$' "$docker_log" || :)"
+vx_compose_deploy alice web \
+    || fail 'immutable canonical deploy did not resolve its accepted tag authority'
+[[ "$(grep -c '^ARG=example.test/web:v1$' "$docker_log" || :)" \
+    -gt "$tag_lookups_before" ]] \
+    || fail 'bundle refresh inspected the canonical digest instead of accepted tag'
+printf '%s\n' 'sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd' \
+    >"$test_root/image-id"
+if vx_compose_restart alice web 2>/dev/null; then
+    fail 'moved accepted image tag passed workload lifecycle refresh'
+fi
+printf '%s\n' "$image_id" >"$test_root/image-id"
+
 # A failed tombstone deletion must fail the command and restore a discoverable
 # normal control root while leaving owner data/runtime scope untouched. The
 # project lock remains held across the whole remove, including final cleanup.

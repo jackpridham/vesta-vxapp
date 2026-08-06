@@ -971,7 +971,7 @@ vx_compose_image_evidence_restore_previous() {
 vx_compose_project_resolve_images() {
     local owner="$1"
     local project="$2"
-    local root canonical metadata revision revision_name temp_file profile
+    local root canonical resolution_canonical metadata revision revision_name temp_file profile
     local revision_file revision_kind current_kind upgrade=no service_count
     local install_required=yes revision_sha='' current_sha='' expected_sha
     local backup_file='' had_current=no failure_detail=''
@@ -987,14 +987,44 @@ vx_compose_project_resolve_images() {
     canonical="$root/runtime/canonical.json"
     metadata="$root/project.conf"
     profile="$(vx_compose_meta_get "$metadata" PROFILE)" || return 1
-    temp_file="$(mktemp "$root/.images.pending.XXXXXX")"
-    rm -f -- "$temp_file"
-    vx_compose_resolve_images_to_file \
-        "$owner" "$canonical" "$profile" "$temp_file" || return 1
-
     revision="$(vx_compose_meta_get "$metadata" REVISION)" || return 1
     printf -v revision_name '%06d' "$revision"
     revision_file="$root/revisions/$revision_name/images.json"
+    resolution_canonical="$canonical"
+    if [[ -f "$root/workload.json" && ! -L "$root/workload.json"
+        && -e "$revision_file" ]]; then
+        vx_compose_image_evidence_file_is_secure "$revision_file" 640 \
+            || return 1
+        revision_kind="$(vx_compose_image_evidence_kind "$revision_file")" \
+            || return 1
+        if [[ "$revision_kind" == "$VX_COMPOSE_IMAGE_EVIDENCE_SCHEMA_VERSION" ]]; then
+            resolution_canonical="$(mktemp "$root/.canonical.lookup.XXXXXX")" \
+                || return 1
+            if ! jq -eS --slurpfile accepted "$revision_file" '
+                select(($accepted[0] | keys) == (.services | keys))
+                | select(all(.services | to_entries[]; . as $service
+                    | .value.image == $accepted[0][$service.key].IMAGE_ID))
+                | .services |= with_entries(
+                    .value.image = $accepted[0][.key].REFERENCE)
+            ' "$canonical" >"$resolution_canonical"; then
+                rm -f -- "$resolution_canonical"
+                vx_compose_error 'accepted workload image authority does not match canonical services'
+                return 1
+            fi
+            chmod 0600 "$resolution_canonical"
+        fi
+    fi
+    temp_file="$(mktemp "$root/.images.pending.XXXXXX")"
+    rm -f -- "$temp_file"
+    if ! vx_compose_resolve_images_to_file \
+        "$owner" "$resolution_canonical" "$profile" "$temp_file"; then
+        [[ "$resolution_canonical" == "$canonical" ]] \
+            || rm -f -- "$resolution_canonical"
+        return 1
+    fi
+    [[ "$resolution_canonical" == "$canonical" ]] \
+        || rm -f -- "$resolution_canonical"
+
     if [[ -e "$revision_file" ]]; then
         vx_compose_image_evidence_directory_is_secure \
             "$root/revisions/$revision_name" 750 \

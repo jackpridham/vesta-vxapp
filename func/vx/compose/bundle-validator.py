@@ -7,9 +7,11 @@ import hashlib
 import json
 import os
 import re
+import secrets
 import stat
 import struct
 import sys
+import time
 import zlib
 
 NAMES = ["compose.yaml", "manifest.sha256", "workload.json"]
@@ -160,10 +162,53 @@ def octal(field):
 
 
 def parse_bundle(archive, checksum, output):
-    basename = os.path.basename(archive)
+    parent = os.path.dirname(archive)
+    output_parent = os.path.dirname(output)
+    archive_name = os.path.basename(archive)
+    checksum_name = os.path.basename(checksum)
+    output_name = os.path.basename(output)
+    if not os.path.isabs(parent) or not os.path.isabs(output_parent) \
+            or os.path.dirname(checksum) != parent \
+            or any(name in ("", ".", "..") or "/" in name
+                   for name in (archive_name, checksum_name, output_name)):
+        fail("bundle paths are invalid")
     authority_uid, authority_gid = os.geteuid(), os.getegid()
-    archive_fd = os.open(archive, os.O_RDONLY | os.O_NOFOLLOW)
-    checksum_fd = os.open(checksum, os.O_RDONLY | os.O_NOFOLLOW)
+    grandparent = os.path.dirname(parent)
+    parent_name = os.path.basename(parent)
+    grandparent_fd = os.open(grandparent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    parent_fd = os.open(parent_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                        dir_fd=grandparent_fd)
+    parent_before = os.fstat(parent_fd)
+    if not stat.S_ISDIR(parent_before.st_mode) \
+            or (parent_before.st_mode & 0o777) != 0o700 \
+            or parent_before.st_uid != authority_uid \
+            or parent_before.st_gid != authority_gid:
+        fail("bundle parent authority is invalid")
+    output_grandparent = os.path.dirname(output_parent)
+    output_parent_name = os.path.basename(output_parent)
+    output_grandparent_fd = os.open(
+        output_grandparent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    output_parent_fd = os.open(
+        output_parent_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+        dir_fd=output_grandparent_fd)
+    output_parent_before = os.fstat(output_parent_fd)
+    if not stat.S_ISDIR(output_parent_before.st_mode) \
+            or (output_parent_before.st_mode & 0o777) != 0o700 \
+            or output_parent_before.st_uid != authority_uid \
+            or output_parent_before.st_gid != authority_gid:
+        fail("bundle output parent authority is invalid")
+    archive_fd = os.open(archive_name, os.O_RDONLY | os.O_NOFOLLOW,
+                         dir_fd=parent_fd)
+    checksum_fd = os.open(checksum_name, os.O_RDONLY | os.O_NOFOLLOW,
+                          dir_fd=parent_fd)
+    if os.geteuid() != 0 \
+            and os.environ.get("VX_COMPOSE_BUNDLE_VALIDATOR_TEST_PAUSE") == "yes":
+        marker = ".bundle-validator-test-ready"
+        marker_fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL,
+                            0o600, dir_fd=output_parent_fd)
+        os.close(marker_fd)
+        time.sleep(0.2)
+        os.unlink(marker, dir_fd=output_parent_fd)
     archive_before, checksum_before = os.fstat(archive_fd), os.fstat(checksum_fd)
     for state in (archive_before, checksum_before):
         if not stat.S_ISREG(state.st_mode) or (state.st_mode & 0o777) != 0o600 \
@@ -171,17 +216,24 @@ def parse_bundle(archive, checksum, output):
             fail("bundle input authority is invalid")
     with os.fdopen(checksum_fd, "rb", closefd=False) as handle:
         wanted = handle.read(1024)
-    match = re.fullmatch(rb"([a-f0-9]{64})  " + re.escape(basename.encode()) + rb"\n", wanted)
+    match = re.fullmatch(rb"([a-f0-9]{64})  "
+                         + re.escape(archive_name.encode()) + rb"\n", wanted)
     if not match:
         fail("bundle checksum file is invalid")
     with os.fdopen(archive_fd, "rb", closefd=False) as handle:
         raw = handle.read(67108865)
     identity = lambda s: (s.st_dev, s.st_ino, s.st_mode, s.st_uid, s.st_gid,
                           s.st_size, s.st_mtime_ns, s.st_ctime_ns)
+    binding = lambda s: (s.st_dev, s.st_ino, s.st_mode, s.st_uid, s.st_gid)
     if identity(os.fstat(archive_fd)) != identity(archive_before) \
             or identity(os.fstat(checksum_fd)) != identity(checksum_before):
         fail("bundle input identity changed during validation")
-    os.close(archive_fd); os.close(checksum_fd)
+    os.close(archive_fd)
+    os.close(checksum_fd)
+    parent_entry = os.stat(parent_name, dir_fd=grandparent_fd,
+                           follow_symlinks=False)
+    if binding(parent_entry) != binding(parent_before):
+        fail("bundle parent identity changed during validation")
     if len(raw) > 67108864 or hashlib.sha256(raw).hexdigest().encode() != match.group(1):
         fail("bundle checksum does not match")
     if raw[:10] != bytes.fromhex("1f8b0800000000000203") or len(raw) < 18:
@@ -232,6 +284,7 @@ def parse_bundle(archive, checksum, output):
                          hashlib.sha256(members["compose.yaml"]).hexdigest() + "  compose.yaml\n").encode()
     if members["manifest.sha256"] != expected_manifest:
         fail("bundle member manifest is invalid")
+    renamed = False
     try:
         workload = json.loads(members["workload.json"].decode("utf-8"), object_pairs_hook=pairs_unique,
                               parse_float=lambda _: fail("non-integer JSON number"),
@@ -243,20 +296,62 @@ def parse_bundle(archive, checksum, output):
     if canonical != members["workload.json"]:
         fail("workload JSON is not canonical")
     validate_manifest(workload)
-    os.mkdir(output, 0o700)
-    for name in NAMES:
-        path = os.path.join(output, name)
-        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(members[name])
-    evidence = {"ARCHIVE_SHA256": hashlib.sha256(raw).hexdigest(),
-                "COMPOSE_SHA256": hashlib.sha256(members["compose.yaml"]).hexdigest(),
-                "MANIFEST_SHA256": hashlib.sha256(members["manifest.sha256"]).hexdigest(),
-                "WORKLOAD_SHA256": hashlib.sha256(members["workload.json"]).hexdigest()}
-    path = os.path.join(output, "workload-evidence.json")
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-        json.dump(evidence, handle, sort_keys=True, separators=(",", ":")); handle.write("\n")
+    try:
+        os.stat(output_name, dir_fd=output_parent_fd, follow_symlinks=False)
+        fail("bundle output already exists")
+    except FileNotFoundError:
+        pass
+    temporary = f".{output_name}.tmp.{secrets.token_hex(16)}"
+    os.mkdir(temporary, 0o700, dir_fd=output_parent_fd)
+    output_fd = os.open(temporary, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                        dir_fd=output_parent_fd)
+    try:
+        for name in NAMES:
+            fd = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                         0o600, dir_fd=output_fd)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(members[name])
+                handle.flush()
+                os.fsync(handle.fileno())
+        evidence = {"ARCHIVE_SHA256": hashlib.sha256(raw).hexdigest(),
+                    "COMPOSE_SHA256": hashlib.sha256(members["compose.yaml"]).hexdigest(),
+                    "MANIFEST_SHA256": hashlib.sha256(members["manifest.sha256"]).hexdigest(),
+                    "WORKLOAD_SHA256": hashlib.sha256(members["workload.json"]).hexdigest()}
+        fd = os.open("workload-evidence.json",
+                     os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                     0o600, dir_fd=output_fd)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(evidence, handle, sort_keys=True, separators=(",", ":"))
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.fsync(output_fd)
+        output_parent_entry = os.stat(
+            output_parent_name, dir_fd=output_grandparent_fd,
+            follow_symlinks=False)
+        if binding(output_parent_entry) != binding(output_parent_before):
+            fail("bundle output parent identity changed during extraction")
+        os.rename(temporary, output_name, src_dir_fd=output_parent_fd,
+                  dst_dir_fd=output_parent_fd)
+        renamed = True
+        os.fsync(output_parent_fd)
+    except Exception:
+        if renamed:
+            os.rename(output_name, temporary, src_dir_fd=output_parent_fd,
+                      dst_dir_fd=output_parent_fd)
+        for name in NAMES + ["workload-evidence.json"]:
+            try:
+                os.unlink(name, dir_fd=output_fd)
+            except FileNotFoundError:
+                pass
+        os.close(output_fd)
+        os.rmdir(temporary, dir_fd=output_parent_fd)
+        raise
+    os.close(output_fd)
+    os.close(parent_fd)
+    os.close(grandparent_fd)
+    os.close(output_parent_fd)
+    os.close(output_grandparent_fd)
 
 
 if __name__ == "__main__":
@@ -278,6 +373,6 @@ if __name__ == "__main__":
             validate_manifest(value)
         else:
             parse_bundle(sys.argv[1], sys.argv[2], sys.argv[3])
-    except (ValueError, OSError, IndexError) as exc:
-        print(f"workload bundle rejected: {exc}", file=sys.stderr)
+    except Exception:
+        print("workload bundle rejected", file=sys.stderr)
         sys.exit(1)

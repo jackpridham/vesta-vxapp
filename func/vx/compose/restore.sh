@@ -502,7 +502,18 @@ vx_compose_restore_prepare() {
         "$owner" "$project" "$extracted" \
         "$candidate" "$profile" "$validation_secrets" \
         || return 1
-    if [[ -f "$extracted/control/workload.json"
+    local workload_members=0 workload_member
+    for workload_member in \
+        workload.json workload-evidence.json workload-manifest.sha256; do
+        [[ ! -e "$extracted/control/$workload_member" \
+            && ! -L "$extracted/control/$workload_member" ]] \
+            || workload_members=$((workload_members + 1))
+    done
+    if (( workload_members != 0 && workload_members != 3 )); then
+        vx_compose_error 'restore workload authority is incomplete'
+        return 1
+    fi
+    if (( workload_members == 3 )) && [[ -f "$extracted/control/workload.json"
         && -f "$extracted/control/workload-evidence.json"
         && -f "$extracted/control/workload-manifest.sha256" ]]; then
         install -m 0600 "$extracted/control/workload.json" "$candidate/workload.json"
@@ -510,6 +521,9 @@ vx_compose_restore_prepare() {
             "$candidate/workload-evidence.json"
         install -m 0600 "$extracted/control/workload-manifest.sha256" \
             "$candidate/workload-manifest.sha256"
+    elif (( workload_members == 3 )); then
+        vx_compose_error 'restore workload authority is invalid'
+        return 1
     fi
     if [[ -e "$candidate/workload.json" || -e "$candidate/workload-evidence.json"
         || -e "$candidate/workload-manifest.sha256" ]]; then

@@ -160,4 +160,32 @@ jq -e '
 ' <<<"$capability_output" >/dev/null \
     || fail "capability adapter JSON does not preserve the authorized actor"
 
+for public_command in \
+    v-start-docker-project v-deploy-docker-project \
+    v-recreate-docker-project v-restart-docker-project \
+    v-rollback-docker-project v-restore-docker-project; do
+    if ! VESTA="$fixture" \
+        VX_COMPOSE_WORKLOAD_OVERRIDE=/tmp/bypass-workload \
+        VX_COMPOSE_INVOKE_CANONICAL_OVERRIDE=/tmp/bypass-canonical \
+        VX_COMPOSE_INVOKE_IMAGES_OVERRIDE=/tmp/bypass-images \
+        VX_COMPOSE_INVOKE_REVISION_OVERRIDE=999 \
+        VX_COMPOSE_INVOKE_ENV_OVERRIDE=/tmp/bypass-env \
+        VX_COMPOSE_POLICY_OVERRIDE=/tmp/bypass-policy \
+        VX_COMPOSE_PROBE_TEST_ENGINE_HELPER=/tmp/bypass-helper \
+        VX_COMPOSE_TEST_MODE=yes \
+        bash -c '
+          source "$1"
+          [[ -z "${VX_COMPOSE_WORKLOAD_OVERRIDE:-}"
+            && -z "${VX_COMPOSE_INVOKE_CANONICAL_OVERRIDE:-}"
+            && -z "${VX_COMPOSE_INVOKE_IMAGES_OVERRIDE:-}"
+            && -z "${VX_COMPOSE_INVOKE_REVISION_OVERRIDE:-}"
+            && -z "${VX_COMPOSE_INVOKE_ENV_OVERRIDE:-}"
+            && -z "${VX_COMPOSE_POLICY_OVERRIDE:-}"
+            && -z "${VX_COMPOSE_PROBE_TEST_ENGINE_HELPER:-}"
+            && -z "${VX_COMPOSE_TEST_MODE:-}" ]]
+        ' "$public_command" "$repo_root/func/vx/compose/main.sh"; then
+        fail "public override environment survived $public_command"
+    fi
+done
+
 echo "Compose CLI surface tests passed."
