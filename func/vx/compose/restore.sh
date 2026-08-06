@@ -227,7 +227,9 @@ vx_compose_restore_verify_images() {
         vx_compose_error 'restore image identity manifest is incomplete'
         return 1
     }
-    if jq -e 'any(.services[]; .image | startswith("sha256:"))' \
+    if jq -e 'any(.services[]; .image as $image
+            | ($image | test("^sha256:[a-f0-9]{64}$"))
+            or ($image | test("^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}@sha256:[a-f0-9]{64}$")))' \
         "$canonical" >/dev/null \
         && [[ "$evidence_kind" != "$VX_COMPOSE_IMAGE_EVIDENCE_SCHEMA_VERSION" ]]; then
         vx_compose_error 'restore digest-pinned image evidence is not current'
@@ -256,6 +258,11 @@ vx_compose_restore_verify_images() {
             [[ "$canonical_image" == "$expected_id"
                 && -n "$expected_immutable" ]] || {
                 vx_compose_error 'restore canonical image identity does not match evidence'
+                return 1
+            }
+        elif [[ "$canonical_image" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}@sha256:[a-f0-9]{64}$ ]]; then
+            [[ "$canonical_image" == "$expected_immutable" ]] || {
+                vx_compose_error 'restore canonical immutable image does not match evidence'
                 return 1
             }
         elif [[ "$canonical_image" != "$reference" ]]; then

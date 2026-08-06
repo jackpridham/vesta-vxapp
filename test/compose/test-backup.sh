@@ -633,6 +633,13 @@ unset -f vx_compose_test_verifier_result
     vx_compose_restore_verify_images alice \
         "$restore_image_root/canonical.json" "$restore_image_root/images.json" \
         || fail 'digest-pinned bundle backup failed restore image validation'
+    printf '%s\n' \
+        "{\"services\":{\"worker\":{\"image\":\"example.test/worker@$accepted_id\"}}}" \
+        >"$restore_image_root/repository-digest-canonical.json"
+    vx_compose_restore_verify_images alice \
+        "$restore_image_root/repository-digest-canonical.json" \
+        "$restore_image_root/images.json" \
+        || fail 'repository-digest bundle restore rejected schema-2 evidence'
     resolved_id="$moved_id"
     if vx_compose_restore_verify_images alice \
         "$restore_image_root/canonical.json" "$restore_image_root/images.json" \
@@ -648,6 +655,11 @@ unset -f vx_compose_test_verifier_result
         "$restore_image_root/canonical.json" \
         "$restore_image_root/legacy-images.json" >/dev/null 2>&1; then
         fail 'legacy evidence authorized a digest-pinned bundle restore'
+    fi
+    if vx_compose_restore_verify_images alice \
+        "$restore_image_root/repository-digest-canonical.json" \
+        "$restore_image_root/legacy-images.json" >/dev/null 2>&1; then
+        fail 'legacy evidence authorized a repository-digest bundle restore'
     fi
     jq '.worker.SCHEMA=1' "$restore_image_root/images.json" \
         >"$restore_image_root/wrong-schema-images.json"
