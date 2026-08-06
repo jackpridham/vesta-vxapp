@@ -181,7 +181,7 @@ vx_compose_bundle_secret_definition_rewrite alice app \
     "$test_root/extracted/compose.yaml" "$test_root/secret-workload.json" \
     "$test_root/managed-compose.json" \
     || fail 'abstract secret was not rewritten to managed authority'
-jq -e --arg path "$VESTA/data/users/alice/docker-projects/app/secrets/credential" \
+jq -e --arg path "$VESTA/data/users/alice/docker-projects/app/runtime/workload-secrets/current/credential" \
     '.secrets=={credential:{file:$path}}' "$test_root/managed-compose.json" \
     >/dev/null || fail 'managed secret rewrite was not exact'
 touch "$test_root/extra-secret"
@@ -240,6 +240,46 @@ if (( EUID != 0 )); then
     if wait "$snapshot_pid"; then
         fail 'mutating secret input was accepted'
     fi
+    find "$test_root/raced-secret" -depth -delete 2>/dev/null || :
+    printf 'stable\n' >"$test_root/input/secret-input/credential"
+    for swap_kind in parent directory; do
+        VX_COMPOSE_BUNDLE_SECRET_TEST_PAUSE="$swap_kind" /usr/bin/python3 \
+            "$repo_root/func/vx/compose/bundle-secrets.py" \
+            "$test_root/secret-manifest.json" \
+            "$test_root/input/secret-input" \
+            "$test_root/$swap_kind-swap-secret" >/dev/null 2>&1 &
+        snapshot_pid=$!
+        for _ in {1..100}; do
+            [[ -e "$test_root/.bundle-secrets-test-ready" ]] && break
+            sleep 0.01
+        done
+        [[ -e "$test_root/.bundle-secrets-test-ready" ]] \
+            || fail "$swap_kind swap did not reach descriptor snapshot"
+        if [[ "$swap_kind" == parent ]]; then
+            mv "$test_root/input" "$test_root/input-held"
+            mkdir -m 0700 "$test_root/input"
+        else
+            mv "$test_root/input/secret-input" \
+                "$test_root/input/secret-input-held"
+            mkdir -m 0700 "$test_root/input/secret-input"
+            printf 'replacement\n' \
+                >"$test_root/input/secret-input/credential"
+            chmod 0600 "$test_root/input/secret-input/credential"
+        fi
+        if wait "$snapshot_pid"; then
+            fail "$swap_kind secret staging replacement was accepted"
+        fi
+        if [[ "$swap_kind" == parent ]]; then
+            rmdir "$test_root/input"
+            mv "$test_root/input-held" "$test_root/input"
+        else
+            find "$test_root/input/secret-input" -depth -delete
+            mv "$test_root/input/secret-input-held" \
+                "$test_root/input/secret-input"
+        fi
+        find "$test_root/$swap_kind-swap-secret" -depth -delete \
+            2>/dev/null || :
+    done
 fi
 
 cp "$test_root/input/bundle.tar.gz" "$test_root/input/tampered.tar.gz"

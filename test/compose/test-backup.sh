@@ -57,6 +57,11 @@ printf '%s\n' \
     '{"GENERATED":true,"OWNER":"alice","NAME":"app","IMAGE":"example.test/app:v1","COMMAND":"","ENV":"","MOUNTS":"","HOST_PORT":"18080","CONTAINER_PORT":"8080","DOMAIN":"","ROUTE_PATH":"","AUTO_START":"no","RESTART_POLICY":"unless-stopped","HEALTHCHECK_TYPE":"none","HEALTHCHECK_TARGET":"","HEALTHCHECK_INTERVAL":"60","CPU_ALERT_PCT":"85","MEM_ALERT_MB":"1024","NET_ALERT_MBPS":"50","ALERT_EMAIL":"yes"}' \
     >"$project_root/simple.json"
 chmod 0600 "$project_root/simple.json"
+mkdir -m 0700 "$project_root/runtime/workload-secrets" \
+    "$project_root/runtime/workload-secrets/current"
+printf 'runtime-copy-must-not-back-up\n' \
+    >"$project_root/runtime/workload-secrets/current/credential"
+chmod 0444 "$project_root/runtime/workload-secrets/current/credential"
 
 archive="$test_root/app.tar.gz"
 vx_compose_backup_project alice app "$archive"
@@ -77,6 +82,10 @@ cmp -s "$project_root/alerts.conf" \
     || fail "active or revisioned alert policy was omitted"
 if tar -tzf "$archive" | grep -Eq 'secrets/api_key|docker-registry|config.json$'; then
     fail "backup contains plaintext secrets or registry auth"
+fi
+if tar -tzf "$archive" | grep -Fq 'workload-secrets' \
+    || grep -R -Fq 'runtime-copy-must-not-back-up' "$test_root/validated"; then
+    fail 'backup retained a disposable runtime secret copy'
 fi
 
 managed_archive="$(vx_compose_backup_allocate_path alice app)"

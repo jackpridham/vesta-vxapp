@@ -8,6 +8,12 @@ vx_compose_secret_path() {
     printf '%s/secrets/%s\n' "$(vx_compose_project_root "$1" "$2")" "$3"
 }
 
+vx_compose_runtime_secret_path() {
+    local owner="$1" project="$2" secret="$3"
+    printf '%s/runtime/workload-secrets/current/%s\n' \
+        "$(vx_compose_project_root "$owner" "$project")" "$secret"
+}
+
 vx_compose_secret_metadata_path() {
     printf '%s/secrets.json\n' "$(vx_compose_project_root "$1" "$2")"
 }

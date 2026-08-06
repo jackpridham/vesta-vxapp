@@ -1,5 +1,15 @@
 #!/usr/bin/env bash
 
+case "${0##*/}" in
+    v-*)
+        _VX_COMPOSE_PUBLIC_BOUNDARY=yes
+        for _vx_public_variable in "${!VX_COMPOSE_@}"; do
+            unset "$_vx_public_variable"
+        done
+        unset _vx_public_variable
+        ;;
+esac
+
 _vx_compose_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 if [[ -z "${_VX_COMPOSE_MAIN_LOADED:-}"
     || "$(declare -p _VX_COMPOSE_MAIN_LOADED 2>/dev/null)" == declare\ -x* ]]; then
@@ -32,19 +42,6 @@ if [[ -z "${_VX_COMPOSE_MAIN_LOADED:-}"
         _vx_inherited_lock_target
     _VX_COMPOSE_MAIN_LOADED=1
 fi
-
-case "${0##*/}" in
-    v-*)
-        for _vx_public_variable in "${!VX_COMPOSE_@}"; do
-            case "$_vx_public_variable" in
-                VX_COMPOSE_INVOKE_*|VX_COMPOSE_*OVERRIDE*|VX_COMPOSE_*TEST*)
-                    unset "$_vx_public_variable"
-                    ;;
-            esac
-        done
-        unset _vx_public_variable
-        ;;
-esac
 
 # shellcheck source=func/vx/compose/common.sh
 source "$_vx_compose_dir/common.sh"

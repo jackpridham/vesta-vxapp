@@ -191,7 +191,7 @@ vx_compose_bundle_secret_definition_rewrite() {
     }
     jq -e 'all((.secrets//{})[]; (.external//false)==true)' "$raw" >/dev/null \
         || { rm -rf -- "$work_root"; vx_compose_error 'bundle secrets must be abstract external declarations'; return 1; }
-    jq -S --arg root "$(vx_compose_project_root "$owner" "$project")/secrets" '
+    jq -S --arg root "$(vx_compose_project_root "$owner" "$project")/runtime/workload-secrets/current" '
         .secrets = ((.secrets // {})
           | with_entries(.value={file:($root+"/"+.key)}))
     ' "$raw" >"$output" || { rm -rf -- "$work_root"; return 1; }
@@ -255,6 +255,21 @@ vx_compose_current_workload_image_approval_require() {
     fi
     vx_compose_workload_image_approval_require_files \
         "$owner" "$workload" "$canonical"
+}
+
+vx_compose_runtime_secrets_materialize() {
+    local owner="$1" project="$2" root workload authority_root
+    root="$(vx_compose_project_root "$owner" "$project")"
+    workload="${VX_COMPOSE_WORKLOAD_OVERRIDE:-$root/workload.json}"
+    authority_root="$(dirname -- "$workload")"
+    if [[ ! -e "$workload"
+        && ! -e "$authority_root/workload-evidence.json"
+        && ! -e "$authority_root/workload-manifest.sha256" ]]; then
+        return 0
+    fi
+    [[ -f "$workload" && ! -L "$workload" ]] || return 1
+    env -i PATH="$VX_COMPOSE_SAFE_PATH" /usr/bin/python3 \
+        "$VX_COMPOSE_LIB_DIR/runtime-secrets.py" "$root" "$workload"
 }
 
 vx_compose_workload_authority_validate() {

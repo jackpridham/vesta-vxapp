@@ -36,6 +36,7 @@ The canonical root is:
 │   ├── routes.conf
 │   └── manifest.sha256
 └── runtime/
+    ├── workload-secrets/current/
     ├── last-operation.json
     ├── last-health.json
     └── backup-manifest.json
@@ -51,6 +52,10 @@ Directories are root-owned and not writable by the tenant account. Control
 files are mode 0640 unless a stricter contract applies. `secrets/`,
 `variables.env`, registry auth, operation state containing command output, and
 all files beneath `secrets/` are mode 0700/0600 as appropriate.
+`runtime/workload-secrets/` is disposable authority-only state: its parent and
+active directory are mode `0700`, its exact container-mounted files are mode
+`0444`, and it is excluded from revisions, backup archives, restore inputs,
+and public metadata.
 
 ## Durable data layout
 

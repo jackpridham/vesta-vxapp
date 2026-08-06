@@ -226,14 +226,22 @@ secret input is at most 8 MiB; administrators may configure smaller limits,
 never larger ones.
 
 Under the project lock, the importer opens the directory without following
-links, snapshots its descriptor identity, opens and snapshots every input file
-without following links, and verifies directory and file identities before
-and after copying. It validates each name and value through the existing
+links through its validated protected parent descriptor, snapshots both
+bindings, opens and snapshots every input file without following links, and
+verifies parent, directory, and file identities before and after copying. It
+validates each name and value through the existing
 managed-secret helpers, then atomically installs the values into the new
 project's temporary root before that root is published or deployment begins.
 A failure removes the unpublished project root and installs no partial
 project. The import transaction never places secret values in bundle members,
 revision files, or backup payloads.
+
+Abstract external Compose secret declarations are normalized during import to
+stable paths below the protected runtime secret-copy directory. Immediately
+before each start-like convergence, Vesta atomically refreshes that exact
+declared set from authoritative mode-0600 files. Runtime copies are
+authority-owned mode `0444` below an authority-owned mode-0700 parent and are
+never revision or backup members.
 
 The importer neither changes nor removes the caller-supplied directory. The
 caller owns cleanup after every success or failure; an application CLI that

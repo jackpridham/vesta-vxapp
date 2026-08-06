@@ -2,7 +2,7 @@
 
 ## Storage
 
-Managed secret values live only at:
+Authoritative managed secret values live at:
 
 ```text
 /usr/local/vesta/data/users/<user>/docker-projects/<project>/secrets/<name>
@@ -13,6 +13,18 @@ each regular, non-symlink file is root-owned mode 0600. Values are never
 accepted as CLI arguments. Create/change commands accept a root-readable input
 file descriptor or protected temporary file and remove the temporary file
 after an atomic install.
+
+Bundle-managed workloads use container-readable runtime copies at
+`runtime/workload-secrets/current/<name>`. Before every start-like lifecycle
+action, while holding the project lock, Vesta snapshots the exact declared
+authoritative files through no-follow descriptors into a temporary mode-0700
+directory, writes authority-owned mode-0444 files, fsyncs them, and atomically
+activates the directory. The parent remains authority-owned mode `0700`, so
+host users cannot traverse to the readable files while the container runtime
+can mount each declared file read-only. A failed refresh leaves the previous
+complete set active. These copies are disposable runtime state: revisions,
+backups, restore payloads, UI, audit, logs, and exported definitions exclude
+them, and project removal removes them with the runtime control root.
 
 Public metadata contains exactly secret name, target path, availability
 status, opaque version, creation time, and rotation time. Versions are
@@ -35,6 +47,8 @@ the first cryptographically random version; read-only listing never does.
 
 - Secrets are mounted read-only through Compose secrets or a long-form
   read-only bind to a declared target.
+- Bundle Compose files reference only the stable protected runtime-copy path;
+  they never mount the authoritative mode-0600 files directly.
 - Targets default to `/run/secrets/<name>`.
 - A secret cannot be mounted over a system binary, Docker socket, device, or
   another protected path.

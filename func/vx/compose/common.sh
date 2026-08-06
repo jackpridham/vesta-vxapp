@@ -14,7 +14,12 @@ VX_COMPOSE_WAIT_TIMEOUT='60'
 VX_COMPOSE_SAFE_PATH='/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 VX_COMPOSE_LIB_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-if [[ -f "${VESTA:-}/conf/vx-docker-policy.conf" ]]; then
+if [[ -f "${VESTA:-}/conf/vx-docker-policy.conf" \
+    && ! -L "${VESTA:-}/conf/vx-docker-policy.conf" \
+    && ( "${_VX_COMPOSE_PUBLIC_BOUNDARY:-no}" != yes \
+        || "$(stat -c '%u:%a:%F' \
+            "${VESTA:-}/conf/vx-docker-policy.conf" 2>/dev/null)" \
+            =~ ^0:(600|640):regular\ file$ ) ]]; then
     # shellcheck source=conf/vx-docker-policy.conf
     source "$VESTA/conf/vx-docker-policy.conf"
     VX_COMPOSE_POLICY_SCHEMA_VERSION="$VX_DOCKER_POLICY_SCHEMA_VERSION"

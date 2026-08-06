@@ -21,7 +21,7 @@ for owner in alice bob; do
         printf "DOCKER_PIDS='512'\n"
         printf "DOCKER_STORAGE_MB='128'\n"
         printf "DOCKER_PORTS='8'\n"
-        printf "DOCKER_SECRETS='0'\n"
+        printf "DOCKER_SECRETS='2'\n"
         printf "DOCKER_VOLUMES='0'\n"
     } >"$VESTA/data/users/$owner/user.conf"
 done
@@ -522,7 +522,13 @@ canonical_sha="$(sha256sum "$project_root/runtime/canonical.json" | awk '{print 
 sed "s/^CANONICAL_SHA256=.*/CANONICAL_SHA256='$canonical_sha'/" \
     "$project_root/project.conf" >"$test_root/project.updated"
 install -m 0640 "$test_root/project.updated" "$project_root/project.conf"
-printf '{}\n' >"$project_root/workload.json"
+mkdir -p "$project_root/secrets"
+chmod 0700 "$project_root/secrets"
+printf 'lifecycle-secret\n' >"$project_root/secrets/credential"
+chmod 0600 "$project_root/secrets/credential"
+printf '%s\n' \
+    '{"secrets":[{"name":"credential","target":"/run/secrets/credential"}]}' \
+    >"$project_root/workload.json"
 chmod 0600 "$project_root/workload.json"
 install -m 0600 "$project_root/workload.json" "$revision_root/workload.json"
 rm -f -- "$revision_root/manifest.sha256"
@@ -532,9 +538,22 @@ printf absent >"$test_root/runtime-mode"
 tag_lookups_before="$(grep -c '^ARG=example.test/web:v1$' "$docker_log" || :)"
 vx_compose_deploy alice web \
     || fail 'immutable canonical deploy did not resolve its accepted tag authority'
+runtime_secret="$project_root/runtime/workload-secrets/current/credential"
+[[ "$(<"$runtime_secret")" == lifecycle-secret \
+    && "$(stat -c '%a' "$project_root/secrets/credential")" == 600 \
+    && "$(stat -c '%a' "$runtime_secret")" == 444 ]] \
+    || fail 'deploy did not materialize its protected runtime secret copy'
+[[ ! -e "$revision_root/runtime" ]] \
+    && ! grep -R -Fq 'lifecycle-secret' "$revision_root" \
+    || fail 'immutable revision retained a disposable runtime secret copy'
 [[ "$(grep -c '^ARG=example.test/web:v1$' "$docker_log" || :)" \
     -gt "$tag_lookups_before" ]] \
     || fail 'bundle refresh inspected the canonical digest instead of accepted tag'
+printf 'rotated-lifecycle-secret\n' >"$project_root/secrets/credential"
+vx_compose_restart alice web \
+    || fail 'restart did not converge after authoritative secret rotation'
+[[ "$(<"$runtime_secret")" == rotated-lifecycle-secret ]] \
+    || fail 'restart did not refresh the runtime secret copy'
 printf '%s\n' 'sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd' \
     >"$test_root/image-id"
 if vx_compose_restart alice web 2>/dev/null; then

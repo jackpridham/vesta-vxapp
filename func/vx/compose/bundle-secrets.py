@@ -19,11 +19,38 @@ def main():
     manifest_fd = os.open(manifest_path, os.O_RDONLY | os.O_NOFOLLOW)
     with os.fdopen(manifest_fd, encoding="utf-8") as handle:
         declared = [entry["name"] for entry in json.load(handle)["secrets"]]
-    source_fd = os.open(source_path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    source_parent = os.path.dirname(source_path)
+    source_name = os.path.basename(source_path)
+    if not os.path.isabs(source_parent) or source_name in ("", ".", ".."):
+        raise ValueError("secret directory path is invalid")
+    grandparent = os.path.dirname(source_parent)
+    parent_name = os.path.basename(source_parent)
+    grandparent_fd = os.open(
+        grandparent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    parent_fd = os.open(
+        parent_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+        dir_fd=grandparent_fd)
+    parent_before = os.fstat(parent_fd)
+    if not stat.S_ISDIR(parent_before.st_mode) \
+            or (parent_before.st_mode & 0o777) != 0o700 \
+            or parent_before.st_uid != os.geteuid() \
+            or parent_before.st_gid != os.getegid():
+        raise ValueError("secret staging parent authority is invalid")
+    source_fd = os.open(source_name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+                        dir_fd=parent_fd)
     source_before = os.fstat(source_fd)
     if not stat.S_ISDIR(source_before.st_mode) or (source_before.st_mode & 0o777) != 0o700 \
             or source_before.st_uid != os.geteuid() or source_before.st_gid != os.getegid():
         raise ValueError("secret directory authority is invalid")
+    test_pause = os.environ.get("VX_COMPOSE_BUNDLE_SECRET_TEST_PAUSE", "") \
+        if os.geteuid() != 0 else ""
+    if test_pause in ("parent", "directory"):
+        marker_path = os.path.join(
+            os.path.dirname(destination_path), ".bundle-secrets-test-ready")
+        marker_fd = os.open(marker_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        os.close(marker_fd)
+        time.sleep(0.2)
+        os.unlink(marker_path)
     if sorted(os.listdir(source_fd)) != sorted(declared):
         raise ValueError("secret input set does not match the manifest")
     os.mkdir(destination_path, 0o700)
@@ -44,7 +71,7 @@ def main():
         output = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
                          0o600, dir_fd=destination_fd)
         os.fchmod(output, 0o600)
-        if os.geteuid() != 0 and os.environ.get("VX_COMPOSE_BUNDLE_SECRET_TEST_PAUSE") == "yes":
+        if test_pause == "yes":
             time.sleep(0.2)
         remaining = before.st_size
         while remaining:
@@ -58,7 +85,15 @@ def main():
         os.close(source_secret)
     if identity(os.fstat(source_fd)) != identity(source_before):
         raise ValueError("secret directory changed during snapshot")
+    binding = lambda value: (value.st_dev, value.st_ino, value.st_mode,
+                             value.st_uid, value.st_gid)
+    if binding(os.stat(source_name, dir_fd=parent_fd, follow_symlinks=False)) \
+            != binding(source_before) \
+            or binding(os.stat(parent_name, dir_fd=grandparent_fd,
+                               follow_symlinks=False)) != binding(parent_before):
+        raise ValueError("secret staging binding changed during snapshot")
     os.fsync(destination_fd); os.close(destination_fd); os.close(source_fd)
+    os.close(parent_fd); os.close(grandparent_fd)
 
 if __name__ == "__main__":
     try: main()

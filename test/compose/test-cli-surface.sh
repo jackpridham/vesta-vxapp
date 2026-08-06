@@ -172,6 +172,14 @@ for public_command in \
         VX_COMPOSE_INVOKE_ENV_OVERRIDE=/tmp/bypass-env \
         VX_COMPOSE_POLICY_OVERRIDE=/tmp/bypass-policy \
         VX_COMPOSE_PROBE_TEST_ENGINE_HELPER=/tmp/bypass-helper \
+        VX_COMPOSE_LIFECYCLE_DEFER_COMMIT=yes \
+        VX_COMPOSE_ROUTES_DEFER_COMMIT=yes \
+        VX_COMPOSE_DOCKER_BIN=/tmp/bypass-docker \
+        VX_COMPOSE_SS_BIN=/tmp/bypass-ss \
+        VX_COMPOSE_ROUTE_COMMAND=/tmp/bypass-route \
+        VX_COMPOSE_ROUTE_CONFIGTEST_COMMAND=/tmp/bypass-configtest \
+        VX_COMPOSE_ROUTE_RELOAD_COMMAND=/tmp/bypass-reload \
+        VX_COMPOSE_NOTIFICATION_COMMAND=/tmp/bypass-notify \
         VX_COMPOSE_TEST_MODE=yes \
         bash -c '
           source "$1"
@@ -182,6 +190,14 @@ for public_command in \
             && -z "${VX_COMPOSE_INVOKE_ENV_OVERRIDE:-}"
             && -z "${VX_COMPOSE_POLICY_OVERRIDE:-}"
             && -z "${VX_COMPOSE_PROBE_TEST_ENGINE_HELPER:-}"
+            && -z "${VX_COMPOSE_LIFECYCLE_DEFER_COMMIT:-}"
+            && -z "${VX_COMPOSE_ROUTES_DEFER_COMMIT:-}"
+            && -z "${VX_COMPOSE_DOCKER_BIN:-}"
+            && -z "${VX_COMPOSE_SS_BIN:-}"
+            && -z "${VX_COMPOSE_ROUTE_COMMAND:-}"
+            && -z "${VX_COMPOSE_ROUTE_CONFIGTEST_COMMAND:-}"
+            && -z "${VX_COMPOSE_ROUTE_RELOAD_COMMAND:-}"
+            && -z "${VX_COMPOSE_NOTIFICATION_COMMAND:-}"
             && -z "${VX_COMPOSE_TEST_MODE:-}" ]]
         ' "$public_command" "$repo_root/func/vx/compose/main.sh"; then
         fail "public override environment survived $public_command"

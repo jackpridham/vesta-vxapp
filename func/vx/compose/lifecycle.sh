@@ -286,6 +286,12 @@ vx_compose_run_lifecycle() {
         vx_compose_error 'current workload image approval is unavailable'
         return 1
     fi
+    if [[ "$action" =~ ^(deploy|start|restart|recreate)$ ]] \
+        && ! vx_compose_runtime_secrets_materialize "$owner" "$project"; then
+        vx_compose_lock_release
+        vx_compose_error 'runtime workload secrets are unavailable'
+        return 1
+    fi
     if [[ "$action" =~ ^(deploy|start|restart|recreate)$ ]]; then
         timeout="$(vx_compose_convergence_timeout "$owner" "$project")" || {
             vx_compose_lock_release

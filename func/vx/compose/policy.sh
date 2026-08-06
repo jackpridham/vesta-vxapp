@@ -327,7 +327,7 @@ vx_compose_policy_check_managed_secrets() {
     local owner="${2:-}"
     local project="${3:-}"
     local validation_secret_root="${4:-}"
-    local secret_name configured_path expected_path validation_path
+    local secret_name configured_path expected_path runtime_path validation_path
 
     if jq -e '
         ((.secrets // {}) | length == 0)
@@ -372,11 +372,14 @@ vx_compose_policy_check_managed_secrets() {
         configured_path="$(jq -r --arg name "$secret_name" \
             '.secrets[$name].file' "$canonical_json")"
         expected_path="$(vx_compose_secret_path "$owner" "$project" "$secret_name")"
+        runtime_path="$(vx_compose_runtime_secret_path \
+            "$owner" "$project" "$secret_name")"
         validation_path="$expected_path"
         if [[ -n "$validation_secret_root" ]]; then
             validation_path="$validation_secret_root/$secret_name"
         fi
-        [[ "$configured_path" == "$expected_path"
+        [[ ( "$configured_path" == "$expected_path"
+                || "$configured_path" == "$runtime_path" )
             && -f "$validation_path"
             && ! -L "$validation_path"
             && "$(stat -c '%a' "$validation_path")" == 600 ]] \
