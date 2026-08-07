@@ -1,16 +1,13 @@
-# Docker Orchestration Deployment - vesta-vxapp | Vortex Enterprises
+# Docker Orchestration Deployment for vesta-vxapp
 
-This runbook explains how an ordinary Vesta account such as
-`asterisk-vxapp` or `slave-vxapp` can deploy and operate its own Docker
-Compose projects through vesta-vxapp. It covers the complete path from account
-entitlement and SSH access through image delivery, Compose preview/apply,
-routes, data, operations, backup, and recovery.
+This runbook explains how an ordinary Vesta account such as `appuser` can
+deploy and operate its own Docker Compose projects through vesta-vxapp. It
+covers the complete path from account entitlement and SSH access through image
+delivery, Compose preview/apply, routes, data, operations, backup, and
+recovery.
 
-> **Important:** a Unix/Vesta user may literally be named `slave-vxapp`, but
-> that does not grant the privileged Compose profile also named
-> `slave-vxapp`. Every tenant SSH command is forced to the owner-equal
-> `standard` profile. Privileged profiles and production workload changes are
-> administrator-only.
+Every tenant SSH command is forced to the owner-equal `standard` profile.
+Privileged profiles and production workload changes are administrator-only.
 
 ## 1. The deployment model
 
@@ -42,7 +39,7 @@ tenant.
 
 ### 2.1 Install Docker orchestration and shell access
 
-Install the repository release through the normal vesta-vxapp release process,
+Install the vesta-vxapp release through the normal release process,
 then install or repair the shell-access boundary:
 
 ```bash
@@ -72,14 +69,96 @@ An eligible tenant must be all of the following:
 - within the package's service, CPU, memory, PID, storage, port, secret, and
   volume limits.
 
-Set these through the Vesta package and user interfaces. Do not manually edit
-`user.conf` or `/etc/group`. Normal user/package/shell lifecycle commands
+#### Compose package fields
+
+All nine Compose quota fields are part of the assigned Vesta package:
+
+| Field | Meaning | Unit |
+| --- | --- | --- |
+| `DOCKER_PROJECTS` | Maximum managed Compose projects | count |
+| `DOCKER_SERVICES` | Total services across the owner's projects | count |
+| `DOCKER_CPUS` | Aggregate declared service CPU limits | CPU cores, up to three decimal places |
+| `DOCKER_MEMORY_MB` | Aggregate declared service memory limits | MiB |
+| `DOCKER_PIDS` | Aggregate declared service PID limits | count |
+| `DOCKER_STORAGE_MB` | Definitions, revisions, retained binds, and measurable managed volumes | MiB |
+| `DOCKER_PORTS` | Published port mappings | count |
+| `DOCKER_SECRETS` | Managed secret declarations | count |
+| `DOCKER_VOLUMES` | Managed named volumes | count |
+
+For each field, `0` disables that capability and `unlimited` has the normal
+Vesta unlimited meaning. Prefer explicit bounded limits. `DOCKER_PROJECTS`
+must be greater than zero (or `unlimited`) for `v-docker` shell access. Other
+fields may remain zero only when the tenant's workloads do not consume that
+resource. Every service must still declare CPU, memory, and PID limits, so a
+usable package normally grants non-zero values for all three resource fields.
+Shipped default packages set the Compose fields to `0`; explicitly enable the
+required dimensions in a dedicated package before onboarding a tenant.
+
+The matching `U_DOCKER_*` fields are system-maintained usage counters. Do not
+put them in a package or edit them by hand. Validation sums usage across all
+of the owner's projects. Exceeding a limit rejects growth and start-like
+operations; it does not delete projects or retained data.
+
+An illustrative small package allocation is:
+
+```text
+DOCKER_PROJECTS='2'
+DOCKER_SERVICES='6'
+DOCKER_CPUS='2.000'
+DOCKER_MEMORY_MB='4096'
+DOCKER_PIDS='1024'
+DOCKER_STORAGE_MB='20480'
+DOCKER_PORTS='8'
+DOCKER_SECRETS='16'
+DOCKER_VOLUMES='8'
+```
+
+These are examples, not production sizing recommendations. Size the package
+from the canonical Compose service limits, expected retained data, revisions,
+and published endpoints. A port range consumes one port quota entry for every
+expanded published port.
+
+#### Create, update, and assign the package
+
+The recommended operator flow is the Vesta administrator package UI: create a
+dedicated package (or edit an existing dedicated package), fill all nine
+Compose fields, and assign it to the tenant. Avoid changing a shared default
+package just to enable one workload.
+
+The equivalent command boundaries are:
+
+```text
+v-add-user-package PKG_DIR PACKAGE
+v-add-user-package PKG_DIR PACKAGE yes        # replace an existing package
+v-update-user-package PACKAGE                 # propagate edits to assigned users
+v-change-user-package USER PACKAGE            # assign a package to one user
+```
+
+`PKG_DIR/PACKAGE.pkg` must be a complete valid Vesta package, not only the
+nine-line fragment above. Use `yes` replacement only after reviewing every
+non-Docker and Docker field. A Compose package reduction is refused when any
+new limit would fall below current Compose usage. The `FORCE=yes` form of
+`v-change-user-package` does not bypass Compose quota coverage, delete data, or
+make an over-limit workload healthy.
+
+After creating or editing a package, propagate it and assign it as needed:
+
+```bash
+sudo /usr/local/vesta/bin/v-update-user-package compose-standard
+sudo /usr/local/vesta/bin/v-change-user-package appuser compose-standard
+sudo /usr/local/vesta/bin/v-change-user-shell appuser bash
+```
+
+Package assignment and shell changes automatically reconcile shell access.
+Changing the package does not itself replace the user's current login shell,
+so set Bash explicitly when onboarding a previously non-interactive account.
+Do not manually edit the authoritative package file, `user.conf`, usage
+counters, or `/etc/group`. Normal user/package/shell lifecycle commands
 reconcile membership automatically. An operator can repair one account or all
 accounts explicitly:
 
 ```bash
-sudo /usr/local/vesta/bin/v-sync-docker-shell-access asterisk-vxapp
-sudo /usr/local/vesta/bin/v-sync-docker-shell-access slave-vxapp
+sudo /usr/local/vesta/bin/v-sync-docker-shell-access appuser
 sudo /usr/local/vesta/bin/v-sync-docker-shell-access-all
 ```
 
@@ -87,8 +166,7 @@ Verify the installation without granting broader sudo:
 
 ```bash
 getent group vesta-compose-users
-sudo -l -U asterisk-vxapp
-sudo -l -U slave-vxapp
+sudo -l -U appuser
 ```
 
 The only Compose privilege shown for an eligible user should be the exact
@@ -97,14 +175,39 @@ membership are rechecked on every call. A fresh login may be needed before an
 interactive shell displays changed supplementary groups, but live broker
 authorization changes immediately.
 
+#### Verify effective package values
+
+The operator's authoritative diagnostic is:
+
+```bash
+sudo /usr/local/vesta/bin/v-list-docker-compose-quota appuser json | jq .
+```
+
+The tenant sees the same owner-scoped diagnostic through:
+
+```bash
+v-docker quota json | jq .
+```
+
+For each quota row:
+
+- `PACKAGE_VALUE` is the value in the currently assigned package;
+- `EFFECTIVE_VALUE` is the value persisted for and enforced on the user; and
+- `USED` is the current system-maintained usage.
+
+After a package edit, a difference between `PACKAGE_VALUE` and
+`EFFECTIVE_VALUE` normally means the package has not yet been propagated with
+`v-update-user-package`, or the user has not been reassigned. Confirm all nine
+effective limits before granting SSH access or attempting the first preview.
+
 ### 2.3 Configure SSH safely
 
 Use an ordinary SSH public key for the tenant account. For example, from the
 operator workstation:
 
 ```bash
-ssh-copy-id asterisk-vxapp@vesta.example.com
-ssh asterisk-vxapp@vesta.example.com /usr/local/bin/v-docker quota json
+ssh-copy-id appuser@vesta.example.com
+ssh appuser@vesta.example.com /usr/local/bin/v-docker quota json
 ```
 
 For automation, provision a dedicated deployment key, restrict possession of
@@ -117,17 +220,10 @@ administrator key, or expose the Vesta/Docker socket over SSH.
 Log in as the tenant itself:
 
 ```bash
-ssh asterisk-vxapp@vesta.example.com
+ssh appuser@vesta.example.com
 command -v v-docker
 v-docker quota json | jq .
 v-docker projects json | jq .
-```
-
-The same flow works for a user named `slave-vxapp`:
-
-```bash
-ssh slave-vxapp@vesta.example.com
-v-docker quota json | jq .
 ```
 
 Do not run `sudo v-*` commands directly. `v-docker` invokes the one permitted
@@ -163,10 +259,10 @@ owner-scoped pull and trust interfaces:
 
 ```bash
 sudo /usr/local/vesta/bin/v-pull-docker-image \
-  asterisk-vxapp \
+  appuser \
   registry.example.com/team/app@sha256:DIGEST
 sudo /usr/local/vesta/bin/v-verify-docker-image-trust \
-  asterisk-vxapp \
+  appuser \
   registry.example.com/team/app@sha256:DIGEST \
   standard json
 ```
@@ -249,7 +345,7 @@ services:
         protocol: tcp
     volumes:
       - type: bind
-        source: /home/asterisk-vxapp/docker/app/binds/config
+        source: /home/appuser/docker/app/binds/config
         target: /app/config
         read_only: true
         bind:
@@ -266,9 +362,9 @@ the first preview:
 ```bash
 sudo /usr/bin/perl \
   /usr/local/vesta/func/vx/compose/managed-directory.pl \
-  asterisk-vxapp /home app config normal
+  appuser /home app config normal
 sudo stat -c '%U:%G %a %n' \
-  /home/asterisk-vxapp/docker/app/binds/config
+  /home/appuser/docker/app/binds/config
 ```
 
 The authority-owned traversal is mode `0750`; the direct `config` leaf becomes
@@ -279,7 +375,7 @@ sources must be direct children such as `binds/config`, not nested arbitrary
 host paths. Repeat the reviewed helper call for each required leaf.
 
 Do not copy this file into Vesta's protected desired-state directory. Keep it
-in the application repository and send it to preview over SSH.
+in the application source tree and send it to preview over SSH.
 
 ## 6. Create or update through SSH preview/apply
 
@@ -294,7 +390,7 @@ From the developer workstation, stream the local file over SSH:
 
 ```bash
 preview_json="$(
-  ssh asterisk-vxapp@vesta.example.com \
+  ssh appuser@vesta.example.com \
     '/usr/local/bin/v-docker preview app add' < compose.yaml
 )"
 printf '%s\n' "$preview_json" | jq .
@@ -311,7 +407,7 @@ source_sha="$(jq -er '.SOURCE_SHA256' <<<"$preview_json")"
 candidate_sha="$(jq -er '.CANDIDATE_SHA256' <<<"$preview_json")"
 revision="$(jq -er '.EXPECTED_CURRENT_REVISION' <<<"$preview_json")"
 
-ssh asterisk-vxapp@vesta.example.com \
+ssh appuser@vesta.example.com \
   "/usr/local/bin/v-docker apply app $preview_id $source_sha $candidate_sha $revision"
 ```
 
@@ -321,7 +417,7 @@ Change only the mode:
 
 ```bash
 preview_json="$(
-  ssh asterisk-vxapp@vesta.example.com \
+  ssh appuser@vesta.example.com \
     '/usr/local/bin/v-docker preview app change' < compose.yaml
 )"
 printf '%s\n' "$preview_json" | jq .
@@ -440,14 +536,14 @@ tenant-owned managed bind leaf. For example:
 
 ```bash
 rsync -a -- ./public/ \
-  asterisk-vxapp@vesta.example.com:/home/asterisk-vxapp/docker/app/binds/public/
+  appuser@vesta.example.com:/home/appuser/docker/app/binds/public/
 ```
 
 or:
 
 ```bash
 scp -- ./config/defaults.json \
-  asterisk-vxapp@vesta.example.com:/home/asterisk-vxapp/docker/app/binds/config/
+  appuser@vesta.example.com:/home/appuser/docker/app/binds/config/
 ```
 
 Guidelines:
@@ -479,7 +575,7 @@ v-docker secret-delete app database-password
 
 Deletion is refused while the current revision references the secret. Listings
 show redacted metadata, never values. Do not store secret values in Compose,
-CI logs, shell tracing, argv, repository files, routes, health checks, or
+CI logs, shell tracing, argv, source-controlled files, routes, health checks, or
 unencrypted backups.
 
 Creating a brand-new secret-dependent workload may require the protected
@@ -504,13 +600,13 @@ the operator runs:
 
 ```bash
 sudo /usr/local/vesta/bin/v-plan-docker-workload-bundle \
-  admin asterisk-vxapp app \
+  admin appuser app \
   /tmp/vx-compose-bundle.STAGING_ID/bundle.tar.gz \
   /tmp/vx-compose-bundle.STAGING_ID/bundle.sha256 \
   add json
 
 sudo /usr/local/vesta/bin/v-import-docker-workload-bundle \
-  admin asterisk-vxapp app \
+  admin appuser app \
   /tmp/vx-compose-bundle.STAGING_ID/bundle.tar.gz \
   /tmp/vx-compose-bundle.STAGING_ID/bundle.sha256 \
   add 0 \
@@ -618,9 +714,9 @@ operation using the retained managed backup:
 
 ```bash
 sudo /usr/local/vesta/bin/v-restore-docker-project \
-  asterisk-vxapp app managed:BACKUP_ID validate
+  appuser app managed:BACKUP_ID validate
 sudo /usr/local/vesta/bin/v-restore-docker-project \
-  asterisk-vxapp app managed:BACKUP_ID apply
+  appuser app managed:BACKUP_ID apply
 ```
 
 The operator must inspect and preserve retained bind/volume data before doing
@@ -766,7 +862,7 @@ Never grant or automate any of the following for a tenant:
 - Docker group/socket access or raw Docker/Compose;
 - direct tenant sudo to existing `v-*` commands;
 - caller-supplied owner, actor, or profile;
-- `admin-approved` or privileged `slave-vxapp` profile selection;
+- any administrator-only or privileged profile selection;
 - Docker sockets, privileged mode, host networking/PID/IPC, devices, unsafe
   capabilities, arbitrary host paths, or automatic bind creation;
 - secret/registry values in argv, environment metadata, logs, UI, audit, or
