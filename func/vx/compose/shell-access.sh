@@ -27,6 +27,10 @@ vx_compose_shell_actor_gids() {
     /usr/bin/id -G "$1"
 }
 
+vx_compose_shell_getfacl() {
+    /usr/bin/getfacl -cnep -- "$1"
+}
+
 vx_compose_shell_groups() {
     /usr/bin/id -nG "$1"
 }
@@ -62,6 +66,7 @@ vx_compose_shell_group_contains() {
 
 vx_compose_shell_user_conf_secure() {
     local actor="$1" conf="$2" authority_uid actor_uid mode file_gid links gid
+    local acl line qualifier permissions effective
     [[ -f "$conf" && ! -L "$conf" ]] || return 1
     authority_uid="$(vx_compose_authority_uid)" || return 1
     actor_uid="$(vx_compose_shell_actor_uid "$actor" 2>/dev/null)" || return 1
@@ -77,6 +82,20 @@ vx_compose_shell_user_conf_secure() {
             [[ "$gid" != "$file_gid" ]] || return 1
         done
     fi
+    acl="$(vx_compose_shell_getfacl "$conf" 2>/dev/null)" || return 1
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        if [[ "$line" =~ ^(user|group):([0-9]*):([rwx-]{3})([[:space:]]+#effective:([rwx-]{3}))?$ ]]; then
+            qualifier="${BASH_REMATCH[2]}"
+            permissions="${BASH_REMATCH[3]}"
+            effective="${BASH_REMATCH[5]:-$permissions}"
+            [[ -z "$qualifier" || "$effective" != *w* ]] || return 1
+        elif [[ "$line" =~ ^(mask|other)::([rwx-]{3})$ ]]; then
+            :
+        else
+            return 1
+        fi
+    done <<<"$acl"
 }
 
 vx_compose_shell_group_revoke() {

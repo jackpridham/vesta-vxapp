@@ -85,6 +85,7 @@ secure_parent_chain() {
 [[ "$EUID" == 0 ]] || fail 'root privileges are required'
 [[ -z "$mode" || "$mode" == defer ]] || fail 'argument must be defer'
 [[ "$#" -le 1 ]] || fail 'too many arguments'
+[[ -x /usr/bin/getfacl ]] || fail 'getfacl is required for shell access'
 
 if ! /usr/bin/getent group "$group" >/dev/null 2>&1; then
     /usr/sbin/groupadd --system "$group" || fail 'unable to create access group'

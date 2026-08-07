@@ -29,6 +29,19 @@ vx_compose_package_integer_normalize() {
     printf '%s\n' "$value"
 }
 
+vx_compose_package_integer_multiply() {
+    local normalized_value normalized_factor
+
+    normalized_value="$(vx_compose_package_integer_normalize "$1")" \
+        || return 1
+    normalized_factor="$(vx_compose_package_integer_normalize "$2")" \
+        || return 1
+    (( 10#$normalized_factor != 0 )) || return 1
+    (( 10#$normalized_value <= 10#$VX_COMPOSE_PACKAGE_MAX_VALUE / 10#$normalized_factor )) \
+        || return 1
+    printf '%s\n' "$((10#$normalized_value * 10#$normalized_factor))"
+}
+
 vx_compose_package_cpu_normalize() {
     local value="$1" integer fraction
 
@@ -59,6 +72,7 @@ vx_compose_package_unset_values() {
 vx_compose_package_data_with_defaults() {
     local package_data="$1"
     local field legacy_limit default_value normalized_legacy_limit
+    local legacy_memory legacy_pids values value count
 
     legacy_limit="$(sed -n "s/^DOCKER_CONTAINERS='\\([^']*\\)'$/\\1/p" \
         <<<"$package_data")"
@@ -70,19 +84,37 @@ vx_compose_package_data_with_defaults() {
                 default_value=unlimited
             elif normalized_legacy_limit="$(
                 vx_compose_package_integer_normalize "$legacy_limit"
-            )" && [[ "$normalized_legacy_limit" != 0 ]]; then
+            )" && [[ "$normalized_legacy_limit" != 0 ]] \
+                && legacy_memory="$(
+                    vx_compose_package_integer_multiply "$normalized_legacy_limit" 1024
+                )" && legacy_pids="$(
+                    vx_compose_package_integer_multiply "$normalized_legacy_limit" 128
+                )"; then
                 case "$field" in
                     DOCKER_PROJECTS|DOCKER_SERVICES|DOCKER_PORTS)
                         default_value="$normalized_legacy_limit"
                         ;;
                     DOCKER_CPUS) default_value="$normalized_legacy_limit.000" ;;
-                    DOCKER_MEMORY_MB) default_value=$((10#$normalized_legacy_limit * 1024)) ;;
-                    DOCKER_PIDS) default_value=$((10#$normalized_legacy_limit * 128)) ;;
-                    DOCKER_STORAGE_MB) default_value=$((10#$normalized_legacy_limit * 1024)) ;;
+                    DOCKER_MEMORY_MB) default_value="$legacy_memory" ;;
+                    DOCKER_PIDS) default_value="$legacy_pids" ;;
+                    DOCKER_STORAGE_MB) default_value="$legacy_memory" ;;
                 esac
             fi
             package_data="${package_data}
 ${field}='${default_value}'"
+        fi
+    done
+    for field in "${VX_COMPOSE_PACKAGE_FIELDS[@]}"; do
+        values="$(sed -n "s/^${field}='\\([^']*\\)'$/\\1/p" <<<"$package_data")" \
+            || return 1
+        count="$(grep -c . <<<"$values")" || true
+        [[ "$count" == 1 ]] || return 1
+        value="$values"
+        [[ "$value" == unlimited ]] && continue
+        if [[ "$field" == DOCKER_CPUS ]]; then
+            vx_compose_package_cpu_normalize "$value" >/dev/null || return 1
+        else
+            vx_compose_package_integer_normalize "$value" >/dev/null || return 1
         fi
     done
     printf '%s\n' "$package_data"

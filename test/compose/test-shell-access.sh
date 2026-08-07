@@ -71,6 +71,30 @@ ln "$fixture/data/users/alice/user.conf" "$fixture/data/users/alice/hardlinked.c
 rm "$fixture/data/users/alice/hardlinked.conf"
 chmod 0666 "$fixture/data/users/alice/user.conf"
 ! vx_compose_shell_require_eligible alice >/dev/null 2>&1 || fail 'actor-writable user.conf accepted'
+chmod 0660 "$fixture/data/users/alice/user.conf"
+actor_gids_definition="$(declare -f vx_compose_shell_actor_gids)"
+acl_actor_gid=$(( $(stat -c '%g' "$fixture/data/users/alice/user.conf") + 1 ))
+vx_compose_shell_actor_gids() { printf '%s\n' "$acl_actor_gid"; }
+setfacl -m u:1101:r-- "$fixture/data/users/alice/user.conf"
+vx_compose_shell_require_eligible alice \
+    || fail 'read-only named user.conf ACL was rejected'
+setfacl -m u:1101:rw- "$fixture/data/users/alice/user.conf"
+[[ "$(stat -c '%u:%g:%a:%h' "$fixture/data/users/alice/user.conf")" \
+    == "$(stat -c '%u' "$fixture"):$(stat -c '%g' "$fixture/data/users/alice/user.conf"):660:1" ]] \
+    || fail 'named ACL regression fixture does not have protected mode/link facts'
+[[ "$(stat -c '%g' "$fixture/data/users/alice/user.conf")" != "$acl_actor_gid" ]] \
+    || fail 'named ACL regression fixture group is actor-accessible'
+! vx_compose_shell_require_eligible alice >/dev/null 2>&1 \
+    || fail 'actor-writable named user.conf ACL accepted'
+setfacl -b "$fixture/data/users/alice/user.conf"
+unset -f vx_compose_shell_actor_gids
+eval "$actor_gids_definition"
+getfacl_definition="$(declare -f vx_compose_shell_getfacl)"
+vx_compose_shell_getfacl() { return 1; }
+! vx_compose_shell_require_eligible alice >/dev/null 2>&1 \
+    || fail 'failed user.conf ACL inspection was accepted'
+unset -f vx_compose_shell_getfacl
+eval "$getfacl_definition"
 
 test_passwd_actor=bob test_passwd_uid=1101 test_passwd_shell=bash
 export SUDO_USER=alice SUDO_UID=1101 SUDO_GID=1101

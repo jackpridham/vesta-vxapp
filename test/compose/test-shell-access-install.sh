@@ -32,6 +32,13 @@ grep -Fq '/usr/bin/mv -fT -- "$temp" "$target_policy"' "$installer" || fail 'pol
 grep -Fq '/usr/bin/install -m 0440 -o root -g root' "$installer" || fail 'staged policy ownership/mode is not exact'
 grep -Fq '/usr/bin/mv -fT -- "$client_stage" "$client_link"' "$installer" || fail 'client link is not atomically renamed'
 grep -Fq 'v-sync-docker-shell-access-all' "$installer" || fail 'normal install does not reconcile users'
+grep -Fq '[[ -x /usr/bin/getfacl ]]' "$installer" || fail 'installer does not require ACL inspection'
+grep -Fq 'Depends: acl,' "$repo_root/src/deb/vesta/control" || fail 'Debian package omits ACL dependency'
+for release in 10 11 12 13; do
+    release_block="$(sed -n "/if \[ \"\$release\" -eq $release \]/,/^elif \|^fi$/p" "$repo_root/install/vst-install-debian.sh")"
+    grep -Eq '(^|[[:space:]])acl([[:space:]]|$)' <<<"$release_block" \
+        || fail "Debian $release installer omits ACL package"
+done
 
 for file in install/vst-install-debian.sh install/vst-install-ubuntu.sh install/vst-install-rhel.sh install/vst-install-amazon.sh src/deb/vesta/postinst src/rpm/specs/vesta.spec bin/v-install-docker-service; do
     grep -Fq 'v-install-docker-shell-access' "$repo_root/$file" || fail "$file omits shell-access installation"

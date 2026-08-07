@@ -40,6 +40,7 @@ is_package_avalable() {
     pkg_data=$(cat $VESTA/data/packages/$package.pkg |grep -v TIME |\
         grep -v DATE)
     pkg_data=$(vx_compose_package_data_with_defaults "$pkg_data")
+    check_result $? "Docker package limits are invalid" $E_INVALID
     parse_object_kv_list_non_eval $pkg_data
     vx_compose_package_apply_defaults
 
@@ -95,14 +96,42 @@ is_package_avalable() {
     is_proxy_template_valid $PROXY_TEMPLATE
 }
 
+is_compose_package_avalable() {
+
+    vx_compose_package_unset_values
+    usr_data=$(cat $USER_DATA/user.conf)
+    IFS=$'\n'
+    for key in $usr_data; do
+        parse_object_kv_list_non_eval $key
+    done
+
+    pkg_data=$(cat $VESTA/data/packages/$package.pkg |grep -v TIME |\
+        grep -v DATE)
+    pkg_data=$(vx_compose_package_data_with_defaults "$pkg_data")
+    check_result $? "Docker package limits are invalid" $E_INVALID
+    parse_object_kv_list_non_eval $pkg_data
+    vx_compose_package_apply_defaults
+    if ! vx_compose_package_usage_is_covered; then
+        check_result \
+            $E_LIMIT \
+            "Package doesn't cover $VX_COMPOSE_PACKAGE_OVERAGE_FIELD usage"
+    fi
+}
+
 change_user_package() {
     parse_object_kv_list_non_eval $(cat $USER_DATA/user.conf)
     pkg_data=$(cat $VESTA/data/packages/$package.pkg |egrep -v "TIME|DATE")
     pkg_data=$(vx_compose_package_data_with_defaults "$pkg_data")
+    check_result $? "Docker package limits are invalid" $E_INVALID
     parse_object_kv_list_non_eval $pkg_data
     DOCKER_CONTAINERS=${DOCKER_CONTAINERS-0}
     U_DOCKER_CONTAINERS=${U_DOCKER_CONTAINERS-0}
     vx_compose_package_apply_defaults
+    if ! vx_compose_package_usage_is_covered; then
+        check_result \
+            $E_LIMIT \
+            "Package doesn't cover $VX_COMPOSE_PACKAGE_OVERAGE_FIELD usage"
+    fi
     echo "FNAME='$FNAME'
 LNAME='$LNAME'
 PACKAGE='$package'
@@ -190,6 +219,8 @@ is_object_valid 'user' 'USER' "$user"
 is_package_valid
 if [ "$force" != 'yes' ];then
     is_package_avalable
+else
+    is_compose_package_avalable
 fi
 
 vx_compose_shell_access_lock_acquire "$user"

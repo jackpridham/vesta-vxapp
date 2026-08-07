@@ -97,6 +97,24 @@ for field in "${quota_fields[@]}"; do
         || fail "oversized legacy limit did not fail closed for $field"
 done
 
+legacy_multiplication_oversized="$(
+    vx_compose_package_data_with_defaults "DOCKER_CONTAINERS='2097152'"
+)"
+for field in "${quota_fields[@]}"; do
+    grep -Eq "^${field}='0'$" <<<"$legacy_multiplication_oversized" \
+        || fail "multiplication-oversized legacy limit did not fail closed for $field"
+done
+legacy_multiplication_max="$(
+    vx_compose_package_data_with_defaults "DOCKER_CONTAINERS='2097151'"
+)"
+grep -Eq "^DOCKER_MEMORY_MB='2147482624'$" <<<"$legacy_multiplication_max" \
+    || fail 'largest safely derivable legacy memory limit was rejected'
+
+explicit_oversized=$'DOCKER_CONTAINERS=\'1\'\nDOCKER_MEMORY_MB=\'2147483648\''
+if vx_compose_package_data_with_defaults "$explicit_oversized" >/dev/null; then
+    fail 'oversized explicit Compose package limit was accepted'
+fi
+
 for field in "${quota_fields[@]}"; do
     printf -v "$field" '%s' 10
     printf -v "U_$field" '%s' 10
@@ -382,5 +400,100 @@ VESTA="$VESTA" \
     "$package_source" validtemplates
 [[ -f "$VESTA/data/packages/validtemplates.pkg" ]] \
     || fail 'valid package was not copied after all template validators passed'
+
+change_root="$test_root/change-package"
+export VESTA="$change_root/vesta"
+mkdir -p \
+    "$VESTA/conf" \
+    "$VESTA/data/packages" \
+    "$VESTA/data/users/alice" \
+    "$VESTA/func/vx/compose"
+cat >"$VESTA/func/main.sh" <<'EOF'
+OK=0
+E_INVALID=3
+E_LIMIT=4
+ARGUMENTS=''
+USER_DATA="$VESTA/data/users/$user"
+BIN="$VESTA/bin"
+check_args() { :; }
+is_format_valid() { :; }
+is_object_valid() { :; }
+is_package_valid() { :; }
+is_web_template_valid() { :; }
+is_dns_template_valid() { :; }
+is_proxy_template_valid() { :; }
+log_history() { :; }
+log_event() { :; }
+check_result() {
+    local code="$1" message="$2"
+    (( code == 0 )) && return 0
+    printf '%s\n' "$message" >&2
+    exit "$code"
+}
+parse_object_kv_list_non_eval() {
+    local assignment key value
+    for assignment in "$@"; do
+        key="${assignment%%=*}"
+        value="${assignment#*=}"
+        value="${value#\'}"
+        value="${value%\'}"
+        printf -v "$key" '%s' "$value"
+    done
+}
+EOF
+: >"$VESTA/func/domain.sh"
+cat >"$VESTA/func/vx/compose/main.sh" <<'EOF'
+source "$VX_TEST_REPO_ROOT/func/vx/compose/package.sh"
+vx_compose_shell_access_lock_acquire() { printf 'lock\n' >>"$VX_TEST_MUTATIONS"; }
+vx_compose_shell_access_lock_release() { :; }
+vx_compose_shell_access_deny_establish() { printf 'deny\n' >>"$VX_TEST_MUTATIONS"; }
+vx_compose_shell_group_revoke() { printf 'revoke\n' >>"$VX_TEST_MUTATIONS"; }
+vx_compose_shell_access_transition_complete() { printf 'complete\n' >>"$VX_TEST_MUTATIONS"; }
+EOF
+printf "DISK_QUOTA='no'\n" >"$VESTA/conf/vesta.conf"
+cat >"$VESTA/data/users/alice/user.conf" <<'EOF'
+PACKAGE='current'
+U_DOCKER_PROJECTS='2'
+U_DOCKER_SERVICES='0'
+U_DOCKER_CPUS='0.000'
+U_DOCKER_MEMORY_MB='0'
+U_DOCKER_PIDS='0'
+U_DOCKER_STORAGE_MB='0'
+U_DOCKER_PORTS='0'
+U_DOCKER_SECRETS='0'
+U_DOCKER_VOLUMES='0'
+EOF
+change_user_before="$(sha256sum "$VESTA/data/users/alice/user.conf")"
+mutations="$change_root/mutations"
+: >"$mutations"
+cat >"$VESTA/data/packages/under.pkg" <<'EOF'
+DOCKER_CONTAINERS='1'
+DOCKER_PROJECTS='1'
+EOF
+if VX_TEST_REPO_ROOT="$repo_root" VX_TEST_MUTATIONS="$mutations" \
+    "$repo_root/bin/v-change-user-package" alice under yes \
+    >"$change_root/under.out" 2>&1; then
+    fail 'forced package update bypassed Compose usage coverage'
+fi
+grep -Fq "Package doesn't cover DOCKER_PROJECTS usage" "$change_root/under.out" \
+    || fail 'forced under-coverage returned the wrong diagnostic'
+[[ ! -s "$mutations" ]] || fail 'forced under-coverage reached package mutation'
+[[ "$(sha256sum "$VESTA/data/users/alice/user.conf")" == "$change_user_before" ]] \
+    || fail 'forced under-coverage changed user.conf'
+
+cat >"$VESTA/data/packages/oversized.pkg" <<'EOF'
+DOCKER_CONTAINERS='1'
+DOCKER_MEMORY_MB='2147483648'
+EOF
+if VX_TEST_REPO_ROOT="$repo_root" VX_TEST_MUTATIONS="$mutations" \
+    "$repo_root/bin/v-change-user-package" alice oversized yes \
+    >"$change_root/oversized.out" 2>&1; then
+    fail 'forced package update propagated an oversized Compose limit'
+fi
+grep -Fq 'Docker package limits are invalid' "$change_root/oversized.out" \
+    || fail 'forced oversized update returned the wrong diagnostic'
+[[ ! -s "$mutations" ]] || fail 'forced oversized update reached package mutation'
+[[ "$(sha256sum "$VESTA/data/users/alice/user.conf")" == "$change_user_before" ]] \
+    || fail 'forced oversized update changed user.conf'
 
 echo "Compose package integration tests passed."
