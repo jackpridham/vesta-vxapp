@@ -179,6 +179,7 @@ to make shell delivery easier.
 | `test/compose/test-shell-access-concurrency.sh` | Revocation/operation ordering and access-lock tests |
 | `test/compose/test-shell-access-install.sh` | Group, sudoers, installer, package upgrade, idempotence, rollback tests |
 | `test/test_compose_package_form.php` | Package add/edit round-trip for all Compose quota fields |
+| `.docs/validation/2026-08-07-compose-shell-access-development.md` | Exact commit, overlay, host-local acceptance, cleanup, and rollback evidence from `192.168.100.100` |
 
 Do not restructure unrelated upstream user/package code. Hooks in existing
 commands should remain thin calls into `shell-access.sh`.
@@ -1300,6 +1301,7 @@ git commit -m "feat(compose): install tenant Docker shell access"
 **Files:**
 
 - Create: `test/compose/test-shell-access-root-integration.sh`
+- Create: `.docs/validation/2026-08-07-compose-shell-access-development.md`
 - Modify: `test/compose/test-docker-readiness.sh`
 - Modify: `test/compose/test-malicious-input.sh`
 - Modify: `test/compose/test-policy.sh`
@@ -1353,7 +1355,165 @@ sudo -l -U vx-shell-alice
 Expected: only
 `/usr/local/vesta/bin/v-run-user-docker-command *`; no other NOPASSWD command.
 
-- [ ] **Step 4: Run focused security regressions**
+- [ ] **Step 4: Deploy the exact implementation commit to the development server**
+
+This step is authorized only for the development Vesta host
+`debian@192.168.100.100`, reached through
+`gizmo@192.168.100.16`. Do not connect to, deploy to, restart, or mutate
+production. Do not use a hostname alias for the target and do not use
+`rsync --delete`.
+
+Require a clean, remotely recoverable implementation commit:
+
+```bash
+git diff --exit-code
+git diff --cached --exit-code
+release_commit="$(git rev-parse HEAD)"
+git branch -r --contains "$release_commit"
+```
+
+Expected: both diffs are empty and a pushed remote branch contains the exact
+commit. Build an overlay containing only the runtime files changed by this
+feature:
+
+```bash
+overlay_root="$(mktemp -d /var/tmp/vesta-shell-access-overlay.XXXXXXXX)"
+git archive "$release_commit" \
+  bin/v-docker \
+  bin/v-run-user-docker-command \
+  bin/v-sync-docker-shell-access \
+  bin/v-sync-docker-shell-access-all \
+  bin/v-install-docker-shell-access \
+  bin/v-install-docker-service \
+  bin/v-add-user \
+  bin/v-change-user-package \
+  bin/v-update-user-package \
+  bin/v-change-user-shell \
+  bin/v-suspend-user \
+  bin/v-unsuspend-user \
+  bin/v-rebuild-user \
+  bin/v-delete-user \
+  func/vx/compose/main.sh \
+  func/vx/compose/package.sh \
+  func/vx/compose/shell-access.sh \
+  func/vx/compose/audit.sh \
+  web/inc/vx_compose_package.php \
+  web/add/package/index.php \
+  web/edit/package/index.php \
+  web/templates/admin/add_package.html \
+  web/templates/admin/edit_package.html \
+  install/common/sudo/vesta-compose-users \
+  | tar -x -C "$overlay_root"
+printf '%s\n' "$release_commit" >"$overlay_root/RELEASE_COMMIT"
+tar -C "$overlay_root" -czf \
+  "/var/tmp/vesta-shell-access-$release_commit.tar.gz" .
+(
+  cd /var/tmp
+  sha256sum "vesta-shell-access-$release_commit.tar.gz" \
+    >"vesta-shell-access-$release_commit.tar.gz.sha256"
+)
+```
+
+Transfer through the approved jump host:
+
+```bash
+scp -o ProxyJump=gizmo@192.168.100.16 \
+  "/var/tmp/vesta-shell-access-$release_commit.tar.gz" \
+  "/var/tmp/vesta-shell-access-$release_commit.tar.gz.sha256" \
+  debian@192.168.100.100:/var/tmp/
+ssh -J gizmo@192.168.100.16 debian@192.168.100.100
+```
+
+On `192.168.100.100`, run `sha256sum -c` from `/var/tmp` against the transferred
+checksum file, extract the archive to a root-owned temporary directory, run
+Bash/PHP syntax checks there, and
+snapshot every destination that will be replaced beneath a root-owned backup
+directory named with the exact commit. Apply with `rsync -a` per listed file or
+directory, without `--delete`, then run:
+
+```bash
+sudo /usr/local/vesta/bin/v-install-docker-shell-access
+sudo /usr/sbin/visudo -cf /etc/sudoers.d/vesta-compose-users
+sudo /usr/local/vesta/bin/v-sync-docker-shell-access-all
+sudo /usr/local/vesta/bin/v-check-docker-engine json
+```
+
+Expected: installer, sudo policy, full reconciliation, and Docker readiness all
+pass. Record the local commit, remote archive checksum, backup path, installed
+file modes/owners, and command output in
+`.docs/validation/2026-08-07-compose-shell-access-development.md`. If syntax,
+installation, or readiness fails, disable the new sudoers rule first, restore
+only the exact snapshotted files, rerun `visudo` and Docker readiness, and stop
+the acceptance run.
+
+- [ ] **Step 5: Exercise real Docker-enabled Vesta users on `192.168.100.100`**
+
+Under one root-owned test lock, create disposable Vesta users named
+`vxshalpha`, `vxshbeta`, and `vxshzero`. Create a disposable package named
+`vx-shell-e2e` through `v-add-user-package`; it must use Bash and explicit
+nonzero `DOCKER_PROJECTS`, service, CPU, memory, PID, storage, port, secret,
+and volume quotas. Keep `vxshzero` on a zero-Docker package. Generate test
+passwords in root-owned mode-`0600` files and do not record them in evidence.
+
+Seed one administrator-selected, immutable registry digest for the two
+`standard` test projects. Record whether its image existed before the test.
+Create `vxshalpha/app` and `vxshbeta/app` through each user's own immutable
+`v-docker preview ... < compose.yaml` and `v-docker apply ...` flow; do not
+use a privileged profile, workload-bundle import, raw tenant Docker, host
+networking, host paths, or published host ports.
+
+Prove on the live development host:
+
+```text
+vxshalpha and vxshbeta are automatically in vesta-compose-users
+vxshzero is not in vesta-compose-users
+sudo -l -U vxshalpha exposes only v-run-user-docker-command
+vxshalpha can list, show, validate, health, stop, start, restart and probe alpha/app
+vxshalpha cannot name or access vxshbeta/app, claim admin, or use a nonstandard profile
+vxshalpha cannot sudo another v-* command, docker, docker compose, bash, sh, env or an interpreter
+vxshalpha cannot read or write /var/run/docker.sock
+malicious Compose definitions are denied before a Docker mutation
+an already-open vxshalpha shell is denied immediately after package quota becomes zero
+an already-open vxshalpha shell is denied immediately after Bash is changed to nologin
+an already-open vxshalpha shell is denied as suspension begins and cannot restart its project
+valid package/shell/unsuspension restores membership and owner-only access
+removing eligible membership and rerunning v-install-docker-shell-access repairs it
+rerunning the installer and full reconciliation is idempotent
+Docker labels remain vx.managed=true, vx.user=OWNER, vx.project=app with standard profile evidence
+```
+
+Use the root integration harness for stale-session and concurrency control;
+do not approximate those checks with a fresh login. Capture bounded,
+secret-free command results and exact exit codes in the development validation
+document.
+
+- [ ] **Step 6: Clean development fixtures and verify the host remains healthy**
+
+Delete the two test projects through Vesta while retaining no disposable test
+data, then delete `vxshalpha`, `vxshbeta`, `vxshzero`, and the `vx-shell-e2e`
+package through Vesta commands. Remove only the exact test archive, extraction
+directory, password files, Compose inputs, previews, test backup records, and
+test image if it was absent before the run and has no remaining Vesta/Docker
+reference. Do not prune Docker globally.
+
+Verify:
+
+```bash
+getent passwd vxshalpha && exit 1 || true
+getent passwd vxshbeta && exit 1 || true
+getent passwd vxshzero && exit 1 || true
+sudo /usr/local/vesta/bin/v-sync-docker-shell-access-all
+sudo /usr/sbin/visudo -cf /etc/sudoers.d/vesta-compose-users
+sudo /usr/local/vesta/bin/v-check-docker-engine json
+sudo docker ps --filter label=vx.managed=true --format '{{json .}}'
+```
+
+Expected: disposable users/projects/files are absent, reconciliation and
+sudoers validation pass, Docker orchestration remains ready, and unrelated
+managed containers are unchanged. Record cleanup evidence and compare the
+unrelated-container inventory to the pre-deployment snapshot.
+
+- [ ] **Step 7: Run focused security regressions**
 
 Run:
 
@@ -1371,13 +1531,14 @@ git diff --check
 
 Expected: PASS.
 
-- [ ] **Step 5: Commit disposable privilege-boundary acceptance**
+- [ ] **Step 8: Commit disposable and development-server acceptance evidence**
 
 ```bash
 git add test/compose/test-shell-access-root-integration.sh \
   test/compose/test-docker-readiness.sh \
-  test/compose/test-malicious-input.sh test/compose/test-policy.sh
-git commit -m "test(compose): prove tenant shell isolation"
+  test/compose/test-malicious-input.sh test/compose/test-policy.sh \
+  .docs/validation/2026-08-07-compose-shell-access-development.md
+git commit -m "test(compose): prove tenant shell isolation on development"
 ```
 
 ### Milestone 3 security review gate
@@ -1389,6 +1550,10 @@ git commit -m "test(compose): prove tenant shell isolation"
 - [ ] Verify rollback disables sudo first, removes all dedicated group members,
   removes the group only when empty, and leaves Docker projects, images,
   volumes, secrets, and package quota state untouched.
+- [ ] Verify the exact implementation commit was deployed and accepted on
+  `debian@192.168.100.100` through `gizmo@192.168.100.16`, all disposable
+  fixtures were removed, and the pre/post unrelated-container inventory
+  matches.
 - [ ] Record milestone commit SHAs and staging evidence in this plan.
 
 ---
@@ -1554,6 +1719,10 @@ git commit -m "docs(compose): document tenant Docker shell access"
   converge group/sudoers state deterministically.
 - [ ] Disposable real-sudo acceptance proves cross-owner, privileged-profile,
   raw Docker, arbitrary command, environment, and filesystem attacks fail.
+- [ ] The exact remotely recoverable implementation commit passes deployment,
+  real-user orchestration, revocation, reconciliation, cleanup, and unchanged
+  unrelated-container checks on `192.168.100.100` through the required jump
+  host; no production system is accessed.
 - [ ] Documentation, focused tests, resource-safe readiness, and
   `git diff --check` pass.
 
@@ -1561,8 +1730,9 @@ git commit -m "docs(compose): document tenant Docker shell access"
 
 - **Spec coverage:** automatic Vesta-owned permissions, Docker-enabled package
   authority, SSH shell use, owner scoping, safe management operations,
-  installer/update convergence, revocation, documentation, and security tests
-  are each assigned to explicit tasks.
+  installer/update convergence, revocation, explicit development-server
+  deployment, cleanup, documentation, and security tests are each assigned to
+  explicit tasks.
 - **Complexity check:** one group and one broker reuse the existing Vesta
   policy/transaction system; no daemon, Docker proxy, per-user group, socket
   ACL, duplicated orchestrator, or application-specific command is introduced.
