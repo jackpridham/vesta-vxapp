@@ -255,23 +255,67 @@ vx_compose_shell_access_lock_release() {
 }
 
 vx_compose_shell_snapshot_stdin() {
-    local kind="$1" max_bytes="$2" snapshot_root snapshot_file bytes
-    [[ "$kind" =~ ^(compose|secret|registry)$ && "$max_bytes" =~ ^[1-9][0-9]*$ ]] || return 1
-    umask 077
-    snapshot_root="$(mktemp -d /var/tmp/vesta-compose-shell.XXXXXXXX)" || return 1
-    chmod 0700 "$snapshot_root" || { rm -rf -- "$snapshot_root"; return 1; }
-    snapshot_file="$snapshot_root/$kind.input"
-    head -c "$((max_bytes + 1))" >"$snapshot_file" || { rm -rf -- "$snapshot_root"; return 1; }
-    chmod 0600 "$snapshot_file" || { rm -rf -- "$snapshot_root"; return 1; }
-    bytes="$(stat -c '%s' "$snapshot_file")" || { rm -rf -- "$snapshot_root"; return 1; }
-    if (( bytes == 0 || bytes > max_bytes )) \
-        || [[ -L "$snapshot_root" || -L "$snapshot_file"
-            || "$(stat -c '%u:%g:%a:%F' "$snapshot_root")" != '0:0:700:directory'
-            || "$(stat -c '%u:%g:%a:%F' "$snapshot_file")" != '0:0:600:regular file' ]]; then
-        rm -rf -- "$snapshot_root"
+    local vx_snapshot_internal_kind="${1-}" vx_snapshot_internal_max_bytes="${2-}"
+    local vx_snapshot_internal_root_name="${3-}" vx_snapshot_internal_file_name="${4-}"
+    local vx_snapshot_internal_root= vx_snapshot_internal_file= vx_snapshot_internal_id
+    local vx_snapshot_internal_declaration vx_snapshot_internal_bytes vx_snapshot_internal_name
+    local vx_snapshot_internal_attempts=0
+    (( $# == 4 )) || return 1
+    [[ "$vx_snapshot_internal_kind" =~ ^(compose|secret|registry)$
+        && "$vx_snapshot_internal_max_bytes" =~ ^[1-9][0-9]*$
+        && "$vx_snapshot_internal_root_name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$
+        && "$vx_snapshot_internal_file_name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$
+        && "$vx_snapshot_internal_root_name" != "$vx_snapshot_internal_file_name"
+        && "$vx_snapshot_internal_root_name" != vx_snapshot_internal_*
+        && "$vx_snapshot_internal_file_name" != vx_snapshot_internal_* ]] || return 1
+    for vx_snapshot_internal_name in \
+        "$vx_snapshot_internal_root_name" "$vx_snapshot_internal_file_name"; do
+        if vx_snapshot_internal_declaration="$(declare -p "$vx_snapshot_internal_name" 2>/dev/null)"; then
+            [[ "$vx_snapshot_internal_declaration" == 'declare -- '* ]] || return 1
+        fi
+    done
+    local -n vx_snapshot_internal_root_output="$vx_snapshot_internal_root_name"
+    local -n vx_snapshot_internal_file_output="$vx_snapshot_internal_file_name"
+    vx_snapshot_internal_root_output=
+    vx_snapshot_internal_file_output=
+    if [[ "$vx_snapshot_internal_kind" == compose ]]; then
+        while (( vx_snapshot_internal_attempts < 128 )); do
+            vx_snapshot_internal_id="$(od -An -N16 -tx1 /dev/urandom | tr -d '[:space:]')" || return 1
+            [[ "$vx_snapshot_internal_id" =~ ^[a-f0-9]{32}$ ]] || return 1
+            vx_snapshot_internal_root="/tmp/vx-compose-web.$vx_snapshot_internal_id"
+            if mkdir -m 0700 -- "$vx_snapshot_internal_root" 2>/dev/null; then
+                break
+            fi
+            [[ -e "$vx_snapshot_internal_root" || -L "$vx_snapshot_internal_root" ]] || return 1
+            vx_snapshot_internal_root=
+            vx_snapshot_internal_attempts=$((vx_snapshot_internal_attempts + 1))
+        done
+        [[ -n "$vx_snapshot_internal_root" ]] || return 1
+        vx_snapshot_internal_file="$vx_snapshot_internal_root/compose.yaml"
+    else
+        vx_snapshot_internal_root="$(mktemp -d /var/tmp/vesta-compose-shell.XXXXXXXX)" || return 1
+        vx_snapshot_internal_file="$vx_snapshot_internal_root/$vx_snapshot_internal_kind.input"
+    fi
+    vx_snapshot_internal_root_output="$vx_snapshot_internal_root"
+    vx_snapshot_internal_file_output="$vx_snapshot_internal_file"
+    chmod 0700 "$vx_snapshot_internal_root" \
+        || { rm -rf -- "$vx_snapshot_internal_root"; return 1; }
+    install -m 0600 /dev/null "$vx_snapshot_internal_file" \
+        || { rm -rf -- "$vx_snapshot_internal_root"; return 1; }
+    head -c "$((vx_snapshot_internal_max_bytes + 1))" >"$vx_snapshot_internal_file" \
+        || { rm -rf -- "$vx_snapshot_internal_root"; return 1; }
+    chmod 0600 "$vx_snapshot_internal_file" \
+        || { rm -rf -- "$vx_snapshot_internal_root"; return 1; }
+    vx_snapshot_internal_bytes="$(stat -c '%s' "$vx_snapshot_internal_file")" \
+        || { rm -rf -- "$vx_snapshot_internal_root"; return 1; }
+    if (( vx_snapshot_internal_bytes == 0
+            || vx_snapshot_internal_bytes > vx_snapshot_internal_max_bytes )) \
+        || [[ -L "$vx_snapshot_internal_root" || -L "$vx_snapshot_internal_file"
+            || "$(stat -c '%u:%g:%a:%F' "$vx_snapshot_internal_root")" != '0:0:700:directory'
+            || "$(stat -c '%u:%g:%a:%F' "$vx_snapshot_internal_file")" != '0:0:600:regular file' ]]; then
+        rm -rf -- "$vx_snapshot_internal_root"
         return 1
     fi
-    printf '%s\n' "$snapshot_file"
 }
 
 vx_compose_shell_broker_audit() {

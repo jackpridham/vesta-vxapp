@@ -42,7 +42,9 @@ result=failed
 
 cleanup() {
     local status=$?
-    if [[ -n "$snapshot_root" && "$snapshot_root" == /var/tmp/vesta-compose-shell.*
+    if [[ -n "$snapshot_root"
+        && ( "$snapshot_root" =~ ^/tmp/vx-compose-web[.][a-f0-9]{32}$
+            || "$snapshot_root" =~ ^/var/tmp/vesta-compose-shell[.][A-Za-z0-9]{8}$ )
         && -d "$snapshot_root" && ! -L "$snapshot_root"
         && "$(stat -c '%u:%g:%a:%F' "$snapshot_root" 2>/dev/null)" == '0:0:700:directory' ]]; then
         rm -rf -- "$snapshot_root"
@@ -91,7 +93,7 @@ valid_format() { [[ "$1" == json || "$1" == plain ]]; }
 valid_revision() { [[ "$1" =~ ^(0|[1-9][0-9]*)$ ]]; }
 reject_unsafe_args() { local value; for value in "$@"; do [[ -n "$value" && ${#value} -le 2000 && "$value" != -* && "$value" != *[$'\n\r\t ']* && "$value" != *['`$;&|<>\\(){}[]']* ]] || return 1; done; }
 require_standard() { project="$1"; vx_compose_shell_require_standard_project "$actor" "$project"; }
-snapshot() { local kind="$1" max="$2"; snapshot_file="$(vx_compose_shell_snapshot_stdin "$kind" "$max")" || return 1; snapshot_root="${snapshot_file%/*}"; }
+snapshot() { local kind="$1" max="$2"; vx_compose_shell_snapshot_stdin "$kind" "$max" snapshot_root snapshot_file; }
 
 (( EUID == 0 )) || exit 1
 actor="$(vx_compose_shell_actor_resolve)" || exit 1

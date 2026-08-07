@@ -7,6 +7,11 @@ fail() { echo "FAIL: $1" >&2; exit 1; }
 
 mount -t tmpfs tmpfs /usr/local
 mount -t tmpfs tmpfs /run/lock
+mkdir -p /usr/local/shell-broker-fixture
+mount --bind "$fixture" /usr/local/shell-broker-fixture
+fixture=/usr/local/shell-broker-fixture
+mount -t tmpfs tmpfs /tmp
+mount -t tmpfs tmpfs /var/tmp
 export VESTA=/usr/local/vesta HOMEDIR=/home
 mkdir -p /usr/local/vesta/{bin,func/vx,data/users/alice/docker-projects/app/runtime,data/log}
 cp -a "$repo_root/func/vx/compose" /usr/local/vesta/func/vx/
@@ -65,7 +70,16 @@ cat >"$fixture/fake-command" <<EOF
 set -Eeuo pipefail
 printf '%s' "\${0##*/}" >>'$fixture/docker.log'
 for argument in "\$@"; do
-    if [[ "\$argument" == /var/tmp/vesta-compose-shell.*/*.input ]]; then
+    if [[ "\$argument" =~ ^/tmp/vx-compose-web[.][a-f0-9]{32}/compose[.]yaml$ ]]; then
+        [[ -f "\$argument" && ! -L "\$argument"
+            && "\$(stat -c '%u:%g:%a:%F' "\${argument%/*}")" == '0:0:700:directory'
+            && "\$(stat -c '%u:%g:%a:%F' "\$argument")" == '0:0:600:regular file' ]] || exit 71
+        printf ' <%s:%s>' "\${argument##*/}" "\$(stat -c '%s' "\$argument")" >>'$fixture/docker.log'
+        if [[ -e '$fixture/delete-compose-source' ]]; then
+            rm -f -- "\$argument"
+            rmdir -- "\${argument%/*}"
+        fi
+    elif [[ "\$argument" =~ ^/var/tmp/vesta-compose-shell[.][A-Za-z0-9]{8}/(secret|registry)[.]input$ ]]; then
         [[ -f "\$argument" && ! -L "\$argument" ]] || exit 71
         printf ' <%s:%s>' "\${argument##*/}" "\$(stat -c '%s' "\$argument")" >>'$fixture/docker.log'
     else
@@ -119,8 +133,10 @@ expect_allow_stdin() {
         || fail "broker denied stdin operation: $*"
     grep -Fxq "$expected actor=alice" "$fixture/docker.log" \
         || fail "wrong stdin dispatch for: $* :: $(<"$fixture/docker.log")"
+    ! compgen -G '/tmp/vx-compose-web.*' >/dev/null \
+        || fail "broker retained Compose stdin snapshot for: $*"
     ! compgen -G '/var/tmp/vesta-compose-shell.*' >/dev/null \
-        || fail "broker retained stdin snapshot for: $*"
+        || fail "broker retained protected stdin snapshot for: $*"
 }
 expect_deny() {
     : >"$fixture/docker.log"
@@ -156,7 +172,10 @@ expect_allow 'v-run-docker-project-action <alice> <alice> <app> <stop>' stop app
 expect_allow 'v-run-docker-project-action <alice> <alice> <app> <restart>' restart app
 expect_allow 'v-run-docker-project-action <alice> <alice> <app> <recreate> <web>' recreate app web
 expect_allow 'v-run-docker-project-action <alice> <alice> <app> <deploy>' deploy app
-expect_allow_stdin 'v-stage-docker-project-preview <alice> <alice> <app> <compose.input:12> <standard> <change>' 'compose-data' preview app change
+expect_allow_stdin 'v-stage-docker-project-preview <alice> <alice> <app> <compose.yaml:12> <standard> <change>' 'compose-data' preview app change
+touch "$fixture/delete-compose-source"
+expect_allow_stdin 'v-stage-docker-project-preview <alice> <alice> <app> <compose.yaml:12> <standard> <change>' 'compose-data' preview app change
+rm -f "$fixture/delete-compose-source"
 expect_allow "v-apply-docker-project-preview <alice> <alice> <app> <$preview_id> <$digest_a> <$digest_b> <1>" apply app "$preview_id" "$digest_a" "$digest_b" 1
 expect_allow "v-apply-docker-project-preview <alice> <alice> <new-app> <$preview_id> <$digest_a> <$digest_b> <0>" apply new-app "$preview_id" "$digest_a" "$digest_b" 0
 expect_allow 'v-backup-docker-project <alice> <app>' backup app
@@ -214,6 +233,34 @@ wait_for_file() {
     done
     return 1
 }
+
+expect_interrupted_preview_cleanup() {
+    local signal="$1" upload_fd upload_pid root_seen=no
+    mkfifo "$fixture/upload-$signal"
+    exec {upload_fd}<>"$fixture/upload-$signal"
+    set -m
+    "${broker[@]}" preview app change <&"$upload_fd" >/dev/null 2>&1 &
+    upload_pid=$!
+    set +m
+    for _ in {1..200}; do
+        if compgen -G '/tmp/vx-compose-web.*' >/dev/null; then
+            root_seen=yes
+            break
+        fi
+        kill -0 "$upload_pid" 2>/dev/null || break
+        sleep 0.025
+    done
+    [[ "$root_seen" == yes ]] || fail "$signal preview did not create a snapshot root"
+    kill -s "$signal" -- "-$upload_pid"
+    ! wait "$upload_pid" || fail "$signal preview succeeded after interruption"
+    exec {upload_fd}>&-
+    rm -f "$fixture/upload-$signal"
+    ! compgen -G '/tmp/vx-compose-web.*' >/dev/null \
+        || fail "$signal preview retained Compose stdin snapshot"
+}
+
+expect_interrupted_preview_cleanup INT
+expect_interrupted_preview_cleanup TERM
 
 # An authorized operation retains the owner lock until its child finishes.
 touch "$fixture/hold-owner"
