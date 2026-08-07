@@ -1610,10 +1610,34 @@ git commit -m "test(compose): prove tenant shell isolation on development"
 
 #### Interim Progress Report
 
-- Local implementation: complete through the disposable-container harness and focused security regressions; commits `e80485ca`, `04317d06`, and `309bf712` are clean and specification-approved.
-- Local evidence: installer/visudo, lifecycle, package, broker, input, malicious-policy, isolation, readiness, and diff checks passed. The root-only disposable harness skipped because the current process is not root and no disposable backend was available; no real-sudo acceptance is claimed.
-- Development acceptance: not attempted. The exact clean implementation commit was not present on a pushed remote branch, so no development or production host was contacted. Steps 3–6 and the final evidence commit remain pending.
-- Follow-up: after the exact release commit is pushed and the approved development prerequisites are available, run Steps 3–6 and record bounded secret-free evidence before closing Task 9 and the Milestone 3 gate.
+- Local implementation: complete through the disposable-container harness,
+  executable 39-operation broker matrix, lifecycle reconciliation, installer,
+  documentation, and final review remediation. The current clean local head is
+  `da52561b`; final security/code-quality review approved the implementation
+  after quota, rollback, revision-zero apply, reconciliation-race, ACL,
+  authority-file, and loader-idempotence fixes.
+- Local evidence: the focused 14-suite shell-access matrix, package form,
+  syntax, documentation, transaction, installer/visudo, lifecycle, malicious
+  policy, isolation, and diff checks passed. The root-only disposable harness
+  skipped because the current process is not root and no approved disposable
+  backend was available; no real-sudo acceptance is claimed.
+- Release-gate evidence: a resource-safe sequential readiness run at
+  `79727c58` passed its complete ShellCheck phase and nearly all Compose shell
+  suites, then exposed a repeated-source failure in `shell-access.sh` during
+  `test-transaction.sh`. Commits `453721c7` and `da52561b` fix that failure;
+  the exact focused shell-access and transaction regressions pass and the fix
+  is independently approved. At the operator's direction after severe host
+  lag/session crashes, broad ShellCheck and expensive full-suite reruns are
+  prohibited on this workstation, so Step 7 remains open rather than being
+  reported as passed.
+- Development acceptance: not attempted for the final head. The required
+  passing release gate and remotely recoverable exact commit prerequisites
+  were not met, so no development or production host was contacted. Steps
+  3–6 and the final acceptance-evidence commit remain pending.
+- Follow-up: on a suitably sized approved environment, rerun the complete
+  release gate for the exact pushed commit, then run Steps 3–6 through the
+  required jump host and record bounded secret-free evidence before closing
+  Task 9 and the Milestone 3 gate.
 
 ### Milestone 3 security review gate
 
@@ -1651,7 +1675,7 @@ git commit -m "test(compose): prove tenant shell isolation on development"
 - Modify: `.agents/skills/runtime-layout/SKILL.md`
 - Modify: `test/test_compose_docs.sh`
 
-- [ ] **Step 1: Add failing documentation consistency checks**
+- [x] **Step 1: Add failing documentation consistency checks**
 
 Assert current docs name `v-docker`, `vesta-compose-users`, the exact broker,
 package-derived entitlement, `standard`-only scope, bounded stdin, and the
@@ -1659,7 +1683,7 @@ automatic reconciliation command. Assert no current user guide recommends the
 Docker group, Docker socket chmod/ACL, direct tenant sudo of `v-*`, caller
 owner/actor arguments, raw Docker, or manual group maintenance.
 
-- [ ] **Step 2: Update the operator and user documentation**
+- [x] **Step 2: Update the operator and user documentation**
 
 Document this user workflow:
 
@@ -1680,7 +1704,7 @@ take effect immediately. Explain that administrators enable access by assigning
 a package with `DOCKER_PROJECTS > 0` and an interactive Bash shell; Vesta owns
 all group reconciliation.
 
-- [ ] **Step 3: Document administrator repair and rollback**
+- [x] **Step 3: Document administrator repair and rollback**
 
 Add exact operations:
 
@@ -1699,14 +1723,14 @@ dedicated group, then remove client/broker code. Rollback must not mutate
 Docker, project state, images, volumes, secrets, routes, package quotas, or
 application data.
 
-- [ ] **Step 4: Update agent guidance**
+- [x] **Step 4: Update agent guidance**
 
 Add concise rules that future work must preserve kernel/sudo-derived identity,
 owner equality, `standard` profile, bounded stdin, exact broker sudo, live
 entitlement checks, access-lock-before-project-lock ordering, and the ban on
 Docker group/socket access and direct existing-command sudo.
 
-- [ ] **Step 5: Run documentation and syntax validation**
+- [x] **Step 5: Run documentation and syntax validation**
 
 Run:
 
@@ -1724,7 +1748,7 @@ git diff --check
 
 Expected: PASS.
 
-- [ ] **Step 6: Run the complete focused shell-access suite**
+- [x] **Step 6: Run the complete focused shell-access suite**
 
 Run:
 
@@ -1763,7 +1787,7 @@ git diff --check
 Expected: PASS. Do not run concurrent ShellCheck workers on constrained
 machines; keep the gate sequential or use the gate's bounded configuration.
 
-- [ ] **Step 8: Commit documentation and closeout**
+- [x] **Step 8: Commit documentation and closeout**
 
 ```bash
 git add docs/container-orchestration.md .docs/contracts/compose-interfaces.md \
@@ -1773,6 +1797,23 @@ git add docs/container-orchestration.md .docs/contracts/compose-interfaces.md \
   .agents/skills/runtime-layout/SKILL.md test/test_compose_docs.sh
 git commit -m "docs(compose): document tenant Docker shell access"
 ```
+
+#### Task 10 closeout report
+
+- Documentation and consistency checks: PASS in `d380bab8`.
+- Focused shell-access matrix: all 14 suites PASS; subsequent changes were
+  covered by their affected package, installer, shell-access, lifecycle, and
+  transaction regressions.
+- Independent specification review: APPROVED for the exact executable
+  39-operation catalog and contract parity.
+- Independent code-quality/security review: APPROVED after remediation commits
+  `d6561990`, `1cccf02a`, `1f765292`, `453721c7`, and `da52561b`.
+- Full release gate: OPEN. The last resource-safe run exposed the now-fixed
+  repeated-source failure but was not rerun because broad validation is
+  prohibited on this constrained workstation after severe lag/session
+  crashes. No PASS is claimed.
+- Development/disposable acceptance: OPEN under Task 9; no production host was
+  contacted.
 
 ### Final acceptance gate
 
