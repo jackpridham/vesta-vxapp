@@ -32,7 +32,7 @@ vx_compose_shell_groups() {
 }
 
 vx_compose_shell_actor_resolve() {
-    local record actor password uid gid gecos home shell
+    local record actor uid gid home
 
     [[ "$(vx_compose_shell_effective_uid)" == 0 ]] || return 1
     [[ "${SUDO_UID:-}" =~ ^[1-9][0-9]*$
@@ -40,7 +40,7 @@ vx_compose_shell_actor_resolve() {
         && "${SUDO_USER:-}" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ ]] || return 1
     record="$(vx_compose_shell_passwd_by_uid "$SUDO_UID")" || return 1
     [[ "$record" != *$'\n'* ]] || return 1
-    IFS=: read -r actor password uid gid gecos home shell <<<"$record"
+    IFS=: read -r actor _ uid gid _ home _ <<<"$record"
     [[ -n "$actor" && "$actor" == "$SUDO_USER" && "$uid" == "$SUDO_UID"
         && "$gid" == "$SUDO_GID" && "$actor" != root && "$actor" != admin
         && "$home" == "${HOMEDIR:-/home}/$actor" ]] || return 1
@@ -89,7 +89,7 @@ vx_compose_shell_group_grant_if_eligible() {
 }
 
 vx_compose_shell_require_eligible_except_group() {
-    local actor="$1" conf suspended shell limit record passwd_actor password uid gid gecos home passwd_shell
+    local actor="$1" conf suspended shell limit record passwd_actor uid home passwd_shell
     vx_compose_require_owner "$actor" || return 1
     conf="$VESTA/data/users/$actor/user.conf"
     vx_compose_shell_user_conf_secure "$actor" "$conf" || return 1
@@ -105,7 +105,7 @@ vx_compose_shell_require_eligible_except_group() {
     limit="$(vx_compose_meta_get "$conf" DOCKER_PROJECTS)" || return 1
     record="$(vx_compose_shell_passwd_by_name "$actor")" || return 1
     [[ "$record" != *$'\n'* ]] || return 1
-    IFS=: read -r passwd_actor password uid gid gecos home passwd_shell <<<"$record"
+    IFS=: read -r passwd_actor _ uid _ _ home passwd_shell <<<"$record"
     [[ "$passwd_actor" == "$actor" && "$uid" =~ ^[1-9][0-9]*$
         && "$home" == "${HOMEDIR:-/home}/$actor" && "${passwd_shell##*/}" == "$shell" ]] || return 1
     [[ "$suspended" == no ]] && vx_compose_shell_is_interactive "$shell" \
@@ -113,18 +113,53 @@ vx_compose_shell_require_eligible_except_group() {
 }
 
 vx_compose_shell_require_eligible() {
-    local actor="$1" conf suspended shell limit
+    local actor="$1"
+    vx_compose_shell_access_deny_is_clear "$actor" || return 1
     vx_compose_shell_require_eligible_except_group "$actor" || return 1
     vx_compose_shell_group_contains "$actor"
 }
 
+vx_compose_shell_access_deny_path() {
+    printf '%s/%s.deny\n' "$VX_COMPOSE_ACCESS_LOCK_ROOT" "$1"
+}
+
+vx_compose_shell_access_deny_establish() {
+    local owner="$1" path
+    [[ "${VX_COMPOSE_ACCESS_LOCK_OWNER:-}" == "$owner"
+        && "${VX_COMPOSE_ACCESS_LOCK_FD:-}" =~ ^[0-9]+$ ]] || return 1
+    path="$(vx_compose_shell_access_deny_path "$owner")" || return 1
+    install -m 0600 -o root -g root /dev/null "$path" || return 1
+    [[ -f "$path" && ! -L "$path"
+        && "$(stat -c '%u:%g:%a' "$path")" == '0:0:600' ]]
+}
+
+vx_compose_shell_access_deny_is_clear() {
+    local owner="$1" path
+    path="$(vx_compose_shell_access_deny_path "$owner")" || return 1
+    [[ ! -e "$path" && ! -L "$path" ]]
+}
+
+vx_compose_shell_access_transition_complete() {
+    local owner="$1" path
+    [[ "${VX_COMPOSE_ACCESS_LOCK_OWNER:-}" == "$owner" ]] || return 1
+    vx_compose_shell_group_grant_if_eligible "$owner" || return 1
+    path="$(vx_compose_shell_access_deny_path "$owner")" || return 1
+    [[ -f "$path" && ! -L "$path"
+        && "$(stat -c '%u:%g:%a' "$path")" == '0:0:600' ]] || return 1
+    rm -f -- "$path"
+}
+
 vx_compose_shell_require_standard_project() {
-    local actor="$1" project="$2" root profile authority_uid
+    local actor="$1" project="$2" root profile authority_uid authority_gid mode
     vx_compose_require_project "$actor" "$project" || return 1
     root="$(vx_compose_project_root "$actor" "$project")"
     authority_uid="$(vx_compose_authority_uid)" || return 1
+    authority_gid="$(vx_compose_authority_gid)" || return 1
     [[ -f "$root/project.conf" && ! -L "$root/project.conf"
-        && "$(stat -c '%u' "$root/project.conf" 2>/dev/null)" == "$authority_uid" ]] || return 1
+        && "$(stat -c '%u:%g' "$root/project.conf" 2>/dev/null)" \
+            == "$authority_uid:$authority_gid" ]] || return 1
+    mode="$(stat -c '%a' "$root/project.conf" 2>/dev/null)" || return 1
+    (( (8#$mode & 0022) == 0 )) || return 1
     profile="$(vx_compose_meta_get "$root/project.conf" PROFILE)" || return 1
     [[ "$profile" == standard ]] || return 1
 }
@@ -143,7 +178,8 @@ vx_compose_shell_access_lock_acquire() {
     path="$VX_COMPOSE_ACCESS_LOCK_ROOT/$owner.lock"
     exec {VX_COMPOSE_ACCESS_LOCK_FD}>"$path" || return 1
     chmod 0600 "$path" || { exec {VX_COMPOSE_ACCESS_LOCK_FD}>&-; unset VX_COMPOSE_ACCESS_LOCK_FD; return 1; }
-    [[ ! -L "$path" && "$(stat -c '%u:%g:%a:%F' "$path")" == '0:0:600:regular file' ]] \
+    [[ -f "$path" && ! -L "$path"
+        && "$(stat -c '%u:%g:%a' "$path")" == '0:0:600' ]] \
         || { exec {VX_COMPOSE_ACCESS_LOCK_FD}>&-; unset VX_COMPOSE_ACCESS_LOCK_FD; return 1; }
     flock -x "$VX_COMPOSE_ACCESS_LOCK_FD" || { exec {VX_COMPOSE_ACCESS_LOCK_FD}>&-; unset VX_COMPOSE_ACCESS_LOCK_FD; return 1; }
     VX_COMPOSE_ACCESS_LOCK_OWNER="$owner"

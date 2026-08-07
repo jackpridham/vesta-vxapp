@@ -233,7 +233,7 @@ vx_compose_owner_audit() {
     local action="$2"
     local result="$3"
     local details="${4:-}"
-    local actor="${5:-root}"
+    local actor="${5:-${_VX_COMPOSE_AUDIT_ACTOR:-root}}"
     local event
 
     vx_compose_require_owner "$owner" || return 1

@@ -31,6 +31,8 @@ is_object_unsuspended 'user' 'USER' "$user"
 vx_compose_shell_access_lock_acquire "$user"
 check_result $? "Compose owner access lock failed"
 trap 'vx_compose_shell_access_lock_release' EXIT
+vx_compose_shell_access_deny_establish "$user"
+check_result $? "Compose shell access deny marker failed"
 vx_compose_shell_group_revoke "$user"
 check_result $? "Compose shell access revocation failed"
 
@@ -44,6 +46,7 @@ shell_path=$(grep -w "$shell" /etc/shells | head -n1)
 
 # Changing passwd file
 /usr/bin/chsh -s "$shell_path" "$user" >/dev/null 2>&1
+check_result $? "User shell update failed"
 shell=$(basename $shell_path)
 
 # Adding jailed sftp env
@@ -62,7 +65,7 @@ fi
 
 # Changing user shell
 update_user_value "$user" '$SHELL' "$shell"
-vx_compose_shell_group_grant_if_eligible "$user"
+vx_compose_shell_access_transition_complete "$user"
 check_result $? "Compose shell access reconciliation failed"
 
 # Logging

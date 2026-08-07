@@ -56,6 +56,7 @@ expect_deny alice 1101 nologin no 2
 expect_deny alice 1101 bash yes 2
 expect_deny bob 1101 bash no 2
 expect_deny admin 1000 bash no unlimited
+# shellcheck disable=SC2016
 expect_deny malformed 1101 bash no '$(touch /tmp/canary)'
 [[ ! -e /tmp/canary ]] || fail 'command-substitution canary executed'
 
@@ -77,7 +78,9 @@ vx_compose_shell_effective_uid() { printf '1101\n'; }
 ! vx_compose_shell_actor_resolve >/dev/null 2>&1 || fail 'direct non-root invocation accepted'
 
 grep -Fq 'exec /usr/bin/sudo -n -- /usr/local/vesta/bin/v-run-user-docker-command "$@"' "$repo_root/bin/v-docker" || fail 'thin client changed'
-grep -Fq 'v-run-docker-project-action "$actor" "$actor" "$1" "$operation"' "$repo_root/bin/v-run-user-docker-command" || fail 'lifecycle mapping missing'
-grep -Fq 'v-run-docker-project-probe "$actor" "$actor" "$1" "$2" "$format"' "$repo_root/bin/v-run-user-docker-command" || fail 'probe mapping missing'
+namespace_fixture="$fixture/namespace"
+mkdir -p "$namespace_fixture"
+unshare -Urnm bash "$repo_root/test/compose/fixtures/shell-broker-namespace.sh" \
+    "$repo_root" "$namespace_fixture"
 
 echo 'Compose shell access tests passed.'

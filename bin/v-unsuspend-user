@@ -34,6 +34,8 @@ fi
 vx_compose_shell_access_lock_acquire "$user"
 check_result $? "Compose owner access lock failed"
 trap 'vx_compose_shell_access_lock_release' EXIT
+vx_compose_shell_access_deny_establish "$user"
+check_result $? "Compose shell access deny marker failed"
 
 # Restoring only Compose projects that were running before suspension
 if [ -d "$(vx_compose_projects_root "$user")" ]; then
@@ -82,8 +84,6 @@ fi
 # Changing suspend value
 update_user_value "$user" '$SUSPENDED' 'no'
 decrease_user_value 'admin' '$SUSPENDED_USERS'
-vx_compose_shell_group_grant_if_eligible "$user"
-check_result $? "Compose shell access grant failed"
 
 # Unsuspending docker containers
 if is_docker_engine_available && [ -f "$USER_DATA/docker.conf" ]; then
@@ -115,6 +115,9 @@ check_result $? "DNS restart failed" >/dev/null
 
 $BIN/v-restart-cron $restart
 check_result $? "Cron restart failed" >/dev/null
+
+vx_compose_shell_access_transition_complete "$user"
+check_result $? "Compose shell access grant failed"
 
 # Logging
 log_event "$OK" "$ARGUMENTS"

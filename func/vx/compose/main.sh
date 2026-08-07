@@ -107,6 +107,12 @@ source "$_vx_compose_dir/drift.sh"
 source "$_vx_compose_dir/revisions.sh"
 unset _VX_COMPOSE_AUDIT_ACTOR
 unset VX_COMPOSE_RUNTIME_PREFLIGHT_CANDIDATE
+if (( EUID == 0 )) \
+    && [[ "${VESTA_COMPOSE_BROKER_ACTOR:-}" \
+        =~ ^[a-z0-9][a-z0-9_-]{0,31}$ ]]; then
+    _VX_COMPOSE_AUDIT_ACTOR="$VESTA_COMPOSE_BROKER_ACTOR"
+fi
+unset VESTA_COMPOSE_BROKER_ACTOR
 # shellcheck source=func/vx/compose/deployment.sh
 source "$_vx_compose_dir/deployment.sh"
 # shellcheck source=func/vx/compose/transaction.sh

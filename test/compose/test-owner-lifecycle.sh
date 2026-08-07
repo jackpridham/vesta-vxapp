@@ -7,6 +7,12 @@ for owner_command in v-suspend-user v-unsuspend-user v-change-user-package v-cha
     grep -Fq 'vx_compose_shell_access_lock_acquire "$user"' "$repo_root/bin/$owner_command" \
         || { echo "FAIL: $owner_command omits Compose owner access lock" >&2; exit 1; }
 done
+for enable_command in v-unsuspend-user v-change-user-package v-change-user-shell; do
+    grep -Fq 'vx_compose_shell_access_deny_establish "$user"' "$repo_root/bin/$enable_command" \
+        || { echo "FAIL: $enable_command omits fail-closed deny marker" >&2; exit 1; }
+    grep -Fq 'vx_compose_shell_access_transition_complete "$user"' "$repo_root/bin/$enable_command" \
+        || { echo "FAIL: $enable_command clears denial before terminal success" >&2; exit 1; }
+done
 test_root="$(mktemp -d)"
 trap 'rm -rf -- "$test_root"' EXIT
 

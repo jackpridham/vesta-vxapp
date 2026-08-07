@@ -8,11 +8,11 @@ readonly VESTA=/usr/local/vesta
 readonly PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 export VESTA PATH
 
-for dangerous_name in BASH_ENV ENV CDPATH GLOBIGNORE LD_PRELOAD LD_LIBRARY_PATH PYTHONPATH PYTHONHOME DOCKER_HOST DOCKER_CONTEXT COMPOSE_FILE COMPOSE_PROJECT_NAME; do
+for dangerous_name in BASH_ENV ENV CDPATH GLOBIGNORE LD_PRELOAD LD_LIBRARY_PATH PYTHONPATH PYTHONHOME DOCKER_HOST DOCKER_CONTEXT COMPOSE_FILE COMPOSE_PROJECT_NAME VESTA_COMPOSE_BROKER_ACTOR; do
     [[ -z "${!dangerous_name+x}" ]] || { echo 'unsafe broker environment' >&2; exit 1; }
 done
 while IFS='=' read -r inherited_name _; do
-    case "$inherited_name" in BASH_ENV|ENV|SHELLOPTS|BASHOPTS|CDPATH|GLOBIGNORE|VESTA|VX_COMPOSE_*|DOCKER_*|COMPOSE_*|LD_*|PYTHON*) echo 'unsafe broker environment' >&2; exit 1;; esac
+    case "$inherited_name" in BASH_ENV|ENV|SHELLOPTS|BASHOPTS|CDPATH|GLOBIGNORE|VESTA_COMPOSE_BROKER_ACTOR|VX_COMPOSE_*|DOCKER_*|COMPOSE_*|LD_*|PYTHON*) echo 'unsafe broker environment' >&2; exit 1;; esac
 done < <(/usr/bin/env)
 unset dangerous_name inherited_name
 
@@ -63,11 +63,15 @@ run_vesta_user_command() {
     [[ "$command" =~ ^v-[a-z0-9-]+$ && -x "/usr/local/vesta/bin/$command" ]] || return 1
     (
         vx_compose_shell_access_lock_close_child_copy
-        env -i VESTA=/usr/local/vesta PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root USER=root LOGNAME=root LANG=C.UTF-8 "/usr/local/vesta/bin/$command" "$@"
+        env -i VESTA=/usr/local/vesta VESTA_COMPOSE_BROKER_ACTOR="$actor" PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root USER=root LOGNAME=root LANG=C.UTF-8 "/usr/local/vesta/bin/$command" "$@"
     )
 }
 
-require_count() { (( $# >= $1 && $# <= $2 )); }
+require_count() {
+    local minimum="$1" maximum="$2"
+    shift 2
+    (( $# >= minimum && $# <= maximum ))
+}
 valid_project() { [[ "$1" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]; }
 valid_name() { [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$ && "$1" != -* ]]; }
 valid_format() { [[ "$1" == json || "$1" == plain ]]; }
@@ -137,25 +141,20 @@ case "$operation" in
         require_count 2 2 "$@" || exit 1; valid_project "$1" && valid_name "$2" || exit 1; require_standard "$1" || exit 1; snapshot secret 65536 || exit 1
         [[ "$operation" == secret-add ]] && command=v-add-docker-secret || command=v-change-docker-secret
         run_vesta_user_command "$command" "$actor" "$1" "$2" "$snapshot_file"
-        vx_compose_audit "$(vx_compose_project_root "$actor" "$1")" shell-secret succeeded 'brokered secret mutation' 0 '[]' "$actor" || :
         ;;
     secret-delete)
         require_count 2 2 "$@" || exit 1; valid_project "$1" && valid_name "$2" || exit 1; require_standard "$1" || exit 1
         run_vesta_user_command v-delete-docker-secret "$actor" "$1" "$2"
-        vx_compose_audit "$(vx_compose_project_root "$actor" "$1")" shell-secret succeeded 'brokered secret mutation' 0 '[]' "$actor" || :
         ;;
     registry-add|registry-change)
         require_count 2 2 "$@" || exit 1; valid_name "$1" && valid_name "$2" || exit 1; snapshot registry 65536 || exit 1
         run_vesta_user_command v-add-docker-registry "$actor" "$1" "$2" "$snapshot_file"
-        vx_compose_owner_audit "$actor" shell-registry succeeded 'brokered registry mutation' "$actor" || :
         ;;
     registry-delete)
         require_count 1 1 "$@" || exit 1; valid_name "$1" || exit 1; run_vesta_user_command v-delete-docker-registry "$actor" "$1"
-        vx_compose_owner_audit "$actor" shell-registry succeeded 'brokered registry mutation' "$actor" || :
         ;;
     remove)
         require_count 2 2 "$@" || exit 1; valid_project "$1" && [[ "$2" == keep-data ]] || exit 1; require_standard "$1" || exit 1
-        vx_compose_owner_audit "$actor" shell-delete started 'brokered project deletion' "$actor" || :
         run_vesta_user_command v-delete-docker-project "$actor" "$1" keep-data
         ;;
     restore)
