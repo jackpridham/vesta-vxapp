@@ -1085,7 +1085,7 @@ disposable-host acceptance remains in Milestone 3 Task 9.
 
 ## Milestone 3: Automate entitlement and installation
 
-### Task 7: Reconcile group membership from Vesta lifecycle state
+### Task 7: Reconcile group membership from Vesta lifecycle state - COMPLETE
 
 **Files:**
 
@@ -1103,7 +1103,7 @@ disposable-host acceptance remains in Milestone 3 Task 9.
 - Modify: `test/compose/test-owner-lifecycle.sh`
 - Modify: `test/compose/test-package-integration.sh`
 
-- [ ] **Step 1: Add failing membership reconciliation tests**
+- [x] **Step 1: Add failing membership reconciliation tests**
 
 Use fake `getent`, `groupadd`, `usermod`, `gpasswd`, and `id` functions. Cover:
 
@@ -1124,7 +1124,7 @@ repeated synchronization -> no changes and exit 0
 
 Assert no test command names or modifies the `docker` group.
 
-- [ ] **Step 2: Run lifecycle tests and verify they fail**
+- [x] **Step 2: Run lifecycle tests and verify they fail**
 
 Run:
 
@@ -1135,7 +1135,7 @@ bash test/compose/test-package-integration.sh
 
 Expected: FAIL because synchronization commands/hooks are absent.
 
-- [ ] **Step 3: Implement one-user reconciliation**
+- [x] **Step 3: Implement one-user reconciliation**
 
 `v-sync-docker-shell-access USER` validates the Vesta username, takes the owner
 access lock, computes eligibility without trusting current group membership,
@@ -1152,7 +1152,7 @@ fi
 The helper must distinguish an already-absent member from a system error and
 must never rewrite `/etc/group` directly.
 
-- [ ] **Step 4: Implement full reconciliation**
+- [x] **Step 4: Implement full reconciliation**
 
 `v-sync-docker-shell-access-all` takes a global reconciliation lock, enumerates
 regular Vesta `user.conf` files, syncs every valid non-admin Vesta account,
@@ -1160,7 +1160,7 @@ then removes members of the dedicated Vesta-owned group that no longer map to
 an eligible Vesta account. Emit only bounded added/removed/unchanged/failed
 counts; do not print emails, homes, package contents, or secrets.
 
-- [ ] **Step 5: Add thin lifecycle hooks**
+- [x] **Step 5: Add thin lifecycle hooks**
 
 Call the one-user sync at these committed-state boundaries:
 
@@ -1179,7 +1179,7 @@ Any sync failure aborts an enabling transition before reporting success. A
 revocation failure leaves the broker fail-closed through its live authority
 check and returns a nonzero administrator-visible result.
 
-- [ ] **Step 6: Run lifecycle and package integration tests**
+- [x] **Step 6: Run lifecycle and package integration tests**
 
 Run:
 
@@ -1197,7 +1197,7 @@ git diff --check
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit automatic membership lifecycle**
+- [x] **Step 7: Commit automatic membership lifecycle**
 
 ```bash
 git add bin/v-sync-docker-shell-access \
@@ -1210,7 +1210,17 @@ git add bin/v-sync-docker-shell-access \
 git commit -m "feat(compose): reconcile Docker shell entitlement"
 ```
 
-### Task 8: Install the group and exact sudo policy on every lifecycle path
+#### Closeout Report
+
+- Summary: Added one-user and full Vesta-owned group reconciliation with three-state lookup/error handling, stale/manual-member removal, owner/global locks, bounded reporting, and lifecycle hooks at committed authority boundaries.
+- Files changed: `bin/v-sync-docker-shell-access`, `bin/v-sync-docker-shell-access-all`, `func/vx/compose/shell-access.sh`, lifecycle/package commands, and owner/package integration tests.
+- Tests: Membership, owner lifecycle, package integration, shell concurrency, syntax, failure matrices, and `git diff --check` PASS.
+- Commit SHA(s): `e80485ca`, `309bf712`.
+- Spec review: APPROVED after reconciliation error-state, stale-member, and executable failure-matrix remediation.
+- Code quality review: Deferred to final closeout per milestone-driven workflow.
+- Follow-ups or concerns: None.
+
+### Task 8: Install the group and exact sudo policy on every lifecycle path - COMPLETE
 
 **Files:**
 
@@ -1227,7 +1237,7 @@ git commit -m "feat(compose): reconcile Docker shell entitlement"
 - Create: `example-of-linux-root-folder/etc/sudoers.d/vesta-compose-users`
 - Modify: `test/compose/test-package-integration.sh`
 
-- [ ] **Step 1: Write failing sudo/install tests**
+- [x] **Step 1: Write failing sudo/install tests**
 
 Assert:
 
@@ -1247,7 +1257,7 @@ Assert:
 - package upgrade reconciles existing users;
 - no unrelated sudoers file or system group changes.
 
-- [ ] **Step 2: Run the install test and verify it fails**
+- [x] **Step 2: Run the install test and verify it fails**
 
 Run:
 
@@ -1257,7 +1267,7 @@ bash test/compose/test-shell-access-install.sh
 
 Expected: FAIL because the template and installer are absent.
 
-- [ ] **Step 3: Create the canonical sudo policy**
+- [x] **Step 3: Create the canonical sudo policy**
 
 Use this exact narrow shape, adjusting only syntax required by the installed
 sudo version after `visudo` verification:
@@ -1274,7 +1284,7 @@ Defaults:%vesta-compose-users env_delete += "VESTA BASH_ENV ENV CDPATH GLOBIGNOR
 Do not enable `log_input`; secret and registry values are supplied on stdin.
 Do not grant the client, because only the broker is the privileged boundary.
 
-- [ ] **Step 4: Implement atomic installation and repair**
+- [x] **Step 4: Implement atomic installation and repair**
 
 `v-install-docker-shell-access [defer]` must:
 
@@ -1294,7 +1304,7 @@ Do not grant the client, because only the broker is the privileged boundary.
 On validation failure, remove only the temporary file and preserve the prior
 policy.
 
-- [ ] **Step 5: Wire fresh install, package upgrade, and Docker installation**
+- [x] **Step 5: Wire fresh install, package upgrade, and Docker installation**
 
 Call `v-install-docker-shell-access defer` in `src/deb/vesta/postinst` before
 the fresh-package early exit. Call the normal form during upgrades, after the
@@ -1303,13 +1313,13 @@ from the RPM post section, and at the end of
 `v-install-docker-service`. The normal form must repair group/sudoers drift and
 reconcile all existing users.
 
-- [ ] **Step 6: Add the synthetic-root sudo policy**
+- [x] **Step 6: Add the synthetic-root sudo policy**
 
 Mirror the canonical sudoers file at
 `example-of-linux-root-folder/etc/sudoers.d/vesta-compose-users`. Do not mirror
 dynamic `/etc/group` membership; it is host state derived by reconciliation.
 
-- [ ] **Step 7: Run sudo/install/package tests**
+- [x] **Step 7: Run sudo/install/package tests**
 
 Run:
 
@@ -1329,7 +1339,7 @@ Expected: PASS. If `visudo` is unavailable in the development environment,
 the test must report a skip for only the real parser check while retaining
 static policy assertions; staging acceptance must run real `visudo`.
 
-- [ ] **Step 8: Commit installer and package integration**
+- [x] **Step 8: Commit installer and package integration**
 
 ```bash
 git add install/common/sudo/vesta-compose-users \
@@ -1343,6 +1353,16 @@ git add install/common/sudo/vesta-compose-users \
 git commit -m "feat(compose): install tenant Docker shell access"
 ```
 
+#### Closeout Report
+
+- Summary: Added the exact broker-only sudo policy, atomic trusted installer/repair, synthetic-root mirror, lifecycle installer wiring, and executable policy/failure tests.
+- Files changed: `install/common/sudo/vesta-compose-users`, `example-of-linux-root-folder/etc/sudoers.d/vesta-compose-users`, `bin/v-install-docker-shell-access`, installer/postinst/spec/service files, and install/package tests.
+- Tests: Installer/visudo, package integration, policy mirror, malicious-input, isolation, Docker readiness, syntax, and `git diff --check` PASS.
+- Commit SHA(s): `e80485ca`, `309bf712`.
+- Spec review: APPROVED after trust-chain, writable-path, atomic-policy, and failure-matrix remediation.
+- Code quality review: Deferred to final closeout per milestone-driven workflow.
+- Follow-ups or concerns: Root/disposable real-sudo execution remains Task 9 acceptance work.
+
 ### Task 9: Prove the real privilege boundary in a disposable host
 
 **Files:**
@@ -1353,7 +1373,7 @@ git commit -m "feat(compose): install tenant Docker shell access"
 - Modify: `test/compose/test-malicious-input.sh`
 - Modify: `test/compose/test-policy.sh`
 
-- [ ] **Step 1: Add a root-only disposable integration test**
+- [x] **Step 1: Add a root-only disposable integration test**
 
 The test creates temporary Unix users `vx-shell-alice` and `vx-shell-bob`, a
 temporary Vesta tree, one `standard` fixture per owner, and a fake Docker
@@ -1377,7 +1397,7 @@ membership is restored only after valid unsuspension/re-entitlement
 Always remove only the exact disposable users, namespace, fake state, and
 temporary policy created by the test.
 
-- [ ] **Step 2: Extend malicious policy fixtures through the broker**
+- [x] **Step 2: Extend malicious policy fixtures through the broker**
 
 Feed the existing fixtures for privileged mode, Docker/containerd sockets,
 host PID/IPC, devices, unsafe capabilities, host networking, arbitrary host
@@ -1560,7 +1580,7 @@ sudoers validation pass, Docker orchestration remains ready, and unrelated
 managed containers are unchanged. Record cleanup evidence and compare the
 unrelated-container inventory to the pre-deployment snapshot.
 
-- [ ] **Step 7: Run focused security regressions**
+- [x] **Step 7: Run focused security regressions**
 
 Run:
 
@@ -1587,6 +1607,13 @@ git add test/compose/test-shell-access-root-integration.sh \
   .docs/validation/2026-08-07-compose-shell-access-development.md
 git commit -m "test(compose): prove tenant shell isolation on development"
 ```
+
+#### Interim Progress Report
+
+- Local implementation: complete through the disposable-container harness and focused security regressions; commits `e80485ca`, `04317d06`, and `309bf712` are clean and specification-approved.
+- Local evidence: installer/visudo, lifecycle, package, broker, input, malicious-policy, isolation, readiness, and diff checks passed. The root-only disposable harness skipped because the current process is not root and no disposable backend was available; no real-sudo acceptance is claimed.
+- Development acceptance: not attempted. The exact clean implementation commit was not present on a pushed remote branch, so no development or production host was contacted. Steps 3–6 and the final evidence commit remain pending.
+- Follow-up: after the exact release commit is pushed and the approved development prerequisites are available, run Steps 3–6 and record bounded secret-free evidence before closing Task 9 and the Milestone 3 gate.
 
 ### Milestone 3 security review gate
 
