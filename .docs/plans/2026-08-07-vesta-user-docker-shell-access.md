@@ -944,6 +944,29 @@ git commit -m "feat(compose): protect Docker shell mutation inputs"
 - Code quality review: Deferred to final closeout per milestone-driven workflow.
 - Follow-ups or concerns: None.
 
+#### Post-acceptance compatibility remediation closeout
+
+- Summary: Aligned brokered Compose stdin with the existing immutable web
+  source contract by creating
+  `/tmp/vx-compose-web.<32 lowercase hex>/compose.yaml`, while retaining the
+  generic protected snapshot shape for secret and registry input. Refactored
+  snapshot output into the broker shell so `INT`/`TERM` cleanup knows the
+  active root before a blocking read, and preserved the caller umask.
+- Files changed: `bin/v-run-user-docker-command`,
+  `func/vx/compose/shell-access.sh`, `test/compose/test-shell-input.sh`, and
+  `test/compose/fixtures/shell-broker-namespace.sh`.
+- Tests: Bash syntax; shell input as the ordinary caller and in a root-mapped
+  namespace; executable broker and reconciliation fixtures; immutable preview
+  stage/apply; and `git diff --check` PASS. Signal tests cover blocked uploads
+  interrupted by both `INT` and `TERM`, and cleanup is covered whether the
+  downstream staging adapter consumes the source or leaves it for the broker.
+- Commit SHA(s): `bd901e03`.
+- Spec review: APPROVED after the output-variable and signal-cleanup changes.
+- Code quality review: APPROVED after cancellation cleanup and caller-umask
+  preservation remediation.
+- Follow-ups or concerns: Rerun the constrained release gate and repeat exact
+  development-host acceptance from the clean rollback baseline.
+
 ### Task 6: Bind audit identity and revocation ordering - COMPLETE
 
 **Files:**
