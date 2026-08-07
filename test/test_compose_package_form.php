@@ -60,17 +60,35 @@ if (vx_compose_package_normalize($trimmed) !== $expected) {
     fail_package_test('Compose package values were not trimmed');
 }
 
+$leading_zero = $expected;
+$leading_zero['DOCKER_PROJECTS'] = '09';
+$leading_zero['DOCKER_CPUS'] = '02.500';
+$leading_zero_expected = $expected;
+$leading_zero_expected['DOCKER_PROJECTS'] = '9';
+if (vx_compose_package_normalize($leading_zero) !== $leading_zero_expected) {
+    fail_package_test('leading-zero package limits were not normalized as base 10');
+}
+
 foreach (array(
     array('DOCKER_PROJECTS', '-1'),
     array('DOCKER_MEMORY_MB', '1.5'),
     array('DOCKER_PORTS', '1; touch /tmp/compose-package-test'),
     array('DOCKER_CPUS', '1.2345'),
+    array('DOCKER_PROJECTS', '2147483648'),
+    array('DOCKER_MEMORY_MB', '999999999999999999999999999999'),
+    array('DOCKER_CPUS', '2147483648.000'),
 ) as $invalid) {
     $values = $expected;
     $values[$invalid[0]] = $invalid[1];
     if (vx_compose_package_normalize($values) !== false) {
         fail_package_test('malformed '.$invalid[0].' value was accepted');
     }
+}
+
+$maximum = $expected;
+$maximum['DOCKER_PROJECTS'] = VX_COMPOSE_PACKAGE_MAX_VALUE;
+if (vx_compose_package_normalize($maximum) !== $maximum) {
+    fail_package_test('maximum bounded package limit was rejected');
 }
 
 $non_scalar = $expected;

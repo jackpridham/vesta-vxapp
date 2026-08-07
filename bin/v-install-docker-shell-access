@@ -13,7 +13,44 @@ broker="$VESTA/bin/v-run-user-docker-command"
 client="$VESTA/bin/v-docker"
 client_link=/usr/local/bin/v-docker
 temp=
-cleanup() { [[ -z "$temp" ]] || /usr/bin/rm -f -- "$temp"; }
+policy_backup=
+client_stage_dir=
+client_stage=
+target_had_policy=no
+client_link_had=no
+transaction_started=no
+transaction_complete=no
+rollback() {
+    local result=0
+
+    if [[ "$target_had_policy" == yes ]]; then
+        [[ -n "$policy_backup" ]] \
+            && /usr/bin/mv -fT -- "$policy_backup" "$target_policy" \
+            && policy_backup= \
+            || result=1
+    else
+        /usr/bin/rm -f -- "$target_policy" || result=1
+    fi
+    if [[ "$client_link_had" == yes ]]; then
+        /usr/bin/ln -sfn "$client" "$client_link" || result=1
+    else
+        /usr/bin/rm -f -- "$client_link" || result=1
+    fi
+    return "$result"
+}
+cleanup() {
+    local status=$?
+
+    trap - EXIT
+    if [[ "$transaction_started" == yes && "$transaction_complete" != yes ]]; then
+        rollback || status=1
+    fi
+    [[ -z "$temp" ]] || /usr/bin/rm -f -- "$temp"
+    [[ -z "$policy_backup" ]] || /usr/bin/rm -f -- "$policy_backup"
+    [[ -z "$client_stage" ]] || /usr/bin/rm -f -- "$client_stage"
+    [[ -z "$client_stage_dir" ]] || /usr/bin/rmdir -- "$client_stage_dir" 2>/dev/null || :
+    exit "$status"
+}
 trap cleanup EXIT
 
 fail() { echo "Error: $*" >&2; exit 1; }
@@ -72,23 +109,57 @@ if [[ -e "$target_policy" || -L "$target_policy" ]]; then
     secure_regular "$target_policy" \
         && [[ "$(/usr/bin/stat -c '%a' "$target_policy")" == 440 ]] \
         || fail 'sudo policy target is not trusted'
+    target_had_policy=yes
+fi
+if [[ -e "$client_link" || -L "$client_link" ]]; then
+    [[ -L "$client_link" && "$(/usr/bin/stat -c '%u' "$client_link")" == 0 \
+        && "$(/usr/bin/readlink "$client_link")" == "$client" ]] \
+        || fail 'client path is not a trusted exact symlink'
+    client_link_had=yes
 fi
 temp="$(/usr/bin/mktemp "$target_dir/.vesta-compose-users.XXXXXXXX")" || fail 'unable to stage sudo policy'
 /usr/bin/install -m 0440 -o root -g root "$source_policy" "$temp" || fail 'unable to stage sudo policy'
 secure_regular "$temp" && [[ "$(/usr/bin/stat -c '%u:%g:%a' "$temp")" == '0:0:440' ]] \
     || fail 'staged sudo policy is not trusted'
 /usr/sbin/visudo -cf "$temp" >/dev/null || fail 'sudo policy validation failed'
+if [[ "$target_had_policy" == yes ]]; then
+    policy_backup="$(/usr/bin/mktemp "$target_dir/.vesta-compose-users.rollback.XXXXXXXX")" \
+        || fail 'unable to stage sudo policy rollback'
+    /usr/bin/install -m 0440 -o root -g root "$target_policy" "$policy_backup" \
+        || fail 'unable to stage sudo policy rollback'
+    if ! secure_regular "$policy_backup" \
+        || [[ "$(/usr/bin/stat -c '%u:%g:%a' "$policy_backup")" != '0:0:440' ]] \
+        || ! /usr/sbin/visudo -cf "$policy_backup" >/dev/null; then
+        fail 'staged sudo policy rollback is not trusted'
+    fi
+fi
+client_stage_dir="$(/usr/bin/mktemp -d /usr/local/bin/.v-docker.XXXXXXXX)" \
+    || fail 'unable to stage client link'
+secure_directory "$client_stage_dir" \
+    && [[ "$(/usr/bin/stat -c '%u:%g:%a' "$client_stage_dir")" == '0:0:700' ]] \
+    || fail 'client link staging directory is not trusted'
+client_stage="$client_stage_dir/v-docker"
+/usr/bin/ln -s "$client" "$client_stage" || fail 'unable to stage client link'
+[[ -L "$client_stage" && "$(/usr/bin/stat -c '%u' "$client_stage")" == 0 \
+    && "$(/usr/bin/readlink "$client_stage")" == "$client" ]] \
+    || fail 'staged client link is not trusted'
+transaction_started=yes
 /usr/bin/mv -fT -- "$temp" "$target_policy" || fail 'unable to install sudo policy'
 temp=
 [[ "$(/usr/bin/stat -c '%u:%g:%a:%h:%F' "$target_policy")" == '0:0:440:1:regular file' ]] \
     || fail 'installed sudo policy is not protected'
-if [[ -e "$client_link" || -L "$client_link" ]]; then
-    [[ -L "$client_link" && "$(/usr/bin/stat -c '%u' "$client_link")" == 0 \
-        && "$(/usr/bin/readlink "$client_link")" == "$client" ]] \
-        || fail 'client path is not a trusted exact symlink'
-fi
-/usr/bin/ln -sfn "$client" "$client_link"
-[[ "$(/usr/bin/readlink "$client_link")" == "$client" ]] || fail 'client link verification failed'
+/usr/bin/mv -fT -- "$client_stage" "$client_link" || fail 'unable to install client link'
+client_stage=
+/usr/bin/rmdir -- "$client_stage_dir" || fail 'unable to finalize client link staging'
+client_stage_dir=
+[[ -L "$client_link" && "$(/usr/bin/stat -c '%u' "$client_link")" == 0 \
+    && "$(/usr/bin/readlink "$client_link")" == "$client" ]] \
+    || fail 'client link verification failed'
 if [[ "$mode" != defer ]]; then
     "$VESTA/bin/v-sync-docker-shell-access-all" || fail 'membership reconciliation failed'
 fi
+[[ "$(/usr/bin/stat -c '%u:%g:%a:%h:%F' "$target_policy")" == '0:0:440:1:regular file' \
+    && -L "$client_link" && "$(/usr/bin/stat -c '%u' "$client_link")" == 0 \
+    && "$(/usr/bin/readlink "$client_link")" == "$client" ]] \
+    || fail 'installed shell access artifacts failed final verification'
+transaction_complete=yes

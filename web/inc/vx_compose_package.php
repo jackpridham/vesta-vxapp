@@ -1,5 +1,7 @@
 <?php
 
+define('VX_COMPOSE_PACKAGE_MAX_VALUE', '2147483647');
+
 function vx_compose_package_fields()
 {
     return array(
@@ -13,6 +15,27 @@ function vx_compose_package_fields()
         'DOCKER_SECRETS',
         'DOCKER_VOLUMES',
     );
+}
+
+function vx_compose_package_integer_normalize($value)
+{
+    if (strlen($value) > strlen(VX_COMPOSE_PACKAGE_MAX_VALUE)
+        || preg_match('/^[0-9]+$/', $value) !== 1) {
+        return false;
+    }
+
+    $normalized = ltrim($value, '0');
+    if ($normalized === '') {
+        $normalized = '0';
+    }
+    $maximum = VX_COMPOSE_PACKAGE_MAX_VALUE;
+    if (strlen($normalized) > strlen($maximum)
+        || (strlen($normalized) === strlen($maximum)
+            && strcmp($normalized, $maximum) > 0)) {
+        return false;
+    }
+
+    return $normalized;
 }
 
 function vx_compose_package_normalize($values)
@@ -29,13 +52,23 @@ function vx_compose_package_normalize($values)
             $value = trim((string) $values[$field]);
         }
 
-        if ($field === 'DOCKER_CPUS') {
-            $pattern = '/^(unlimited|[0-9]+(?:\.[0-9]{1,3})?)$/';
-        } else {
-            $pattern = '/^(unlimited|[0-9]+)$/';
-        }
-        if (preg_match($pattern, $value) !== 1) {
-            return false;
+        if ($value !== 'unlimited') {
+            if ($field === 'DOCKER_CPUS') {
+                if (strlen($value) > strlen(VX_COMPOSE_PACKAGE_MAX_VALUE) + 4
+                    || preg_match('/^([0-9]+)(\.[0-9]{1,3})?$/', $value, $parts) !== 1) {
+                    return false;
+                }
+                $integer = vx_compose_package_integer_normalize($parts[1]);
+                if ($integer === false) {
+                    return false;
+                }
+                $value = $integer.(isset($parts[2]) ? $parts[2] : '');
+            } else {
+                $value = vx_compose_package_integer_normalize($value);
+                if ($value === false) {
+                    return false;
+                }
+            }
         }
         $normalized[$field] = $value;
     }

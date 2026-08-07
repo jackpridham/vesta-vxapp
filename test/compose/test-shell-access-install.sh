@@ -30,6 +30,7 @@ grep -Fq '/usr/sbin/groupadd --system "$group"' "$installer" || fail 'system gro
 grep -Fq '/usr/sbin/visudo -cf "$temp"' "$installer" || fail 'staged policy is not validated'
 grep -Fq '/usr/bin/mv -fT -- "$temp" "$target_policy"' "$installer" || fail 'policy is not atomically renamed'
 grep -Fq '/usr/bin/install -m 0440 -o root -g root' "$installer" || fail 'staged policy ownership/mode is not exact'
+grep -Fq '/usr/bin/mv -fT -- "$client_stage" "$client_link"' "$installer" || fail 'client link is not atomically renamed'
 grep -Fq 'v-sync-docker-shell-access-all' "$installer" || fail 'normal install does not reconcile users'
 
 for file in install/vst-install-debian.sh install/vst-install-ubuntu.sh install/vst-install-rhel.sh install/vst-install-amazon.sh src/deb/vesta/postinst src/rpm/specs/vesta.spec bin/v-install-docker-service; do
@@ -65,9 +66,19 @@ EOF
 printf 'visudo %s\n' "$*" >>/mnt/actions
 [[ ! -e /mnt/visudo.fail ]] && grep -Fq 'v-run-user-docker-command *' "$2"
 EOF
+    cp /usr/bin/mv "$ns/real-mv"
+    cat >"$ns/tools/mv" <<'EOF'
+#!/usr/bin/env bash
+destination="${@: -1}"
+if [[ -e /mnt/client-mv.fail && "$destination" == /usr/local/bin/v-docker ]]; then
+    exit 1
+fi
+exec /mnt/real-mv "$@"
+EOF
     cat >"$ns/usr-local/vesta/bin/v-sync-docker-shell-access-all" <<'EOF'
 #!/usr/bin/env bash
 printf 'sync\n' >>/mnt/actions
+[[ ! -e /mnt/sync.fail ]]
 EOF
     chmod 0755 "$ns/tools/"* "$ns/usr-local/vesta/bin/v-sync-docker-shell-access-all"
     cat >"$ns/runner" <<'EOF'
@@ -85,6 +96,29 @@ first=$(sha256sum "$policy")
 [[ "$(sha256sum "$policy")" == "$first" ]]
 "$installer"
 grep -Fq sync /mnt/actions
+chmod 0640 "$policy"
+printf '# preserved prior policy\n' >>"$policy"
+chmod 0440 "$policy"
+cp "$policy" /mnt/previous
+prior_link=$(readlink /usr/local/bin/v-docker)
+touch /mnt/client-mv.fail
+! "$installer" defer >/dev/null 2>&1
+cmp /mnt/previous "$policy"
+[[ "$(readlink /usr/local/bin/v-docker)" == "$prior_link" ]]
+rm /mnt/client-mv.fail
+touch /mnt/sync.fail
+! "$installer" >/dev/null 2>&1
+cmp /mnt/previous "$policy"
+[[ "$(readlink /usr/local/bin/v-docker)" == "$prior_link" ]]
+rm /mnt/sync.fail
+rm /usr/local/bin/v-docker
+touch /mnt/sync.fail
+! "$installer" >/dev/null 2>&1
+cmp /mnt/previous "$policy"
+[[ ! -e /usr/local/bin/v-docker && ! -L /usr/local/bin/v-docker ]]
+rm /mnt/sync.fail
+"$installer" defer
+rm /mnt/previous
 cp "$policy" /mnt/previous
 chmod 0666 /usr/local/vesta/install/common/sudo/vesta-compose-users
 ! "$installer" defer >/dev/null 2>&1
@@ -119,6 +153,7 @@ EOF
         --bind "$ns/tools/getent" /usr/bin/getent \
         --bind "$ns/tools/groupadd" /usr/sbin/groupadd \
         --bind "$ns/tools/visudo" /usr/sbin/visudo \
+        --bind "$ns/tools/mv" /usr/bin/mv \
         --bind "$ns" /mnt /mnt/runner
 else
     echo 'SKIP: bubblewrap user namespace unavailable for executable installer failure paths'
@@ -132,7 +167,9 @@ mkdir -p "$fake_vesta/func/vx/compose" "$fake_vesta/bin" "$fake_bin"
 cat >"$fake_vesta/func/vx/compose/main.sh" <<'EOF'
 vx_compose_shell_access_lock_acquire() { :; }
 vx_compose_shell_access_lock_release() { :; }
-vx_compose_shell_should_be_group_member() { [[ "$(cat "$VX_TEST_ELIGIBLE")" == yes ]]; }
+vx_compose_shell_should_be_group_member() {
+    [[ "$1" == alice && "$(cat "$VX_TEST_ELIGIBLE")" == yes ]]
+}
 vx_compose_shell_group_state() {
     local groups
     groups="$("$VX_TEST_ID" -nG "$1")" || return 2

@@ -37,6 +37,7 @@ quota_fields=(
 )
 
 # shellcheck source=func/vx/compose/package.sh
+source "$repo_root/func/vx/compose/quota.sh"
 source "$repo_root/func/vx/compose/package.sh"
 grep -Fq 'source "$_vx_compose_dir/package.sh"' \
     "$repo_root/func/vx/compose/main.sh" \
@@ -51,11 +52,22 @@ fi
 if ! vx_compose_package_docker_is_enabled unlimited; then
     fail 'unlimited Compose projects does not enable Docker access'
 fi
-for malformed_limit in -1 01 1.5 malformed; do
+if ! vx_compose_package_docker_is_enabled 09; then
+    fail 'leading-zero Compose project limit was not treated as base 10'
+fi
+for malformed_limit in -1 1.5 malformed 2147483648 999999999999999999999999999999; do
     if vx_compose_package_docker_is_enabled "$malformed_limit"; then
         fail "malformed Compose project limit was enabled: $malformed_limit"
     fi
 done
+
+[[ "$(vx_compose_package_integer_normalize 0009)" == 9 ]] \
+    || fail 'leading-zero quota did not normalize canonically'
+[[ "$(vx_compose_package_integer_normalize 2147483647)" == 2147483647 ]] \
+    || fail 'maximum bounded quota was rejected'
+if vx_compose_package_integer_normalize 2147483648 >/dev/null; then
+    fail 'above-maximum quota was accepted'
+fi
 
 legacy_zero="$(vx_compose_package_data_with_defaults "DOCKER_CONTAINERS='0'")"
 for field in "${quota_fields[@]}"; do
@@ -72,6 +84,52 @@ grep -Eq "^DOCKER_MEMORY_MB='3072'$" <<<"$legacy_positive" \
     || fail 'positive legacy limit did not derive memory'
 grep -Eq "^DOCKER_PIDS='384'$" <<<"$legacy_positive" \
     || fail 'positive legacy limit did not derive PIDs'
+
+legacy_leading_zero="$(vx_compose_package_data_with_defaults "DOCKER_CONTAINERS='09'")"
+grep -Eq "^DOCKER_PROJECTS='9'$" <<<"$legacy_leading_zero" \
+    || fail 'leading-zero legacy limit was not derived in base 10'
+grep -Eq "^DOCKER_MEMORY_MB='9216'$" <<<"$legacy_leading_zero" \
+    || fail 'leading-zero legacy arithmetic was not canonical base 10'
+
+legacy_oversized="$(vx_compose_package_data_with_defaults "DOCKER_CONTAINERS='2147483648'")"
+for field in "${quota_fields[@]}"; do
+    grep -Eq "^${field}='0'$" <<<"$legacy_oversized" \
+        || fail "oversized legacy limit did not fail closed for $field"
+done
+
+for field in "${quota_fields[@]}"; do
+    printf -v "$field" '%s' 10
+    printf -v "U_$field" '%s' 10
+done
+# Values below are consumed through indirect expansion by the package helper.
+# shellcheck disable=SC2034
+DOCKER_CPUS=10.000
+# shellcheck disable=SC2034
+U_DOCKER_CPUS=10.000
+vx_compose_package_usage_is_covered \
+    || fail 'usage equal to bounded package limits was rejected'
+U_DOCKER_PROJECTS=11
+if vx_compose_package_usage_is_covered; then
+    fail 'usage above a bounded package limit was accepted'
+fi
+[[ "$VX_COMPOSE_PACKAGE_OVERAGE_FIELD" == DOCKER_PROJECTS ]] \
+    || fail 'above-limit package field was not reported'
+U_DOCKER_PROJECTS=09
+# shellcheck disable=SC2034
+DOCKER_PROJECTS=10
+vx_compose_package_usage_is_covered \
+    || fail 'leading-zero usage was not compared as base 10'
+U_DOCKER_PROJECTS=2147483648
+if vx_compose_package_usage_is_covered; then
+    fail 'oversized usage failed open'
+fi
+# shellcheck disable=SC2034
+U_DOCKER_PROJECTS=10
+# shellcheck disable=SC2034
+U_DOCKER_CPUS=2147483648.000
+if vx_compose_package_usage_is_covered; then
+    fail 'oversized CPU usage failed open'
+fi
 
 legacy_unlimited="$(vx_compose_package_data_with_defaults "DOCKER_CONTAINERS='unlimited'")"
 for field in "${quota_fields[@]}"; do
