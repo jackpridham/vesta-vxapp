@@ -35,6 +35,9 @@
 - Put shared logic in `func/vx/compose/*.sh`; keep public commands as thin Vesta adapters.
 - Canonicalize in a controlled environment, enforce deny-first policy, and verify ownership labels before mutation.
 - Ordinary users act only on their own `standard` projects. Privileged profiles remain administrator-only.
+- Preserve `v-docker` shell access as package-derived (`DOCKER_PROJECTS`) and automatically reconciled through `vesta-compose-users` plus exact `v-run-user-docker-command` sudo.
+- Derive identity from kernel/sudo state, require owner equality and `standard`, bound stdin, and acquire owner lock before project lock.
+- Never grant Docker group/socket access, raw Docker, caller owner/actor arguments, or direct tenant sudo to existing `v-*` commands.
 - Preview/apply is immutable, digest- and revision-bound, and locked through convergence or rollback.
 - Never expose secret/registry values through argv, metadata, environment, logs, UI, audit, or unencrypted backups.
 - Keep image trust profile/version bound; adapters use fixed root-owned paths, empty environments, immutable digests, and bounded redacted output.

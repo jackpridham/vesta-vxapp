@@ -209,6 +209,12 @@ v-docker secret-add|secret-change PROJECT NAME < secret-value
 This surface is available only through the documented shell-access contract's
 `vesta-compose-users` membership and exact `v-run-user-docker-command` broker.
 It does not authorize direct sudo access to any existing `v-*` Docker command.
+Effective package `DOCKER_PROJECTS > 0` (or `unlimited`) and interactive Bash
+are required; Vesta owns automatic reconciliation of membership. Every call
+uses kernel/sudo-derived identity, owner equality, the `standard` profile, and
+bounded stdin where input is required. Live broker checks apply entitlement
+changes immediately even when a new login is still needed to display changed
+supplementary groups.
 
 ## JSON
 

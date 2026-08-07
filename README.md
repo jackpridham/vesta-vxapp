@@ -62,6 +62,11 @@ The implemented orchestrator provides:
 - owner-only `standard` Compose create/update in the panel through a
   non-mutating impact preview and immutable digest- and revision-bound
   confirmation;
+- owner-only interactive `v-docker` access through derived
+  `vesta-compose-users` membership and the exact
+  `v-run-user-docker-command` broker, with package `DOCKER_PROJECTS`
+  entitlement, automatic reconciliation, live authorization checks, and
+  bounded stdin;
 - administrator-only `admin-approved` profile workflows;
 - owner-scoped registry credentials, image pulls, checksum-verified local
   archives, immutable registry/platform identity evidence, protected
@@ -134,6 +139,7 @@ Start here for current Compose work:
 - [Backup and restore contract](.docs/contracts/compose-backup-restore.md)
 - [CLI and web interface contract](.docs/contracts/compose-interfaces.md)
 - [Self-service deployment contract](.docs/contracts/compose-self-service-deployment.md)
+- [Tenant shell-access contract](.docs/contracts/compose-shell-access.md)
 
 Legacy direct-container documents remain in `.docs/contracts/docker-*` and
 `.docs/user-guides/docker-containers.md` for audit history only. They are
@@ -155,6 +161,11 @@ comparison on disposable staging proved exact repository bytes, modes, and
 `root:root` ownership. Real create/deploy, lifecycle, backup, immutable
 preview/update, stale-preview rejection, failed-update recovery, restore, and
 scoped deletion all passed.
+
+For the later tenant shell-access change, the exact commit/archive were
+verified locally, but deployment was not applied because local
+release-readiness prerequisites were incomplete. Development-host acceptance
+was not recorded, and no production access occurred during that validation.
 
 The legacy myVesta upstream README follows.
 

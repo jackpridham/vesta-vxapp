@@ -35,5 +35,11 @@ immutable preview/apply, administrator-approved profiles, trusted image
 delivery, managed backup and restore, and native Vesta ingress integration.
 The workload-bundle and project-probe contracts define the protected generic
 interfaces for application-owned release metadata and diagnostics.
+Tenant interactive access is the `v-docker` client, derived
+`vesta-compose-users` membership, and exact `v-run-user-docker-command`
+broker. Package `DOCKER_PROJECTS` entitlement and interactive Bash are checked
+live; Vesta owns automatic reconciliation. The surface is owner-equal,
+standard-only, redacted, immutable for preview/apply, and accepts payloads
+only through bounded stdin.
 Production mutation always requires separate explicit authorization naming the
 target, release, and workload scope.

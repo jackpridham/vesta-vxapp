@@ -14,6 +14,14 @@ public issue.
   environment, then evaluated by deny-first policy before Docker mutation.
 - Ordinary users act only on their own `standard` projects. Privileged
   profiles require explicit administrator assignment and expiry.
+- Interactive users call `v-docker` through derived `vesta-compose-users`
+  membership and the exact `v-run-user-docker-command` broker. Effective
+  package `DOCKER_PROJECTS` entitlement, interactive Bash, kernel/sudo-derived
+  identity, and owner equality are checked live; Vesta owns automatic
+  reconciliation.
+- Tenant payloads use bounded stdin. The grant never exposes the Docker group,
+  Docker socket, raw Docker, caller-selected owner/actor arguments, or direct
+  tenant sudo access to existing `v-*` commands.
 - Self-service confirmation uses a short-lived, root-owned, non-symlink
   preview bound to source/canonical digests and the expected revision.
 - Secrets and registry authentication must not appear in argv, Compose

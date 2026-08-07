@@ -87,6 +87,13 @@ Preserve the established format unless a file already deviates for a good reason
   lifecycle, policy, or storage contract before changing public behavior.
   Use `.docs/validation/2026-07-29-compose-production-readiness.md` for the
   current release baseline.
+- Keep tenant shell access behind `v-docker`, derived
+  `vesta-compose-users` membership, and exact `v-run-user-docker-command`
+  sudo. Derive identity from kernel/sudo state, require owner equality and
+  `standard`, check package `DOCKER_PROJECTS` live, use bounded stdin, and
+  acquire the owner lock before any project lock. Vesta owns automatic
+  reconciliation; never grant Docker group/socket, raw Docker, caller
+  owner/actor arguments, or direct tenant sudo to existing `v-*` commands.
 
 ## Validation
 

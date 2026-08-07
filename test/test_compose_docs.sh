@@ -17,6 +17,69 @@ grep -Fq 'v-run-user-docker-command' \
     "$repo_root/.docs/contracts/compose-shell-access.md" \
     || fail 'shell-access contract omits the privileged broker'
 
+shell_access_docs=(
+    "README.md"
+    "SECURITY.md"
+    "AGENTS.md"
+    "docs/container-orchestration.md"
+    ".docs/README.md"
+    ".docs/contracts/compose-interfaces.md"
+    ".docs/contracts/compose-policy.md"
+    ".docs/contracts/compose-lifecycle.md"
+    ".docs/contracts/compose-shell-access.md"
+    ".docs/user-guides/docker-compose-projects.md"
+    ".agents/skills/bash-cli/SKILL.md"
+    ".agents/skills/runtime-layout/SKILL.md"
+)
+
+for required_text in \
+    'v-docker' \
+    'vesta-compose-users' \
+    'v-run-user-docker-command' \
+    'DOCKER_PROJECTS' \
+    'package-derived' \
+    'standard-only' \
+    'bounded stdin' \
+    'automatic reconciliation'
+do
+    grep -Fq "$required_text" "${shell_access_docs[@]/#/$repo_root/}" \
+        || fail "active shell-access guidance omits: $required_text"
+done
+
+for workflow_command in \
+    'v-docker quota json' \
+    'v-docker projects json' \
+    'v-docker show app json' \
+    'v-docker health app json' \
+    'v-docker logs app app 100' \
+    'v-docker preview app change < compose.yaml' \
+    'v-docker apply app PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION' \
+    'v-docker restart app'
+do
+    grep -Fq "$workflow_command" \
+        "$repo_root/.docs/user-guides/docker-compose-projects.md" \
+        || fail "user guide omits shell workflow command: $workflow_command"
+done
+
+for repair_command in \
+    '/usr/local/vesta/bin/v-sync-docker-shell-access USER' \
+    '/usr/local/vesta/bin/v-sync-docker-shell-access-all' \
+    '/usr/local/vesta/bin/v-install-docker-shell-access' \
+    '/usr/sbin/visudo -cf /etc/sudoers.d/vesta-compose-users' \
+    'getent group vesta-compose-users' \
+    'sudo -l -U USER'
+do
+    grep -Fq "$repair_command" "$repo_root/docs/container-orchestration.md" \
+        || fail "operator guide omits shell-access repair command: $repair_command"
+done
+
+if rg -n \
+    '(usermod|gpasswd).*(docker|vesta-compose-users)|chmod.*docker\.sock|setfacl.*docker\.sock|sudo[[:space:]]+(-n[[:space:]]+)?(/usr/local/vesta/bin/)?v-[a-z0-9-]+|^[[:space:]]*(\$[[:space:]]*)?(sudo[[:space:]]+)?docker[[:space:]]+(ps|compose|logs|inspect|restart|start|stop|exec|run)|v-docker.*(ACTOR|OWNER)|manual(ly)? (add|remove|maintain).*(vesta-compose-users|group membership)' \
+    "${shell_access_docs[@]/#/$repo_root/}"
+then
+    fail 'active guidance recommends a forbidden tenant Docker access path'
+fi
+
 required_docs=(
     ".docs/contracts/compose-storage.md"
     ".docs/contracts/compose-policy.md"
