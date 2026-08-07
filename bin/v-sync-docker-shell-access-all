@@ -14,30 +14,62 @@ source "$VESTA/func/vx/compose/main.sh"
 [[ ! -L "$lock_root" && "$(stat -c '%u:%g:%a:%F' "$lock_root")" == '0:0:700:directory' ]] || exit 1
 exec {reconcile_fd}>"$lock_path" || exit 1
 /usr/bin/chmod 0600 "$lock_path" || exit 1
-[[ ! -L "$lock_path" && "$(stat -c '%u:%g:%a:%F' "$lock_path")" == '0:0:600:regular file' ]] || exit 1
+[[ -f "$lock_path" && ! -L "$lock_path" \
+    && "$(stat -c '%u:%g:%a' "$lock_path")" == '0:0:600' ]] || exit 1
 /usr/bin/flock -x "$reconcile_fd" || exit 1
 added=0 removed=0 unchanged=0 failed=0
 declare -A eligible=()
+if ! /usr/bin/getent group vesta-compose-users >/dev/null 2>&1; then
+    printf 'added=0 removed=0 unchanged=0 failed=1\n'
+    exit 1
+fi
 shopt -s nullglob
 for conf in "$VESTA"/data/users/*/user.conf; do
     user=${conf%/user.conf}; user=${user##*/}
     [[ "$user" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ && "$user" != admin ]] || continue
-    before=absent; vx_compose_shell_group_contains "$user" && before=present
+    vx_compose_shell_group_state "$user"; state=$?
+    if (( state == 2 )); then ((failed+=1)); continue; fi
+    before=absent; (( state == 0 )) && before=present
     if "$VESTA/bin/v-sync-docker-shell-access" "$user"; then
         after=absent
-        vx_compose_shell_group_contains "$user" && { after=present; eligible["$user"]=1; }
+        vx_compose_shell_group_state "$user"; state=$?
+        if (( state == 2 )); then ((failed+=1)); continue; fi
+        (( state == 0 )) && { after=present; eligible["$user"]=1; }
         if [[ "$before" == "$after" ]]; then ((unchanged+=1));
         elif [[ "$after" == present ]]; then ((added+=1)); else ((removed+=1)); fi
     else ((failed+=1)); fi
 done
-group_record="$(/usr/bin/getent group vesta-compose-users 2>/dev/null || :)"
+if ! group_record="$(/usr/bin/getent group vesta-compose-users 2>/dev/null)"; then
+    ((failed+=1))
+    printf 'added=%d removed=%d unchanged=%d failed=%d\n' "$added" "$removed" "$unchanged" "$failed"
+    exit 1
+fi
+[[ "$group_record" != *$'\n'* && "$group_record" == vesta-compose-users:*:*:* ]] || {
+    ((failed+=1))
+    printf 'added=%d removed=%d unchanged=%d failed=%d\n' "$added" "$removed" "$unchanged" "$failed"
+    exit 1
+}
 member_csv=${group_record##*:}
 IFS=, read -r -a group_members <<<"$member_csv"
 for user in "${group_members[@]}"; do
-    [[ -n "$user" && "$user" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ ]] || continue
+    [[ -n "$user" ]] || continue
     [[ -n "${eligible[$user]:-}" ]] && continue
-    /usr/bin/gpasswd -d "$user" vesta-compose-users >/dev/null 2>&1 || :
-    if vx_compose_shell_group_contains "$user"; then ((failed+=1)); else ((removed+=1)); fi
+    if [[ ! "$user" =~ ^[A-Za-z_][A-Za-z0-9_.-]{0,31}\$?$ ]]; then
+        ((failed+=1))
+        continue
+    fi
+    /usr/bin/gpasswd -d "$user" -- vesta-compose-users >/dev/null 2>&1 || :
+    if ! refreshed_record="$(/usr/bin/getent group vesta-compose-users 2>/dev/null)"; then
+        ((failed+=1))
+        continue
+    fi
+    refreshed_members=${refreshed_record##*:}
+    still_present=no
+    IFS=, read -r -a refreshed_group_members <<<"$refreshed_members"
+    for refreshed_user in "${refreshed_group_members[@]}"; do
+        [[ "$refreshed_user" == "$user" ]] && still_present=yes
+    done
+    if [[ "$still_present" == no ]]; then ((removed+=1)); else ((failed+=1)); fi
 done
 printf 'added=%d removed=%d unchanged=%d failed=%d\n' "$added" "$removed" "$unchanged" "$failed"
 (( failed == 0 ))

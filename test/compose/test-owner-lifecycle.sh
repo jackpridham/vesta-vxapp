@@ -78,6 +78,15 @@ export VX_COMPOSE_DOCKER_BIN="$fake_docker"
 # shellcheck source=func/vx/compose/main.sh
 source "$repo_root/func/vx/compose/main.sh"
 
+vx_compose_shell_groups() { printf '%s\n' 'alice vesta-compose-users'; }
+vx_compose_shell_group_state alice || fail 'group-state helper missed present membership'
+vx_compose_shell_groups() { printf '%s\n' 'alice users'; }
+set +e; vx_compose_shell_group_state alice; group_state=$?; set -e
+[[ "$group_state" == 1 ]] || fail 'group-state helper did not distinguish absent membership'
+vx_compose_shell_groups() { return 7; }
+set +e; vx_compose_shell_group_state alice; group_state=$?; set -e
+[[ "$group_state" == 2 ]] || fail 'group-state helper suppressed id lookup failure'
+
 # Derived membership ignores current group trust and follows authoritative
 # quota, suspension, shell, and passwd identity.
 cat >>"$VESTA/data/users/alice/user.conf" <<'EOF'

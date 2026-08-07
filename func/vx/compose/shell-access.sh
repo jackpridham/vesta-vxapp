@@ -47,12 +47,17 @@ vx_compose_shell_actor_resolve() {
     printf '%s\n' "$actor"
 }
 
-vx_compose_shell_group_contains() {
-    local actor="$1" group
+vx_compose_shell_group_state() {
+    local actor="$1" groups group
+    groups="$(vx_compose_shell_groups "$actor")" || return 2
     while IFS= read -r group; do
         [[ "$group" == "$VX_COMPOSE_SHELL_GROUP" ]] && return 0
-    done < <(vx_compose_shell_groups "$actor" | tr ' ' '\n')
+    done < <(printf '%s\n' "$groups" | tr ' ' '\n')
     return 1
+}
+
+vx_compose_shell_group_contains() {
+    vx_compose_shell_group_state "$1"
 }
 
 vx_compose_shell_user_conf_secure() {
@@ -74,10 +79,10 @@ vx_compose_shell_user_conf_secure() {
 
 vx_compose_shell_group_revoke() {
     local actor="$1"
-    /usr/bin/getent group "$VX_COMPOSE_SHELL_GROUP" >/dev/null 2>&1 || return 0
-    /usr/sbin/gpasswd -d "$actor" "$VX_COMPOSE_SHELL_GROUP" >/dev/null 2>&1 || {
-        vx_compose_shell_group_contains "$actor" && return 1
-        return 0
+    /usr/bin/getent group "$VX_COMPOSE_SHELL_GROUP" >/dev/null 2>&1 || return 1
+    /usr/sbin/gpasswd -d "$actor" -- "$VX_COMPOSE_SHELL_GROUP" >/dev/null 2>&1 || {
+        vx_compose_shell_group_state "$actor"
+        case $? in 1) return 0 ;; *) return 1 ;; esac
     }
 }
 
@@ -85,7 +90,7 @@ vx_compose_shell_group_grant_if_eligible() {
     local actor="$1"
     vx_compose_shell_should_be_group_member "$actor" || return 0
     /usr/bin/getent group "$VX_COMPOSE_SHELL_GROUP" >/dev/null 2>&1 || return 1
-    /usr/sbin/usermod -a -G "$VX_COMPOSE_SHELL_GROUP" "$actor"
+    /usr/sbin/usermod -a -G "$VX_COMPOSE_SHELL_GROUP" -- "$actor"
 }
 
 vx_compose_shell_require_eligible_except_group() {
@@ -122,7 +127,7 @@ vx_compose_shell_require_eligible() {
     local actor="$1"
     vx_compose_shell_access_deny_is_clear "$actor" || return 1
     vx_compose_shell_require_eligible_except_group "$actor" || return 1
-    vx_compose_shell_group_contains "$actor"
+    vx_compose_shell_group_state "$actor"
 }
 
 vx_compose_shell_access_deny_path() {

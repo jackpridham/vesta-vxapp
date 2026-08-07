@@ -18,7 +18,32 @@ trap cleanup EXIT
 
 fail() { echo "Error: $*" >&2; exit 1; }
 secure_regular() {
-    [[ -f "$1" && ! -L "$1" && "$(/usr/bin/stat -c '%u:%h:%F' "$1")" == '0:1:regular file' ]]
+    local facts
+    [[ -f "$1" && ! -L "$1" ]] || return 1
+    facts="$(/usr/bin/stat -c '%u:%a:%h:%F' "$1")" || return 1
+    IFS=: read -r owner permissions links kind <<<"$facts"
+    [[ "$owner" == 0 && "$links" == 1 && "$kind" == 'regular file' ]] || return 1
+    (( (8#$permissions & 0022) == 0 ))
+}
+secure_directory() {
+    local path="$1" facts owner permissions kind
+    [[ -d "$path" && ! -L "$path" ]] || return 1
+    facts="$(/usr/bin/stat -c '%u:%a:%F' "$path")" || return 1
+    IFS=: read -r owner permissions kind <<<"$facts"
+    [[ "$owner" == 0 && "$kind" == directory ]] || return 1
+    (( (8#$permissions & 0022) == 0 ))
+}
+secure_parent_chain() {
+    local path="$1" parent component current=/
+    parent="$(/usr/bin/dirname -- "$path")" || return 1
+    [[ "$parent" == /* ]] || return 1
+    secure_directory / || return 1
+    IFS=/ read -r -a components <<<"${parent#/}"
+    for component in "${components[@]}"; do
+        [[ -n "$component" && "$component" != . && "$component" != .. ]] || return 1
+        current="${current%/}/$component"
+        secure_directory "$current" || return 1
+    done
 }
 [[ "$EUID" == 0 ]] || fail 'root privileges are required'
 [[ -z "$mode" || "$mode" == defer ]] || fail 'argument must be defer'
@@ -37,18 +62,31 @@ local_record="$(/usr/bin/awk -F: -v group="$group" '$1 == group { print; found++
 secure_regular "$source_policy" || fail 'sudo policy source is not trusted'
 secure_regular "$broker" || fail 'broker is not trusted'
 secure_regular "$client" || fail 'client is not trusted'
-[[ -d "$target_dir" && ! -L "$target_dir" && "$(/usr/bin/stat -c '%u:%F' "$target_dir")" == '0:directory' ]] \
-    || fail 'sudoers directory is not trusted'
-[[ ! -e "$target_policy" || ( -f "$target_policy" && ! -L "$target_policy" && "$(/usr/bin/stat -c '%u:%h:%F' "$target_policy")" == '0:1:regular file' ) ]] \
-    || fail 'sudo policy target is not trusted'
+secure_parent_chain "$source_policy" || fail 'sudo policy source path is not trusted'
+secure_parent_chain "$broker" || fail 'broker path is not trusted'
+secure_parent_chain "$client" || fail 'client path is not trusted'
+secure_parent_chain "$target_policy" || fail 'sudoers path is not trusted'
+secure_parent_chain "$client_link" || fail 'client link path is not trusted'
+secure_directory "$target_dir" || fail 'sudoers directory is not trusted'
+if [[ -e "$target_policy" || -L "$target_policy" ]]; then
+    secure_regular "$target_policy" \
+        && [[ "$(/usr/bin/stat -c '%a' "$target_policy")" == 440 ]] \
+        || fail 'sudo policy target is not trusted'
+fi
 temp="$(/usr/bin/mktemp "$target_dir/.vesta-compose-users.XXXXXXXX")" || fail 'unable to stage sudo policy'
 /usr/bin/install -m 0440 -o root -g root "$source_policy" "$temp" || fail 'unable to stage sudo policy'
+secure_regular "$temp" && [[ "$(/usr/bin/stat -c '%u:%g:%a' "$temp")" == '0:0:440' ]] \
+    || fail 'staged sudo policy is not trusted'
 /usr/sbin/visudo -cf "$temp" >/dev/null || fail 'sudo policy validation failed'
 /usr/bin/mv -fT -- "$temp" "$target_policy" || fail 'unable to install sudo policy'
 temp=
 [[ "$(/usr/bin/stat -c '%u:%g:%a:%h:%F' "$target_policy")" == '0:0:440:1:regular file' ]] \
     || fail 'installed sudo policy is not protected'
-if [[ -e "$client_link" && ! -L "$client_link" ]]; then fail 'client path is not a symlink'; fi
+if [[ -e "$client_link" || -L "$client_link" ]]; then
+    [[ -L "$client_link" && "$(/usr/bin/stat -c '%u' "$client_link")" == 0 \
+        && "$(/usr/bin/readlink "$client_link")" == "$client" ]] \
+        || fail 'client path is not a trusted exact symlink'
+fi
 /usr/bin/ln -sfn "$client" "$client_link"
 [[ "$(/usr/bin/readlink "$client_link")" == "$client" ]] || fail 'client link verification failed'
 if [[ "$mode" != defer ]]; then
