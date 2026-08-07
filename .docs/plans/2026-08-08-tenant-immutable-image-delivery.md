@@ -1,0 +1,297 @@
+# Tenant Immutable Image Delivery Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use `$milestone-driven-implementation` because this is a security-sensitive, multi-repository product milestone. Complete the Vesta authority milestone and its independent specification review before host rollout; use focused tests during implementation and reserve full affected-system closeout for the end.
+
+**Goal:** Let an eligible Vesta tenant build in CI, push an immutable registry digest, pull that exact bounded image through `v-docker`, and preview/apply its own `standard` project without raw Docker or a human Debian step.
+
+**Architecture:** Add one owner-derived `image-pull` broker operation backed by a dedicated immutable-only Vesta adapter. The adapter verifies the registry manifest and bounded Linux/approved-architecture image size before Docker mutation, pulls with the owner's protected registry configuration, and records owner-scoped image evidence. Standard-project resolution accepts registry images only when the submitted reference is itself immutable and the owner-scoped pull record matches; tag/local-image references continue to require expiring administrator approval. Slave builds remain off-host, the new Slave workload uses generic `standard` v2, and legacy production remains untouched until a separately authorized migration window.
+
+**Tech Stack:** Bash, Docker CLI manifest/image APIs, jq, Vesta state, SSH, Compose, Python workload builder, shell namespace fixtures.
+
+---
+
+## Product milestones
+
+1. Vesta tenant immutable image delivery and local-image authority correction.
+2. Development host onboarding and a standard-profile Slave deployment rehearsal.
+3. Cross-repository deployment documentation and production account readiness without production workload mutation.
+
+### Task 1: Specify broker and image-authority behavior
+
+**Files:**
+- Modify: `.docs/contracts/compose-shell-access.md`
+- Modify: `.docs/contracts/compose-images.md`
+- Modify: `.docs/contracts/compose-self-service-deployment.md`
+- Modify: `docs/container-orchestration.md`
+- Modify: `DOCKER_ORCHESTRATION_DEPLOYMENT.md`
+
+- [ ] **Step 1: Add the tenant command contract**
+
+Add this exact catalog form:
+
+```text
+image-pull IMAGE@sha256:DIGEST
+```
+
+State that the broker derives the owner, fixes profile authority to `standard`, accepts no tag, URL, owner, actor, platform, Docker option, or credential argument, and uses only the owner's protected registry configuration.
+
+- [ ] **Step 2: Separate pull, approval, and deployment language**
+
+Document these independent facts:
+
+```text
+immutable registry digest -> tenant may request bounded owner-scoped pull
+local archive or tag       -> administrator load plus expiring local approval
+already delivered image    -> tenant preview/apply/deploy for standard only
+slave-vxapp/admin-approved -> administrator-only; never accepted by v-docker
+```
+
+- [ ] **Step 3: Define image admission limits**
+
+Require manifest inspection before pull, one unambiguous Linux/approved-architecture manifest, a positive aggregate config/layer byte count no greater than `VX_COMPOSE_IMAGE_MAX_BYTES`, exact post-pull digest/platform verification, owner-scoped evidence, and redacted audit output.
+
+### Task 2: Write failing focused tests
+
+**Files:**
+- Modify: `test/compose/fixtures/shell-broker-namespace.sh`
+- Modify: `test/compose/test-images.sh`
+- Modify: `test/compose/test-cli-surface.sh`
+- Modify: `test/compose/test-shell-access-root-integration.sh`
+
+- [ ] **Step 1: Add exact broker dispatch coverage**
+
+Add an executable fake `v-pull-user-docker-image` and require:
+
+```text
+v-docker image-pull registry.example/app@sha256:<64 lowercase hex>
+  -> v-pull-user-docker-image alice registry.example/app@sha256:<digest>
+```
+
+Reject tags, uppercase/malformed digests, extra arguments, option injection, embedded credentials, URLs, and owner arguments before the fake adapter runs.
+
+- [ ] **Step 2: Add immutable pull helper tests**
+
+Extend the fake Docker implementation with single-platform and index manifest fixtures containing config/layer sizes. Prove that immutable pull:
+
+```text
+- rejects tags before Docker image pull;
+- rejects missing, ambiguous, wrong-platform, zero-size, malformed, and oversized manifests;
+- performs manifest inspection before image pull;
+- verifies the post-pull immutable reference, image ID, OS, and architecture;
+- writes only owner-scoped redacted metadata and audit evidence.
+```
+
+- [ ] **Step 3: Add standard resolver regression tests**
+
+Prove that a standard candidate:
+
+```text
+- accepts a pulled and recorded exact repository digest;
+- rejects an unrecorded exact digest;
+- rejects a tag carrying a Docker-generated RepoDigests entry without local approval;
+- accepts that tag only with matching unexpired administrator approval;
+- preserves the existing privileged/legacy compatibility branch.
+```
+
+- [ ] **Step 4: Run failing tests**
+
+Run:
+
+```bash
+bash test/compose/test-images.sh
+bash test/compose/test-shell-access.sh
+bash test/compose/test-cli-surface.sh
+```
+
+Expected: failures identify the missing immutable adapter, broker operation, and standard resolver authority checks.
+
+### Task 3: Implement immutable image delivery
+
+**Files:**
+- Create: `bin/v-pull-user-docker-image`
+- Modify: `bin/v-run-user-docker-command`
+- Modify: `func/vx/compose/images.sh`
+
+- [ ] **Step 1: Add immutable reference validation**
+
+Implement:
+
+```bash
+vx_compose_image_reference_is_immutable() {
+    vx_compose_image_reference_is_valid "$1" \
+        && [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,181}@sha256:[a-f0-9]{64}$ ]]
+}
+```
+
+Use the repository parser to preserve the existing 255-byte total reference bound.
+
+- [ ] **Step 2: Add bounded manifest admission**
+
+Implement a helper that calls owner-scoped `docker manifest inspect` using the protected registry config, selects exactly one `linux/$VX_COMPOSE_ALLOWED_ARCHITECTURE` manifest when the reference is an index, inspects the selected child digest, and sums `.config.size` plus every `.layers[].size`. Reject non-integer, negative, zero, overflowing, malformed, ambiguous, or over-limit totals before `docker image pull`.
+
+- [ ] **Step 3: Add immutable owner pull**
+
+Implement `vx_compose_image_pull_immutable OWNER REFERENCE` to validate the owner/reference, acquire the owner registry lock, run bounded manifest admission, pull exactly the digest, inspect it, require the matching repository digest and approved platform, record the existing redacted owner metadata, audit `image-pull`, and release the lock on every path.
+
+- [ ] **Step 4: Add the thin Vesta adapter**
+
+Create `v-pull-user-docker-image USER IMAGE` using the normal Vesta command header and validation flow. It calls only `vx_compose_image_pull_immutable`, logs the owner-scoped success, and emits the existing redacted image metadata JSON.
+
+- [ ] **Step 5: Add broker dispatch**
+
+Add:
+
+```bash
+image-pull)
+    require_count 1 1 "$@" || exit 1
+    vx_compose_image_reference_is_immutable "$1" || exit 1
+    run_vesta_user_command v-pull-user-docker-image "$actor" "$1"
+    ;;
+```
+
+Do not add image load, image delete, build, raw pull options, owner/profile arguments, or Docker socket access.
+
+- [ ] **Step 6: Correct standard image authority**
+
+In `vx_compose_resolve_images_to_file`, for `standard` require:
+
+```text
+immutable submitted reference + matching owner image record
+OR
+matching current local-image approval for owner/reference/id/platform/standard-version
+```
+
+Do not treat a non-empty Docker `RepoDigests` array by itself as proof of registry delivery. Keep the recorded production legacy evidence compatibility branch scoped exactly to non-standard privileged profiles.
+
+- [ ] **Step 7: Run focused tests and syntax validation**
+
+Run:
+
+```bash
+bash -n bin/v-pull-user-docker-image bin/v-run-user-docker-command func/vx/compose/images.sh
+bash test/compose/test-images.sh
+bash test/compose/test-image-approval.sh
+bash test/compose/test-shell-access.sh
+bash test/compose/test-shell-access-root-integration.sh
+bash test/compose/test-cli-surface.sh
+git diff --check
+```
+
+Expected: all pass. Do not run broad ShellCheck or the unrestricted production gate on constrained hosts.
+
+- [ ] **Step 8: Commit the Vesta milestone**
+
+```bash
+git add bin/v-pull-user-docker-image bin/v-run-user-docker-command \
+  func/vx/compose/images.sh test/compose .docs/contracts \
+  docs/container-orchestration.md DOCKER_ORCHESTRATION_DEPLOYMENT.md
+git commit -m "feat(compose): allow bounded tenant image pulls"
+```
+
+### Task 4: Independently review the security milestone
+
+- [ ] **Step 1: Run a fresh specification review**
+
+Review owner derivation, fixed standard profile, immutable digest parsing, pre-pull size admission, registry locking, secret redaction, local approval enforcement, legacy profile compatibility, broker namespace isolation, and absence of raw Docker/build/delete access.
+
+- [ ] **Step 2: Fix only security/specification blockers**
+
+Rerun the affected focused tests and commit coherent corrections without broad refactoring.
+
+### Task 5: Roll out and accept development
+
+**Hosts:**
+- Primary development: `debian@192.168.200.100`
+- Staging reference: `debian@192.168.100.100`
+
+- [ ] **Step 1: Deploy the exact Vesta commit control plane**
+
+Use an immutable archive, release lock, protected exact-file rollback backup, no `--delete`, no container/service restart, targeted syntax/config checks, and before/after container/firewall/route/tenant digests.
+
+- [ ] **Step 2: Onboard development `slave`**
+
+Create or select a package with positive standard-profile quotas matching one project/service, 1 CPU, 1024 MiB, 256 PIDs, one loopback port, three secrets, and one volume. Change the user package through Vesta so `DOCKER_PROJECTS` is persisted, reconcile `vesta-compose-users`, and remove `slave` from the raw `docker` group only after the managed cutover is ready.
+
+- [ ] **Step 3: Build the Slave candidate off-host**
+
+On `gizmo@192.168.100.16:/home/gizmo/slave-vxapp`, build from a remotely recoverable commit using the repository-owned Docker and workload builders. Validate the exact focused deployment tests and record image ID and artifact checksums without exposing secrets.
+
+- [ ] **Step 4: Perform one-time development migration**
+
+Use the root/admin workload-bundle install path once to establish three managed secrets and the generic `standard` project. Preserve a rollback record for the unmanaged `public_html` Compose container, stop it only at the final loopback-port cutover, require the Vesta-managed replacement healthy/readiness-pass, and restore the old container immediately if acceptance fails.
+
+- [ ] **Step 5: Prove tenant operations**
+
+From a fresh `slave` SSH identity require:
+
+```bash
+v-docker projects json
+v-docker health slave-vxapp json
+v-docker drift slave-vxapp json
+```
+
+Require raw `docker info` and direct `sudo v-*` denial. If an approved registry is available, pull a fresh immutable digest through `v-docker image-pull` and preview/apply it; otherwise retain the focused immutable-pull tests and document registry provisioning as the only external prerequisite.
+
+### Task 6: Synchronize Slave-owned deployment knowledge
+
+**Remote repository:** `gizmo@192.168.100.16:/home/gizmo/slave-vxapp`
+
+**Files:**
+- Modify: `.vx/skills/slave-vxapp-deploy/SKILL.md`
+- Modify: `.vx/skills/slave-vxapp-production-operations/SKILL.md`
+- Modify: `@Docs/@TechnicalDocs/slave-vxapp/deployment.md`
+- Modify: `README.md`
+- Create or modify as the Slave maintainer chooses: repository-owned deployment script and focused tests
+
+- [ ] **Step 1: Replace the obsolete local-archive default**
+
+Make the normal release lane:
+
+```text
+build/test off-host -> push immutable registry digest ->
+ssh slave v-docker image-pull -> preview -> reviewed apply -> health/drift
+```
+
+Keep archive load/approval/workload import documented only as one-time migration, offline recovery, or operator fallback.
+
+- [ ] **Step 2: Give the maintainer an exact script contract**
+
+Require script inputs `environment`, SSH target, owner, project, immutable image reference, Compose file, and add/change mode. Require protected preview JSON, exact returned owner/profile/mode/digests/revision validation, explicit apply confirmation, no secret argv/environment logging, no raw Docker, and production authorization separate from development success.
+
+- [ ] **Step 3: Explain profile and host state**
+
+State that new Slave releases are generic `standard` v2. The legacy production revision remains `slave-vxapp` until an authorized migration; tenant scripts must fail closed rather than trying to mutate that profile.
+
+- [ ] **Step 4: Commit and push submodule then parent**
+
+Commit/push `@Docs` first, commit its gitlink plus root docs/skills/scripts next, run the repository-required focused validations and hooks, then push `development` without bypass flags.
+
+### Task 7: Prepare production without interruption
+
+**Host:** `debian@syd.vortexenterprises.com.au`
+
+- [ ] **Step 1: Deploy only the accepted Vesta control-plane commit**
+
+Retain a protected rollback backup and prove the revision-4 `slave/slave-vxapp` container ID, image, health, restart count, Docker PID, routes, firewall structure, quota authority, mount guard, and stopped external rollback container remain unchanged.
+
+- [ ] **Step 2: Onboard the `slave` account without workload mutation**
+
+Persist the approved Docker package quota, change the Unix/Vesta shell to Bash only if SSH access is intended and the account files agree, reconcile `vesta-compose-users`, ensure no Docker-group membership, and prove `v-docker projects` works. The broker must continue denying the current privileged `slave-vxapp` project.
+
+- [ ] **Step 3: Do not migrate the production workload**
+
+Because uninterrupted active-client service is required, leave revision 4, its profile, container, port, routes, secrets, volumes, and rollback authority unchanged. Record that tenant production deployment begins only after a separately authorized standard-profile migration window with tested rollback.
+
+### Task 8: Final closeout
+
+- [ ] **Step 1: Run affected-system gates**
+
+Use focused Compose tests plus `test/compose/run-production-readiness-limited.sh` only where required and safe. Do not run broad ShellCheck or an unrestricted full gate on constrained hosts.
+
+- [ ] **Step 2: Run final specification and code-quality reviews**
+
+Review the complete Vesta change, Slave documentation/script contract, development evidence, production no-mutation evidence, and rollback material.
+
+- [ ] **Step 3: Push Vesta and report the maintainer response**
+
+Push the clean Vesta branch and provide a concise response the user can paste into the Slave thread containing the exact supported pipeline, development host readiness, production migration boundary, and commands the Slave maintainer should implement.
