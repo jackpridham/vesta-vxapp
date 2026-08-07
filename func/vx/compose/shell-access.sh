@@ -1,16 +1,25 @@
 #!/usr/bin/env bash
 
-if [[ -v VX_COMPOSE_SHELL_GROUP
-    && "$VX_COMPOSE_SHELL_GROUP" != 'vesta-compose-users' ]] \
-    || [[ -v VX_COMPOSE_ACCESS_LOCK_ROOT
-        && "$VX_COMPOSE_ACCESS_LOCK_ROOT" != '/run/lock/vesta-compose-user-access' ]]; then
+if declare -p VX_COMPOSE_SHELL_GROUP >/dev/null 2>&1 \
+    && [[ "$(declare -p VX_COMPOSE_SHELL_GROUP)" \
+        != 'declare -r VX_COMPOSE_SHELL_GROUP="vesta-compose-users"' ]]; then
     return 1
 fi
-[[ -v VX_COMPOSE_SHELL_GROUP ]] \
+if declare -p VX_COMPOSE_ACCESS_LOCK_ROOT >/dev/null 2>&1 \
+    && [[ "$(declare -p VX_COMPOSE_ACCESS_LOCK_ROOT)" \
+        != 'declare -r VX_COMPOSE_ACCESS_LOCK_ROOT="/run/lock/vesta-compose-user-access"' ]]; then
+    return 1
+fi
+declare -p VX_COMPOSE_SHELL_GROUP >/dev/null 2>&1 \
     || VX_COMPOSE_SHELL_GROUP='vesta-compose-users'
-[[ -v VX_COMPOSE_ACCESS_LOCK_ROOT ]] \
+declare -p VX_COMPOSE_ACCESS_LOCK_ROOT >/dev/null 2>&1 \
     || VX_COMPOSE_ACCESS_LOCK_ROOT='/run/lock/vesta-compose-user-access'
 readonly VX_COMPOSE_SHELL_GROUP VX_COMPOSE_ACCESS_LOCK_ROOT
+[[ "$(declare -p VX_COMPOSE_SHELL_GROUP)" \
+    == 'declare -r VX_COMPOSE_SHELL_GROUP="vesta-compose-users"'
+    && "$(declare -p VX_COMPOSE_ACCESS_LOCK_ROOT)" \
+        == 'declare -r VX_COMPOSE_ACCESS_LOCK_ROOT="/run/lock/vesta-compose-user-access"' ]] \
+    || return 1
 
 vx_compose_shell_is_interactive() {
     [[ "$1" == bash || "$1" == /bin/bash || "$1" == /usr/bin/bash ]]

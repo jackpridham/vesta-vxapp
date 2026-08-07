@@ -15,8 +15,8 @@ bash -Eeuo pipefail -c '
     source "$1"
     [[ "$VX_COMPOSE_SHELL_GROUP" == vesta-compose-users
         && "$VX_COMPOSE_ACCESS_LOCK_ROOT" == /run/lock/vesta-compose-user-access
-        && "$(declare -p VX_COMPOSE_SHELL_GROUP)" == declare\ -r*
-        && "$(declare -p VX_COMPOSE_ACCESS_LOCK_ROOT)" == declare\ -r* ]]
+        && "$(declare -p VX_COMPOSE_SHELL_GROUP)" == "declare -r VX_COMPOSE_SHELL_GROUP=\"vesta-compose-users\""
+        && "$(declare -p VX_COMPOSE_ACCESS_LOCK_ROOT)" == "declare -r VX_COMPOSE_ACCESS_LOCK_ROOT=\"/run/lock/vesta-compose-user-access\"" ]]
 ' _ "$shell_access_helper" \
     || fail 'shell access helper could not be sourced twice'
 bash -Eeuo pipefail -c '
@@ -33,6 +33,44 @@ bash -Eeuo pipefail -c '
         && ! -v VX_COMPOSE_SHELL_GROUP ]]
 ' _ "$shell_access_helper" \
     || fail 'shell access helper accepted an overridden lock-root authority'
+bash -Eeuo pipefail -c '
+    shell_group_target=vesta-compose-users
+    declare -n VX_COMPOSE_SHELL_GROUP=shell_group_target
+    ! source "$1"
+    [[ "$(declare -p shell_group_target)" == "declare -- shell_group_target=\"vesta-compose-users\""
+        && ! -v VX_COMPOSE_ACCESS_LOCK_ROOT ]]
+    unset -n VX_COMPOSE_SHELL_GROUP
+    VX_COMPOSE_SHELL_GROUP=untrusted
+' _ "$shell_access_helper" \
+    || fail 'shell access helper accepted or froze a matching nameref target'
+bash -Eeuo pipefail -c '
+    VX_COMPOSE_SHELL_GROUP=(vesta-compose-users)
+    ! source "$1"
+    [[ "$(declare -p VX_COMPOSE_SHELL_GROUP)" == declare\ -a* ]]
+' _ "$shell_access_helper" \
+    || fail 'shell access helper accepted a matching array authority'
+bash -Eeuo pipefail -c '
+    export VX_COMPOSE_SHELL_GROUP=vesta-compose-users
+    ! source "$1"
+    [[ "$(declare -p VX_COMPOSE_SHELL_GROUP)" == declare\ -x* ]]
+' _ "$shell_access_helper" \
+    || fail 'shell access helper accepted a matching exported authority'
+
+compose_main="$repo_root/func/vx/compose/main.sh"
+bash -Eeuo pipefail -c '
+    VX_COMPOSE_SHELL_GROUP=untrusted
+    ! source "$1"
+    ! declare -F vx_compose_require_owner >/dev/null
+' _ "$compose_main" \
+    || fail 'Compose main loader ignored shell access authority failure'
+bash -Eeuo pipefail -c '
+    shell_group_target=vesta-compose-users
+    declare -n VX_COMPOSE_SHELL_GROUP=shell_group_target
+    ! source "$1"
+    [[ "$(declare -p shell_group_target)" == "declare -- shell_group_target=\"vesta-compose-users\"" ]]
+    ! declare -F vx_compose_require_owner >/dev/null
+' _ "$compose_main" \
+    || fail 'Compose main loader accepted a matching shell group nameref'
 
 source "$repo_root/func/vx/compose/common.sh"
 source "$repo_root/func/vx/compose/storage.sh"
