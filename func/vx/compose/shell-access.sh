@@ -1,7 +1,16 @@
 #!/usr/bin/env bash
 
-readonly VX_COMPOSE_SHELL_GROUP='vesta-compose-users'
-readonly VX_COMPOSE_ACCESS_LOCK_ROOT='/run/lock/vesta-compose-user-access'
+if [[ -v VX_COMPOSE_SHELL_GROUP
+    && "$VX_COMPOSE_SHELL_GROUP" != 'vesta-compose-users' ]] \
+    || [[ -v VX_COMPOSE_ACCESS_LOCK_ROOT
+        && "$VX_COMPOSE_ACCESS_LOCK_ROOT" != '/run/lock/vesta-compose-user-access' ]]; then
+    return 1
+fi
+[[ -v VX_COMPOSE_SHELL_GROUP ]] \
+    || VX_COMPOSE_SHELL_GROUP='vesta-compose-users'
+[[ -v VX_COMPOSE_ACCESS_LOCK_ROOT ]] \
+    || VX_COMPOSE_ACCESS_LOCK_ROOT='/run/lock/vesta-compose-user-access'
+readonly VX_COMPOSE_SHELL_GROUP VX_COMPOSE_ACCESS_LOCK_ROOT
 
 vx_compose_shell_is_interactive() {
     [[ "$1" == bash || "$1" == /bin/bash || "$1" == /usr/bin/bash ]]

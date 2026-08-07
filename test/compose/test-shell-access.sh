@@ -7,12 +7,38 @@ trap 'rm -rf -- "$fixture"' EXIT
 mkdir -p "$fixture/data/users/alice" "$fixture/data/users/bob"
 VESTA="$fixture"
 HOMEDIR=/home
+fail() { echo "FAIL: $1" >&2; exit 1; }
+
+shell_access_helper="$repo_root/func/vx/compose/shell-access.sh"
+bash -Eeuo pipefail -c '
+    source "$1"
+    source "$1"
+    [[ "$VX_COMPOSE_SHELL_GROUP" == vesta-compose-users
+        && "$VX_COMPOSE_ACCESS_LOCK_ROOT" == /run/lock/vesta-compose-user-access
+        && "$(declare -p VX_COMPOSE_SHELL_GROUP)" == declare\ -r*
+        && "$(declare -p VX_COMPOSE_ACCESS_LOCK_ROOT)" == declare\ -r* ]]
+' _ "$shell_access_helper" \
+    || fail 'shell access helper could not be sourced twice'
+bash -Eeuo pipefail -c '
+    VX_COMPOSE_SHELL_GROUP=untrusted
+    ! source "$1"
+    [[ "$VX_COMPOSE_SHELL_GROUP" == untrusted
+        && ! -v VX_COMPOSE_ACCESS_LOCK_ROOT ]]
+' _ "$shell_access_helper" \
+    || fail 'shell access helper accepted an overridden group authority'
+bash -Eeuo pipefail -c '
+    VX_COMPOSE_ACCESS_LOCK_ROOT=/tmp/untrusted
+    ! source "$1"
+    [[ "$VX_COMPOSE_ACCESS_LOCK_ROOT" == /tmp/untrusted
+        && ! -v VX_COMPOSE_SHELL_GROUP ]]
+' _ "$shell_access_helper" \
+    || fail 'shell access helper accepted an overridden lock-root authority'
+
 source "$repo_root/func/vx/compose/common.sh"
 source "$repo_root/func/vx/compose/storage.sh"
 source "$repo_root/func/vx/compose/package.sh"
 source "$repo_root/func/vx/compose/shell-access.sh"
 
-fail() { echo "FAIL: $1" >&2; exit 1; }
 vx_compose_shell_effective_uid() { printf '0\n'; }
 vx_compose_shell_passwd_by_uid() { printf '%s:x:%s:1101:Alice:/home/%s:/bin/%s\n' "$test_passwd_actor" "$test_passwd_uid" "$test_passwd_actor" "$test_passwd_shell"; }
 vx_compose_shell_passwd_by_name() { printf '%s:x:1101:1101:Alice:/home/%s:/bin/%s\n' "$1" "$1" "$test_passwd_shell"; }
