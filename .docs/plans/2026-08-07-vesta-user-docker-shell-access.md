@@ -187,7 +187,7 @@ commands should remain thin calls into `shell-access.sh`.
 
 ## Milestone 1: Freeze authority and package entitlement
 
-### Task 1: Publish the shell-access contract and failing surface checks
+### Task 1: Publish the shell-access contract and failing surface checks - COMPLETE
 
 **Files:**
 
@@ -196,7 +196,7 @@ commands should remain thin calls into `shell-access.sh`.
 - Modify: `.docs/README.md`
 - Modify: `test/test_compose_docs.sh`
 
-- [ ] **Step 1: Add failing documentation and CLI-surface assertions**
+- [x] **Step 1: Add failing documentation and CLI-surface assertions**
 
 Add these assertions to the documentation test before creating the new
 contract:
@@ -212,7 +212,7 @@ grep -Fq 'v-run-user-docker-command' \
     || fail 'shell-access contract omits the privileged broker'
 ```
 
-- [ ] **Step 2: Run the assertions and verify the expected failure**
+- [x] **Step 2: Run the assertions and verify the expected failure**
 
 Run:
 
@@ -223,7 +223,7 @@ bash test/test_compose_docs.sh
 Expected: failure naming `.docs/contracts/compose-shell-access.md`; no existing
 documentation test should fail before the new assertions.
 
-- [ ] **Step 3: Write the contract with exact non-negotiable behavior**
+- [x] **Step 3: Write the contract with exact non-negotiable behavior**
 
 The contract must contain these normative statements verbatim or with equally
 strict wording:
@@ -250,7 +250,7 @@ tenant-selected filesystem path as root.
 Include the full command table and administrator-only exclusions from this
 plan. Document lock ordering as owner-access lock followed by project lock.
 
-- [ ] **Step 4: Index the contract and public client syntax**
+- [x] **Step 4: Index the contract and public client syntax**
 
 Add `compose-shell-access.md` to `.docs/README.md` and add this stable shell
 surface to `.docs/contracts/compose-interfaces.md`:
@@ -263,7 +263,7 @@ v-docker apply PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION
 v-docker secret-add|secret-change PROJECT NAME < secret-value
 ```
 
-- [ ] **Step 5: Run documentation checks**
+- [x] **Step 5: Run documentation checks**
 
 Run:
 
@@ -274,7 +274,7 @@ git diff --check
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the contract milestone**
+- [x] **Step 6: Commit the contract milestone**
 
 ```bash
 git add .docs/contracts/compose-shell-access.md \
@@ -283,7 +283,17 @@ git add .docs/contracts/compose-shell-access.md \
 git commit -m "docs(compose): define tenant shell access contract"
 ```
 
-### Task 2: Make Compose package authority round-trip through the panel
+#### Closeout Report
+
+- Summary: Published the authenticated, owner-bound shell-access contract and indexed the fixed `v-docker` surface.
+- Files changed: `.docs/contracts/compose-shell-access.md`, `.docs/contracts/compose-interfaces.md`, `.docs/README.md`, `test/test_compose_docs.sh`.
+- Tests: `bash test/test_compose_docs.sh` PASS; `git diff --check` PASS.
+- Commit SHA(s): `d5506f9c2f2bb235ac392e031b2055e85733dd33`.
+- Spec review: APPROVED; no blockers.
+- Code quality review: Deferred to final closeout per milestone-driven workflow.
+- Follow-ups or concerns: None; ShellCheck reported only informational SC2016 warnings in test grep assertions.
+
+### Task 2: Make Compose package authority round-trip through the panel - COMPLETE
 
 **Files:**
 
@@ -296,7 +306,7 @@ git commit -m "docs(compose): define tenant shell access contract"
 - Create: `test/test_compose_package_form.php`
 - Modify: `test/compose/test-package-integration.sh`
 
-- [ ] **Step 1: Write a failing PHP round-trip test**
+- [x] **Step 1: Write a failing PHP round-trip test**
 
 Create a fixture containing all fields and require byte-equivalent values
 after add/edit serialization:
@@ -323,7 +333,7 @@ Also assert zero and `unlimited` are accepted, negative values, decimals on
 non-CPU fields, more than three CPU decimal places, arrays, shell fragments,
 and missing keys are rejected or receive documented defaults.
 
-- [ ] **Step 2: Run the PHP test and verify it fails because the helper is absent**
+- [x] **Step 2: Run the PHP test and verify it fails because the helper is absent**
 
 Run:
 
@@ -333,7 +343,7 @@ php test/test_compose_package_form.php
 
 Expected: FAIL because `web/inc/vx_compose_package.php` does not exist.
 
-- [ ] **Step 3: Add the focused PHP quota helper**
+- [x] **Step 3: Add the focused PHP quota helper**
 
 Implement these complete public functions without shell execution:
 
@@ -375,7 +385,7 @@ function vx_compose_package_lines($values)
 }
 ```
 
-- [ ] **Step 4: Wire add/edit controllers and templates**
+- [x] **Step 4: Wire add/edit controllers and templates**
 
 Use one loop over `vx_compose_package_fields()` to load POST/current values,
 validate them before constructing the package, and append exactly one line per
@@ -383,7 +393,7 @@ field via `vx_compose_package_lines()`. Add explicit administrator form inputs
 for the nine fields. Preserve `DOCKER_CONTAINERS` only as legacy compatibility;
 it must not overwrite explicit Compose fields.
 
-- [ ] **Step 5: Add the Bash entitlement predicate**
+- [x] **Step 5: Add the Bash entitlement predicate**
 
 Append this strict helper to `func/vx/compose/package.sh`:
 
@@ -398,7 +408,7 @@ Extend `test-package-integration.sh` to cover `0`, positive, `unlimited`,
 malformed, and legacy-derived values and to assert package edit surfaces name
 every `VX_COMPOSE_PACKAGE_FIELDS` entry.
 
-- [ ] **Step 6: Run focused package tests**
+- [x] **Step 6: Run focused package tests**
 
 Run:
 
@@ -413,7 +423,7 @@ git diff --check
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit package authority preservation**
+- [x] **Step 7: Commit package authority preservation**
 
 ```bash
 git add web/inc/vx_compose_package.php web/add/package/index.php \
@@ -423,14 +433,30 @@ git add web/inc/vx_compose_package.php web/add/package/index.php \
 git commit -m "fix(compose): preserve Docker package entitlement"
 ```
 
+#### Closeout Report
+
+- Summary: Added validated nine-field Compose package authority, preserved explicit quota values through add/edit forms, and added the positive/unlimited entitlement predicate with legacy compatibility coverage.
+- Files changed: `web/inc/vx_compose_package.php`, `web/add/package/index.php`, `web/edit/package/index.php`, `web/templates/admin/add_package.html`, `web/templates/admin/edit_package.html`, `func/vx/compose/package.sh`, `test/test_compose_package_form.php`, `test/compose/test-package-integration.sh`.
+- Tests: PHP lint, `php test/test_compose_package_form.php`, `bash test/compose/test-package-integration.sh`, Bash syntax checks, and `git diff --check` PASS.
+- Commit SHA(s): `d5506f9c2f2bb235ac392e031b2055e85733dd33`.
+- Spec review: APPROVED; no blockers.
+- Code quality review: Deferred to final closeout per milestone-driven workflow.
+- Follow-ups or concerns: None; ShellCheck reported only informational SC2016 warnings in test grep assertions.
+
 ### Milestone 1 review gate
 
-- [ ] Trace every eligibility field from package template to package file to
+- [x] Trace every eligibility field from package template to package file to
   `user.conf` and the new predicate.
-- [ ] Confirm a package edit cannot silently reset explicit Compose quotas.
-- [ ] Confirm the contract contains no direct sudo permission for an existing
+- [x] Confirm a package edit cannot silently reset explicit Compose quotas.
+- [x] Confirm the contract contains no direct sudo permission for an existing
   Docker `v-*` command.
-- [ ] Run `git diff --check` and record the milestone commit SHAs in this plan.
+- [x] Run `git diff --check` and record the milestone commit SHAs in this plan.
+
+Milestone 1 outcome: package templates, controllers, package state/default
+helpers, and the documented broker boundary preserve the nine Compose quota
+dimensions. Commit `d5506f9c2f2bb235ac392e031b2055e85733dd33` passed the
+focused documentation/package tests and independent specification review.
+No deferred security or authority findings remain.
 
 ---
 
