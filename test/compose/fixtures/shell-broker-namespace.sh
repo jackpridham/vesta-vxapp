@@ -65,7 +65,6 @@ cat >"$fixture/fake-command" <<EOF
 set -Eeuo pipefail
 printf '%s' "\${0##*/}" >>'$fixture/docker.log'
 printf ' <%s>' "\$@" >>'$fixture/docker.log'
-printf ' actor=%s\n' "\${VESTA_COMPOSE_BROKER_ACTOR-}" >>'$fixture/docker.log'
 if [[ -e '$fixture/hold-owner' ]]; then
     : >'$fixture/operation-entered'
     for _ in {1..200}; do
@@ -75,6 +74,7 @@ if [[ -e '$fixture/hold-owner' ]]; then
     [[ -e '$fixture/release-operation' ]] || exit 70
 fi
 source /usr/local/vesta/func/vx/compose/main.sh
+printf ' actor=%s\n' "\${_VX_COMPOSE_AUDIT_ACTOR-root}" >>'$fixture/docker.log'
 vx_compose_owner_audit alice broker-child succeeded 'fixture authoritative event'
 EOF
 chmod 0755 "$fixture/fake-command"
@@ -101,6 +101,24 @@ expect_allow 'v-list-docker-project <alice> <app> <json>' show app json
 expect_allow 'v-run-docker-project-action <alice> <alice> <app> <start>' start app
 expect_allow 'v-run-docker-project-action <alice> <alice> <app> <recreate> <web>' recreate app web
 expect_allow 'v-run-docker-project-probe <alice> <alice> <app> <ready> <json>' probe app ready json
+
+# A direct root child invocation cannot forge audit identity through the old
+# environment variable because no validated broker descriptor is inherited.
+env -i VESTA=/usr/local/vesta VESTA_COMPOSE_BROKER_ACTOR=mallory \
+    /usr/local/vesta/bin/v-run-docker-project-action alice alice app start \
+    >/dev/null 2>&1
+jq -e 'select(.ACTION == "broker-child") | .ACTOR == "root"' \
+    /usr/local/vesta/data/users/alice/docker-audit.log >/dev/null \
+    || fail 'direct child environment forged authoritative actor'
+! jq -e 'select(.ACTION == "broker-child") | .ACTOR == "mallory"' \
+    /usr/local/vesta/data/users/alice/docker-audit.log >/dev/null \
+    || fail 'forged actor reached authoritative audit'
+: >"$fixture/docker.log"
+! env -i SUDO_USER=alice SUDO_UID=1101 SUDO_GID=1101 \
+    VESTA_COMPOSE_BROKER_ACTOR=mallory \
+    /usr/local/vesta/bin/v-run-user-docker-command start app \
+    >/dev/null 2>&1 || fail 'broker accepted old actor environment'
+[[ ! -s "$fixture/docker.log" ]] || fail 'forged broker environment reached fake Docker'
 
 wait_for_file() {
     local path="$1"

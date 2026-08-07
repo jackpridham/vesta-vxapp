@@ -59,12 +59,25 @@ trap 'exit 130' INT
 trap 'exit 143' TERM
 
 run_vesta_user_command() {
-    local command="$1"; shift
+    local command="$1" context status; shift
     [[ "$command" =~ ^v-[a-z0-9-]+$ && -x "/usr/local/vesta/bin/$command" ]] || return 1
+    context="$(mktemp "$VX_COMPOSE_ACCESS_LOCK_ROOT/.broker-actor.XXXXXXXX")" \
+        || return 1
+    if ! printf '%s\n' "$actor" >"$context" \
+        || ! chmod 0600 "$context" \
+        || [[ -L "$context"
+            || "$(stat -c '%u:%g:%a' "$context" 2>/dev/null)" != '0:0:600' ]]; then
+        rm -f -- "$context"
+        return 1
+    fi
     (
         vx_compose_shell_access_lock_close_child_copy
-        env -i VESTA=/usr/local/vesta VESTA_COMPOSE_BROKER_ACTOR="$actor" PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root USER=root LOGNAME=root LANG=C.UTF-8 "/usr/local/vesta/bin/$command" "$@"
-    )
+        exec 9<"$context"
+        rm -f -- "$context"
+        env -i VESTA=/usr/local/vesta PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root USER=root LOGNAME=root LANG=C.UTF-8 "/usr/local/vesta/bin/$command" "$@"
+    ) || status=$?
+    rm -f -- "$context"
+    return "${status:-0}"
 }
 
 require_count() {
