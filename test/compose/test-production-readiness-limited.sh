@@ -41,6 +41,7 @@ set +e
 PATH="$fixture/bin:$PATH" \
 VX_TEST_SYSTEMD_LOG="$systemd_log" \
 VX_TEST_GATE_EXIT=37 \
+VX_READINESS_TEST_AVAILABLE_MEMORY_MB=8192 \
     "$launcher" >"$fixture/default.out" 2>"$fixture/default.err"
 status=$?
 set -e
@@ -49,10 +50,12 @@ set -e
     || fail "limited launcher did not probe before execution"
 grep -Fq 'CPUQuota=50%' "$systemd_log" \
     || fail "default CPU quota was not passed to systemd"
-grep -Fq 'MemoryHigh=2G' "$systemd_log" \
+grep -Fq 'MemoryHigh=5120M' "$systemd_log" \
     || fail "default memory high watermark was not passed to systemd"
-grep -Fq 'MemoryMax=3G' "$systemd_log" \
+grep -Fq 'MemoryMax=6144M' "$systemd_log" \
     || fail "default memory maximum was not passed to systemd"
+grep -Fq 'MemoryHigh=5120M MemoryMax=6144M' "$fixture/default.err" \
+    || fail "calculated dynamic memory limits were not reported"
 grep -Fq 'MemorySwapMax=512M' "$systemd_log" \
     || fail "default swap maximum was not passed to systemd"
 grep -Fq 'TasksMax=32' "$systemd_log" \
@@ -85,6 +88,16 @@ for property in \
 done
 grep -Fq -- '-n 10' "$systemd_log" \
     || fail "custom nice level was not passed to the scoped command"
+
+set +e
+VX_READINESS_TEST_AVAILABLE_MEMORY_MB=2300 \
+    "$launcher" >"$fixture/low-memory.out" 2>"$fixture/low-memory.err"
+status=$?
+set -e
+[[ $status -eq 1 ]] || fail "insufficient host reserve was accepted"
+grep -Fq 'available memory cannot preserve the 2048 MiB host reserve' \
+    "$fixture/low-memory.err" \
+    || fail "insufficient memory error omitted the host reserve"
 
 set +e
 VX_READINESS_CPU_QUOTA=0% \

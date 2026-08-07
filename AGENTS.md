@@ -51,4 +51,5 @@
 - Keep cross-owner BusinessGUID values in native domain authority; Docker UI may show redacted consumer metadata and header names only.
 - Production is read-only without explicit authorization naming target, release, and workload mutation.
 - On constrained hosts, use `test/compose/run-production-readiness-limited.sh`; do not run broad ShellCheck or the canonical full gate directly, and never set `VX_READINESS_ALLOW_UNLIMITED=yes` without explicit operator approval.
+- Preserve `test/compose/run-production-shellcheck.sh`: scan adapters locally once and follow the shared Compose graph once; never restore per-adapter `shellcheck -x` expansion.
 - Before release/deployment, require the limited launcher—or the canonical gate on an approved unconstrained host—to pass; the launcher runs `test/compose/run-production-readiness.sh` unchanged.

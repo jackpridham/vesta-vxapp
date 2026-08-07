@@ -1785,11 +1785,14 @@ git diff --check
 ```
 
 Expected: PASS. The repository-owned launcher applies validated cgroup CPU,
-memory, swap, task, and nice limits before running the canonical gate
-unchanged. Do not run concurrent ShellCheck workers on constrained machines.
-Use `VX_READINESS_*` overrides only to match an approved host's capacity; an
-unsupported limited environment fails closed unless the operator explicitly
-sets `VX_READINESS_ALLOW_UNLIMITED=yes` on an unconstrained host.
+dynamic memory, swap, task, and nice limits before running the canonical gate
+unchanged. It reserves 2 GiB of available memory for the host. The gate checks
+adapters locally once and follows the shared Compose helper graph once. Do not
+run concurrent ShellCheck workers or restore per-adapter `shellcheck -x` on
+constrained machines. Use `VX_READINESS_*` overrides only to match an approved
+host's capacity; an unsupported limited environment fails closed unless the
+operator explicitly sets `VX_READINESS_ALLOW_UNLIMITED=yes` on an
+unconstrained host.
 
 - [x] **Step 8: Commit documentation and closeout**
 

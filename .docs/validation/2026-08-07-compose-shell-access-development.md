@@ -46,6 +46,10 @@ crashes. Therefore the complete readiness gate has not been rerun at
 launcher is now available at
 `test/compose/run-production-readiness-limited.sh`; it must be used to rerun
 the canonical gate with suitable cgroup limits before development deployment.
+The gate's optimized ShellCheck phase analyzes 101 adapters locally and
+follows the 42-helper Compose graph once. That phase passed in approximately
+25 seconds inside a constrained scope, replacing the previous per-adapter
+graph expansion that took roughly 24 minutes.
 
 The root integration test returned `SKIP: root-only disposable integration`.
 It deliberately skips unless it is running in an explicitly approved

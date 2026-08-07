@@ -178,9 +178,12 @@ git diff --check
 
 The repository-owned limited launcher runs the canonical
 `run-production-readiness.sh` gate unchanged inside a transient user systemd
-scope. It defaults to one-half CPU, a 2 GiB memory high watermark, a 3 GiB
-hard memory limit, 512 MiB swap, 32 tasks, and nice level 19. Override limits
-for an approved host without editing the script:
+scope. It defaults to one-half CPU, reserves 2 GiB of currently available
+memory for the host, gives the scope the remainder, places its soft memory
+watermark 1 GiB below that dynamic maximum, and limits swap to 512 MiB, tasks
+to 32, and nice level to 19. Parent-cgroup availability further constrains the
+calculation when applicable. Override limits for an approved host without
+editing the script:
 
 ```bash
 VX_READINESS_CPU_QUOTA=75% \
@@ -191,12 +194,20 @@ test/compose/run-production-readiness-limited.sh
 
 Supported settings are `VX_READINESS_CPU_QUOTA`,
 `VX_READINESS_MEMORY_HIGH`, `VX_READINESS_MEMORY_MAX`,
-`VX_READINESS_MEMORY_SWAP_MAX`, `VX_READINESS_TASKS_MAX`, and
-`VX_READINESS_NICE`. The launcher probes the requested systemd controls before
-starting and preserves the canonical gate's exit status. Unsupported hosts
-fail closed. `VX_READINESS_ALLOW_UNLIMITED=yes` is an explicit operator opt-in
-for an approved unconstrained host; it retains the configured nice level but
-does not claim resource isolation.
+`VX_READINESS_MEMORY_RESERVE_MB`, `VX_READINESS_MEMORY_SWAP_MAX`,
+`VX_READINESS_TASKS_MAX`, and `VX_READINESS_NICE`. The launcher probes the
+requested systemd controls before starting and preserves the canonical gate's
+exit status. Unsupported or insufficient-memory hosts fail closed.
+`VX_READINESS_ALLOW_UNLIMITED=yes` is an explicit operator opt-in for an
+approved unconstrained host; it retains the configured nice level but does not
+claim resource isolation.
+
+The canonical gate delegates to `test/compose/run-production-shellcheck.sh`.
+That runner checks all Docker adapters locally in one invocation without
+source expansion, then follows `func/vx/compose/main.sh` once to analyze the
+complete shared helper graph. Do not replace it with per-adapter
+`shellcheck -x`; that re-expands the same graph for every adapter and makes the
+gate impractically slow on constrained hosts.
 
 The current shell-access release archive and exact commit were verified
 locally, but deployment was not applied because local release-readiness

@@ -157,6 +157,7 @@ limited_readiness="$repo_root/test/compose/run-production-readiness-limited.sh"
     || fail 'resource-limited production readiness launcher is missing'
 for required_text in \
     'test/compose/run-production-readiness-limited.sh' \
+    'test/compose/run-production-shellcheck.sh' \
     'VX_READINESS_CPU_QUOTA' \
     'VX_READINESS_MEMORY_MAX' \
     'VX_READINESS_ALLOW_UNLIMITED=yes'
