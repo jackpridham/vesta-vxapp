@@ -960,7 +960,7 @@ git commit -m "feat(compose): protect Docker shell mutation inputs"
   stage/apply; and `git diff --check` PASS. Signal tests cover blocked uploads
   interrupted by both `INT` and `TERM`, and cleanup is covered whether the
   downstream staging adapter consumes the source or leaves it for the broker.
-- Commit SHA(s): `bd901e03`.
+- Commit SHA(s): `bd901e03`, `727f4864`.
 - Spec review: APPROVED after the output-variable and signal-cleanup changes.
 - Code quality review: APPROVED after cancellation cleanup and caller-umask
   preservation remediation.
