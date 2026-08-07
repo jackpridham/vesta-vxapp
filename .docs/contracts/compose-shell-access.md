@@ -1,0 +1,226 @@
+# Compose Tenant Shell-Access Contract
+
+This contract defines the only supported shell access to the Vesta-owned
+Compose control plane. It applies to an ordinary Vesta tenant using the
+installed `v-docker` client and to the privileged broker that serves that
+client.
+
+## Authority and caller identity
+
+The Unix caller is authenticated from `SUDO_UID` plus the system passwd
+database. `ACTOR`, `OWNER`, and `PROFILE` are never accepted from a tenant
+command line. For every tenant shell operation, actor equals owner and the
+project profile equals `standard`. The broker derives the owner from the
+authenticated passwd UID and passes that owner to the Vesta command; tenant
+arguments cannot select another owner, actor, or profile.
+
+Eligibility is all of the following:
+
+- a real Unix account and a real Vesta account;
+- the passwd username, UID, home directory, and login shell agree with the
+  authoritative Vesta account;
+- the account is neither `root` nor `admin` and is not an administrator;
+- `user.conf` is the authoritative regular file, is not a symlink or hard
+  link, and is not writable by the actor;
+- `SUSPENDED=no`;
+- the login shell is a supported interactive shell, initially `bash`;
+- the effective `DOCKER_PROJECTS` entitlement is a positive integer or
+  `unlimited`; and
+- the current account is a member of the dedicated `vesta-compose-users`
+  group.
+
+Membership in `vesta-compose-users` is derived from active Vesta state and is
+never sufficient authorization. The broker acquires the owner access lock and
+then rechecks the authenticated identity, suspension state, interactive
+shell, effective `DOCKER_PROJECTS`, authoritative state-file properties, and
+current dedicated-group membership before every operation. Revocation and
+entitlement changes therefore take effect at the broker boundary even if a
+stale group membership remains in the process environment.
+
+The owner access lock is always acquired before a project lock. No operation
+may acquire those locks in the reverse order.
+
+## Dedicated group and broker
+
+The group grants only `v-run-user-docker-command`. It grants no Docker socket,
+Docker group, Vesta state, shell, interpreter, wildcard command, or filesystem
+permission. The installed privilege policy authorizes only the exact
+`v-run-user-docker-command` broker; it is not a broad sudo wildcard and does
+not authorize existing `v-*` Docker commands directly.
+
+The broker is an explicit operation dispatcher. It accepts only the documented
+`v-docker` operation and bounded arguments, resolves the authenticated owner,
+and invokes the corresponding owner-scoped Vesta helper. It never provides a
+raw Docker, raw Compose, `exec`, socket, or group-management interface.
+
+## Tenant command catalog
+
+The following forms are the complete tenant catalog. Omitted format arguments
+default to the stable human form; `json` is redacted, bounded JSON.
+
+Read operations:
+
+```text
+v-docker projects [json]
+v-docker show PROJECT [json]
+v-docker definition PROJECT [json]
+v-docker quota [json]
+v-docker validate PROJECT [json]
+v-docker health PROJECT [json]
+v-docker logs PROJECT [SERVICE] [LINES]
+v-docker stats PROJECT [PERIOD] [json]
+v-docker alerts PROJECT [json]
+```
+
+Lifecycle operations are owner-scoped and retain the existing project data
+policy:
+
+```text
+v-docker start PROJECT
+v-docker stop PROJECT
+v-docker restart PROJECT
+v-docker recreate PROJECT [SERVICE]
+v-docker deploy PROJECT
+```
+
+Definition changes use immutable, server-issued preview/apply state. Compose
+source is read from bounded stdin, never from a tenant-selected path:
+
+```text
+v-docker preview PROJECT add|change < compose.yaml
+v-docker apply PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION
+```
+
+Managed backup and recovery forms are owner-scoped and preserve the existing
+retention policy:
+
+```text
+v-docker backup PROJECT [BACKUP]
+v-docker backup-policy PROJECT [json]
+v-docker backups PROJECT [json]
+v-docker restore PROJECT ARCHIVE validate
+v-docker restore PROJECT ARCHIVE apply
+```
+
+Revision and drift operations use the server-issued evidence associated with
+the owner and project:
+
+```text
+v-docker rollback PROJECT [REVISION]
+v-docker rollback-preview PROJECT TARGET
+v-docker reconcile-preview PROJECT
+v-docker reconcile PROJECT DRIFT_DIGEST CURRENT_REVISION
+```
+
+Secret and registry operations accept values only through bounded stdin or a
+broker-created protected snapshot. Secret values and registry credentials are
+never command-line arguments:
+
+```text
+v-docker secret-add PROJECT NAME < secret-value
+v-docker secret-change PROJECT NAME < secret-value
+v-docker secret-delete PROJECT NAME
+v-docker secrets PROJECT [json]
+v-docker registry-add REGISTRY USERNAME < registry-password
+v-docker registry-change REGISTRY USERNAME < registry-password
+v-docker registry-delete REGISTRY
+v-docker registries [json]
+```
+
+Route and alert operations are limited to the owner's Vesta-owned model:
+
+```text
+v-docker routes PROJECT [json]
+v-docker route-add PROJECT DOMAIN SERVICE PORT [SCHEME] [PATH]
+v-docker route-delete PROJECT DOMAIN
+v-docker ingress-consumers PROJECT [json]
+v-docker alert-ack PROJECT ALERT
+v-docker monitoring-update PROJECT
+```
+
+Project removal is explicit and retained-data only:
+
+```text
+v-docker remove PROJECT keep-data
+```
+
+There is no tenant purge form. Managed binds, named volumes, backups, routes,
+and other retained data follow the Compose storage and backup contracts.
+
+## Administrator-only exclusions
+
+Tenants cannot select `admin-approved`, `slave-vxapp`, or any other privileged
+profile. They cannot supply a different actor or owner, impersonate another
+user, access another user's project, or call the underlying `v-*` command
+adapters directly. The following remain administrator-only:
+
+- profile approval or revocation, including `v-approve-docker-project-profile`
+  and `v-delete-docker-project-profile`;
+- role, capability, delegated-actor, ingress-consumer mutation, and audit
+  administration;
+- image pull/load/approval/trust and migration operations;
+- installation, group reconciliation, sudo-policy changes, and filesystem
+  administration; and
+- any raw Docker, raw Compose, Docker socket, host-path, namespace,
+  interpreter, arbitrary command, or unrestricted archive operation.
+
+The tenant catalog does not create a second permission path for existing
+`v-*` Docker commands. Every allowed operation goes through the one exact
+broker and the owner/profile checks above.
+
+## Input, storage, and disclosure boundaries
+
+All identifiers are validated before dispatch. `PROJECT`, `SERVICE`, secret
+names, and registry names use the bounded identifier form
+`[A-Za-z0-9][A-Za-z0-9_.-]{0,62}`; project and secret names are at most 63
+bytes. Domains are valid Vesta DNS names of at most 253 bytes, service ports
+are decimal integers from 1 through 65535, and paths, schemes, periods, line
+counts, revisions, digests, and preview IDs use their command-specific
+allowlists and fixed maximum lengths. Empty values, control bytes, NULs,
+newlines in identifiers, shell metacharacters, option injection, and malformed
+hashes or revisions are rejected before any Vesta command runs.
+
+Compose, secret, and registry input is accepted only as bounded stdin and is
+snapshotted into root-owned mode-0700/mode-0600 storage. Compose input is
+limited to 1 MiB per preview. A secret or registry credential is limited to
+64 KiB; the snapshot is a mode-0700 directory containing mode-0600 regular
+files for the duration of the broker operation. The broker never opens a
+tenant-selected filesystem path as root. Archives and checksums use the
+protected, separately validated inputs defined by the backup and self-service
+contracts.
+
+Preview/apply is immutable and digest/revision bound. The broker snapshots
+stdin before validation, redacts managed secret material from definitions and
+diagnostics, and removes temporary snapshots after completion or failure.
+Secret values, registry credentials, Compose source containing managed
+secrets, tenant paths, Docker environment, and raw adapter stderr never appear
+in argv, process metadata, environment, stdout, JSON, HTML, logs, audit, or
+unencrypted backup output. Reads expose only the contract's bounded redacted
+forms.
+
+The broker performs no raw Docker/Compose/`exec`/socket/group operation for a
+tenant. It uses fixed root-owned Vesta command paths and bounded redacted
+output. It never evaluates or sources tenant state as shell code.
+
+## Installation, revocation, and audit
+
+Installation is administrator-controlled. It creates or validates the
+root-owned `vesta-compose-users` group, installs the single exact broker
+privilege policy and client path atomically, validates the policy, and derives
+membership from current eligible Vesta state. Installation is idempotent and
+does not grant direct access to existing Docker commands.
+
+Package, account, shell, suspension, quota, deletion, and administrator-state
+changes must reconcile derived membership. Revocation removes the user from
+the dedicated group and invalidates access at the broker's owner-lock
+recheck. A stale login, stale supplementary group list, or previously issued
+client token does not preserve access. Revocation never deletes retained
+project data or performs a global Docker cleanup.
+
+Audit records contain the authenticated owner, operation, project, profile,
+result, bounded reason, and revision/digest identifiers where applicable.
+They do not contain secrets, registry credentials, raw Compose, tenant paths,
+or unredacted Docker output. Group installation, membership changes, failed
+identity/entitlement checks, preview/apply, lifecycle, backup/restore,
+rollback/reconcile, route, alert, secret, registry, and retained-data actions
+are auditable at their respective Vesta authority boundaries.

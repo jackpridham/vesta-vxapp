@@ -8,6 +8,15 @@ fail() {
     exit 1
 }
 
+test -f "$repo_root/.docs/contracts/compose-shell-access.md" \
+    || fail 'Compose shell-access contract is missing'
+grep -Fq 'vesta-compose-users' \
+    "$repo_root/.docs/contracts/compose-shell-access.md" \
+    || fail 'shell-access contract omits the derived group'
+grep -Fq 'v-run-user-docker-command' \
+    "$repo_root/.docs/contracts/compose-shell-access.md" \
+    || fail 'shell-access contract omits the privileged broker'
+
 required_docs=(
     ".docs/contracts/compose-storage.md"
     ".docs/contracts/compose-policy.md"

@@ -10,6 +10,7 @@ Current documents:
 - [Native web-domain proxy validation](validation/2026-08-06-native-web-proxy-release.md)
 - [Self-service staging evidence](status/2026-07-29-compose-self-service-task7-staging-evidence.md)
 - [Compose contracts](contracts/)
+- [Compose tenant shell-access contract](contracts/compose-shell-access.md)
 - [Application-neutral workload bundles](contracts/compose-workload-bundles.md)
 - [Bounded managed-project probes](contracts/compose-project-probes.md)
 

@@ -36,6 +36,72 @@ quota_fields=(
     DOCKER_VOLUMES
 )
 
+# shellcheck source=func/vx/compose/package.sh
+source "$repo_root/func/vx/compose/package.sh"
+grep -Fq 'source "$_vx_compose_dir/package.sh"' \
+    "$repo_root/func/vx/compose/main.sh" \
+    || fail 'Compose consumers do not source package.sh'
+
+if vx_compose_package_docker_is_enabled 0; then
+    fail 'zero Compose projects incorrectly enables Docker access'
+fi
+if ! vx_compose_package_docker_is_enabled 3; then
+    fail 'positive Compose projects does not enable Docker access'
+fi
+if ! vx_compose_package_docker_is_enabled unlimited; then
+    fail 'unlimited Compose projects does not enable Docker access'
+fi
+for malformed_limit in -1 01 1.5 malformed; do
+    if vx_compose_package_docker_is_enabled "$malformed_limit"; then
+        fail "malformed Compose project limit was enabled: $malformed_limit"
+    fi
+done
+
+legacy_zero="$(vx_compose_package_data_with_defaults "DOCKER_CONTAINERS='0'")"
+for field in "${quota_fields[@]}"; do
+    grep -Eq "^${field}='0'$" <<<"$legacy_zero" \
+        || fail "zero legacy limit did not derive $field=0"
+done
+
+legacy_positive="$(vx_compose_package_data_with_defaults "DOCKER_CONTAINERS='3'")"
+grep -Eq "^DOCKER_PROJECTS='3'$" <<<"$legacy_positive" \
+    || fail 'positive legacy limit did not derive projects'
+grep -Eq "^DOCKER_CPUS='3\\.000'$" <<<"$legacy_positive" \
+    || fail 'positive legacy limit did not derive CPUs'
+grep -Eq "^DOCKER_MEMORY_MB='3072'$" <<<"$legacy_positive" \
+    || fail 'positive legacy limit did not derive memory'
+grep -Eq "^DOCKER_PIDS='384'$" <<<"$legacy_positive" \
+    || fail 'positive legacy limit did not derive PIDs'
+
+legacy_unlimited="$(vx_compose_package_data_with_defaults "DOCKER_CONTAINERS='unlimited'")"
+for field in "${quota_fields[@]}"; do
+    grep -Eq "^${field}='unlimited'$" <<<"$legacy_unlimited" \
+        || fail "unlimited legacy limit did not derive $field"
+done
+
+legacy_malformed="$(vx_compose_package_data_with_defaults "DOCKER_CONTAINERS='malformed'")"
+for field in "${quota_fields[@]}"; do
+    grep -Eq "^${field}='0'$" <<<"$legacy_malformed" \
+        || fail "malformed legacy limit did not default $field"
+done
+
+explicit_fields=$'DOCKER_CONTAINERS=\'3\'\nDOCKER_PROJECTS=\'9\''
+explicit_data="$(vx_compose_package_data_with_defaults "$explicit_fields")"
+[[ "$(grep -Ec '^DOCKER_PROJECTS=' <<<"$explicit_data")" == 1 ]] \
+    || fail 'legacy-derived values overwrite an explicit Compose field'
+grep -Eq "^DOCKER_PROJECTS='9'$" <<<"$explicit_data" \
+    || fail 'explicit Compose project value did not survive legacy compatibility'
+
+for package_template in \
+    "$repo_root/web/templates/admin/add_package.html" \
+    "$repo_root/web/templates/admin/edit_package.html"; do
+    for field in "${VX_COMPOSE_PACKAGE_FIELDS[@]}"; do
+        form_field="v_${field,,}"
+        grep -Fq "name=\"$form_field\"" "$package_template" \
+            || fail "$package_template does not expose $form_field"
+    done
+done
+
 cmp -s \
     "$repo_root/conf/vx-docker-policy.conf" \
     "$repo_root/example-of-linux-root-folder/usr/local/vesta/conf/vx-docker-policy.conf" \

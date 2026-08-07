@@ -12,6 +12,12 @@ VX_COMPOSE_PACKAGE_FIELDS=(
     DOCKER_VOLUMES
 )
 
+vx_compose_package_docker_is_enabled() {
+    local limit="$1"
+
+    [[ "$limit" == unlimited || "$limit" =~ ^[1-9][0-9]*$ ]]
+}
+
 vx_compose_package_unset_values() {
     local field
 
