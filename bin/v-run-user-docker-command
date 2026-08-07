@@ -161,7 +161,8 @@ case "$operation" in
         ;;
     registry-add|registry-change)
         require_count 2 2 "$@" || exit 1; valid_name "$1" && valid_name "$2" || exit 1; snapshot registry 65536 || exit 1
-        run_vesta_user_command v-add-docker-registry "$actor" "$1" "$2" "$snapshot_file"
+        [[ "$operation" == registry-add ]] && command=v-add-docker-registry || command=v-change-docker-registry
+        run_vesta_user_command "$command" "$actor" "$1" "$2" "$snapshot_file"
         ;;
     registry-delete)
         require_count 1 1 "$@" || exit 1; valid_name "$1" || exit 1; run_vesta_user_command v-delete-docker-registry "$actor" "$1"

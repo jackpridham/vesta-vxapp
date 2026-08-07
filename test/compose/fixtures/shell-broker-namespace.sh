@@ -64,7 +64,14 @@ cat >"$fixture/fake-command" <<EOF
 #!/usr/bin/env bash
 set -Eeuo pipefail
 printf '%s' "\${0##*/}" >>'$fixture/docker.log'
-printf ' <%s>' "\$@" >>'$fixture/docker.log'
+for argument in "\$@"; do
+    if [[ "\$argument" == /var/tmp/vesta-compose-shell.*/*.input ]]; then
+        [[ -f "\$argument" && ! -L "\$argument" ]] || exit 71
+        printf ' <%s:%s>' "\${argument##*/}" "\$(stat -c '%s' "\$argument")" >>'$fixture/docker.log'
+    else
+        printf ' <%s>' "\$argument" >>'$fixture/docker.log'
+    fi
+done
 if [[ -e '$fixture/hold-owner' ]]; then
     : >'$fixture/operation-entered'
     for _ in {1..200}; do
@@ -78,19 +85,42 @@ printf ' actor=%s\n' "\${_VX_COMPOSE_AUDIT_ACTOR-root}" >>'$fixture/docker.log'
 vx_compose_owner_audit alice broker-child succeeded 'fixture authoritative event'
 EOF
 chmod 0755 "$fixture/fake-command"
-for command in v-list-docker-projects v-list-docker-project v-run-docker-project-action v-run-docker-project-probe \
-    v-backup-docker-project v-add-docker-project-route v-delete-docker-project-route \
+for command in \
+    v-list-docker-projects v-list-docker-compose-quota v-list-docker-registries \
+    v-list-docker-project v-list-docker-project-definition v-validate-docker-project \
+    v-list-docker-project-health v-list-docker-project-alerts v-list-docker-project-routes \
+    v-list-docker-project-backups v-list-docker-secrets v-list-docker-project-operation \
+    v-list-docker-project-drift v-run-docker-project-probe v-list-docker-project-logs \
+    v-list-docker-project-stats v-run-docker-project-action v-stage-docker-project-preview \
+    v-apply-docker-project-preview v-add-docker-secret v-change-docker-secret \
+    v-delete-docker-secret v-add-docker-registry v-change-docker-registry \
+    v-delete-docker-registry v-delete-docker-project v-backup-docker-project \
+    v-restore-docker-project v-preview-docker-project-rollback \
+    v-apply-docker-project-rollback v-preview-docker-project-reconcile \
+    v-reconcile-docker-project v-add-docker-project-route v-delete-docker-project-route \
     v-acknowledge-docker-project-alert; do
     cp "$fixture/fake-command" "/usr/local/vesta/bin/$command"
 done
 
 broker=(env -i SUDO_USER=alice SUDO_UID=1101 SUDO_GID=1101 /usr/local/vesta/bin/v-run-user-docker-command)
+: >"$fixture/covered-operations"
 expect_allow() {
     local expected="$1"; shift
+    printf '%s\n' "$1" >>"$fixture/covered-operations"
     : >"$fixture/docker.log"
     "${broker[@]}" "$@" >/dev/null 2>&1 || fail "broker denied: $*"
-    grep -Fq "$expected" "$fixture/docker.log" || fail "wrong dispatch for: $*"
-    grep -Fq 'actor=alice' "$fixture/docker.log" || fail 'clean child actor context missing'
+    grep -Fxq "$expected actor=alice" "$fixture/docker.log" || fail "wrong dispatch for: $*"
+}
+expect_allow_stdin() {
+    local expected="$1" input="$2"; shift 2
+    printf '%s\n' "$1" >>"$fixture/covered-operations"
+    : >"$fixture/docker.log"
+    printf '%s' "$input" | "${broker[@]}" "$@" >/dev/null 2>&1 \
+        || fail "broker denied stdin operation: $*"
+    grep -Fxq "$expected actor=alice" "$fixture/docker.log" \
+        || fail "wrong stdin dispatch for: $* :: $(<"$fixture/docker.log")"
+    ! compgen -G '/var/tmp/vesta-compose-shell.*' >/dev/null \
+        || fail "broker retained stdin snapshot for: $*"
 }
 expect_deny() {
     : >"$fixture/docker.log"
@@ -98,16 +128,64 @@ expect_deny() {
     [[ ! -s "$fixture/docker.log" ]] || fail "denial reached fake Docker: $*"
 }
 
-expect_allow 'v-list-docker-projects <alice> <json>' projects json
-expect_allow 'v-list-docker-project <alice> <app> <json>' show app json
+digest_a=$(printf 'a%.0s' {1..64})
+digest_b=$(printf 'b%.0s' {1..64})
+preview_id=$(printf 'c%.0s' {1..32})
+name_63="n$(printf 'x%.0s' {1..62})"
+name_64="n$(printf 'x%.0s' {1..63})"
+
+# Exact argv coverage for every operation in the 39-operation tenant catalog.
+expect_allow 'v-list-docker-projects <alice> <json>' projects
+expect_allow 'v-list-docker-project <alice> <app> <plain>' show app plain
+expect_allow 'v-list-docker-project-definition <alice> <app> <json>' definition app
+expect_allow 'v-list-docker-compose-quota <alice> <plain>' quota plain
+expect_allow 'v-validate-docker-project <alice> <app> <json>' validate app
+expect_allow 'v-list-docker-project-health <alice> <app> <plain>' health app plain
+expect_allow 'v-list-docker-project-logs <alice> <app> <> <100>' logs app
+expect_allow 'v-list-docker-project-stats <alice> <app> <5m> <plain>' stats app 5m plain
+expect_allow 'v-list-docker-project-alerts <alice> <app> <json>' alerts app
+expect_allow 'v-list-docker-project-operation <alice> <alice> <app> <json>' operation app
+expect_allow 'v-list-docker-project-routes <alice> <app> <plain>' routes app plain
+expect_allow 'v-list-docker-project-backups <alice> <app> <json>' backups app
+expect_allow 'v-list-docker-secrets <alice> <app> <plain>' secrets app plain
+expect_allow 'v-list-docker-registries <alice> <json>' registries
+expect_allow 'v-list-docker-project-drift <alice> <alice> <app> <plain>' drift app plain
+expect_allow "v-run-docker-project-probe <alice> <alice> <app> <$name_63> <json>" probe app "$name_63"
 expect_allow 'v-run-docker-project-action <alice> <alice> <app> <start>' start app
+expect_allow 'v-run-docker-project-action <alice> <alice> <app> <stop>' stop app
+expect_allow 'v-run-docker-project-action <alice> <alice> <app> <restart>' restart app
 expect_allow 'v-run-docker-project-action <alice> <alice> <app> <recreate> <web>' recreate app web
-expect_allow 'v-run-docker-project-probe <alice> <alice> <app> <ready> <json>' probe app ready json
+expect_allow 'v-run-docker-project-action <alice> <alice> <app> <deploy>' deploy app
+expect_allow_stdin 'v-stage-docker-project-preview <alice> <alice> <app> <compose.input:12> <standard> <change>' 'compose-data' preview app change
+expect_allow "v-apply-docker-project-preview <alice> <alice> <app> <$preview_id> <$digest_a> <$digest_b> <1>" apply app "$preview_id" "$digest_a" "$digest_b" 1
 expect_allow 'v-backup-docker-project <alice> <app>' backup app
+expect_allow 'v-restore-docker-project <alice> <app> <managed:backup-1> <validate>' restore app backup-1 validate
+expect_allow 'v-restore-docker-project <alice> <app> <managed:backup-1> <apply>' restore app backup-1 apply
+expect_allow 'v-preview-docker-project-rollback <alice> <alice> <app> <1>' rollback-preview app 1
+expect_allow "v-apply-docker-project-rollback <alice> <alice> <app> <1> <2> <$digest_a> <$digest_b>" rollback-apply app 1 2 "$digest_a" "$digest_b"
+expect_allow 'v-preview-docker-project-reconcile <alice> <alice> <app>' reconcile-preview app
+expect_allow "v-reconcile-docker-project <alice> <alice> <app> <$digest_a> <1>" reconcile-apply app "$digest_a" 1
+expect_allow_stdin 'v-add-docker-secret <alice> <app> <api-key> <secret.input:12>' 'secret-value' secret-add app api-key
+expect_allow_stdin 'v-change-docker-secret <alice> <app> <api-key> <secret.input:12>' 'secret-value' secret-change app api-key
+expect_allow 'v-delete-docker-secret <alice> <app> <api-key>' secret-delete app api-key
+expect_allow_stdin 'v-add-docker-registry <alice> <registry-1> <alice> <registry.input:17>' 'registry-password' registry-add registry-1 alice
+expect_allow_stdin 'v-change-docker-registry <alice> <registry-1> <alice> <registry.input:17>' 'registry-password' registry-change registry-1 alice
+expect_allow 'v-delete-docker-registry <alice> <registry-1>' registry-delete registry-1
 expect_allow 'v-add-docker-project-route <alice> <alice> <app> <app.example.com> <web> <8080> <http> </>' route-add app app.example.com web 8080
 expect_allow 'v-add-docker-project-route <alice> <alice> <app> <app.example.com> <web> <443> <https> </api>' route-add app app.example.com web 443 https /api
 expect_allow 'v-delete-docker-project-route <alice> <app> <app.example.com>' route-delete app app.example.com
 expect_allow 'v-acknowledge-docker-project-alert <alice> <alice> <app> <alert-1>' alert-ack app alert-1
+expect_allow 'v-delete-docker-project <alice> <app> <keep-data>' remove app keep-data
+expect_deny probe app "$name_64"
+
+awk '
+    /^```tsv compose-shell-catalog$/ { catalog=1; next }
+    catalog && /^```$/ { exit }
+    catalog { print $1 }
+' "$repo_root/.docs/contracts/compose-shell-access.md" | sort -u >"$fixture/catalog-operations"
+sort -u "$fixture/covered-operations" >"$fixture/covered-operations.sorted"
+cmp -s "$fixture/catalog-operations" "$fixture/covered-operations.sorted" \
+    || fail 'executable broker fixture does not cover the complete catalog'
 
 # A direct root child invocation cannot forge audit identity through the old
 # environment variable because no validated broker descriptor is inherited.

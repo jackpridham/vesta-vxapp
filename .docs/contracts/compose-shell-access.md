@@ -59,94 +59,60 @@ The following forms are the complete tenant catalog. Accepted format arguments
 are `json` and `plain`; omitted format arguments default to redacted, bounded
 `json`.
 
-Read operations:
+The fenced TSV below is the canonical catalog. Its first column is the literal
+broker operation and its second column is the complete tenant argument form.
 
-```text
-v-docker projects [json|plain]
-v-docker show PROJECT [json|plain]
-v-docker definition PROJECT [json|plain]
-v-docker quota [json|plain]
-v-docker validate PROJECT [json|plain]
-v-docker health PROJECT [json|plain]
-v-docker logs PROJECT [SERVICE] [LINES]
-v-docker stats PROJECT [PERIOD] [json|plain]
-v-docker alerts PROJECT [json|plain]
-v-docker operation PROJECT [json|plain]
-v-docker routes PROJECT [json|plain]
-v-docker backups PROJECT [json|plain]
-v-docker secrets PROJECT [json|plain]
-v-docker registries [json|plain]
-v-docker drift PROJECT [json|plain]
-v-docker probe PROJECT SERVICE [json|plain]
+```tsv compose-shell-catalog
+projects	[json|plain]
+show	PROJECT [json|plain]
+definition	PROJECT [json|plain]
+quota	[json|plain]
+validate	PROJECT [json|plain]
+health	PROJECT [json|plain]
+logs	PROJECT [SERVICE] [LINES]
+stats	PROJECT [PERIOD] [json|plain]
+alerts	PROJECT [json|plain]
+operation	PROJECT [json|plain]
+routes	PROJECT [json|plain]
+backups	PROJECT [json|plain]
+secrets	PROJECT [json|plain]
+registries	[json|plain]
+drift	PROJECT [json|plain]
+probe	PROJECT SERVICE [json|plain]
+start	PROJECT
+stop	PROJECT
+restart	PROJECT
+recreate	PROJECT [SERVICE]
+deploy	PROJECT
+preview	PROJECT add|change < compose.yaml
+apply	PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION
+backup	PROJECT
+restore	PROJECT BACKUP_ID validate|apply
+rollback-preview	PROJECT REVISION
+rollback-apply	PROJECT REVISION CURRENT FROM_MANIFEST_SHA TO_MANIFEST_SHA
+reconcile-preview	PROJECT
+reconcile-apply	PROJECT DRIFT_SHA CURRENT_REVISION
+secret-add	PROJECT NAME < secret-value
+secret-change	PROJECT NAME < secret-value
+secret-delete	PROJECT NAME
+registry-add	REGISTRY USERNAME < registry-password
+registry-change	REGISTRY USERNAME < registry-password
+registry-delete	REGISTRY
+route-add	PROJECT DOMAIN SERVICE PORT [SCHEME] [PATH]
+route-delete	PROJECT DOMAIN
+alert-ack	PROJECT ALERT
+remove	PROJECT keep-data
 ```
 
 Lifecycle operations are owner-scoped and retain the existing project data
-policy:
-
-```text
-v-docker start PROJECT
-v-docker stop PROJECT
-v-docker restart PROJECT
-v-docker recreate PROJECT [SERVICE]
-v-docker deploy PROJECT
-```
-
-Definition changes use immutable, server-issued preview/apply state. Compose
-source is read from bounded stdin, never from a tenant-selected path:
-
-```text
-v-docker preview PROJECT add|change < compose.yaml
-v-docker apply PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION
-```
-
-Managed backup and recovery forms are owner-scoped and preserve the existing
-retention policy:
-
-```text
-v-docker backup PROJECT
-v-docker restore PROJECT BACKUP_ID validate
-v-docker restore PROJECT BACKUP_ID apply
-```
-
-Revision and drift operations use the server-issued evidence associated with
-the owner and project:
-
-```text
-v-docker rollback-preview PROJECT REVISION
-v-docker rollback-apply PROJECT REVISION CURRENT FROM_MANIFEST_SHA TO_MANIFEST_SHA
-v-docker reconcile-preview PROJECT
-v-docker reconcile-apply PROJECT DRIFT_SHA CURRENT_REVISION
-```
-
-Secret and registry operations accept values only through bounded stdin or a
-broker-created protected snapshot. Secret values and registry credentials are
-never command-line arguments:
-
-```text
-v-docker secret-add PROJECT NAME < secret-value
-v-docker secret-change PROJECT NAME < secret-value
-v-docker secret-delete PROJECT NAME
-v-docker secrets PROJECT [json|plain]
-v-docker registry-add REGISTRY USERNAME < registry-password
-v-docker registry-change REGISTRY USERNAME < registry-password
-v-docker registry-delete REGISTRY
-v-docker registries [json|plain]
-```
-
-Route and alert operations are limited to the owner's Vesta-owned model:
-
-```text
-v-docker routes PROJECT [json|plain]
-v-docker route-add PROJECT DOMAIN SERVICE PORT [SCHEME] [PATH]
-v-docker route-delete PROJECT DOMAIN
-v-docker alert-ack PROJECT ALERT
-```
-
-Project removal is explicit and retained-data only:
-
-```text
-v-docker remove PROJECT keep-data
-```
+policy. Definition changes use immutable, server-issued preview/apply state;
+Compose source is read from bounded stdin, never from a tenant-selected path.
+Managed backup and recovery preserve the existing retention policy. Revision
+and drift mutations use server-issued evidence associated with the owner and
+project. Secret and registry values are accepted only through bounded stdin or
+a broker-created protected snapshot and are never command-line arguments.
+Route and alert operations are limited to the owner's Vesta-owned model.
+Project removal is explicit and retained-data only.
 
 There is no tenant purge form. Managed binds, named volumes, backups, routes,
 and other retained data follow the Compose storage and backup contracts.

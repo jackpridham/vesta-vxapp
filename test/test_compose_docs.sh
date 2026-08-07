@@ -17,27 +17,84 @@ grep -Fq 'v-run-user-docker-command' \
     "$repo_root/.docs/contracts/compose-shell-access.md" \
     || fail 'shell-access contract omits the privileged broker'
 
-tenant_operations=(
-    projects show definition quota validate health logs stats alerts operation
-    routes backups secrets registries drift probe start stop restart recreate
-    deploy preview apply backup restore rollback-preview rollback-apply
-    reconcile-preview reconcile-apply secret-add secret-change secret-delete
-    registry-add registry-change registry-delete route-add route-delete alert-ack
-    remove
-)
-for operation in "${tenant_operations[@]}"; do
-    grep -Eq "(^|[|[:space:]])${operation}([|)])" \
-        "$repo_root/bin/v-run-user-docker-command" \
-        || fail "broker catalog omits operation: $operation"
-    grep -Fq "v-docker $operation" \
-        "$repo_root/.docs/contracts/compose-shell-access.md" \
-        || fail "shell-access contract omits operation: $operation"
-done
-for unsupported in backup-policy ingress-consumers monitoring-update \
-    'v-docker rollback ' 'v-docker reconcile '; do
-    ! grep -Fq "$unsupported" "$repo_root/.docs/contracts/compose-shell-access.md" \
-        || fail "shell-access contract advertises unsupported operation: $unsupported"
-done
+catalog_tmp="$(mktemp -d)"
+trap 'rm -rf -- "$catalog_tmp"' EXIT
+contract_catalog="$catalog_tmp/contract.tsv"
+expected_catalog="$catalog_tmp/expected.tsv"
+broker_operations="$catalog_tmp/broker.operations"
+contract_operations="$catalog_tmp/contract.operations"
+
+awk '
+    /^```tsv compose-shell-catalog$/ { catalog=1; next }
+    catalog && /^```$/ { exit }
+    catalog { print }
+' "$repo_root/.docs/contracts/compose-shell-access.md" >"$contract_catalog"
+
+cat >"$expected_catalog" <<'EOF'
+projects	[json|plain]
+show	PROJECT [json|plain]
+definition	PROJECT [json|plain]
+quota	[json|plain]
+validate	PROJECT [json|plain]
+health	PROJECT [json|plain]
+logs	PROJECT [SERVICE] [LINES]
+stats	PROJECT [PERIOD] [json|plain]
+alerts	PROJECT [json|plain]
+operation	PROJECT [json|plain]
+routes	PROJECT [json|plain]
+backups	PROJECT [json|plain]
+secrets	PROJECT [json|plain]
+registries	[json|plain]
+drift	PROJECT [json|plain]
+probe	PROJECT SERVICE [json|plain]
+start	PROJECT
+stop	PROJECT
+restart	PROJECT
+recreate	PROJECT [SERVICE]
+deploy	PROJECT
+preview	PROJECT add|change < compose.yaml
+apply	PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION
+backup	PROJECT
+restore	PROJECT BACKUP_ID validate|apply
+rollback-preview	PROJECT REVISION
+rollback-apply	PROJECT REVISION CURRENT FROM_MANIFEST_SHA TO_MANIFEST_SHA
+reconcile-preview	PROJECT
+reconcile-apply	PROJECT DRIFT_SHA CURRENT_REVISION
+secret-add	PROJECT NAME < secret-value
+secret-change	PROJECT NAME < secret-value
+secret-delete	PROJECT NAME
+registry-add	REGISTRY USERNAME < registry-password
+registry-change	REGISTRY USERNAME < registry-password
+registry-delete	REGISTRY
+route-add	PROJECT DOMAIN SERVICE PORT [SCHEME] [PATH]
+route-delete	PROJECT DOMAIN
+alert-ack	PROJECT ALERT
+remove	PROJECT keep-data
+EOF
+
+cmp -s "$expected_catalog" "$contract_catalog" \
+    || { diff -u "$expected_catalog" "$contract_catalog" >&2 || :; fail 'shell catalog signature drift'; }
+
+cut -f1 "$contract_catalog" | sort >"$contract_operations"
+[[ "$(wc -l <"$contract_operations")" -eq 39 ]] \
+    || fail 'shell contract catalog must contain exactly 39 operations'
+[[ "$(uniq "$contract_operations" | wc -l)" -eq 39 ]] \
+    || fail 'shell contract catalog contains duplicate operations'
+
+awk '
+    /^case "\$operation" in$/ { dispatch=1; next }
+    dispatch && /^    [a-z0-9][a-z0-9|-]*\)$/ {
+        label=$0
+        sub(/^    /, "", label)
+        sub(/\)$/, "", label)
+        count=split(label, operations, "|")
+        for (i=1; i<=count; i++) print operations[i]
+    }
+    dispatch && /^esac$/ { exit }
+' "$repo_root/bin/v-run-user-docker-command" | sort >"$broker_operations"
+
+cmp -s "$contract_operations" "$broker_operations" \
+    || { diff -u "$contract_operations" "$broker_operations" >&2 || :; fail 'broker and contract operation sets differ'; }
 
 shell_access_docs=(
     "README.md"
