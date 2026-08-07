@@ -138,11 +138,13 @@ vx_compose_shell_require_eligible_except_group() {
     conf="$VESTA/data/users/$actor/user.conf"
     vx_compose_shell_user_conf_secure "$actor" "$conf" || return 1
     awk '
-        !/^[A-Z][A-Z0-9_]*='\''[^'\'']*'\''$/ { exit 1 }
+        !/^[A-Z][A-Z0-9_]*=('\''[^'\'']*'\''|)$/ { invalid = 1; next }
         /^SUSPENDED=/ { suspended++ }
         /^SHELL=/ { shell++ }
         /^DOCKER_PROJECTS=/ { projects++ }
-        END { exit !(suspended == 1 && shell == 1 && projects == 1) }
+        END {
+            exit (invalid || suspended != 1 || shell != 1 || projects != 1)
+        }
     ' "$conf" || return 1
     suspended="$(vx_compose_meta_get "$conf" SUSPENDED)" || return 1
     shell="$(vx_compose_meta_get "$conf" SHELL)" || return 1

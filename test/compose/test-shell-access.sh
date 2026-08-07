@@ -124,6 +124,16 @@ expect_deny admin 1000 bash no unlimited
 expect_deny malformed 1101 bash no '$(touch /tmp/canary)'
 [[ ! -e /tmp/canary ]] || fail 'command-substitution canary executed'
 
+test_passwd_actor=alice test_passwd_uid=1101 test_passwd_shell=bash
+test_groups="users $VX_COMPOSE_SHELL_GROUP"
+write_conf alice bash no 2
+printf 'BACKEND_TEMPLATE=\n' >>"$fixture/data/users/alice/user.conf"
+vx_compose_shell_require_eligible alice \
+    || fail 'canonical empty Vesta assignment was rejected'
+printf 'UNSAFE_VALUE=unquoted\n' >>"$fixture/data/users/alice/user.conf"
+! vx_compose_shell_require_eligible alice >/dev/null 2>&1 \
+    || fail 'nonempty unquoted Vesta assignment was accepted'
+
 write_conf alice bash no 2
 ln -sf user.conf "$fixture/data/users/alice/linked.conf"
 mv "$fixture/data/users/alice/user.conf" "$fixture/data/users/alice/real.conf"
