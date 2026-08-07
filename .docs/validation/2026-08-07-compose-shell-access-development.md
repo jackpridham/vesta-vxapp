@@ -15,7 +15,15 @@ No connection was made to the development host or to production.
 
 ## Local evidence
 
-Populate with the final commit and focused command results at closeout. The
-root integration test deliberately skips unless it is running in an explicitly
-approved disposable container; it never changes developer-host users, groups,
-or sudoers.
+Implementation commit: `e80485ca`.
+
+Passed locally: Bash syntax checks; owner lifecycle; package integration;
+shell-access concurrency; exact sudo installation (including `visudo`);
+broker access; shell stdin; malicious-input policy; general policy; owner
+isolation; Docker readiness; canonical-policy byte comparison; and
+`git diff --check`.
+
+The root integration test returned `SKIP: root-only disposable integration`.
+It deliberately skips unless it is running in an explicitly approved
+disposable container; it never changes developer-host users, groups, or
+sudoers.
