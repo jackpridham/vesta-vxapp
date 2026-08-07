@@ -44,6 +44,14 @@ Use this skill before editing files when the main question is "where does this l
 - Immutable self-service previews live temporarily under
   `/usr/local/vesta/data/tmp/compose-previews/<preview-id>/` and must remain
   root-owned with the contracted modes and 15-minute lifetime.
+- Tenant shell access maps `bin/v-docker` to the unprivileged client and
+  `bin/v-run-user-docker-command` to the exact sudo broker. Package-derived
+  `DOCKER_PROJECTS` entitlement and interactive Bash drive automatic
+  reconciliation of `vesta-compose-users`; broker checks remain live.
+  Preserve kernel/sudo-derived identity, owner equality, `standard`-only
+  scope, bounded stdin, and owner-lock-before-project-lock. Never add Docker
+  group/socket, raw Docker, caller owner/actor arguments, or direct tenant
+  sudo access to existing `v-*` commands.
 - Docker objects and inspect output are runtime evidence, not persistence.
 - HTTP routes remain Vesta state and render through the dedicated `vx-proxy`
   web template; projects without routes receive no nginx configuration.

@@ -1,0 +1,166 @@
+#!/usr/bin/env bash
+# info: install Docker tenant shell-access group and exact sudo policy
+# options: [defer]
+
+set -Eeuo pipefail
+VESTA=${VESTA:-/usr/local/vesta}
+mode=${1:-}
+group=vesta-compose-users
+source_policy="$VESTA/install/common/sudo/vesta-compose-users"
+target_dir=/etc/sudoers.d
+target_policy="$target_dir/$group"
+broker="$VESTA/bin/v-run-user-docker-command"
+client="$VESTA/bin/v-docker"
+client_link=/usr/local/bin/v-docker
+temp=
+policy_backup=
+client_stage_dir=
+client_stage=
+target_had_policy=no
+client_link_had=no
+transaction_started=no
+transaction_complete=no
+rollback() {
+    local result=0
+
+    if [[ "$target_had_policy" == yes ]]; then
+        [[ -n "$policy_backup" ]] \
+            && /usr/bin/mv -fT -- "$policy_backup" "$target_policy" \
+            && policy_backup= \
+            || result=1
+    else
+        /usr/bin/rm -f -- "$target_policy" || result=1
+    fi
+    if [[ "$client_link_had" == yes ]]; then
+        /usr/bin/ln -sfn "$client" "$client_link" || result=1
+    else
+        /usr/bin/rm -f -- "$client_link" || result=1
+    fi
+    return "$result"
+}
+cleanup() {
+    local status=$?
+
+    trap - EXIT
+    if [[ "$transaction_started" == yes && "$transaction_complete" != yes ]]; then
+        rollback || status=1
+    fi
+    [[ -z "$temp" ]] || /usr/bin/rm -f -- "$temp"
+    [[ -z "$policy_backup" ]] || /usr/bin/rm -f -- "$policy_backup"
+    [[ -z "$client_stage" ]] || /usr/bin/rm -f -- "$client_stage"
+    [[ -z "$client_stage_dir" ]] || /usr/bin/rmdir -- "$client_stage_dir" 2>/dev/null || :
+    exit "$status"
+}
+trap cleanup EXIT
+
+fail() { echo "Error: $*" >&2; exit 1; }
+secure_regular() {
+    local facts
+    [[ -f "$1" && ! -L "$1" ]] || return 1
+    facts="$(/usr/bin/stat -c '%u:%a:%h:%F' "$1")" || return 1
+    IFS=: read -r owner permissions links kind <<<"$facts"
+    [[ "$owner" == 0 && "$links" == 1 && "$kind" == 'regular file' ]] || return 1
+    (( (8#$permissions & 0022) == 0 ))
+}
+secure_directory() {
+    local path="$1" facts owner permissions kind
+    [[ -d "$path" && ! -L "$path" ]] || return 1
+    facts="$(/usr/bin/stat -c '%u:%a:%F' "$path")" || return 1
+    IFS=: read -r owner permissions kind <<<"$facts"
+    [[ "$owner" == 0 && "$kind" == directory ]] || return 1
+    (( (8#$permissions & 0022) == 0 ))
+}
+secure_parent_chain() {
+    local path="$1" parent component current=/
+    parent="$(/usr/bin/dirname -- "$path")" || return 1
+    [[ "$parent" == /* ]] || return 1
+    secure_directory / || return 1
+    IFS=/ read -r -a components <<<"${parent#/}"
+    for component in "${components[@]}"; do
+        [[ -n "$component" && "$component" != . && "$component" != .. ]] || return 1
+        current="${current%/}/$component"
+        secure_directory "$current" || return 1
+    done
+}
+[[ "$EUID" == 0 ]] || fail 'root privileges are required'
+[[ -z "$mode" || "$mode" == defer ]] || fail 'argument must be defer'
+[[ "$#" -le 1 ]] || fail 'too many arguments'
+[[ -x /usr/bin/getfacl ]] || fail 'getfacl is required for shell access'
+
+if ! /usr/bin/getent group "$group" >/dev/null 2>&1; then
+    /usr/sbin/groupadd --system "$group" || fail 'unable to create access group'
+fi
+record="$(/usr/bin/getent group "$group")" || fail 'access group is unavailable'
+IFS=: read -r name _ gid _ <<<"$record"
+[[ "$name" == "$group" && "$gid" =~ ^[0-9]+$ ]] || fail 'access group is invalid'
+local_record="$(/usr/bin/awk -F: -v group="$group" '$1 == group { print; found++ } END { exit(found == 1 ? 0 : 1) }' /etc/group)" \
+    || fail 'access group is not one normal local group'
+[[ "$local_record" == "$record" && "$gid" -lt 1000 ]] \
+    || fail 'access group is not a local system group'
+secure_regular "$source_policy" || fail 'sudo policy source is not trusted'
+secure_regular "$broker" || fail 'broker is not trusted'
+secure_regular "$client" || fail 'client is not trusted'
+secure_parent_chain "$source_policy" || fail 'sudo policy source path is not trusted'
+secure_parent_chain "$broker" || fail 'broker path is not trusted'
+secure_parent_chain "$client" || fail 'client path is not trusted'
+secure_parent_chain "$target_policy" || fail 'sudoers path is not trusted'
+secure_parent_chain "$client_link" || fail 'client link path is not trusted'
+secure_directory "$target_dir" || fail 'sudoers directory is not trusted'
+if [[ -e "$target_policy" || -L "$target_policy" ]]; then
+    secure_regular "$target_policy" \
+        && [[ "$(/usr/bin/stat -c '%a' "$target_policy")" == 440 ]] \
+        || fail 'sudo policy target is not trusted'
+    target_had_policy=yes
+fi
+if [[ -e "$client_link" || -L "$client_link" ]]; then
+    [[ -L "$client_link" && "$(/usr/bin/stat -c '%u' "$client_link")" == 0 \
+        && "$(/usr/bin/readlink "$client_link")" == "$client" ]] \
+        || fail 'client path is not a trusted exact symlink'
+    client_link_had=yes
+fi
+temp="$(/usr/bin/mktemp "$target_dir/.vesta-compose-users.XXXXXXXX")" || fail 'unable to stage sudo policy'
+/usr/bin/install -m 0440 -o root -g root "$source_policy" "$temp" || fail 'unable to stage sudo policy'
+secure_regular "$temp" && [[ "$(/usr/bin/stat -c '%u:%g:%a' "$temp")" == '0:0:440' ]] \
+    || fail 'staged sudo policy is not trusted'
+/usr/sbin/visudo -cf "$temp" >/dev/null || fail 'sudo policy validation failed'
+if [[ "$target_had_policy" == yes ]]; then
+    policy_backup="$(/usr/bin/mktemp "$target_dir/.vesta-compose-users.rollback.XXXXXXXX")" \
+        || fail 'unable to stage sudo policy rollback'
+    /usr/bin/install -m 0440 -o root -g root "$target_policy" "$policy_backup" \
+        || fail 'unable to stage sudo policy rollback'
+    if ! secure_regular "$policy_backup" \
+        || [[ "$(/usr/bin/stat -c '%u:%g:%a' "$policy_backup")" != '0:0:440' ]] \
+        || ! /usr/sbin/visudo -cf "$policy_backup" >/dev/null; then
+        fail 'staged sudo policy rollback is not trusted'
+    fi
+fi
+client_stage_dir="$(/usr/bin/mktemp -d /usr/local/bin/.v-docker.XXXXXXXX)" \
+    || fail 'unable to stage client link'
+secure_directory "$client_stage_dir" \
+    && [[ "$(/usr/bin/stat -c '%u:%g:%a' "$client_stage_dir")" == '0:0:700' ]] \
+    || fail 'client link staging directory is not trusted'
+client_stage="$client_stage_dir/v-docker"
+/usr/bin/ln -s "$client" "$client_stage" || fail 'unable to stage client link'
+[[ -L "$client_stage" && "$(/usr/bin/stat -c '%u' "$client_stage")" == 0 \
+    && "$(/usr/bin/readlink "$client_stage")" == "$client" ]] \
+    || fail 'staged client link is not trusted'
+transaction_started=yes
+/usr/bin/mv -fT -- "$temp" "$target_policy" || fail 'unable to install sudo policy'
+temp=
+[[ "$(/usr/bin/stat -c '%u:%g:%a:%h:%F' "$target_policy")" == '0:0:440:1:regular file' ]] \
+    || fail 'installed sudo policy is not protected'
+/usr/bin/mv -fT -- "$client_stage" "$client_link" || fail 'unable to install client link'
+client_stage=
+/usr/bin/rmdir -- "$client_stage_dir" || fail 'unable to finalize client link staging'
+client_stage_dir=
+[[ -L "$client_link" && "$(/usr/bin/stat -c '%u' "$client_link")" == 0 \
+    && "$(/usr/bin/readlink "$client_link")" == "$client" ]] \
+    || fail 'client link verification failed'
+if [[ "$mode" != defer ]]; then
+    "$VESTA/bin/v-sync-docker-shell-access-all" || fail 'membership reconciliation failed'
+fi
+[[ "$(/usr/bin/stat -c '%u:%g:%a:%h:%F' "$target_policy")" == '0:0:440:1:regular file' \
+    && -L "$client_link" && "$(/usr/bin/stat -c '%u' "$client_link")" == 0 \
+    && "$(/usr/bin/readlink "$client_link")" == "$client" ]] \
+    || fail 'installed shell access artifacts failed final verification'
+transaction_complete=yes

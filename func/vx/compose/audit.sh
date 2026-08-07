@@ -233,9 +233,16 @@ vx_compose_owner_audit() {
     local action="$2"
     local result="$3"
     local details="${4:-}"
+    local actor="${5:-${_VX_COMPOSE_AUDIT_ACTOR:-root}}"
     local event
 
     vx_compose_require_owner "$owner" || return 1
+    if [[ "$actor" != root && "$actor" != admin ]]; then
+        vx_compose_require_owner "$actor" || return 1
+        [[ -f "$VESTA/data/users/$actor/user.conf"
+            && ! -L "$VESTA/data/users/$actor/user.conf"
+            && "$(vx_compose_meta_get "$VESTA/data/users/$actor/user.conf" SUSPENDED 2>/dev/null)" == no ]] || return 1
+    fi
     [[ "$action" =~ ^[a-z][a-z0-9-]{0,63}$
         && "$result" =~ ^(started|succeeded|failed)$ ]] || return 1
     details="${details:0:4096}"
@@ -244,9 +251,10 @@ vx_compose_owner_audit() {
         --arg owner "$owner" \
         --arg action "$action" \
         --arg result "$result" \
-        --arg details "$details" '{
+        --arg details "$details" \
+        --arg actor "$actor" '{
             TIMESTAMP: $timestamp,
-            ACTOR: "root",
+            ACTOR: $actor,
             OWNER: $owner,
             PROJECT: null,
             REVISION: 0,

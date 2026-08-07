@@ -26,6 +26,15 @@ update, remove, and adopt. Each mutation:
 - refreshes health/counters/routes;
 - releases the lock.
 
+Tenant lifecycle calls enter through `v-docker` and the exact
+`v-run-user-docker-command` broker. The broker derives identity from kernel
+and sudo state, verifies package `DOCKER_PROJECTS` entitlement and
+`vesta-compose-users` membership under the owner access lock, requires owner
+equality and profile `standard`, then acquires the project lock. Owner-lock
+before project-lock is invariant. Vesta owns automatic reconciliation after
+package, shell, suspension, account, or administrator-state changes; payload
+operations use bounded stdin and immutable preview/apply evidence.
+
 `stop` uses `docker compose stop`. `start` uses `docker compose start` only
 when containers match the current revision, otherwise it converges with
 `up -d`. `recreate` uses `up -d --force-recreate`. `remove` uses

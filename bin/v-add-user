@@ -55,6 +55,7 @@ if [ -z "$(echo "$pkg_data" | grep "^DOCKER_CONTAINERS=")" ]; then
 DOCKER_CONTAINERS='0'"
 fi
 pkg_data=$(vx_compose_package_data_with_defaults "$pkg_data")
+check_result $? "Docker package limits are invalid" $E_INVALID
 
 # Checking shell
 shell_conf=$(echo "$pkg_data" | grep 'SHELL' | cut -f 2 -d \')
@@ -203,6 +204,9 @@ NOTIFICATIONS='no'
 TIME='$time'
 DATE='$date'" > $USER_DATA/user.conf
 chmod 660 $USER_DATA/user.conf
+
+$BIN/v-sync-docker-shell-access "$user"
+check_result $? "Compose shell access reconciliation failed"
 
 # Updating quota
 if [ "$DISK_QUOTA" = 'yes' ]; then

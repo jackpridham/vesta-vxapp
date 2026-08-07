@@ -138,6 +138,8 @@ fi
 
 "$VESTA/bin/v-install-docker-compose-mount-guard" \
     || fail "unable to activate the Docker Compose mount guard"
+"$VESTA/bin/v-install-docker-shell-access" \
+    || fail "unable to install Docker shell access"
 
 if has_docker && has_compose && has_jq && has_age && has_python3 \
     && docker info >/dev/null 2>&1; then
@@ -216,6 +218,9 @@ has_jq || fail "jq is unavailable"
 has_age || fail "age is unavailable"
 has_python3 || fail "Python 3 is unavailable"
 docker info >/dev/null 2>&1 || fail "Docker daemon is unavailable"
+
+"$VESTA/bin/v-install-docker-shell-access" \
+    || fail "unable to finalize Docker shell access"
 
 echo "= Docker orchestration installation completed."
 exit 0

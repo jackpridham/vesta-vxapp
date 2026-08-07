@@ -14,6 +14,35 @@ routes, lifecycle transactions, monitoring, backup, and audit.
 - Package limits cover projects, services, CPU, memory, PIDs, storage, ports,
   secrets, and volumes. A rejected quota check never deletes data.
 
+Interactive shell access uses `v-docker`. It is enabled when the effective
+package-derived `DOCKER_PROJECTS` value is positive (or `unlimited`) and the
+Vesta account has an interactive Bash login. Vesta owns automatic
+reconciliation of derived `vesta-compose-users` membership. A new login may be
+needed before the shell displays a supplementary-group change, but the exact
+`v-run-user-docker-command` broker checks live entitlement on every call, so
+access changes apply immediately.
+
+The broker derives your identity and permits only your own `standard`
+projects. It does not accept owner or actor arguments. Administrator,
+`admin-approved`, `slave-vxapp`, and privileged operations remain excluded.
+Use the redacted, immutable interface; Compose input is accepted through
+bounded stdin.
+
+```text
+v-docker quota json
+v-docker projects json
+v-docker show app json
+v-docker health app json
+v-docker logs app app 100
+v-docker preview app change < compose.yaml
+v-docker apply app PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION
+v-docker restart app
+```
+
+Use the IDs, digests, and revision returned by preview exactly. If the source,
+project revision, entitlement, or policy changes, create a new preview. Shell
+access never grants Docker daemon access or a route around Vesta policy.
+
 ## Create a project
 
 Use one of two owner-scoped flows:

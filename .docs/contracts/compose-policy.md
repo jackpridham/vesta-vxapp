@@ -114,6 +114,15 @@ and separate production authorization. Rollback reinstalls the hash-verified
 prior package and user bytes at their exact Vesta paths, removes only the
 dedicated transition package, and byte-compares both restored targets.
 
+For tenant shell access, the effective package-derived `DOCKER_PROJECTS`
+value must be positive or `unlimited`; `0` disables access. Interactive Bash
+is also required. Vesta owns automatic reconciliation of the derived
+`vesta-compose-users` membership, while the exact
+`v-run-user-docker-command` broker rechecks live entitlement under the owner
+lock on every `v-docker` call. Membership alone is never authority. The
+tenant surface remains owner-equal, `standard`-only, redacted, and accepts
+payloads only through bounded stdin.
+
 ## Resource minimums and canonical units
 
 - CPU is stored as decimal cores with three fractional digits.

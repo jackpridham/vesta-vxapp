@@ -36,6 +36,12 @@ if [ "$user" = 'admin' ]; then
     exit
 fi
 
+vx_compose_shell_access_lock_acquire "$user"
+check_result $? "Compose owner access lock failed"
+trap 'vx_compose_shell_access_lock_release' EXIT
+vx_compose_shell_group_revoke "$user"
+check_result $? "Compose shell access revocation failed"
+
 #----------------------------------------------------------#
 #                       Action                             #
 #----------------------------------------------------------#

@@ -28,7 +28,7 @@ if [ "$release" -eq 13 ]; then
         clamav-daemon spamassassin dovecot-imapd dovecot-pop3d roundcube-core
         roundcube-mysql roundcube-plugins mariadb-server mariadb-common
         mariadb-client postgresql postgresql-contrib phpmyadmin mc
-        flex whois git idn zip sudo bc ftp lsof ntpsec-ntpdate rrdtool quota
+        flex whois git idn zip sudo acl bc ftp lsof ntpsec-ntpdate rrdtool quota
         e2fslibs bsdutils e2fsprogs curl imagemagick fail2ban dnsutils
         bsdmainutils cron vesta vesta-nginx vesta-php expect libmail-dkim-perl
         unrar-free vim-common net-tools unzip iptables xxd spamd
@@ -41,7 +41,7 @@ elif [ "$release" -eq 12 ]; then
         clamav-daemon spamassassin dovecot-imapd dovecot-pop3d roundcube-core
         roundcube-mysql roundcube-plugins mariadb-server mariadb-common
         mariadb-client postgresql postgresql-contrib phpmyadmin mc
-        flex whois git idn zip sudo bc ftp lsof ntpdate rrdtool quota
+        flex whois git idn zip sudo acl bc ftp lsof ntpdate rrdtool quota
         e2fslibs bsdutils e2fsprogs curl imagemagick fail2ban dnsutils
         bsdmainutils cron vesta vesta-nginx vesta-php expect libmail-dkim-perl
         unrar-free vim-common net-tools unzip iptables xxd spamd rsyslog
@@ -54,7 +54,7 @@ elif [ "$release" -eq 11 ]; then
         clamav-daemon spamassassin dovecot-imapd dovecot-pop3d roundcube-core
         roundcube-mysql roundcube-plugins mariadb-server mariadb-common
         mariadb-client postgresql postgresql-contrib phppgadmin phpmyadmin mc
-        flex whois git idn zip sudo bc ftp lsof ntpdate rrdtool quota
+        flex whois git idn zip sudo acl bc ftp lsof ntpdate rrdtool quota
         e2fslibs bsdutils e2fsprogs curl imagemagick fail2ban dnsutils
         bsdmainutils cron vesta vesta-nginx vesta-php expect libmail-dkim-perl
         unrar-free vim-common net-tools unzip iptables docker-compose jq age python3"
@@ -66,7 +66,7 @@ elif [ "$release" -eq 10 ]; then
         clamav-daemon spamassassin dovecot-imapd dovecot-pop3d roundcube-core
         roundcube-mysql roundcube-plugins mariadb-server mariadb-common
         mariadb-client postgresql postgresql-contrib phppgadmin mc
-        flex whois git idn zip sudo bc ftp lsof ntpdate rrdtool quota
+        flex whois git idn zip sudo acl bc ftp lsof ntpdate rrdtool quota
         e2fslibs bsdutils e2fsprogs curl imagemagick fail2ban dnsutils
         bsdmainutils cron vesta vesta-nginx vesta-php expect libmail-dkim-perl
         unrar-free vim-common net-tools unzip docker-compose jq age python3"
@@ -1813,6 +1813,10 @@ if [ ! -z "$(grep ^admin: /etc/group)" ]; then
     groupdel admin > /dev/null 2>&1
 fi
 
+echo "== Installing Docker shell access"
+$VESTA/bin/v-install-docker-shell-access defer
+check_result $? "Docker shell-access installation failed"
+
 echo "== Adding vesta account"
 $VESTA/bin/v-add-user admin $vpass $email default System Administrator
 check_result $? "can't create admin user"
@@ -1820,6 +1824,8 @@ check_result $? "can't create admin user"
 echo "== Activating Docker Compose mount guard"
 $VESTA/bin/v-install-docker-compose-mount-guard
 check_result $? "Docker Compose mount-guard activation failed"
+$VESTA/bin/v-install-docker-shell-access
+check_result $? "Docker shell-access activation failed"
 $VESTA/bin/v-change-user-shell admin bash
 $VESTA/bin/v-change-user-language admin $lang
 

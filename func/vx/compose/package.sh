@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+VX_COMPOSE_PACKAGE_MAX_VALUE=2147483647
+
 VX_COMPOSE_PACKAGE_FIELDS=(
     DOCKER_PROJECTS
     DOCKER_SERVICES
@@ -12,6 +14,53 @@ VX_COMPOSE_PACKAGE_FIELDS=(
     DOCKER_VOLUMES
 )
 
+vx_compose_package_integer_normalize() {
+    local value="$1"
+
+    [[ "${#value}" -le "${#VX_COMPOSE_PACKAGE_MAX_VALUE}"
+        && "$value" =~ ^[0-9]+$ ]] || return 1
+    while [[ "${#value}" -gt 1 && "$value" == 0* ]]; do
+        value="${value#0}"
+    done
+    if [[ "${#value}" -gt "${#VX_COMPOSE_PACKAGE_MAX_VALUE}" ]] \
+        || (( 10#$value > 10#$VX_COMPOSE_PACKAGE_MAX_VALUE )); then
+        return 1
+    fi
+    printf '%s\n' "$value"
+}
+
+vx_compose_package_integer_multiply() {
+    local normalized_value normalized_factor
+
+    normalized_value="$(vx_compose_package_integer_normalize "$1")" \
+        || return 1
+    normalized_factor="$(vx_compose_package_integer_normalize "$2")" \
+        || return 1
+    (( 10#$normalized_factor != 0 )) || return 1
+    (( 10#$normalized_value <= 10#$VX_COMPOSE_PACKAGE_MAX_VALUE / 10#$normalized_factor )) \
+        || return 1
+    printf '%s\n' "$((10#$normalized_value * 10#$normalized_factor))"
+}
+
+vx_compose_package_cpu_normalize() {
+    local value="$1" integer fraction
+
+    [[ "${#value}" -le $((${#VX_COMPOSE_PACKAGE_MAX_VALUE} + 4))
+        && "$value" =~ ^([0-9]+)([.]([0-9]{1,3}))?$ ]] || return 1
+    integer="$(vx_compose_package_integer_normalize "${BASH_REMATCH[1]}")" \
+        || return 1
+    fraction="${BASH_REMATCH[3]}"
+    printf '%s%s\n' "$integer" "${fraction:+.$fraction}"
+}
+
+vx_compose_package_docker_is_enabled() {
+    local limit
+
+    [[ "$1" == unlimited ]] && return 0
+    limit="$(vx_compose_package_integer_normalize "$1")" || return 1
+    [[ "$limit" != 0 ]]
+}
+
 vx_compose_package_unset_values() {
     local field
 
@@ -22,7 +71,8 @@ vx_compose_package_unset_values() {
 
 vx_compose_package_data_with_defaults() {
     local package_data="$1"
-    local field legacy_limit default_value
+    local field legacy_limit default_value normalized_legacy_limit
+    local legacy_memory legacy_pids values value count
 
     legacy_limit="$(sed -n "s/^DOCKER_CONTAINERS='\\([^']*\\)'$/\\1/p" \
         <<<"$package_data")"
@@ -32,19 +82,39 @@ vx_compose_package_data_with_defaults() {
             default_value=0
             if [[ "$legacy_limit" == unlimited ]]; then
                 default_value=unlimited
-            elif [[ "$legacy_limit" =~ ^[1-9][0-9]*$ ]]; then
+            elif normalized_legacy_limit="$(
+                vx_compose_package_integer_normalize "$legacy_limit"
+            )" && [[ "$normalized_legacy_limit" != 0 ]] \
+                && legacy_memory="$(
+                    vx_compose_package_integer_multiply "$normalized_legacy_limit" 1024
+                )" && legacy_pids="$(
+                    vx_compose_package_integer_multiply "$normalized_legacy_limit" 128
+                )"; then
                 case "$field" in
                     DOCKER_PROJECTS|DOCKER_SERVICES|DOCKER_PORTS)
-                        default_value="$legacy_limit"
+                        default_value="$normalized_legacy_limit"
                         ;;
-                    DOCKER_CPUS) default_value="$legacy_limit.000" ;;
-                    DOCKER_MEMORY_MB) default_value=$((legacy_limit * 1024)) ;;
-                    DOCKER_PIDS) default_value=$((legacy_limit * 128)) ;;
-                    DOCKER_STORAGE_MB) default_value=$((legacy_limit * 1024)) ;;
+                    DOCKER_CPUS) default_value="$normalized_legacy_limit.000" ;;
+                    DOCKER_MEMORY_MB) default_value="$legacy_memory" ;;
+                    DOCKER_PIDS) default_value="$legacy_pids" ;;
+                    DOCKER_STORAGE_MB) default_value="$legacy_memory" ;;
                 esac
             fi
             package_data="${package_data}
 ${field}='${default_value}'"
+        fi
+    done
+    for field in "${VX_COMPOSE_PACKAGE_FIELDS[@]}"; do
+        values="$(sed -n "s/^${field}='\\([^']*\\)'$/\\1/p" <<<"$package_data")" \
+            || return 1
+        count="$(grep -c . <<<"$values")" || true
+        [[ "$count" == 1 ]] || return 1
+        value="$values"
+        [[ "$value" == unlimited ]] && continue
+        if [[ "$field" == DOCKER_CPUS ]]; then
+            vx_compose_package_cpu_normalize "$value" >/dev/null || return 1
+        else
+            vx_compose_package_integer_normalize "$value" >/dev/null || return 1
         fi
     done
     printf '%s\n' "$package_data"
@@ -73,14 +143,17 @@ vx_compose_package_usage_is_covered() {
         usage="${!counter}"
         [[ "$limit" == unlimited ]] && continue
         if [[ "$field" == DOCKER_CPUS ]]; then
+            limit="$(vx_compose_package_cpu_normalize "$limit")" || return 1
+            usage="$(vx_compose_package_cpu_normalize "$usage")" || return 1
             normalized_limit="$(vx_compose_cpu_to_milli "$limit")" || return 1
             normalized_usage="$(vx_compose_cpu_to_milli "$usage")" || return 1
         else
-            [[ "$limit" =~ ^[0-9]+$ && "$usage" =~ ^[0-9]+$ ]] || return 1
-            normalized_limit="$limit"
-            normalized_usage="$usage"
+            normalized_limit="$(vx_compose_package_integer_normalize "$limit")" \
+                || return 1
+            normalized_usage="$(vx_compose_package_integer_normalize "$usage")" \
+                || return 1
         fi
-        if (( normalized_usage > normalized_limit )); then
+        if (( 10#$normalized_usage > 10#$normalized_limit )); then
             # Read by v-change-user-package after this helper returns.
             # shellcheck disable=SC2034
             VX_COMPOSE_PACKAGE_OVERAGE_FIELD="$field"

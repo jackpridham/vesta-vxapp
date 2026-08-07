@@ -39,9 +39,8 @@ for source_file in "${compose_helpers[@]}" "${compose_adapters[@]}"; do
 done
 perl -c func/vx/compose/managed-directory.pl >/dev/null
 
-run_step "resource-safe ShellCheck"
-printf '%s\0' "${compose_helpers[@]}" "${compose_adapters[@]}" \
-    | xargs -0 -r -n 1 shellcheck -x -S warning -e SC1091
+run_step "resource-efficient ShellCheck"
+bash test/compose/run-production-shellcheck.sh
 
 run_step "Compose shell suites"
 while IFS= read -r test_file; do

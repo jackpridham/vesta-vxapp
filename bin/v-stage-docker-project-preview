@@ -9,6 +9,7 @@ source_file=$4
 profile=$5
 mode=$6
 # func/main.sh derives USER_DATA from the conventional user variable.
+# shellcheck disable=SC2034
 user=$owner
 
 # shellcheck source=func/main.sh

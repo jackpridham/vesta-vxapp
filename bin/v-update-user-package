@@ -34,6 +34,7 @@ for user in $(ls $VESTA/data/users); do
     check_package=$(grep "PACKAGE='$package'" $VESTA/data/users/$user/user.conf)
     if [ ! -z "$check_package" ]; then
         $BIN/v-change-user-package $user $package 'yes'
+        check_result $? "User package update failed"
     fi
 done
 

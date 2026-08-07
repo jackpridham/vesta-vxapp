@@ -8,6 +8,171 @@ fail() {
     exit 1
 }
 
+test -f "$repo_root/.docs/contracts/compose-shell-access.md" \
+    || fail 'Compose shell-access contract is missing'
+grep -Fq 'vesta-compose-users' \
+    "$repo_root/.docs/contracts/compose-shell-access.md" \
+    || fail 'shell-access contract omits the derived group'
+grep -Fq 'v-run-user-docker-command' \
+    "$repo_root/.docs/contracts/compose-shell-access.md" \
+    || fail 'shell-access contract omits the privileged broker'
+
+catalog_tmp="$(mktemp -d)"
+trap 'rm -rf -- "$catalog_tmp"' EXIT
+contract_catalog="$catalog_tmp/contract.tsv"
+expected_catalog="$catalog_tmp/expected.tsv"
+broker_operations="$catalog_tmp/broker.operations"
+contract_operations="$catalog_tmp/contract.operations"
+
+awk '
+    /^```tsv compose-shell-catalog$/ { catalog=1; next }
+    catalog && /^```$/ { exit }
+    catalog { print }
+' "$repo_root/.docs/contracts/compose-shell-access.md" >"$contract_catalog"
+
+cat >"$expected_catalog" <<'EOF'
+projects	[json|plain]
+show	PROJECT [json|plain]
+definition	PROJECT [json|plain]
+quota	[json|plain]
+validate	PROJECT [json|plain]
+health	PROJECT [json|plain]
+logs	PROJECT [SERVICE] [LINES]
+stats	PROJECT [PERIOD] [json|plain]
+alerts	PROJECT [json|plain]
+operation	PROJECT [json|plain]
+routes	PROJECT [json|plain]
+backups	PROJECT [json|plain]
+secrets	PROJECT [json|plain]
+registries	[json|plain]
+drift	PROJECT [json|plain]
+probe	PROJECT SERVICE [json|plain]
+start	PROJECT
+stop	PROJECT
+restart	PROJECT
+recreate	PROJECT [SERVICE]
+deploy	PROJECT
+preview	PROJECT add|change < compose.yaml
+apply	PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION
+backup	PROJECT
+restore	PROJECT BACKUP_ID validate|apply
+rollback-preview	PROJECT REVISION
+rollback-apply	PROJECT REVISION CURRENT FROM_MANIFEST_SHA TO_MANIFEST_SHA
+reconcile-preview	PROJECT
+reconcile-apply	PROJECT DRIFT_SHA CURRENT_REVISION
+secret-add	PROJECT NAME < secret-value
+secret-change	PROJECT NAME < secret-value
+secret-delete	PROJECT NAME
+registry-add	REGISTRY USERNAME < registry-password
+registry-change	REGISTRY USERNAME < registry-password
+registry-delete	REGISTRY
+route-add	PROJECT DOMAIN SERVICE PORT [SCHEME] [PATH]
+route-delete	PROJECT DOMAIN
+alert-ack	PROJECT ALERT
+remove	PROJECT keep-data
+EOF
+
+cmp -s "$expected_catalog" "$contract_catalog" \
+    || { diff -u "$expected_catalog" "$contract_catalog" >&2 || :; fail 'shell catalog signature drift'; }
+
+cut -f1 "$contract_catalog" | sort >"$contract_operations"
+[[ "$(wc -l <"$contract_operations")" -eq 39 ]] \
+    || fail 'shell contract catalog must contain exactly 39 operations'
+[[ "$(uniq "$contract_operations" | wc -l)" -eq 39 ]] \
+    || fail 'shell contract catalog contains duplicate operations'
+
+awk '
+    /^case "\$operation" in$/ { dispatch=1; next }
+    dispatch && /^    [a-z0-9][a-z0-9|-]*\)$/ {
+        label=$0
+        sub(/^    /, "", label)
+        sub(/\)$/, "", label)
+        count=split(label, operations, "|")
+        for (i=1; i<=count; i++) print operations[i]
+    }
+    dispatch && /^esac$/ { exit }
+' "$repo_root/bin/v-run-user-docker-command" | sort >"$broker_operations"
+
+cmp -s "$contract_operations" "$broker_operations" \
+    || { diff -u "$contract_operations" "$broker_operations" >&2 || :; fail 'broker and contract operation sets differ'; }
+
+shell_access_docs=(
+    "README.md"
+    "SECURITY.md"
+    "AGENTS.md"
+    "docs/container-orchestration.md"
+    ".docs/README.md"
+    ".docs/contracts/compose-interfaces.md"
+    ".docs/contracts/compose-policy.md"
+    ".docs/contracts/compose-lifecycle.md"
+    ".docs/contracts/compose-shell-access.md"
+    ".docs/user-guides/docker-compose-projects.md"
+    ".agents/skills/bash-cli/SKILL.md"
+    ".agents/skills/runtime-layout/SKILL.md"
+)
+
+for required_text in \
+    'v-docker' \
+    'vesta-compose-users' \
+    'v-run-user-docker-command' \
+    'DOCKER_PROJECTS' \
+    'package-derived' \
+    'standard-only' \
+    'bounded stdin' \
+    'automatic reconciliation'
+do
+    grep -Fq "$required_text" "${shell_access_docs[@]/#/$repo_root/}" \
+        || fail "active shell-access guidance omits: $required_text"
+done
+
+for workflow_command in \
+    'v-docker quota json' \
+    'v-docker projects json' \
+    'v-docker show app json' \
+    'v-docker health app json' \
+    'v-docker logs app app 100' \
+    'v-docker preview app change < compose.yaml' \
+    'v-docker apply app PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION' \
+    'v-docker restart app'
+do
+    grep -Fq "$workflow_command" \
+        "$repo_root/.docs/user-guides/docker-compose-projects.md" \
+        || fail "user guide omits shell workflow command: $workflow_command"
+done
+
+for repair_command in \
+    '/usr/local/vesta/bin/v-sync-docker-shell-access USER' \
+    '/usr/local/vesta/bin/v-sync-docker-shell-access-all' \
+    '/usr/local/vesta/bin/v-install-docker-shell-access' \
+    '/usr/sbin/visudo -cf /etc/sudoers.d/vesta-compose-users' \
+    'getent group vesta-compose-users' \
+    'sudo -l -U USER'
+do
+    grep -Fq "$repair_command" "$repo_root/docs/container-orchestration.md" \
+        || fail "operator guide omits shell-access repair command: $repair_command"
+done
+
+limited_readiness="$repo_root/test/compose/run-production-readiness-limited.sh"
+[[ -x "$limited_readiness" ]] \
+    || fail 'resource-limited production readiness launcher is missing'
+for required_text in \
+    'test/compose/run-production-readiness-limited.sh' \
+    'test/compose/run-production-shellcheck.sh' \
+    'VX_READINESS_CPU_QUOTA' \
+    'VX_READINESS_MEMORY_MAX' \
+    'VX_READINESS_ALLOW_UNLIMITED=yes'
+do
+    grep -Fq "$required_text" "$repo_root/docs/container-orchestration.md" \
+        || fail "operator guide omits limited readiness guidance: $required_text"
+done
+
+if rg -n \
+    '(usermod|gpasswd).*(docker|vesta-compose-users)|chmod.*docker\.sock|setfacl.*docker\.sock|sudo[[:space:]]+(-n[[:space:]]+)?(/usr/local/vesta/bin/)?v-[a-z0-9-]+|^[[:space:]]*(\$[[:space:]]*)?(sudo[[:space:]]+)?docker[[:space:]]+(ps|compose|logs|inspect|restart|start|stop|exec|run)|v-docker.*(ACTOR|OWNER)|manual(ly)? (add|remove|maintain).*(vesta-compose-users|group membership)' \
+    "${shell_access_docs[@]/#/$repo_root/}"
+then
+    fail 'active guidance recommends a forbidden tenant Docker access path'
+fi
+
 required_docs=(
     ".docs/contracts/compose-storage.md"
     ".docs/contracts/compose-policy.md"

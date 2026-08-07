@@ -43,6 +43,13 @@ if [[ -z "${_VX_COMPOSE_MAIN_LOADED:-}"
     _VX_COMPOSE_MAIN_LOADED=1
 fi
 
+# Load fixed shell-access authority before exposing the remaining Compose API.
+# shellcheck source=func/vx/compose/shell-access.sh
+source "$_vx_compose_dir/shell-access.sh" || {
+    unset _vx_compose_dir
+    return 1
+}
+
 # shellcheck source=func/vx/compose/common.sh
 source "$_vx_compose_dir/common.sh"
 # shellcheck source=func/vx/compose/profile.sh
@@ -107,6 +114,26 @@ source "$_vx_compose_dir/drift.sh"
 source "$_vx_compose_dir/revisions.sh"
 unset _VX_COMPOSE_AUDIT_ACTOR
 unset VX_COMPOSE_RUNTIME_PREFLIGHT_CANDIDATE
+_vx_broker_actor=
+_vx_broker_actor_target="$(/usr/bin/readlink "/proc/$$/fd/9" 2>/dev/null || :)"
+_vx_broker_context_seen=no
+if [[ "$_vx_broker_actor_target" \
+    =~ ^/run/lock/vesta-compose-user-access/\.broker-actor\.[A-Za-z0-9]{8}\ \(deleted\)$ ]]; then
+    _vx_broker_context_seen=yes
+fi
+if (( EUID == 0 )) \
+    && [[ "$_vx_broker_context_seen" == yes ]] \
+    && [[ "$(/usr/bin/stat -Lc '%u:%g:%a' "/proc/$$/fd/9" 2>/dev/null)" \
+        == '0:0:600' ]] \
+    && IFS= read -r _vx_broker_actor <&9 \
+    && ! IFS= read -r _vx_broker_actor_extra <&9 \
+    && [[ "$_vx_broker_actor" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ ]]; then
+    _VX_COMPOSE_AUDIT_ACTOR="$_vx_broker_actor"
+fi
+[[ "$_vx_broker_context_seen" != yes ]] || exec 9<&-
+unset VESTA_COMPOSE_BROKER_ACTOR
+unset _vx_broker_actor _vx_broker_actor_extra _vx_broker_actor_target \
+    _vx_broker_context_seen
 # shellcheck source=func/vx/compose/deployment.sh
 source "$_vx_compose_dir/deployment.sh"
 # shellcheck source=func/vx/compose/transaction.sh

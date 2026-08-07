@@ -97,6 +97,43 @@ escaped, and asynchronous work runs through the bounded job mechanism.
 Ordinary users receive only their own standard-project controls; privileged
 operations remain administrator-only.
 
+## Tenant shell access
+
+`v-docker` is the only supported interactive-shell client. Access is derived
+from a positive or `unlimited` effective package `DOCKER_PROJECTS` entitlement
+and an interactive Bash login. Vesta owns automatic reconciliation of the
+derived `vesta-compose-users` membership. A new login may be needed before a
+shell displays changed supplementary groups, but the exact
+`v-run-user-docker-command` broker rechecks live entitlement on every call, so
+grant and revocation take effect there immediately.
+
+The broker derives identity from the kernel and sudo, requires owner equality
+and the `standard` profile, and accepts Compose and secret material only
+through bounded stdin. It grants no Docker-group or socket access, raw Docker
+surface, caller-selected owner/actor arguments, or direct tenant sudo access
+to existing `v-*` commands. `admin-approved`, `slave-vxapp`, administrator,
+and cross-owner operations remain excluded. Preview/apply stays immutable and
+digest/revision bound; all output remains bounded and redacted.
+
+Install, inspect, or repair derived access with these exact administrator
+commands:
+
+```text
+/usr/local/vesta/bin/v-sync-docker-shell-access USER
+/usr/local/vesta/bin/v-sync-docker-shell-access-all
+/usr/local/vesta/bin/v-install-docker-shell-access
+/usr/sbin/visudo -cf /etc/sudoers.d/vesta-compose-users
+getent group vesta-compose-users
+sudo -l -U USER
+```
+
+Rollback is access-plane only. First disable or remove the exact sudoers file
+atomically, then verify the broker grant is absent. Remove derived members,
+remove `vesta-compose-users` only when empty, and finally remove the
+`v-docker` client and broker code. Never alter Docker runtime, projects,
+images, volumes, secrets, routes, package quotas, or retained data as part of
+shell-access rollback.
+
 ## Primary commands
 
 ```text
@@ -135,6 +172,44 @@ native reverse-proxy tests when route or vhost behavior changes, and finish
 with:
 
 ```text
-test/compose/run-production-readiness.sh
+test/compose/run-production-readiness-limited.sh
 git diff --check
 ```
+
+The repository-owned limited launcher runs the canonical
+`run-production-readiness.sh` gate unchanged inside a transient user systemd
+scope. It defaults to one-half CPU, reserves 2 GiB of currently available
+memory for the host, gives the scope the remainder, places its soft memory
+watermark 1 GiB below that dynamic maximum, and limits swap to 512 MiB, tasks
+to 64, and nice level to 19. Parent-cgroup availability further constrains the
+calculation when applicable. Override limits for an approved host without
+editing the script:
+
+```bash
+VX_READINESS_CPU_QUOTA=75% \
+VX_READINESS_MEMORY_HIGH=2500M \
+VX_READINESS_MEMORY_MAX=3500M \
+test/compose/run-production-readiness-limited.sh
+```
+
+Supported settings are `VX_READINESS_CPU_QUOTA`,
+`VX_READINESS_MEMORY_HIGH`, `VX_READINESS_MEMORY_MAX`,
+`VX_READINESS_MEMORY_RESERVE_MB`, `VX_READINESS_MEMORY_SWAP_MAX`,
+`VX_READINESS_TASKS_MAX`, and `VX_READINESS_NICE`. The launcher probes the
+requested systemd controls before starting and preserves the canonical gate's
+exit status. Unsupported or insufficient-memory hosts fail closed.
+`VX_READINESS_ALLOW_UNLIMITED=yes` is an explicit operator opt-in for an
+approved unconstrained host; it retains the configured nice level but does not
+claim resource isolation.
+
+The canonical gate delegates to `test/compose/run-production-shellcheck.sh`.
+That runner checks all Docker adapters locally in one invocation without
+source expansion, then follows `func/vx/compose/main.sh` once to analyze the
+complete shared helper graph. Do not replace it with per-adapter
+`shellcheck -x`; that re-expands the same graph for every adapter and makes the
+gate impractically slow on constrained hosts.
+
+The current shell-access release archive and exact commit were verified
+locally, but deployment was not applied because local release-readiness
+prerequisites were incomplete. No development-host acceptance is recorded and
+no production access occurred for that validation.

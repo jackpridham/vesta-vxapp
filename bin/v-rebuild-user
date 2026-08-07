@@ -55,6 +55,9 @@ if [ -d "$(vx_compose_projects_root "$user")" ]; then
     check_result $? "Compose project rebuild failed"
 fi
 
+$BIN/v-sync-docker-shell-access "$user"
+check_result $? "Compose shell access reconciliation failed"
+
 
 #----------------------------------------------------------#
 #                       Vesta                              #

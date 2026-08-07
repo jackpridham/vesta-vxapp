@@ -5,6 +5,15 @@ $TAB = 'PACKAGE';
 
 // Main include
 include($_SERVER['DOCUMENT_ROOT']."/inc/main.php");
+include($_SERVER['DOCUMENT_ROOT']."/inc/vx_compose_package.php");
+
+$compose_package_values = array();
+foreach (vx_compose_package_fields() as $field) {
+    $form_field = 'v_'.strtolower($field);
+    $value = isset($_POST[$form_field]) ? $_POST[$form_field] : '0';
+    $compose_package_values[$field] = $value;
+    ${$form_field} = is_scalar($value) ? trim((string) $value, "'") : '0';
+}
 
 // Check user
 if ($_SESSION['user'] != 'admin') {
@@ -20,6 +29,9 @@ if (!empty($_POST['ok'])) {
         header('location: /login/');
         exit();
     }
+
+    $compose_package_normalized =
+        vx_compose_package_normalize($compose_package_values);
 
     // Check empty fields
     if (empty($_POST['v_package'])) $errors[] = __('package');
@@ -46,6 +58,9 @@ if (!empty($_POST['ok'])) {
     if (!isset($_POST['v_bandwidth'])) $errors[] = __('bandwidth');
     if (empty($_POST['v_ns1'])) $errors[] = __('ns1');
     if (empty($_POST['v_ns2'])) $errors[] = __('ns2');
+    if ($compose_package_normalized === false) {
+        $_SESSION['error_msg'] = __('Invalid Compose quota value.');
+    }
     if (!empty($errors[0])) {
         foreach ($errors as $i => $error) {
             if ( $i == 0 ) {
@@ -97,6 +112,13 @@ if (!empty($_POST['ok'])) {
 
     // Create temporary dir
     if (empty($_SESSION['error_msg'])) {
+        $compose_package_lines =
+            vx_compose_package_lines($compose_package_normalized);
+        if ($compose_package_lines === false) {
+            $_SESSION['error_msg'] = __('Invalid Compose quota value.');
+        }
+    }
+    if (empty($_SESSION['error_msg'])) {
         exec ('mktemp -d', $output, $return_var);
         $tmpdir = $output[0];
         check_return_code($return_var,$output);
@@ -122,6 +144,7 @@ if (!empty($_POST['ok'])) {
         $pkg .= "DATABASES=".$v_databases."\n";
         $pkg .= "CRON_JOBS=".$v_cron_jobs."\n";
         $pkg .= "DOCKER_CONTAINERS=".$v_docker_containers."\n";
+        $pkg .= $compose_package_lines;
         $pkg .= "DISK_QUOTA=".$v_disk_quota."\n";
         $pkg .= "BANDWIDTH=".$v_bandwidth."\n";
         $pkg .= "NS=".$v_ns."\n";
@@ -143,7 +166,9 @@ if (!empty($_POST['ok'])) {
     }
 
     // Remove tmpdir
-    exec ('rm -rf '.$tmpdir, $output, $return_var);
+    if (!empty($tmpdir)) {
+        exec ('rm -rf '.escapeshellarg($tmpdir), $output, $return_var);
+    }
     unset($output);
 
     // Flush field values on success

@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# info: reconcile one user's derived Docker shell-access group membership
+# options: USER
+
+set -o nounset
+user=${1:-}
+VESTA=${VESTA:-/usr/local/vesta}
+export VESTA
+[[ "$EUID" == 0 ]] || { echo 'Error: root privileges are required' >&2; exit 1; }
+[[ "$#" == 1 && "$user" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ ]] \
+    || { echo 'Error: invalid Vesta username' >&2; exit 1; }
+source "$VESTA/func/vx/compose/main.sh"
+vx_compose_shell_access_lock_acquire "$user" \
+    || { echo 'Error: Compose owner access lock failed' >&2; exit 1; }
+trap 'vx_compose_shell_access_lock_release' EXIT
+/usr/bin/getent group vesta-compose-users >/dev/null 2>&1 \
+    || { echo 'Error: access group lookup failed' >&2; exit 1; }
+vx_compose_shell_group_state "$user"
+group_state=$?
+(( group_state != 2 )) \
+    || { echo 'Error: user group lookup failed' >&2; exit 1; }
+if vx_compose_shell_should_be_group_member "$user"; then
+    (( group_state == 0 )) && exit 0
+    /usr/sbin/usermod -a -G vesta-compose-users -- "$user" || exit 1
+    vx_compose_shell_group_state "$user"
+    exit
+fi
+(( group_state == 1 )) && exit 0
+/usr/bin/gpasswd -d "$user" -- vesta-compose-users >/dev/null 2>&1 || :
+vx_compose_shell_group_state "$user"
+case $? in 1) exit 0 ;; *) exit 1 ;; esac

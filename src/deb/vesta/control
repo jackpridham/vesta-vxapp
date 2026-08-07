@@ -6,7 +6,7 @@ Section: admin
 Maintainer: myVesta <info@myvestacp.com>
 Homepage: https://www.myvestacp.com
 Architecture: amd64
-Depends: bash, awk, sed
+Depends: acl, bash, awk, sed
 Description: Vesta
  Vesta is an open source hosting control panel.
  Vesta has a clean and focused interface without the clutter.

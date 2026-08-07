@@ -58,7 +58,10 @@ vx_compose_probe_lock_authorize() {
         vx_compose_error 'Compose project probe revision lock is unavailable'
         return 1
     fi
+    # Consumed by the shared lock-release helper from the sourced storage module.
+    # shellcheck disable=SC2034
     VX_COMPOSE_LOCK_KEY="$owner/$project"
+    # shellcheck disable=SC2034
     VX_COMPOSE_LOCK_DEPTH=1
 }
 

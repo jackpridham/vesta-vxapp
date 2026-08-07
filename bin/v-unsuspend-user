@@ -31,6 +31,12 @@ if [ "$user" = 'admin' ]; then
     exit
 fi
 
+vx_compose_shell_access_lock_acquire "$user"
+check_result $? "Compose owner access lock failed"
+trap 'vx_compose_shell_access_lock_release' EXIT
+vx_compose_shell_access_deny_establish "$user"
+check_result $? "Compose shell access deny marker failed"
+
 # Restoring only Compose projects that were running before suspension
 if [ -d "$(vx_compose_projects_root "$user")" ]; then
     vx_compose_unsuspend_owner "$user"
@@ -109,6 +115,9 @@ check_result $? "DNS restart failed" >/dev/null
 
 $BIN/v-restart-cron $restart
 check_result $? "Cron restart failed" >/dev/null
+
+vx_compose_shell_access_transition_complete "$user"
+check_result $? "Compose shell access grant failed"
 
 # Logging
 log_event "$OK" "$ARGUMENTS"

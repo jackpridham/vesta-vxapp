@@ -868,7 +868,7 @@ vx_compose_resolve_images_to_file() {
     local profile="$3"
     local output_file="$4"
     local service reference inspection image_id digests resolved='{}'
-    local temp_file immutable_reference digest labels trust expected_image_id
+    local temp_file immutable_reference digest labels trust
 
     [[ -f "$canonical" && ! -L "$canonical"
         && ! -e "$output_file" ]] || return 1

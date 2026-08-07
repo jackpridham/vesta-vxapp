@@ -29,6 +29,7 @@ install -d  %{buildroot}%{_vestadir}
 rm -rf %{buildroot}
 
 %post
+/usr/local/vesta/bin/v-install-docker-shell-access || exit 1
 if [ $1 -ge 2 ]; then
     if [ -x /usr/local/vesta/upd/add_sudo.sh ]; then
         /usr/local/vesta/upd/add_sudo.sh

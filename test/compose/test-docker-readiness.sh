@@ -2,6 +2,8 @@
 set -Eeuo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+grep -Fq 'v-install-docker-shell-access' "$repo_root/bin/v-install-docker-service" \
+    || { echo 'FAIL: Docker readiness installer omits shell-access installation' >&2; exit 1; }
 test_root="$(mktemp -d)"
 trap 'rm -rf -- "$test_root"' EXIT
 
@@ -29,6 +31,11 @@ sed \
     "$repo_root/bin/v-install-docker-compose-mount-guard" \
     >"$fake_vesta/bin/v-install-docker-compose-mount-guard"
 chmod 0755 "$fake_vesta/bin/v-install-docker-compose-mount-guard"
+cat >"$fake_vesta/bin/v-install-docker-shell-access" <<'EOF'
+#!/usr/bin/env bash
+printf 'shell-access %s\n' "$*" >>"$VX_TEST_STATE/lifecycle.log"
+EOF
+chmod 0755 "$fake_vesta/bin/v-install-docker-shell-access"
 cp "$repo_root/install/common/systemd/vesta-compose-data-roots.service" \
     "$fake_vesta/install/common/systemd/"
 cp "$repo_root/install/common/systemd/docker.service.d/vesta-compose-data-roots.conf" \

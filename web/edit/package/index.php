@@ -5,6 +5,7 @@ $TAB = 'PACKAGE';
 
 // Main include
 include($_SERVER['DOCUMENT_ROOT']."/inc/main.php");
+include($_SERVER['DOCUMENT_ROOT']."/inc/vx_compose_package.php");
 
 
 // Check user
@@ -60,6 +61,22 @@ $v_date = $data[$v_package]['DATE'];
 $v_time = $data[$v_package]['TIME'];
 $v_status =  'active';
 
+$compose_package_values = array();
+foreach (vx_compose_package_fields() as $field) {
+    $form_field = 'v_'.strtolower($field);
+    $current_value = isset($data[$v_package][$field])
+        ? $data[$v_package][$field] : '0';
+    if (is_scalar($current_value)) {
+        $current_value = trim((string) $current_value, "'");
+    } else {
+        $current_value = '0';
+    }
+    $value = isset($_POST[$form_field])
+        ? $_POST[$form_field] : $current_value;
+    $compose_package_values[$field] = $value;
+    ${$form_field} = is_scalar($value) ? trim((string) $value, "'") : '0';
+}
+
 // List web templates
 exec (VESTA_CMD."v-list-web-templates json", $output, $return_var);
 $web_templates = json_decode(implode('', $output), true);
@@ -99,6 +116,9 @@ if (!empty($_POST['save'])) {
         exit();
     }
 
+    $compose_package_normalized =
+        vx_compose_package_normalize($compose_package_values);
+
     // Check empty fields
     if (empty($_POST['v_package'])) $errors[] = __('package');
     if (empty($_POST['v_web_template'])) $errors[] = __('web template');
@@ -124,6 +144,9 @@ if (!empty($_POST['save'])) {
     if (!isset($_POST['v_bandwidth'])) $errors[] = __('bandwidth');
     if (empty($_POST['v_ns1'])) $errors[] = __('ns1');
     if (empty($_POST['v_ns2'])) $errors[] = __('ns2');
+    if ($compose_package_normalized === false) {
+        $_SESSION['error_msg'] = __('Invalid Compose quota value.');
+    }
     if (!empty($errors[0])) {
         foreach ($errors as $i => $error) {
             if ( $i == 0 ) {
@@ -177,53 +200,64 @@ if (!empty($_POST['save'])) {
     $v_time = escapeshellarg(date('H:i:s'));
     $v_date = escapeshellarg(date('Y-m-d'));
 
-    // Create temprorary directory
-    exec ('mktemp -d', $output, $return_var);
-    $tmpdir = $output[0];
-    unset($output);
-
-    // Save package file on a fs
-    $pkg = "WEB_TEMPLATE=".$v_web_template."\n";
-    $pkg .= "BACKEND_TEMPLATE=".$v_backend_template."\n";
-    $pkg .= "PROXY_TEMPLATE=".$v_proxy_template."\n";
-    $pkg .= "DNS_TEMPLATE=".$v_dns_template."\n";
-    $pkg .= "WEB_DOMAINS=".$v_web_domains."\n";
-    $pkg .= "WEB_ALIASES=".$v_web_aliases."\n";
-    $pkg .= "DNS_DOMAINS=".$v_dns_domains."\n";
-    $pkg .= "DNS_RECORDS=".$v_dns_records."\n";
-    $pkg .= "MAIL_DOMAINS=".$v_mail_domains."\n";
-    $pkg .= "MAIL_ACCOUNTS=".$v_mail_accounts."\n";
-    $pkg .= "DATABASES=".$v_databases."\n";
-    $pkg .= "CRON_JOBS=".$v_cron_jobs."\n";
-    $pkg .= "DOCKER_CONTAINERS=".$v_docker_containers."\n";
-    $pkg .= "DISK_QUOTA=".$v_disk_quota."\n";
-    $pkg .= "BANDWIDTH=".$v_bandwidth."\n";
-    $pkg .= "NS=".$v_ns."\n";
-    $pkg .= "SHELL=".$v_shell."\n";
-    $pkg .= "BACKUPS=".$v_backups."\n";
-    $pkg .= "TIME=".$v_time."\n";
-    $pkg .= "DATE=".$v_date."\n";
-    $fp = fopen($tmpdir."/".$_POST['v_package'].".pkg", 'w');
-    fwrite($fp, $pkg);
-    fclose($fp);
-
-    // Save changes
-    exec (VESTA_CMD."v-add-user-package ".$tmpdir." ".$v_package." yes", $output, $return_var);
-    check_return_code($return_var,$output);
-    unset($output);
-
-    // Remove temporary dir
-    exec ('rm -rf '.$tmpdir, $output, $return_var);
-    unset($output);
-
-    // Propogate new package
-    exec (VESTA_CMD."v-update-user-package ".$v_package." json", $output, $return_var);
-    check_return_code($return_var,$output);
-    unset($output);
-
-    // Set success message
     if (empty($_SESSION['error_msg'])) {
-        $_SESSION['ok_msg'] = __('Changes has been saved.');
+        $compose_package_lines =
+            vx_compose_package_lines($compose_package_normalized);
+        if ($compose_package_lines === false) {
+            $_SESSION['error_msg'] = __('Invalid Compose quota value.');
+        }
+    }
+
+    if (empty($_SESSION['error_msg'])) {
+        // Create temprorary directory
+        exec ('mktemp -d', $output, $return_var);
+        $tmpdir = $output[0];
+        unset($output);
+
+        // Save package file on a fs
+        $pkg = "WEB_TEMPLATE=".$v_web_template."\n";
+        $pkg .= "BACKEND_TEMPLATE=".$v_backend_template."\n";
+        $pkg .= "PROXY_TEMPLATE=".$v_proxy_template."\n";
+        $pkg .= "DNS_TEMPLATE=".$v_dns_template."\n";
+        $pkg .= "WEB_DOMAINS=".$v_web_domains."\n";
+        $pkg .= "WEB_ALIASES=".$v_web_aliases."\n";
+        $pkg .= "DNS_DOMAINS=".$v_dns_domains."\n";
+        $pkg .= "DNS_RECORDS=".$v_dns_records."\n";
+        $pkg .= "MAIL_DOMAINS=".$v_mail_domains."\n";
+        $pkg .= "MAIL_ACCOUNTS=".$v_mail_accounts."\n";
+        $pkg .= "DATABASES=".$v_databases."\n";
+        $pkg .= "CRON_JOBS=".$v_cron_jobs."\n";
+        $pkg .= "DOCKER_CONTAINERS=".$v_docker_containers."\n";
+        $pkg .= $compose_package_lines;
+        $pkg .= "DISK_QUOTA=".$v_disk_quota."\n";
+        $pkg .= "BANDWIDTH=".$v_bandwidth."\n";
+        $pkg .= "NS=".$v_ns."\n";
+        $pkg .= "SHELL=".$v_shell."\n";
+        $pkg .= "BACKUPS=".$v_backups."\n";
+        $pkg .= "TIME=".$v_time."\n";
+        $pkg .= "DATE=".$v_date."\n";
+        $fp = fopen($tmpdir."/".$_POST['v_package'].".pkg", 'w');
+        fwrite($fp, $pkg);
+        fclose($fp);
+
+        // Save changes
+        exec (VESTA_CMD."v-add-user-package ".$tmpdir." ".$v_package." yes", $output, $return_var);
+        check_return_code($return_var,$output);
+        unset($output);
+
+        // Remove temporary dir
+        exec ('rm -rf '.escapeshellarg($tmpdir), $output, $return_var);
+        unset($output);
+
+        // Propogate new package
+        exec (VESTA_CMD."v-update-user-package ".$v_package." json", $output, $return_var);
+        check_return_code($return_var,$output);
+        unset($output);
+
+        // Set success message
+        if (empty($_SESSION['error_msg'])) {
+            $_SESSION['ok_msg'] = __('Changes has been saved.');
+        }
     }
 }
 

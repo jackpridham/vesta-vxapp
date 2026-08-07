@@ -46,12 +46,16 @@ fi
 if [ "$health_check_due" = 'yes' ]; then
     vx_docker_evaluate_health_status "$user" "$name" || VX_DOCKER_HEALTH_RESULT='unknown'
     HEALTH_STATUS="$VX_DOCKER_HEALTH_RESULT"
+    # Consumed by vx_docker_replace_record from the sourced Docker helper.
+    # shellcheck disable=SC2034
     LAST_HEALTH_AT="$(vx_docker_now)"
 fi
 
 STATUS="$runtime_status"
 
 if [ "$health_check_due" = 'yes' ] || [ "$STATUS" != "$old_status" ] || [ "$HEALTH_STATUS" != "$old_health_status" ]; then
+    # Consumed by vx_docker_replace_record from the sourced Docker helper.
+    # shellcheck disable=SC2034
     UPDATED="$(vx_docker_now)"
     vx_docker_replace_record "$user" "$name"
 fi
