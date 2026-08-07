@@ -2,6 +2,8 @@
 set -Eeuo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+grep -Fq 'vx_compose_shell_require_standard_project' "$repo_root/bin/v-run-user-docker-command" \
+    || { echo 'FAIL: shell broker omits standard-project enforcement' >&2; exit 1; }
 test_root="$(mktemp -d)"
 trap 'rm -rf -- "$test_root"' EXIT
 

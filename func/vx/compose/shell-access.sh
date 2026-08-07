@@ -83,7 +83,7 @@ vx_compose_shell_group_revoke() {
 
 vx_compose_shell_group_grant_if_eligible() {
     local actor="$1"
-    vx_compose_shell_require_eligible_except_group "$actor" || return 0
+    vx_compose_shell_should_be_group_member "$actor" || return 0
     /usr/bin/getent group "$VX_COMPOSE_SHELL_GROUP" >/dev/null 2>&1 || return 1
     /usr/sbin/usermod -a -G "$VX_COMPOSE_SHELL_GROUP" "$actor"
 }
@@ -110,6 +110,12 @@ vx_compose_shell_require_eligible_except_group() {
         && "$home" == "${HOMEDIR:-/home}/$actor" && "${passwd_shell##*/}" == "$shell" ]] || return 1
     [[ "$suspended" == no ]] && vx_compose_shell_is_interactive "$shell" \
         && vx_compose_package_docker_is_enabled "$limit"
+}
+
+vx_compose_shell_should_be_group_member() {
+    local actor="$1"
+    [[ "$actor" != admin && "$actor" != root ]] || return 1
+    vx_compose_shell_require_eligible_except_group "$actor"
 }
 
 vx_compose_shell_require_eligible() {

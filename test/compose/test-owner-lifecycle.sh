@@ -3,6 +3,15 @@ set -Eeuo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 
+for command in v-sync-docker-shell-access v-sync-docker-shell-access-all; do
+    grep -Fq 'vesta-compose-users' "$repo_root/bin/$command" \
+        || { echo "FAIL: $command omits dedicated group" >&2; exit 1; }
+    if grep -Eqi '(groupadd|usermod|gpasswd)[^#]*[[:space:]]docker([[:space:]]|$)' "$repo_root/bin/$command"; then
+        echo "FAIL: $command references docker group" >&2
+        exit 1
+    fi
+done
+
 for owner_command in v-suspend-user v-unsuspend-user v-change-user-package v-change-user-shell v-delete-user; do
     grep -Fq 'vx_compose_shell_access_lock_acquire "$user"' "$repo_root/bin/$owner_command" \
         || { echo "FAIL: $owner_command omits Compose owner access lock" >&2; exit 1; }
@@ -68,6 +77,32 @@ export VX_COMPOSE_DOCKER_BIN="$fake_docker"
 
 # shellcheck source=func/vx/compose/main.sh
 source "$repo_root/func/vx/compose/main.sh"
+
+# Derived membership ignores current group trust and follows authoritative
+# quota, suspension, shell, and passwd identity.
+cat >>"$VESTA/data/users/alice/user.conf" <<'EOF'
+SUSPENDED='no'
+SHELL='bash'
+EOF
+chmod 0600 "$VESTA/data/users/alice/user.conf"
+vx_compose_authority_uid() { id -u; }
+vx_compose_shell_actor_uid() { printf '%s\n' 1001; }
+vx_compose_shell_actor_gids() { printf '%s\n' 1001; }
+vx_compose_shell_passwd_by_name() { printf 'alice:x:1001:1001::%s/alice:/bin/bash\n' "$HOMEDIR"; }
+vx_compose_shell_should_be_group_member alice || fail 'eligible Bash user was denied derived membership'
+sed -i "s/DOCKER_PROJECTS='4'/DOCKER_PROJECTS='0'/" "$VESTA/data/users/alice/user.conf"
+if vx_compose_shell_should_be_group_member alice; then fail 'zero quota retained derived membership'; fi
+sed -i "s/DOCKER_PROJECTS='0'/DOCKER_PROJECTS='unlimited'/" "$VESTA/data/users/alice/user.conf"
+vx_compose_shell_should_be_group_member alice || fail 'unlimited quota did not restore derived membership'
+sed -i "s/SHELL='bash'/SHELL='nologin'/" "$VESTA/data/users/alice/user.conf"
+if vx_compose_shell_should_be_group_member alice; then fail 'nologin retained derived membership'; fi
+sed -i "s/SHELL='nologin'/SHELL='bash'/" "$VESTA/data/users/alice/user.conf"
+sed -i "s/SUSPENDED='no'/SUSPENDED='yes'/" "$VESTA/data/users/alice/user.conf"
+if vx_compose_shell_should_be_group_member alice; then fail 'suspended user retained derived membership'; fi
+sed -i "s/SUSPENDED='yes'/SUSPENDED='no'/" "$VESTA/data/users/alice/user.conf"
+grep -Fq '"$uid" == "$SUDO_UID"' "$repo_root/func/vx/compose/shell-access.sh" \
+    || fail 'broker identity does not reject a stale UID for the same username'
+sed -i "s/DOCKER_PROJECTS='unlimited'/DOCKER_PROJECTS='4'/" "$VESTA/data/users/alice/user.conf"
 
 make_project() {
     local project="$1"

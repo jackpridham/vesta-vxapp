@@ -1255,8 +1255,12 @@ if [ ! -z "$(grep ^admin: /etc/group)" ] && [ "$force" = 'yes' ]; then
 fi
 
 # Adding Vesta admin account
+$VESTA/bin/v-install-docker-shell-access defer
+check_result $? "Docker shell-access installation failed"
 $VESTA/bin/v-add-user admin $vpass $email default System Administrator
 check_result $? "can't create admin user"
+$VESTA/bin/v-install-docker-shell-access
+check_result $? "Docker shell-access activation failed"
 $VESTA/bin/v-change-user-shell admin bash
 $VESTA/bin/v-change-user-language admin $lang
 

@@ -1813,6 +1813,10 @@ if [ ! -z "$(grep ^admin: /etc/group)" ]; then
     groupdel admin > /dev/null 2>&1
 fi
 
+echo "== Installing Docker shell access"
+$VESTA/bin/v-install-docker-shell-access defer
+check_result $? "Docker shell-access installation failed"
+
 echo "== Adding vesta account"
 $VESTA/bin/v-add-user admin $vpass $email default System Administrator
 check_result $? "can't create admin user"
@@ -1820,6 +1824,8 @@ check_result $? "can't create admin user"
 echo "== Activating Docker Compose mount guard"
 $VESTA/bin/v-install-docker-compose-mount-guard
 check_result $? "Docker Compose mount-guard activation failed"
+$VESTA/bin/v-install-docker-shell-access
+check_result $? "Docker shell-access activation failed"
 $VESTA/bin/v-change-user-shell admin bash
 $VESTA/bin/v-change-user-language admin $lang
 

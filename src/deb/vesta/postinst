@@ -13,6 +13,10 @@ if [ ! -e "/usr/local/vesta/data/users/admin" ]; then
         echo "Docker Compose mount-guard installation failed" >&2
         exit 1
     fi
+    if ! /usr/local/vesta/bin/v-install-docker-shell-access defer; then
+        echo "Docker shell-access installation failed" >&2
+        exit 1
+    fi
     version=$(curl -s http://c.myvestacp.com/latest.txt?installed)
     version=${version:6}
     echo "=== myVesta $version installed ==="
@@ -23,6 +27,10 @@ fi
 
 if ! /usr/local/vesta/bin/v-install-docker-compose-mount-guard; then
     echo "Docker Compose mount-guard activation failed" >&2
+    exit 1
+fi
+if ! /usr/local/vesta/bin/v-install-docker-shell-access; then
+    echo "Docker shell-access activation failed" >&2
     exit 1
 fi
 

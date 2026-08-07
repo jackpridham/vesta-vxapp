@@ -126,6 +126,17 @@ grep -Fq '$VESTA/bin/v-install-docker-compose-mount-guard' \
 grep -Fq '"$VESTA/bin/v-install-docker-compose-mount-guard"' \
     "$repo_root/bin/v-install-docker-service" \
     || fail 'Docker installer omits the Compose mount guard'
+for lifecycle_file in \
+    src/deb/vesta/postinst \
+    src/rpm/specs/vesta.spec \
+    install/vst-install-debian.sh \
+    install/vst-install-ubuntu.sh \
+    install/vst-install-rhel.sh \
+    install/vst-install-amazon.sh \
+    bin/v-install-docker-service; do
+    grep -Fq 'v-install-docker-shell-access' "$repo_root/$lifecycle_file" \
+        || fail "$lifecycle_file omits Docker shell-access installation"
+done
 
 while IFS= read -r package_file; do
     for field in "${quota_fields[@]}"; do

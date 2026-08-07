@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# info: reconcile all derived Docker shell-access group memberships
+# options:
+
+set -o nounset
+VESTA=${VESTA:-/usr/local/vesta}
+export VESTA
+lock_root=${VX_COMPOSE_RECONCILE_LOCK_ROOT:-/run/lock}
+lock_path="$lock_root/vesta-compose-shell-access.lock"
+[[ "$EUID" == 0 ]] || { echo 'Error: root privileges are required' >&2; exit 1; }
+[[ "$#" == 0 ]] || { echo 'Error: no arguments are accepted' >&2; exit 1; }
+source "$VESTA/func/vx/compose/main.sh"
+/usr/bin/install -d -m 0700 -o root -g root "$lock_root" || exit 1
+[[ ! -L "$lock_root" && "$(stat -c '%u:%g:%a:%F' "$lock_root")" == '0:0:700:directory' ]] || exit 1
+exec {reconcile_fd}>"$lock_path" || exit 1
+/usr/bin/chmod 0600 "$lock_path" || exit 1
+[[ ! -L "$lock_path" && "$(stat -c '%u:%g:%a:%F' "$lock_path")" == '0:0:600:regular file' ]] || exit 1
+/usr/bin/flock -x "$reconcile_fd" || exit 1
+added=0 removed=0 unchanged=0 failed=0
+declare -A eligible=()
+shopt -s nullglob
+for conf in "$VESTA"/data/users/*/user.conf; do
+    user=${conf%/user.conf}; user=${user##*/}
+    [[ "$user" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ && "$user" != admin ]] || continue
+    before=absent; vx_compose_shell_group_contains "$user" && before=present
+    if "$VESTA/bin/v-sync-docker-shell-access" "$user"; then
+        after=absent
+        vx_compose_shell_group_contains "$user" && { after=present; eligible["$user"]=1; }
+        if [[ "$before" == "$after" ]]; then ((unchanged+=1));
+        elif [[ "$after" == present ]]; then ((added+=1)); else ((removed+=1)); fi
+    else ((failed+=1)); fi
+done
+group_record="$(/usr/bin/getent group vesta-compose-users 2>/dev/null || :)"
+member_csv=${group_record##*:}
+IFS=, read -r -a group_members <<<"$member_csv"
+for user in "${group_members[@]}"; do
+    [[ -n "$user" && "$user" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ ]] || continue
+    [[ -n "${eligible[$user]:-}" ]] && continue
+    /usr/bin/gpasswd -d "$user" vesta-compose-users >/dev/null 2>&1 || :
+    if vx_compose_shell_group_contains "$user"; then ((failed+=1)); else ((removed+=1)); fi
+done
+printf 'added=%d removed=%d unchanged=%d failed=%d\n' "$added" "$removed" "$unchanged" "$failed"
+(( failed == 0 ))

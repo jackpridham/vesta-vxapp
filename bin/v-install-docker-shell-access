@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# info: install Docker tenant shell-access group and exact sudo policy
+# options: [defer]
+
+set -Eeuo pipefail
+VESTA=${VESTA:-/usr/local/vesta}
+mode=${1:-}
+group=vesta-compose-users
+source_policy="$VESTA/install/common/sudo/vesta-compose-users"
+target_dir=/etc/sudoers.d
+target_policy="$target_dir/$group"
+broker="$VESTA/bin/v-run-user-docker-command"
+client="$VESTA/bin/v-docker"
+client_link=/usr/local/bin/v-docker
+temp=
+cleanup() { [[ -z "$temp" ]] || /usr/bin/rm -f -- "$temp"; }
+trap cleanup EXIT
+
+fail() { echo "Error: $*" >&2; exit 1; }
+secure_regular() {
+    [[ -f "$1" && ! -L "$1" && "$(/usr/bin/stat -c '%u:%h:%F' "$1")" == '0:1:regular file' ]]
+}
+[[ "$EUID" == 0 ]] || fail 'root privileges are required'
+[[ -z "$mode" || "$mode" == defer ]] || fail 'argument must be defer'
+[[ "$#" -le 1 ]] || fail 'too many arguments'
+
+if ! /usr/bin/getent group "$group" >/dev/null 2>&1; then
+    /usr/sbin/groupadd --system "$group" || fail 'unable to create access group'
+fi
+record="$(/usr/bin/getent group "$group")" || fail 'access group is unavailable'
+IFS=: read -r name _ gid _ <<<"$record"
+[[ "$name" == "$group" && "$gid" =~ ^[0-9]+$ ]] || fail 'access group is invalid'
+local_record="$(/usr/bin/awk -F: -v group="$group" '$1 == group { print; found++ } END { exit(found == 1 ? 0 : 1) }' /etc/group)" \
+    || fail 'access group is not one normal local group'
+[[ "$local_record" == "$record" && "$gid" -lt 1000 ]] \
+    || fail 'access group is not a local system group'
+secure_regular "$source_policy" || fail 'sudo policy source is not trusted'
+secure_regular "$broker" || fail 'broker is not trusted'
+secure_regular "$client" || fail 'client is not trusted'
+[[ -d "$target_dir" && ! -L "$target_dir" && "$(/usr/bin/stat -c '%u:%F' "$target_dir")" == '0:directory' ]] \
+    || fail 'sudoers directory is not trusted'
+[[ ! -e "$target_policy" || ( -f "$target_policy" && ! -L "$target_policy" && "$(/usr/bin/stat -c '%u:%h:%F' "$target_policy")" == '0:1:regular file' ) ]] \
+    || fail 'sudo policy target is not trusted'
+temp="$(/usr/bin/mktemp "$target_dir/.vesta-compose-users.XXXXXXXX")" || fail 'unable to stage sudo policy'
+/usr/bin/install -m 0440 -o root -g root "$source_policy" "$temp" || fail 'unable to stage sudo policy'
+/usr/sbin/visudo -cf "$temp" >/dev/null || fail 'sudo policy validation failed'
+/usr/bin/mv -fT -- "$temp" "$target_policy" || fail 'unable to install sudo policy'
+temp=
+[[ "$(/usr/bin/stat -c '%u:%g:%a:%h:%F' "$target_policy")" == '0:0:440:1:regular file' ]] \
+    || fail 'installed sudo policy is not protected'
+if [[ -e "$client_link" && ! -L "$client_link" ]]; then fail 'client path is not a symlink'; fi
+/usr/bin/ln -sfn "$client" "$client_link"
+[[ "$(/usr/bin/readlink "$client_link")" == "$client" ]] || fail 'client link verification failed'
+if [[ "$mode" != defer ]]; then
+    "$VESTA/bin/v-sync-docker-shell-access-all" || fail 'membership reconciliation failed'
+fi
