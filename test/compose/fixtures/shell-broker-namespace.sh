@@ -78,7 +78,9 @@ printf ' actor=%s\n' "\${_VX_COMPOSE_AUDIT_ACTOR-root}" >>'$fixture/docker.log'
 vx_compose_owner_audit alice broker-child succeeded 'fixture authoritative event'
 EOF
 chmod 0755 "$fixture/fake-command"
-for command in v-list-docker-projects v-list-docker-project v-run-docker-project-action v-run-docker-project-probe; do
+for command in v-list-docker-projects v-list-docker-project v-run-docker-project-action v-run-docker-project-probe \
+    v-backup-docker-project v-add-docker-project-route v-delete-docker-project-route \
+    v-acknowledge-docker-project-alert; do
     cp "$fixture/fake-command" "/usr/local/vesta/bin/$command"
 done
 
@@ -101,6 +103,11 @@ expect_allow 'v-list-docker-project <alice> <app> <json>' show app json
 expect_allow 'v-run-docker-project-action <alice> <alice> <app> <start>' start app
 expect_allow 'v-run-docker-project-action <alice> <alice> <app> <recreate> <web>' recreate app web
 expect_allow 'v-run-docker-project-probe <alice> <alice> <app> <ready> <json>' probe app ready json
+expect_allow 'v-backup-docker-project <alice> <app>' backup app
+expect_allow 'v-add-docker-project-route <alice> <alice> <app> <app.example.com> <web> <8080> <http> </>' route-add app app.example.com web 8080
+expect_allow 'v-add-docker-project-route <alice> <alice> <app> <app.example.com> <web> <443> <https> </api>' route-add app app.example.com web 443 https /api
+expect_allow 'v-delete-docker-project-route <alice> <app> <app.example.com>' route-delete app app.example.com
+expect_allow 'v-acknowledge-docker-project-alert <alice> <alice> <app> <alert-1>' alert-ack app alert-1
 
 # A direct root child invocation cannot forge audit identity through the old
 # environment variable because no validated broker descriptor is inherited.
@@ -199,6 +206,14 @@ wait "$project_two" || fail 'second project worker failed'
 for denied in 'unknown' '--help' 'start --owner' 'start alice' 'start app extra' \
     'show app yaml' 'probe app bad/name json' 'logs app web 2001' 'start app;touch' \
     'start bob' 'start admin'; do
+    read -r -a denied_args <<<"$denied"
+    expect_deny "${denied_args[@]}"
+done
+for denied in 'backup app custom.tar' 'backup-policy app' 'ingress-consumers app' \
+    'monitoring-update app' 'rollback app' 'rollback app 1' 'reconcile app' \
+    'reconcile app abc 1' 'route-add app app.example.com web 0' \
+    'route-add app app.example.com web 65536' 'route-add app app.example.com web 80 ftp' \
+    'route-delete app invalid' 'alert-ack app bad/name'; do
     read -r -a denied_args <<<"$denied"
     expect_deny "${denied_args[@]}"
 done

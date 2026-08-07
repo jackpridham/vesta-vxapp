@@ -17,6 +17,28 @@ grep -Fq 'v-run-user-docker-command' \
     "$repo_root/.docs/contracts/compose-shell-access.md" \
     || fail 'shell-access contract omits the privileged broker'
 
+tenant_operations=(
+    projects show definition quota validate health logs stats alerts operation
+    routes backups secrets registries drift probe start stop restart recreate
+    deploy preview apply backup restore rollback-preview rollback-apply
+    reconcile-preview reconcile-apply secret-add secret-change secret-delete
+    registry-add registry-change registry-delete route-add route-delete alert-ack
+    remove
+)
+for operation in "${tenant_operations[@]}"; do
+    grep -Eq "(^|[|[:space:]])${operation}([|)])" \
+        "$repo_root/bin/v-run-user-docker-command" \
+        || fail "broker catalog omits operation: $operation"
+    grep -Fq "v-docker $operation" \
+        "$repo_root/.docs/contracts/compose-shell-access.md" \
+        || fail "shell-access contract omits operation: $operation"
+done
+for unsupported in backup-policy ingress-consumers monitoring-update \
+    'v-docker rollback ' 'v-docker reconcile '; do
+    ! grep -Fq "$unsupported" "$repo_root/.docs/contracts/compose-shell-access.md" \
+        || fail "shell-access contract advertises unsupported operation: $unsupported"
+done
+
 shell_access_docs=(
     "README.md"
     "SECURITY.md"

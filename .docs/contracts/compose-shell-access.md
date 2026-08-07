@@ -55,21 +55,29 @@ raw Docker, raw Compose, `exec`, socket, or group-management interface.
 
 ## Tenant command catalog
 
-The following forms are the complete tenant catalog. Omitted format arguments
-default to the stable human form; `json` is redacted, bounded JSON.
+The following forms are the complete tenant catalog. Accepted format arguments
+are `json` and `plain`; omitted format arguments default to redacted, bounded
+`json`.
 
 Read operations:
 
 ```text
-v-docker projects [json]
-v-docker show PROJECT [json]
-v-docker definition PROJECT [json]
-v-docker quota [json]
-v-docker validate PROJECT [json]
-v-docker health PROJECT [json]
+v-docker projects [json|plain]
+v-docker show PROJECT [json|plain]
+v-docker definition PROJECT [json|plain]
+v-docker quota [json|plain]
+v-docker validate PROJECT [json|plain]
+v-docker health PROJECT [json|plain]
 v-docker logs PROJECT [SERVICE] [LINES]
-v-docker stats PROJECT [PERIOD] [json]
-v-docker alerts PROJECT [json]
+v-docker stats PROJECT [PERIOD] [json|plain]
+v-docker alerts PROJECT [json|plain]
+v-docker operation PROJECT [json|plain]
+v-docker routes PROJECT [json|plain]
+v-docker backups PROJECT [json|plain]
+v-docker secrets PROJECT [json|plain]
+v-docker registries [json|plain]
+v-docker drift PROJECT [json|plain]
+v-docker probe PROJECT SERVICE [json|plain]
 ```
 
 Lifecycle operations are owner-scoped and retain the existing project data
@@ -95,21 +103,19 @@ Managed backup and recovery forms are owner-scoped and preserve the existing
 retention policy:
 
 ```text
-v-docker backup PROJECT [BACKUP]
-v-docker backup-policy PROJECT [json]
-v-docker backups PROJECT [json]
-v-docker restore PROJECT ARCHIVE validate
-v-docker restore PROJECT ARCHIVE apply
+v-docker backup PROJECT
+v-docker restore PROJECT BACKUP_ID validate
+v-docker restore PROJECT BACKUP_ID apply
 ```
 
 Revision and drift operations use the server-issued evidence associated with
 the owner and project:
 
 ```text
-v-docker rollback PROJECT [REVISION]
-v-docker rollback-preview PROJECT TARGET
+v-docker rollback-preview PROJECT REVISION
+v-docker rollback-apply PROJECT REVISION CURRENT FROM_MANIFEST_SHA TO_MANIFEST_SHA
 v-docker reconcile-preview PROJECT
-v-docker reconcile PROJECT DRIFT_DIGEST CURRENT_REVISION
+v-docker reconcile-apply PROJECT DRIFT_SHA CURRENT_REVISION
 ```
 
 Secret and registry operations accept values only through bounded stdin or a
@@ -120,22 +126,20 @@ never command-line arguments:
 v-docker secret-add PROJECT NAME < secret-value
 v-docker secret-change PROJECT NAME < secret-value
 v-docker secret-delete PROJECT NAME
-v-docker secrets PROJECT [json]
+v-docker secrets PROJECT [json|plain]
 v-docker registry-add REGISTRY USERNAME < registry-password
 v-docker registry-change REGISTRY USERNAME < registry-password
 v-docker registry-delete REGISTRY
-v-docker registries [json]
+v-docker registries [json|plain]
 ```
 
 Route and alert operations are limited to the owner's Vesta-owned model:
 
 ```text
-v-docker routes PROJECT [json]
+v-docker routes PROJECT [json|plain]
 v-docker route-add PROJECT DOMAIN SERVICE PORT [SCHEME] [PATH]
 v-docker route-delete PROJECT DOMAIN
-v-docker ingress-consumers PROJECT [json]
 v-docker alert-ack PROJECT ALERT
-v-docker monitoring-update PROJECT
 ```
 
 Project removal is explicit and retained-data only:
@@ -170,10 +174,10 @@ broker and the owner/profile checks above.
 
 ## Input, storage, and disclosure boundaries
 
-All identifiers are validated before dispatch. `PROJECT`, `SERVICE`, secret
-names, and registry names use the bounded identifier form
-`[A-Za-z0-9][A-Za-z0-9_.-]{0,62}`; project and secret names are at most 63
-bytes. Domains are valid Vesta DNS names of at most 253 bytes, service ports
+All identifiers are validated before dispatch. `PROJECT` uses the lowercase
+bounded form `[a-z0-9][a-z0-9-]{0,62}`. Service, secret, registry, backup, and
+alert identifiers use `[A-Za-z0-9][A-Za-z0-9_.-]{0,62}`. Every such identifier
+is at most 63 bytes. Domains are valid Vesta DNS names of at most 253 bytes, service ports
 are decimal integers from 1 through 65535, and paths, schemes, periods, line
 counts, revisions, digests, and preview IDs use their command-specific
 allowlists and fixed maximum lengths. Empty values, control bytes, NULs,
@@ -185,9 +189,11 @@ snapshotted into root-owned mode-0700/mode-0600 storage. Compose input is
 limited to 1 MiB per preview. A secret or registry credential is limited to
 64 KiB; the snapshot is a mode-0700 directory containing mode-0600 regular
 files for the duration of the broker operation. The broker never opens a
-tenant-selected filesystem path as root. Archives and checksums use the
-protected, separately validated inputs defined by the backup and self-service
-contracts.
+tenant-selected filesystem path as root. Restore accepts only a bounded
+`BACKUP_ID`, which the server resolves as a managed backup; tenants never
+provide an archive or filesystem path. Immutable preview/apply identifiers and
+SHA-256 digests are exact lowercase hexadecimal values, while revisions are
+`0` or a non-zero decimal integer without leading zeroes.
 
 Preview/apply is immutable and digest/revision bound. The broker snapshots
 stdin before validation, redacts managed secret material from definitions and
