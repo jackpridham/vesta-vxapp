@@ -284,6 +284,8 @@ vx_compose_runtime_secrets_materialize() {
         "$VX_COMPOSE_LIB_DIR/runtime-secrets.py" "$root" "$workload" \
         || materialize_status=$?
     case "$materialize_status" in
+        # Consumed by the lifecycle helper after this sourced helper returns.
+        # shellcheck disable=SC2034
         0) VX_COMPOSE_RUNTIME_SECRETS_REFRESHED=yes ;;
         20) return 0 ;;
         *) return 1 ;;
