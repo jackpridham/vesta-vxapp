@@ -1649,6 +1649,8 @@ git commit -m "test(compose): prove tenant shell isolation on development"
 - Step 5 remains open only for a successful persisted named-probe invocation;
   the standard Compose acceptance fixture defined no named probe. Undefined
   probes failed closed. All other listed development-host assertions passed.
+- Development evidence and the corrected disposable fixture were committed in
+  `e0fec131` after specification, code-quality, and final security review.
 - Step 3 passed in a temporary Debian 12 child of an already-present local
   image after completing the harness's minimum authoritative project fixture.
   The child added only `sudo` and `acl`, ran the harness with network disabled,
