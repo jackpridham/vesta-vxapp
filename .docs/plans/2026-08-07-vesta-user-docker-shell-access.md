@@ -1428,7 +1428,7 @@ paths, reserved ownership labels, cross-owner volumes/networks/ports, and
 unapproved security options through `v-docker preview`. Assert rejection before
 the fake Docker mutation log.
 
-- [ ] **Step 3: Run root integration on a disposable staging host**
+- [x] **Step 3: Run root integration on a disposable staging host**
 
 Run:
 
@@ -1445,7 +1445,7 @@ sudo -l -U vx-shell-alice
 Expected: only
 `/usr/local/vesta/bin/v-run-user-docker-command *`; no other NOPASSWD command.
 
-- [ ] **Step 4: Deploy the exact implementation commit to the development server**
+- [x] **Step 4: Deploy the exact implementation commit to the development server**
 
 This step is authorized only for the development Vesta host
 `debian@192.168.100.100`, reached through
@@ -1577,7 +1577,7 @@ do not approximate those checks with a fresh login. Capture bounded,
 secret-free command results and exact exit codes in the development validation
 document.
 
-- [ ] **Step 6: Clean development fixtures and verify the host remains healthy**
+- [x] **Step 6: Clean development fixtures and verify the host remains healthy**
 
 Delete the two test projects through Vesta while retaining no disposable test
 data, then delete `vxshalpha`, `vxshbeta`, `vxshzero`, and the `vx-shell-e2e`
@@ -1621,7 +1621,7 @@ git diff --check
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit disposable and development-server acceptance evidence**
+- [x] **Step 8: Commit disposable and development-server acceptance evidence**
 
 ```bash
 git add test/compose/test-shell-access-root-integration.sh \
@@ -1631,51 +1631,44 @@ git add test/compose/test-shell-access-root-integration.sh \
 git commit -m "test(compose): prove tenant shell isolation on development"
 ```
 
-#### Interim Progress Report
+#### Acceptance Progress Report
 
-- Local implementation: complete through the disposable-container harness,
-  executable 39-operation broker matrix, lifecycle reconciliation, installer,
-  documentation, and final review remediation. The current clean local head is
-  `da52561b`; final security/code-quality review approved the implementation
-  after quota, rollback, revision-zero apply, reconciliation-race, ACL,
-  authority-file, and loader-idempotence fixes.
-- Local evidence: the focused 14-suite shell-access matrix, package form,
-  syntax, documentation, transaction, installer/visudo, lifecycle, malicious
-  policy, isolation, and diff checks passed. The root-only disposable harness
-  skipped because the current process is not root and no approved disposable
-  backend was available; no real-sudo acceptance is claimed.
-- Release-gate evidence: a resource-safe sequential readiness run at
-  `79727c58` passed its complete ShellCheck phase and nearly all Compose shell
-  suites, then exposed a repeated-source failure in `shell-access.sh` during
-  `test-transaction.sh`. Commits `453721c7` and `da52561b` fix that failure;
-  the exact focused shell-access and transaction regressions pass and the fix
-  is independently approved. At the operator's direction after severe host
-  lag/session crashes, broad ShellCheck and expensive full-suite reruns are
-  prohibited on this workstation, so Step 7 remains open rather than being
-  reported as passed.
-- Development acceptance: not attempted for the final head. The required
-  passing release gate and remotely recoverable exact commit prerequisites
-  were not met, so no development or production host was contacted. Steps
-  3–6 and the final acceptance-evidence commit remain pending.
-- Follow-up: on a suitably sized approved environment, rerun the complete
-  release gate for the exact pushed commit, then run Steps 3–6 through the
-  required jump host and record bounded secret-free evidence before closing
-  Task 9 and the Milestone 3 gate.
+- Exact pushed implementation `15c46d0d` passed
+  `test/compose/run-production-readiness-limited.sh`; optimized ShellCheck,
+  every Compose shell suite, fixture renders, PHP/JavaScript, documentation,
+  Playwright discovery, and whitespace checks passed.
+- The exact commit was deployed to `debian@192.168.100.100` through the
+  required jump host. Overlay checksum, backup, staged syntax/`visudo`, final
+  modes, exact installed hashes, reconciliation, Docker readiness, and actual
+  rollback behavior are recorded in the development validation document.
+- Real Vesta users proved exact broker-only sudo, Docker-socket denial,
+  immutable preview/apply, lifecycle operations, deny-first policy, live
+  shell/suspension/quota/group revocation, installer repair, idempotence, and
+  clean fixture removal. The unrelated managed-container identity and
+  canonical label set were unchanged. Production was not contacted.
+- Step 5 remains open only for a successful persisted named-probe invocation;
+  the standard Compose acceptance fixture defined no named probe. Undefined
+  probes failed closed. All other listed development-host assertions passed.
+- Step 3 passed in a temporary Debian 12 child of an already-present local
+  image after completing the harness's minimum authoritative project fixture.
+  The child added only `sudo` and `acl`, ran the harness with network disabled,
+  and was removed afterward. Specification and code-quality reviews approved
+  the test-only fixture correction.
 
 ### Milestone 3 security review gate
 
-- [ ] Review the actual `visudo -cf` result, installed modes/ownership,
+- [x] Review the actual `visudo -cf` result, installed modes/ownership,
   `sudo -l` output, group membership, and Docker socket permissions.
-- [ ] Verify package/shell/suspension/deletion hooks converge without manual
+- [x] Verify package/shell/suspension/deletion hooks converge without manual
   group commands.
-- [ ] Verify rollback disables sudo first, removes all dedicated group members,
+- [x] Verify rollback disables sudo first, removes all dedicated group members,
   removes the group only when empty, and leaves Docker projects, images,
   volumes, secrets, and package quota state untouched.
-- [ ] Verify the exact implementation commit was deployed and accepted on
+- [x] Verify the exact implementation commit was deployed and accepted on
   `debian@192.168.100.100` through `gizmo@192.168.100.16`, all disposable
   fixtures were removed, and the pre/post unrelated-container inventory
   matches.
-- [ ] Record milestone commit SHAs and staging evidence in this plan.
+- [x] Record milestone commit SHAs and staging evidence in this plan.
 
 ---
 
@@ -1797,7 +1790,7 @@ done
 
 Expected: every test passes sequentially.
 
-- [ ] **Step 7: Run the full release gate in a resource-safe environment**
+- [x] **Step 7: Run the full release gate in a resource-safe environment**
 
 Run only after the focused suite passes and on a host sized for the complete
 gate:
@@ -1838,37 +1831,37 @@ git commit -m "docs(compose): document tenant Docker shell access"
   39-operation catalog and contract parity.
 - Independent code-quality/security review: APPROVED after remediation commits
   `d6561990`, `1cccf02a`, `1f765292`, `453721c7`, and `da52561b`.
-- Full release gate: OPEN. The last resource-safe run exposed the now-fixed
-  repeated-source failure but was not rerun because broad validation is
-  prohibited on this constrained workstation after severe lag/session
-  crashes. No PASS is claimed.
-- Development/disposable acceptance: OPEN under Task 9; no production host was
-  contacted.
+- Full release gate: PASS at exact pushed implementation `15c46d0d` through
+  the repository-owned constrained launcher. No direct broad gate or
+  unlimited override was used.
+- Development acceptance: PASS for deployment, real-user sudo/orchestration,
+  revocation, repair, idempotence, cleanup, and disposable-container checks.
+  The successful named-probe check remains explicitly open under Task 9.
 
 ### Final acceptance gate
 
-- [ ] Eligible Docker-enabled Bash users are added automatically to exactly
+- [x] Eligible Docker-enabled Bash users are added automatically to exactly
   `vesta-compose-users`; no manual group work is required.
-- [ ] The dedicated group grants only the exact root broker and no Docker
+- [x] The dedicated group grants only the exact root broker and no Docker
   socket, Docker group, wildcard Vesta command, shell, or interpreter access.
-- [ ] The broker authenticates from `SUDO_UID`/passwd, never accepts owner,
+- [x] The broker authenticates from `SUDO_UID`/passwd, never accepts owner,
   actor, or profile, and operates only on the actor's `standard` projects.
-- [ ] Suspension, package removal, shell disable, deletion, malformed state,
+- [x] Suspension, package removal, shell disable, deletion, malformed state,
   and stale membership fail before Docker.
-- [ ] Compose, secret, and registry input is bounded stdin with root-owned
+- [x] Compose, secret, and registry input is bounded stdin with root-owned
   immutable snapshots and complete cleanup.
-- [ ] Preview/apply, rollback, reconcile, labels, quota, policy, redaction,
+- [x] Preview/apply, rollback, reconcile, labels, quota, policy, redaction,
   backup, and project-lock contracts remain intact.
-- [ ] Package add/edit surfaces preserve all nine Compose quota dimensions.
-- [ ] Fresh install, package update, Docker installation, repair, and rollback
+- [x] Package add/edit surfaces preserve all nine Compose quota dimensions.
+- [x] Fresh install, package update, Docker installation, repair, and rollback
   converge group/sudoers state deterministically.
-- [ ] Disposable real-sudo acceptance proves cross-owner, privileged-profile,
+- [x] Disposable real-sudo acceptance proves cross-owner, privileged-profile,
   raw Docker, arbitrary command, environment, and filesystem attacks fail.
-- [ ] The exact remotely recoverable implementation commit passes deployment,
+- [x] The exact remotely recoverable implementation commit passes deployment,
   real-user orchestration, revocation, reconciliation, cleanup, and unchanged
   unrelated-container checks on `192.168.100.100` through the required jump
   host; no production system is accessed.
-- [ ] Documentation, focused tests, resource-safe readiness, and
+- [x] Documentation, focused tests, resource-safe readiness, and
   `git diff --check` pass.
 
 ## Self-review result

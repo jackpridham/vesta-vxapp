@@ -37,7 +37,7 @@ chown -R root:root /usr/local/vesta
 chmod go-w /usr/local/vesta /usr/local/vesta/bin /usr/local/vesta/func /usr/local/vesta/install
 useradd -m -s /bin/bash vx-shell-alice
 useradd -m -s /bin/bash vx-shell-bob
-mkdir -p /tmp/vx-shell-root-test /usr/local/vesta/data/users/{vx-shell-alice,vx-shell-bob}/docker-projects/{app,admin}
+mkdir -p /tmp/vx-shell-root-test /usr/local/vesta/data/users/{vx-shell-alice,vx-shell-bob}/docker-projects/{app,admin}/runtime
 chmod 0700 /tmp/vx-shell-root-test
 docker_log=/tmp/vx-shell-root-test/docker.log
 : >"$docker_log"
@@ -48,12 +48,21 @@ SUSPENDED='no'
 SHELL='bash'
 DOCKER_PROJECTS='9'
 EOF
-    cat >"/usr/local/vesta/data/users/$user/docker-projects/app/project.conf" <<'EOF'
+    cat >"/usr/local/vesta/data/users/$user/docker-projects/app/project.conf" <<EOF
+OWNER='$user'
+PROJECT='app'
 PROFILE='standard'
 EOF
-    cat >"/usr/local/vesta/data/users/$user/docker-projects/admin/project.conf" <<'EOF'
+    cat >"/usr/local/vesta/data/users/$user/docker-projects/admin/project.conf" <<EOF
+OWNER='$user'
+PROJECT='admin'
 PROFILE='admin-approved'
 EOF
+    for project in app admin; do
+        : >"/usr/local/vesta/data/users/$user/docker-projects/$project/compose.yaml"
+        : >"/usr/local/vesta/data/users/$user/docker-projects/$project/policy.conf"
+        printf '{}\n' >"/usr/local/vesta/data/users/$user/docker-projects/$project/runtime/canonical.json"
+    done
 done
 chown -R root:root /usr/local/vesta/data
 find /usr/local/vesta/data -type d -exec chmod 0700 {} +
