@@ -192,6 +192,12 @@ if [ "$force" != 'yes' ];then
     is_package_avalable
 fi
 
+vx_compose_shell_access_lock_acquire "$user"
+check_result $? "Compose owner access lock failed"
+trap 'vx_compose_shell_access_lock_release' EXIT
+vx_compose_shell_group_revoke "$user"
+check_result $? "Compose shell access revocation failed"
+
 
 #----------------------------------------------------------#
 #                       Action                             #
@@ -204,6 +210,8 @@ change_user_package
 shell_conf=$(echo "$pkg_data" | grep 'SHELL' | cut -f 2 -d \')
 shell=$(grep -w "$shell_conf" /etc/shells |head -n1)
 /usr/bin/chsh -s "$shell" "$user" &>/dev/null
+vx_compose_shell_group_grant_if_eligible "$user"
+check_result $? "Compose shell access reconciliation failed"
 
 # Run template trigger
 if [ -x "$VESTA/data/packages/$package.sh" ]; then

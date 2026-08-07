@@ -9,6 +9,8 @@ fail() {
 }
 
 commands=(
+    v-docker
+    v-run-user-docker-command
     v-add-docker-project
     v-validate-docker-project
     v-deploy-docker-project
@@ -80,9 +82,14 @@ for command_name in "${commands[@]}"; do
     [[ -x "$command_path" ]] || fail "missing executable command: $command_name"
     grep -Fq '# info:' "$command_path" || fail "missing info header: $command_name"
     grep -Fq '# options:' "$command_path" || fail "missing options header: $command_name"
-    grep -Fq 'func/vx/compose/main.sh' "$command_path" \
-        || fail "command does not use vx Compose helpers: $command_name"
+    if [[ "$command_name" != v-docker ]]; then
+        grep -Fq 'func/vx/compose/main.sh' "$command_path" \
+            || fail "command does not use vx Compose helpers: $command_name"
+    fi
 done
+
+grep -Fq 'exec /usr/bin/sudo -n -- /usr/local/vesta/bin/v-run-user-docker-command "$@"' \
+    "$repo_root/bin/v-docker" || fail 'v-docker is not the fixed sudo client'
 
 grep -Fq '# options: USER PROJECT SOURCE [dry-run|apply] [PROFILE]' \
     "$repo_root/bin/v-adopt-docker-project" \

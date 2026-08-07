@@ -1,0 +1,181 @@
+#!/usr/bin/env bash
+# info: broker owner-scoped Docker project commands
+# options: OPERATION [ARGUMENTS]
+set -Eeuo pipefail
+
+[[ -z "${VESTA+x}" ]] || { echo 'unsafe broker environment' >&2; exit 1; }
+readonly VESTA=/usr/local/vesta
+readonly PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+export VESTA PATH
+
+for dangerous_name in BASH_ENV ENV CDPATH GLOBIGNORE LD_PRELOAD LD_LIBRARY_PATH PYTHONPATH PYTHONHOME DOCKER_HOST DOCKER_CONTEXT COMPOSE_FILE COMPOSE_PROJECT_NAME; do
+    [[ -z "${!dangerous_name+x}" ]] || { echo 'unsafe broker environment' >&2; exit 1; }
+done
+while IFS='=' read -r inherited_name _; do
+    case "$inherited_name" in BASH_ENV|ENV|SHELLOPTS|BASHOPTS|CDPATH|GLOBIGNORE|VESTA|VX_COMPOSE_*|DOCKER_*|COMPOSE_*|LD_*|PYTHON*) echo 'unsafe broker environment' >&2; exit 1;; esac
+done < <(/usr/bin/env)
+unset dangerous_name inherited_name
+
+trusted_source() {
+    local path="$1"
+    [[ -f "$path" && ! -L "$path" && "$(stat -c '%u' "$path")" == 0 ]] || return 1
+    [[ $(( 8#$(stat -c '%a' "$path") & 0022 )) -eq 0 ]] || return 1
+    # shellcheck disable=SC1090
+    source "$path"
+}
+for trusted_dir in "$VESTA" "$VESTA/func" "$VESTA/func/vx" "$VESTA/func/vx/compose"; do
+    [[ -d "$trusted_dir" && ! -L "$trusted_dir" && "$(stat -c '%u' "$trusted_dir")" == 0
+        && $(( 8#$(stat -c '%a' "$trusted_dir") & 0022 )) -eq 0 ]] || exit 1
+done
+for trusted_file in "$VESTA"/func/vx/compose/*.sh; do
+    [[ -f "$trusted_file" && ! -L "$trusted_file" && "$(stat -c '%u' "$trusted_file")" == 0
+        && $(( 8#$(stat -c '%a' "$trusted_file") & 0022 )) -eq 0 ]] || exit 1
+done
+unset trusted_dir trusted_file
+trusted_source "$VESTA/func/vx/compose/main.sh" || exit 1
+
+snapshot_root=
+actor=
+operation=${1-}
+project=
+result=failed
+
+cleanup() {
+    local status=$?
+    if [[ -n "$snapshot_root" && "$snapshot_root" == /var/tmp/vesta-compose-shell.*
+        && -d "$snapshot_root" && ! -L "$snapshot_root"
+        && "$(stat -c '%u:%g:%a:%F' "$snapshot_root" 2>/dev/null)" == '0:0:700:directory' ]]; then
+        rm -rf -- "$snapshot_root"
+    fi
+    if [[ -n "$actor" ]]; then
+        [[ "$status" -ne 0 ]] || result=succeeded
+        vx_compose_shell_broker_audit "$actor" "$operation" "$actor" "$project" "$result" 2>/dev/null || :
+    fi
+    vx_compose_shell_access_lock_release 2>/dev/null || :
+    exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+
+run_vesta_user_command() {
+    local command="$1"; shift
+    [[ "$command" =~ ^v-[a-z0-9-]+$ && -x "/usr/local/vesta/bin/$command" ]] || return 1
+    (
+        vx_compose_shell_access_lock_close_child_copy
+        env -i VESTA=/usr/local/vesta PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/root USER=root LOGNAME=root LANG=C.UTF-8 "/usr/local/vesta/bin/$command" "$@"
+    )
+}
+
+require_count() { (( $# >= $1 && $# <= $2 )); }
+valid_project() { [[ "$1" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]; }
+valid_name() { [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$ && "$1" != -* ]]; }
+valid_format() { [[ "$1" == json || "$1" == plain ]]; }
+valid_revision() { [[ "$1" =~ ^(0|[1-9][0-9]*)$ ]]; }
+reject_unsafe_args() { local value; for value in "$@"; do [[ -n "$value" && ${#value} -le 2000 && "$value" != -* && "$value" != *[$'\n\r\t ']* && "$value" != *['`$;&|<>\\(){}[]']* ]] || return 1; done; }
+require_standard() { project="$1"; vx_compose_shell_require_standard_project "$actor" "$project"; }
+snapshot() { local kind="$1" max="$2"; snapshot_file="$(vx_compose_shell_snapshot_stdin "$kind" "$max")" || return 1; snapshot_root="${snapshot_file%/*}"; }
+
+(( EUID == 0 )) || exit 1
+actor="$(vx_compose_shell_actor_resolve)" || exit 1
+vx_compose_shell_access_lock_acquire "$actor" || exit 1
+vx_compose_shell_require_eligible "$actor" || exit 1
+(( $# >= 1 && $# <= 7 )) || exit 1
+reject_unsafe_args "$@" || exit 1
+shift
+
+format=json
+case "$operation" in
+    projects|quota|registries)
+        require_count 0 1 "$@" || exit 1; format=${1-json}; valid_format "$format" || exit 1
+        case "$operation" in projects) command=v-list-docker-projects;; quota) command=v-list-docker-compose-quota;; registries) command=v-list-docker-registries;; esac
+        run_vesta_user_command "$command" "$actor" "$format"
+        ;;
+    show|definition|validate|health|alerts|routes|backups|secrets)
+        require_count 1 2 "$@" || exit 1; valid_project "$1" || exit 1; require_standard "$1" || exit 1
+        format=${2-json}; valid_format "$format" || exit 1
+        case "$operation" in show) command=v-list-docker-project;; definition) command=v-list-docker-project-definition;; validate) command=v-validate-docker-project;; health) command=v-list-docker-project-health;; alerts) command=v-list-docker-project-alerts;; routes) command=v-list-docker-project-routes;; backups) command=v-list-docker-project-backups;; secrets) command=v-list-docker-secrets;; esac
+        run_vesta_user_command "$command" "$actor" "$1" "$format"
+        ;;
+    operation|drift)
+        require_count 1 2 "$@" || exit 1; valid_project "$1" || exit 1; require_standard "$1" || exit 1; format=${2-json}; valid_format "$format" || exit 1
+        [[ "$operation" == operation ]] && command=v-list-docker-project-operation || command=v-list-docker-project-drift
+        run_vesta_user_command "$command" "$actor" "$actor" "$1" "$format"
+        ;;
+    probe)
+        require_count 2 3 "$@" || exit 1; valid_project "$1" && valid_name "$2" || exit 1; require_standard "$1" || exit 1; format=${3-json}; valid_format "$format" || exit 1
+        run_vesta_user_command v-run-docker-project-probe "$actor" "$actor" "$1" "$2" "$format"
+        ;;
+    logs)
+        require_count 1 3 "$@" || exit 1; valid_project "$1" || exit 1; require_standard "$1" || exit 1
+        service=${2-}; lines=${3-100}; [[ -z "$service" ]] || valid_name "$service" || exit 1; [[ "$lines" =~ ^[1-9][0-9]*$ ]] && (( lines <= 2000 )) || exit 1
+        run_vesta_user_command v-list-docker-project-logs "$actor" "$1" "$service" "$lines"
+        ;;
+    stats)
+        require_count 1 3 "$@" || exit 1; valid_project "$1" || exit 1; require_standard "$1" || exit 1
+        period=${2-5m}; format=${3-json}; [[ "$period" =~ ^[1-9][0-9]*[mhd]$ ]] && valid_format "$format" || exit 1
+        run_vesta_user_command v-list-docker-project-stats "$actor" "$1" "$period" "$format"
+        ;;
+    start|stop|restart|deploy)
+        require_count 1 1 "$@" || exit 1; valid_project "$1" || exit 1; require_standard "$1" || exit 1
+        run_vesta_user_command v-run-docker-project-action "$actor" "$actor" "$1" "$operation"
+        ;;
+    recreate)
+        require_count 1 2 "$@" || exit 1; valid_project "$1" || exit 1; [[ -z "${2-}" ]] || valid_name "$2" || exit 1; require_standard "$1" || exit 1
+        run_vesta_user_command v-run-docker-project-action "$actor" "$actor" "$1" recreate ${2:+"$2"}
+        ;;
+    preview)
+        require_count 2 2 "$@" || exit 1; valid_project "$1" && [[ "$2" == add || "$2" == change ]] || exit 1; [[ "$2" != change ]] || require_standard "$1" || exit 1
+        project="$1"; snapshot compose 1048576 || exit 1
+        run_vesta_user_command v-stage-docker-project-preview "$actor" "$actor" "$1" "$snapshot_file" standard "$2"
+        ;;
+    apply)
+        require_count 5 5 "$@" || exit 1; valid_project "$1" && [[ "$2" =~ ^[a-f0-9]{32}$ && "$3" =~ ^[a-f0-9]{64}$ && "$4" =~ ^[a-f0-9]{64}$ ]] && valid_revision "$5" || exit 1; require_standard "$1" || exit 1
+        run_vesta_user_command v-apply-docker-project-preview "$actor" "$actor" "$1" "$2" "$3" "$4" "$5"
+        ;;
+    secret-add|secret-change)
+        require_count 2 2 "$@" || exit 1; valid_project "$1" && valid_name "$2" || exit 1; require_standard "$1" || exit 1; snapshot secret 65536 || exit 1
+        [[ "$operation" == secret-add ]] && command=v-add-docker-secret || command=v-change-docker-secret
+        run_vesta_user_command "$command" "$actor" "$1" "$2" "$snapshot_file"
+        vx_compose_audit "$(vx_compose_project_root "$actor" "$1")" shell-secret succeeded 'brokered secret mutation' 0 '[]' "$actor" || :
+        ;;
+    secret-delete)
+        require_count 2 2 "$@" || exit 1; valid_project "$1" && valid_name "$2" || exit 1; require_standard "$1" || exit 1
+        run_vesta_user_command v-delete-docker-secret "$actor" "$1" "$2"
+        vx_compose_audit "$(vx_compose_project_root "$actor" "$1")" shell-secret succeeded 'brokered secret mutation' 0 '[]' "$actor" || :
+        ;;
+    registry-add|registry-change)
+        require_count 2 2 "$@" || exit 1; valid_name "$1" && valid_name "$2" || exit 1; snapshot registry 65536 || exit 1
+        run_vesta_user_command v-add-docker-registry "$actor" "$1" "$2" "$snapshot_file"
+        vx_compose_owner_audit "$actor" shell-registry succeeded 'brokered registry mutation' "$actor" || :
+        ;;
+    registry-delete)
+        require_count 1 1 "$@" || exit 1; valid_name "$1" || exit 1; run_vesta_user_command v-delete-docker-registry "$actor" "$1"
+        vx_compose_owner_audit "$actor" shell-registry succeeded 'brokered registry mutation' "$actor" || :
+        ;;
+    remove)
+        require_count 2 2 "$@" || exit 1; valid_project "$1" && [[ "$2" == keep-data ]] || exit 1; require_standard "$1" || exit 1
+        vx_compose_owner_audit "$actor" shell-delete started 'brokered project deletion' "$actor" || :
+        run_vesta_user_command v-delete-docker-project "$actor" "$1" keep-data
+        ;;
+    restore)
+        require_count 3 3 "$@" || exit 1; valid_project "$1" && valid_name "$2" && [[ "$3" == validate || "$3" == apply ]] || exit 1; require_standard "$1" || exit 1
+        run_vesta_user_command v-restore-docker-project "$actor" "$1" "managed:$2" "$3"
+        ;;
+    rollback-preview)
+        require_count 2 2 "$@" || exit 1; valid_project "$1" && valid_revision "$2" || exit 1; require_standard "$1" || exit 1
+        run_vesta_user_command v-preview-docker-project-rollback "$actor" "$actor" "$1" "$2"
+        ;;
+    rollback-apply)
+        require_count 5 5 "$@" || exit 1; valid_project "$1" && valid_revision "$2" && valid_revision "$3" && [[ "$4" =~ ^[a-f0-9]{64}$ && "$5" =~ ^[a-f0-9]{64}$ ]] || exit 1; require_standard "$1" || exit 1
+        run_vesta_user_command v-apply-docker-project-rollback "$actor" "$actor" "$1" "$2" "$3" "$4" "$5"
+        ;;
+    reconcile-preview)
+        require_count 1 1 "$@" || exit 1; valid_project "$1" || exit 1; require_standard "$1" || exit 1; run_vesta_user_command v-preview-docker-project-reconcile "$actor" "$actor" "$1"
+        ;;
+    reconcile-apply)
+        require_count 3 3 "$@" || exit 1; valid_project "$1" && [[ "$2" =~ ^[a-f0-9]{64}$ ]] && valid_revision "$3" || exit 1; require_standard "$1" || exit 1
+        run_vesta_user_command v-reconcile-docker-project "$actor" "$actor" "$1" "$2" "$3"
+        ;;
+    *) exit 1;;
+esac

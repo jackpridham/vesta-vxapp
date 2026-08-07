@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+
+readonly VX_COMPOSE_SHELL_GROUP='vesta-compose-users'
+readonly VX_COMPOSE_ACCESS_LOCK_ROOT='/run/lock/vesta-compose-user-access'
+
+vx_compose_shell_is_interactive() {
+    [[ "$1" == bash || "$1" == /bin/bash || "$1" == /usr/bin/bash ]]
+}
+
+vx_compose_shell_passwd_by_uid() {
+    /usr/bin/getent passwd "$1"
+}
+
+vx_compose_shell_passwd_by_name() {
+    /usr/bin/getent passwd "$1"
+}
+
+vx_compose_shell_effective_uid() {
+    printf '%s\n' "$EUID"
+}
+
+vx_compose_shell_actor_uid() {
+    /usr/bin/id -u "$1"
+}
+
+vx_compose_shell_actor_gids() {
+    /usr/bin/id -G "$1"
+}
+
+vx_compose_shell_groups() {
+    /usr/bin/id -nG "$1"
+}
+
+vx_compose_shell_actor_resolve() {
+    local record actor password uid gid gecos home shell
+
+    [[ "$(vx_compose_shell_effective_uid)" == 0 ]] || return 1
+    [[ "${SUDO_UID:-}" =~ ^[1-9][0-9]*$
+        && "${SUDO_GID:-}" =~ ^[1-9][0-9]*$
+        && "${SUDO_USER:-}" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ ]] || return 1
+    record="$(vx_compose_shell_passwd_by_uid "$SUDO_UID")" || return 1
+    [[ "$record" != *$'\n'* ]] || return 1
+    IFS=: read -r actor password uid gid gecos home shell <<<"$record"
+    [[ -n "$actor" && "$actor" == "$SUDO_USER" && "$uid" == "$SUDO_UID"
+        && "$gid" == "$SUDO_GID" && "$actor" != root && "$actor" != admin
+        && "$home" == "${HOMEDIR:-/home}/$actor" ]] || return 1
+    printf '%s\n' "$actor"
+}
+
+vx_compose_shell_group_contains() {
+    local actor="$1" group
+    while IFS= read -r group; do
+        [[ "$group" == "$VX_COMPOSE_SHELL_GROUP" ]] && return 0
+    done < <(vx_compose_shell_groups "$actor" | tr ' ' '\n')
+    return 1
+}
+
+vx_compose_shell_user_conf_secure() {
+    local actor="$1" conf="$2" authority_uid actor_uid mode file_gid gid
+    [[ -f "$conf" && ! -L "$conf" ]] || return 1
+    authority_uid="$(vx_compose_authority_uid)" || return 1
+    actor_uid="$(vx_compose_shell_actor_uid "$actor" 2>/dev/null)" || return 1
+    [[ "$(stat -c '%u' "$conf" 2>/dev/null)" == "$authority_uid" ]] || return 1
+    mode="$(stat -c '%a' "$conf" 2>/dev/null)" || return 1
+    [[ "$(stat -c '%u' "$conf")" != "$actor_uid" ]] || return 1
+    (( (8#$mode & 0002) == 0 )) || return 1
+    if (( (8#$mode & 0020) != 0 )); then
+        file_gid="$(stat -c '%g' "$conf")" || return 1
+        for gid in $(vx_compose_shell_actor_gids "$actor" 2>/dev/null); do
+            [[ "$gid" != "$file_gid" ]] || return 1
+        done
+    fi
+}
+
+vx_compose_shell_group_revoke() {
+    local actor="$1"
+    /usr/bin/getent group "$VX_COMPOSE_SHELL_GROUP" >/dev/null 2>&1 || return 0
+    /usr/sbin/gpasswd -d "$actor" "$VX_COMPOSE_SHELL_GROUP" >/dev/null 2>&1 || {
+        vx_compose_shell_group_contains "$actor" && return 1
+        return 0
+    }
+}
+
+vx_compose_shell_group_grant_if_eligible() {
+    local actor="$1"
+    vx_compose_shell_require_eligible_except_group "$actor" || return 0
+    /usr/bin/getent group "$VX_COMPOSE_SHELL_GROUP" >/dev/null 2>&1 || return 1
+    /usr/sbin/usermod -a -G "$VX_COMPOSE_SHELL_GROUP" "$actor"
+}
+
+vx_compose_shell_require_eligible_except_group() {
+    local actor="$1" conf suspended shell limit record passwd_actor password uid gid gecos home passwd_shell
+    vx_compose_require_owner "$actor" || return 1
+    conf="$VESTA/data/users/$actor/user.conf"
+    vx_compose_shell_user_conf_secure "$actor" "$conf" || return 1
+    awk '
+        !/^[A-Z][A-Z0-9_]*='\''[^'\'']*'\''$/ { exit 1 }
+        /^SUSPENDED=/ { suspended++ }
+        /^SHELL=/ { shell++ }
+        /^DOCKER_PROJECTS=/ { projects++ }
+        END { exit !(suspended == 1 && shell == 1 && projects == 1) }
+    ' "$conf" || return 1
+    suspended="$(vx_compose_meta_get "$conf" SUSPENDED)" || return 1
+    shell="$(vx_compose_meta_get "$conf" SHELL)" || return 1
+    limit="$(vx_compose_meta_get "$conf" DOCKER_PROJECTS)" || return 1
+    record="$(vx_compose_shell_passwd_by_name "$actor")" || return 1
+    [[ "$record" != *$'\n'* ]] || return 1
+    IFS=: read -r passwd_actor password uid gid gecos home passwd_shell <<<"$record"
+    [[ "$passwd_actor" == "$actor" && "$uid" =~ ^[1-9][0-9]*$
+        && "$home" == "${HOMEDIR:-/home}/$actor" && "${passwd_shell##*/}" == "$shell" ]] || return 1
+    [[ "$suspended" == no ]] && vx_compose_shell_is_interactive "$shell" \
+        && vx_compose_package_docker_is_enabled "$limit"
+}
+
+vx_compose_shell_require_eligible() {
+    local actor="$1" conf suspended shell limit
+    vx_compose_shell_require_eligible_except_group "$actor" || return 1
+    vx_compose_shell_group_contains "$actor"
+}
+
+vx_compose_shell_require_standard_project() {
+    local actor="$1" project="$2" root profile authority_uid
+    vx_compose_require_project "$actor" "$project" || return 1
+    root="$(vx_compose_project_root "$actor" "$project")"
+    authority_uid="$(vx_compose_authority_uid)" || return 1
+    [[ -f "$root/project.conf" && ! -L "$root/project.conf"
+        && "$(stat -c '%u' "$root/project.conf" 2>/dev/null)" == "$authority_uid" ]] || return 1
+    profile="$(vx_compose_meta_get "$root/project.conf" PROFILE)" || return 1
+    [[ "$profile" == standard ]] || return 1
+}
+
+vx_compose_shell_access_lock_acquire() {
+    local owner="$1" path
+    vx_compose_owner_is_valid "$owner" || return 1
+    if [[ -n "${VX_COMPOSE_ACCESS_LOCK_FD:-}" ]]; then
+        [[ "${VX_COMPOSE_ACCESS_LOCK_OWNER:-}" == "$owner" ]] || return 1
+        VX_COMPOSE_ACCESS_LOCK_DEPTH=$((VX_COMPOSE_ACCESS_LOCK_DEPTH + 1))
+        return 0
+    fi
+    install -d -m 0700 -o root -g root "$VX_COMPOSE_ACCESS_LOCK_ROOT" || return 1
+    [[ ! -L "$VX_COMPOSE_ACCESS_LOCK_ROOT"
+        && "$(stat -c '%u:%g:%a:%F' "$VX_COMPOSE_ACCESS_LOCK_ROOT")" == '0:0:700:directory' ]] || return 1
+    path="$VX_COMPOSE_ACCESS_LOCK_ROOT/$owner.lock"
+    exec {VX_COMPOSE_ACCESS_LOCK_FD}>"$path" || return 1
+    chmod 0600 "$path" || { exec {VX_COMPOSE_ACCESS_LOCK_FD}>&-; unset VX_COMPOSE_ACCESS_LOCK_FD; return 1; }
+    [[ ! -L "$path" && "$(stat -c '%u:%g:%a:%F' "$path")" == '0:0:600:regular file' ]] \
+        || { exec {VX_COMPOSE_ACCESS_LOCK_FD}>&-; unset VX_COMPOSE_ACCESS_LOCK_FD; return 1; }
+    flock -x "$VX_COMPOSE_ACCESS_LOCK_FD" || { exec {VX_COMPOSE_ACCESS_LOCK_FD}>&-; unset VX_COMPOSE_ACCESS_LOCK_FD; return 1; }
+    VX_COMPOSE_ACCESS_LOCK_OWNER="$owner"
+    VX_COMPOSE_ACCESS_LOCK_DEPTH=1
+}
+
+vx_compose_shell_access_lock_close_child_copy() {
+    [[ "${VX_COMPOSE_ACCESS_LOCK_FD:-}" =~ ^[0-9]+$ ]] || return 0
+    exec {VX_COMPOSE_ACCESS_LOCK_FD}>&-
+}
+
+vx_compose_shell_access_lock_release() {
+    [[ -n "${VX_COMPOSE_ACCESS_LOCK_FD:-}" ]] || return 0
+    if (( VX_COMPOSE_ACCESS_LOCK_DEPTH > 1 )); then
+        VX_COMPOSE_ACCESS_LOCK_DEPTH=$((VX_COMPOSE_ACCESS_LOCK_DEPTH - 1))
+        return 0
+    fi
+    flock -u "$VX_COMPOSE_ACCESS_LOCK_FD" || return 1
+    exec {VX_COMPOSE_ACCESS_LOCK_FD}>&-
+    unset VX_COMPOSE_ACCESS_LOCK_FD VX_COMPOSE_ACCESS_LOCK_OWNER VX_COMPOSE_ACCESS_LOCK_DEPTH
+}
+
+vx_compose_shell_snapshot_stdin() {
+    local kind="$1" max_bytes="$2" snapshot_root snapshot_file bytes
+    [[ "$kind" =~ ^(compose|secret|registry)$ && "$max_bytes" =~ ^[1-9][0-9]*$ ]] || return 1
+    umask 077
+    snapshot_root="$(mktemp -d /var/tmp/vesta-compose-shell.XXXXXXXX)" || return 1
+    chmod 0700 "$snapshot_root" || { rm -rf -- "$snapshot_root"; return 1; }
+    snapshot_file="$snapshot_root/$kind.input"
+    head -c "$((max_bytes + 1))" >"$snapshot_file" || { rm -rf -- "$snapshot_root"; return 1; }
+    chmod 0600 "$snapshot_file" || { rm -rf -- "$snapshot_root"; return 1; }
+    bytes="$(stat -c '%s' "$snapshot_file")" || { rm -rf -- "$snapshot_root"; return 1; }
+    if (( bytes == 0 || bytes > max_bytes )) \
+        || [[ -L "$snapshot_root" || -L "$snapshot_file"
+            || "$(stat -c '%u:%g:%a:%F' "$snapshot_root")" != '0:0:700:directory'
+            || "$(stat -c '%u:%g:%a:%F' "$snapshot_file")" != '0:0:600:regular file' ]]; then
+        rm -rf -- "$snapshot_root"
+        return 1
+    fi
+    printf '%s\n' "$snapshot_file"
+}
+
+vx_compose_shell_broker_audit() {
+    local actor="$1" operation="$2" owner="$3" project="$4" result="$5"
+    local path="$VESTA/data/log/compose-shell-audit.log" event
+    [[ "$actor" =~ ^[a-z0-9][a-z0-9_-]{0,31}$
+        && "$operation" =~ ^[a-z][a-z0-9-]{0,31}$
+        && "$owner" == "$actor" && "$result" =~ ^(succeeded|failed)$
+        && ( -z "$project" || "$project" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ) ]] || return 1
+    event="$(jq -cn --arg timestamp "$(vx_compose_now)" --arg actor "$actor" \
+        --arg operation "$operation" --arg owner "$owner" --arg project "$project" \
+        --arg result "$result" '{TIMESTAMP:$timestamp,ACTOR:$actor,OPERATION:$operation,OWNER:$owner,PROJECT:$project,RESULT:$result}')" || return 1
+    vx_compose_audit_append "$path" 0600 "$event"
+}

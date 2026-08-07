@@ -2,6 +2,11 @@
 set -Eeuo pipefail
 
 repo_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+for owner_command in v-suspend-user v-unsuspend-user v-change-user-package v-change-user-shell v-delete-user; do
+    grep -Fq 'vx_compose_shell_access_lock_acquire "$user"' "$repo_root/bin/$owner_command" \
+        || { echo "FAIL: $owner_command omits Compose owner access lock" >&2; exit 1; }
+done
 test_root="$(mktemp -d)"
 trap 'rm -rf -- "$test_root"' EXIT
 

@@ -121,6 +121,8 @@ source "$_vx_compose_dir/simple.sh"
 source "$_vx_compose_dir/web.sh"
 # shellcheck source=func/vx/compose/package.sh
 source "$_vx_compose_dir/package.sh"
+# shellcheck source=func/vx/compose/shell-access.sh
+source "$_vx_compose_dir/shell-access.sh"
 # shellcheck source=func/vx/compose/lifecycle.sh
 source "$_vx_compose_dir/lifecycle.sh"
 # shellcheck source=func/vx/compose/owner.sh

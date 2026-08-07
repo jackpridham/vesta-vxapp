@@ -32,6 +32,13 @@ if [ "$user" = 'admin' ]; then
     exit
 fi
 
+vx_compose_shell_access_lock_acquire "$user"
+check_result $? "Compose owner access lock failed"
+trap 'vx_compose_shell_access_lock_release' EXIT
+update_user_value "$user" '$SUSPENDED' 'yes'
+vx_compose_shell_group_revoke "$user"
+check_result $? "Compose shell access revocation failed"
+
 # Suspending Compose projects while retaining desired running state
 if [ -d "$(vx_compose_projects_root "$user")" ]; then
     vx_compose_suspend_owner "$user"
@@ -117,8 +124,7 @@ check_result $? "DNS restart failed" >/dev/null
 $BIN/v-restart-cron $restart
 check_result $? "Cron restart failed" >/dev/null
 
-# Changing suspend value
-update_user_value "$user" '$SUSPENDED' 'yes'
+# Changing suspend counter
 increase_user_value 'admin' '$SUSPENDED_USERS'
 
 # Logging
