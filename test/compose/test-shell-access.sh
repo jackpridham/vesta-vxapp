@@ -66,6 +66,9 @@ mv "$fixture/data/users/alice/user.conf" "$fixture/data/users/alice/real.conf"
 ln -s real.conf "$fixture/data/users/alice/user.conf"
 ! vx_compose_shell_require_eligible alice >/dev/null 2>&1 || fail 'linked user.conf accepted'
 rm "$fixture/data/users/alice/user.conf"; mv "$fixture/data/users/alice/real.conf" "$fixture/data/users/alice/user.conf"
+ln "$fixture/data/users/alice/user.conf" "$fixture/data/users/alice/hardlinked.conf"
+! vx_compose_shell_require_eligible alice >/dev/null 2>&1 || fail 'hard-linked user.conf accepted'
+rm "$fixture/data/users/alice/hardlinked.conf"
 chmod 0666 "$fixture/data/users/alice/user.conf"
 ! vx_compose_shell_require_eligible alice >/dev/null 2>&1 || fail 'actor-writable user.conf accepted'
 
@@ -81,6 +84,8 @@ grep -Fq 'exec /usr/bin/sudo -n -- /usr/local/vesta/bin/v-run-user-docker-comman
 namespace_fixture="$fixture/namespace"
 mkdir -p "$namespace_fixture"
 unshare -Urnm bash "$repo_root/test/compose/fixtures/shell-broker-namespace.sh" \
+    "$repo_root" "$namespace_fixture"
+unshare -Urnm bash "$repo_root/test/compose/fixtures/shell-reconcile-race-namespace.sh" \
     "$repo_root" "$namespace_fixture"
 
 echo 'Compose shell access tests passed.'

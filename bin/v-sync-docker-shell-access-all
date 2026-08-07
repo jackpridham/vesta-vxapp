@@ -17,6 +17,8 @@ exec {reconcile_fd}>"$lock_path" || exit 1
 [[ -f "$lock_path" && ! -L "$lock_path" \
     && "$(stat -c '%u:%g:%a' "$lock_path")" == '0:0:600' ]] || exit 1
 /usr/bin/flock -x "$reconcile_fd" || exit 1
+# Lock order is the full reconciliation lock followed by one owner access lock.
+# Per-owner reconciliation takes only its owner lock, so no reverse edge exists.
 added=0 removed=0 unchanged=0 failed=0
 declare -A eligible=()
 if ! /usr/bin/getent group vesta-compose-users >/dev/null 2>&1; then
@@ -58,9 +60,25 @@ for user in "${group_members[@]}"; do
         ((failed+=1))
         continue
     fi
+    owner_locked=no
+    if [[ "$user" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ ]]; then
+        if ! vx_compose_shell_access_lock_acquire "$user"; then
+            ((failed+=1))
+            continue
+        fi
+        owner_locked=yes
+        if vx_compose_shell_should_be_group_member "$user"; then
+            eligible["$user"]=1
+            if ! vx_compose_shell_access_lock_release; then
+                ((failed+=1))
+            fi
+            continue
+        fi
+    fi
     /usr/bin/gpasswd -d "$user" -- vesta-compose-users >/dev/null 2>&1 || :
     if ! refreshed_record="$(/usr/bin/getent group vesta-compose-users 2>/dev/null)"; then
         ((failed+=1))
+        [[ "$owner_locked" != yes ]] || vx_compose_shell_access_lock_release || ((failed+=1))
         continue
     fi
     refreshed_members=${refreshed_record##*:}
@@ -70,6 +88,7 @@ for user in "${group_members[@]}"; do
         [[ "$refreshed_user" == "$user" ]] && still_present=yes
     done
     if [[ "$still_present" == no ]]; then ((removed+=1)); else ((failed+=1)); fi
+    [[ "$owner_locked" != yes ]] || vx_compose_shell_access_lock_release || ((failed+=1))
 done
 printf 'added=%d removed=%d unchanged=%d failed=%d\n' "$added" "$removed" "$unchanged" "$failed"
 (( failed == 0 ))

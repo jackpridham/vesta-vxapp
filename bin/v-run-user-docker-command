@@ -147,7 +147,11 @@ case "$operation" in
         run_vesta_user_command v-stage-docker-project-preview "$actor" "$actor" "$1" "$snapshot_file" standard "$2"
         ;;
     apply)
-        require_count 5 5 "$@" || exit 1; valid_project "$1" && [[ "$2" =~ ^[a-f0-9]{32}$ && "$3" =~ ^[a-f0-9]{64}$ && "$4" =~ ^[a-f0-9]{64}$ ]] && valid_revision "$5" || exit 1; require_standard "$1" || exit 1
+        require_count 5 5 "$@" || exit 1; valid_project "$1" && [[ "$2" =~ ^[a-f0-9]{32}$ && "$3" =~ ^[a-f0-9]{64}$ && "$4" =~ ^[a-f0-9]{64}$ ]] && valid_revision "$5" || exit 1
+        target_root="$(vx_compose_project_root "$actor" "$1")"
+        if [[ "$5" != 0 || -e "$target_root" || -L "$target_root" ]]; then
+            require_standard "$1" || exit 1
+        fi
         run_vesta_user_command v-apply-docker-project-preview "$actor" "$actor" "$1" "$2" "$3" "$4" "$5"
         ;;
     secret-add|secret-change)

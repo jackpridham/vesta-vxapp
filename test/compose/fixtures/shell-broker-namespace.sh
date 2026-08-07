@@ -158,6 +158,7 @@ expect_allow 'v-run-docker-project-action <alice> <alice> <app> <recreate> <web>
 expect_allow 'v-run-docker-project-action <alice> <alice> <app> <deploy>' deploy app
 expect_allow_stdin 'v-stage-docker-project-preview <alice> <alice> <app> <compose.input:12> <standard> <change>' 'compose-data' preview app change
 expect_allow "v-apply-docker-project-preview <alice> <alice> <app> <$preview_id> <$digest_a> <$digest_b> <1>" apply app "$preview_id" "$digest_a" "$digest_b" 1
+expect_allow "v-apply-docker-project-preview <alice> <alice> <new-app> <$preview_id> <$digest_a> <$digest_b> <0>" apply new-app "$preview_id" "$digest_a" "$digest_b" 0
 expect_allow 'v-backup-docker-project <alice> <app>' backup app
 expect_allow 'v-restore-docker-project <alice> <app> <managed:backup-1> <validate>' restore app backup-1 validate
 expect_allow 'v-restore-docker-project <alice> <app> <managed:backup-1> <apply>' restore app backup-1 apply
@@ -318,6 +319,7 @@ chmod 0600 /usr/local/vesta/data/users/alice/docker-projects/app/project.conf
 printf "OWNER='bob'\nPROJECT='app'\nPROFILE='standard'\n" >/usr/local/vesta/data/users/alice/docker-projects/app/project.conf
 chmod 0600 /usr/local/vesta/data/users/alice/docker-projects/app/project.conf
 expect_deny start app
+expect_deny apply app "$preview_id" "$digest_a" "$digest_b" 0
 
 jq -e 'select(.ACTION == "broker-child") | .ACTOR == "alice"' \
     /usr/local/vesta/data/users/alice/docker-audit.log >/dev/null \

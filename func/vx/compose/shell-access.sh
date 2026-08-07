@@ -61,11 +61,13 @@ vx_compose_shell_group_contains() {
 }
 
 vx_compose_shell_user_conf_secure() {
-    local actor="$1" conf="$2" authority_uid actor_uid mode file_gid gid
+    local actor="$1" conf="$2" authority_uid actor_uid mode file_gid links gid
     [[ -f "$conf" && ! -L "$conf" ]] || return 1
     authority_uid="$(vx_compose_authority_uid)" || return 1
     actor_uid="$(vx_compose_shell_actor_uid "$actor" 2>/dev/null)" || return 1
     [[ "$(stat -c '%u' "$conf" 2>/dev/null)" == "$authority_uid" ]] || return 1
+    links="$(stat -c '%h' "$conf" 2>/dev/null)" || return 1
+    [[ "$links" == 1 ]] || return 1
     mode="$(stat -c '%a' "$conf" 2>/dev/null)" || return 1
     [[ "$(stat -c '%u' "$conf")" != "$actor_uid" ]] || return 1
     (( (8#$mode & 0002) == 0 )) || return 1
