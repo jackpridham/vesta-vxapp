@@ -50,4 +50,5 @@
 - Production's mount guard is enabled/active and `slave` uses `vxslave-compose`; preserve both unless a separately authorized rollback changes them.
 - Keep cross-owner BusinessGUID values in native domain authority; Docker UI may show redacted consumer metadata and header names only.
 - Production is read-only without explicit authorization naming target, release, and workload mutation.
-- Before release/deployment, run `test/compose/run-production-readiness.sh`.
+- On constrained hosts, use `test/compose/run-production-readiness-limited.sh`; do not run broad ShellCheck or the canonical full gate directly, and never set `VX_READINESS_ALLOW_UNLIMITED=yes` without explicit operator approval.
+- Before release/deployment, require the limited launcher—or the canonical gate on an approved unconstrained host—to pass; the launcher runs `test/compose/run-production-readiness.sh` unchanged.
