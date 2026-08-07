@@ -463,7 +463,7 @@ No deferred security or authority findings remain.
 
 ## Milestone 2: Build the authenticated broker
 
-### Task 3: Implement caller attestation, entitlement, and access locks
+### Task 3: Implement caller attestation, entitlement, and access locks - COMPLETE
 
 **Files:**
 
@@ -471,7 +471,7 @@ No deferred security or authority findings remain.
 - Modify: `func/vx/compose/main.sh`
 - Create: `test/compose/test-shell-access.sh`
 
-- [ ] **Step 1: Write failing identity and entitlement tests**
+- [x] **Step 1: Write failing identity and entitlement tests**
 
 The test harness must create Vesta fixtures for `alice` and `bob`, fake passwd
 records with different UIDs, and a command/Docker canary log. Add assertions
@@ -493,7 +493,7 @@ Also cover missing, linked, actor-writable, malformed, and owner-mismatched
 direct non-root invocation; stale manual group membership; and a nonstandard
 project. Assert the fake Docker log remains empty after every denial.
 
-- [ ] **Step 2: Run the test and verify it fails because the helper is absent**
+- [x] **Step 2: Run the test and verify it fails because the helper is absent**
 
 Run:
 
@@ -503,7 +503,7 @@ bash test/compose/test-shell-access.sh
 
 Expected: FAIL naming `func/vx/compose/shell-access.sh`.
 
-- [ ] **Step 3: Implement fixed caller attestation**
+- [x] **Step 3: Implement fixed caller attestation**
 
 Create functions with these exact responsibilities and no `eval`:
 
@@ -539,7 +539,7 @@ Production code must use absolute trusted tool paths or a fixed safe PATH.
 Tests may replace functions after sourcing; no production environment variable
 may override passwd, group, lock, Vesta, or executable paths.
 
-- [ ] **Step 4: Implement live entitlement and standard-profile checks**
+- [x] **Step 4: Implement live entitlement and standard-profile checks**
 
 Use `vx_compose_meta_get` and
 `vx_compose_package_docker_is_enabled`. Verify the authoritative file is a
@@ -570,7 +570,7 @@ vx_compose_shell_require_standard_project() {
 }
 ```
 
-- [ ] **Step 5: Add the owner access lock**
+- [x] **Step 5: Add the owner access lock**
 
 Create a root-owned lock directory outside tenant-removable state and acquire
 it before the final eligibility check. The API must be:
@@ -588,12 +588,12 @@ Vesta command, run it in a subshell that closes only the child's inherited copy
 of the access-lock descriptor; the waiting broker process retains its copy and
 therefore retains the lock until the complete operation returns.
 
-- [ ] **Step 6: Source the helper from the Compose main module**
+- [x] **Step 6: Source the helper from the Compose main module**
 
 Add one `source` line after package, quota, storage, and role dependencies are
 available. Preserve current public-boundary `VX_COMPOSE_*` cleanup.
 
-- [ ] **Step 7: Run the focused identity tests**
+- [x] **Step 7: Run the focused identity tests**
 
 Run:
 
@@ -606,7 +606,7 @@ git diff --check
 
 Expected: PASS with an empty Docker canary log for every denied case.
 
-- [ ] **Step 8: Commit the authenticated authority helper**
+- [x] **Step 8: Commit the authenticated authority helper**
 
 ```bash
 git add func/vx/compose/shell-access.sh func/vx/compose/main.sh \
@@ -614,7 +614,17 @@ git add func/vx/compose/shell-access.sh func/vx/compose/main.sh \
 git commit -m "feat(compose): authenticate Docker shell actors"
 ```
 
-### Task 4: Add the fixed read and lifecycle gateway
+#### Closeout Report
+
+- Summary: Added fixed Unix caller attestation, live package/shell/suspension entitlement, standard-project enforcement, root-owned owner locks, and executable identity/denial coverage.
+- Files changed: `func/vx/compose/shell-access.sh`, `func/vx/compose/main.sh`, `test/compose/test-shell-access.sh`.
+- Tests: Identity, denial, syntax, ShellCheck, and `git diff --check` PASS.
+- Commit SHA(s): `980dbafb`, `bec409d6`, `15184a1e`.
+- Spec review: APPROVED after remediation of project authority permissions, transition fail-closed ordering, executable denial/race evidence, and authenticated actor propagation.
+- Code quality review: Deferred to final closeout per milestone-driven workflow.
+- Follow-ups or concerns: None.
+
+### Task 4: Add the fixed read and lifecycle gateway - COMPLETE
 
 **Files:**
 
@@ -625,7 +635,7 @@ git commit -m "feat(compose): authenticate Docker shell actors"
 - Modify: `test/compose/test-isolation.sh`
 - Modify: `test/compose/test-operator-controls.sh`
 
-- [ ] **Step 1: Add failing gateway dispatch tests**
+- [x] **Step 1: Add failing gateway dispatch tests**
 
 For each initial read and lifecycle verb, assert exact child argv with the
 derived actor inserted. Include these representative exact expectations:
@@ -644,7 +654,7 @@ invalid project/service/probe names, and any attempt to include `alice`,
 `bob`, or `admin` as an owner argument. Assert command-substitution and
 backtick canaries are not created.
 
-- [ ] **Step 2: Run the test and verify the gateway is missing**
+- [x] **Step 2: Run the test and verify the gateway is missing**
 
 Run:
 
@@ -655,7 +665,7 @@ bash test/compose/test-shell-access.sh
 Expected: FAIL naming `bin/v-docker` or
 `bin/v-run-user-docker-command`.
 
-- [ ] **Step 3: Create the unprivileged client**
+- [x] **Step 3: Create the unprivileged client**
 
 Use a literal absolute sudo and broker path:
 
@@ -671,7 +681,7 @@ exec /usr/bin/sudo -n -- \
 The client contains no policy, owner argument, environment preservation, or
 fallback to raw Vesta/Docker commands.
 
-- [ ] **Step 4: Create the broker preamble and clean child runner**
+- [x] **Step 4: Create the broker preamble and clean child runner**
 
 The broker must set `VESTA=/usr/local/vesta`, use a fixed PATH, source only
 root-owned Vesta files, resolve the actor, take the owner lock, and recheck
@@ -699,7 +709,7 @@ this function. Before sourcing Bash, sudoers must remove `BASH_ENV`, `ENV`,
 `SHELLOPTS`, `BASHOPTS`, `CDPATH`, `GLOBIGNORE`, `LD_*`, `PYTHON*`,
 `DOCKER_*`, `COMPOSE_*`, `VESTA`, and `VX_COMPOSE_*`.
 
-- [ ] **Step 5: Implement the explicit operation switch**
+- [x] **Step 5: Implement the explicit operation switch**
 
 Use `case "$operation"` and arrays. Each branch validates exact argument
 count and enums, calls `vx_compose_shell_require_standard_project` for a
@@ -736,14 +746,14 @@ Implement the read branches from the command catalog with the same literal
 mapping and derived owner. No branch may concatenate a command line or use
 `eval`, `bash -c`, `sh -c`, `sudo`, or a caller path.
 
-- [ ] **Step 6: Add authenticated bounded audit events**
+- [x] **Step 6: Add authenticated bounded audit events**
 
 Record actor, operation, owner, project when present, result, and timestamp.
 Do not record raw arguments, stdin, registry usernames, domain headers,
 Docker errors, or secret values. Existing project operations retain their
 normal project audit; the broker access event proves the Unix actor.
 
-- [ ] **Step 7: Run gateway and existing isolation tests**
+- [x] **Step 7: Run gateway and existing isolation tests**
 
 Run:
 
@@ -760,7 +770,7 @@ git diff --check
 Expected: PASS. Every denied broker request must leave the fake Docker log
 empty.
 
-- [ ] **Step 8: Commit the read/lifecycle shell surface**
+- [x] **Step 8: Commit the read/lifecycle shell surface**
 
 ```bash
 git add bin/v-docker bin/v-run-user-docker-command \
@@ -769,7 +779,17 @@ git add bin/v-docker bin/v-run-user-docker-command \
 git commit -m "feat(compose): add owner-bound Docker shell gateway"
 ```
 
-### Task 5: Add protected stdin and immutable mutation flows
+#### Closeout Report
+
+- Summary: Added the unprivileged `v-docker` client, fixed root broker, literal owner-bound read/lifecycle catalog, clean child environment, bounded validation, and authenticated broker audit coverage.
+- Files changed: `bin/v-docker`, `bin/v-run-user-docker-command`, `test/compose/test-shell-access.sh`, `test/compose/test-cli-surface.sh`, `test/compose/test-isolation.sh`, `test/compose/test-operator-controls.sh`.
+- Tests: Gateway, isolation, operator-control, CLI-surface, syntax, ShellCheck, and `git diff --check` PASS.
+- Commit SHA(s): `980dbafb`, `bec409d6`, `15184a1e`.
+- Spec review: APPROVED after authenticated FD actor-context remediation.
+- Code quality review: Deferred to final closeout per milestone-driven workflow.
+- Follow-ups or concerns: Real sudoers/disposable-host validation is assigned to Milestone 3 Task 9.
+
+### Task 5: Add protected stdin and immutable mutation flows - COMPLETE
 
 **Files:**
 
@@ -781,7 +801,7 @@ git commit -m "feat(compose): add owner-bound Docker shell gateway"
 - Modify: `test/compose/test-registry.sh`
 - Modify: `test/compose/test-redaction.sh`
 
-- [ ] **Step 1: Write failing bounded-input and redaction tests**
+- [x] **Step 1: Write failing bounded-input and redaction tests**
 
 Test Compose stdin at empty, one byte, exactly 1,048,576 bytes, and 1,048,577
 bytes. Test secrets/registry passwords at their contracted limits. Assert the
@@ -805,7 +825,7 @@ sudo policy/logging configuration
 Assert no operation accepts a source, secret, password, archive, checksum, or
 restore filesystem path.
 
-- [ ] **Step 2: Run the input test and verify it fails**
+- [x] **Step 2: Run the input test and verify it fails**
 
 Run:
 
@@ -815,7 +835,7 @@ bash test/compose/test-shell-input.sh
 
 Expected: FAIL because protected stdin snapshotting is absent.
 
-- [ ] **Step 3: Implement root-owned bounded stdin snapshots**
+- [x] **Step 3: Implement root-owned bounded stdin snapshots**
 
 Add one helper used by Compose, secret, and registry input:
 
@@ -845,7 +865,7 @@ vx_compose_shell_snapshot_stdin() {
 The broker owns a trap that deletes only the exact validated snapshot root.
 Do not use a caller path, follow links, accept FIFOs, or echo input.
 
-- [ ] **Step 4: Wire immutable preview/apply**
+- [x] **Step 4: Wire immutable preview/apply**
 
 `v-docker preview PROJECT add|change < compose.yaml` must snapshot stdin,
 force `standard`, and call:
@@ -860,7 +880,7 @@ run_vesta_user_command v-stage-docker-project-preview \
 actor/owner into `v-apply-docker-project-preview`. Keep the existing immutable
 preview manifest, expiry, revision, route-impact, and project-lock checks.
 
-- [ ] **Step 5: Wire secret and registry mutations through stdin**
+- [x] **Step 5: Wire secret and registry mutations through stdin**
 
 For secret add/change, snapshot the value and call the actor-aware action
 adapter with the derived owner. Secret delete accepts no stdin or extra value.
@@ -869,7 +889,7 @@ cannot preserve authenticated actor audit, but keep the existing owner registry
 validation and Docker-config isolation. Registry delete accepts only the
 validated registry name.
 
-- [ ] **Step 6: Wire retained-data deletion, managed restore, rollback, and reconcile**
+- [x] **Step 6: Wire retained-data deletion, managed restore, rollback, and reconcile**
 
 Implement only these safe forms:
 
@@ -886,7 +906,7 @@ Resolve `BACKUP_ID` with the existing managed backup resolver. Never accept an
 archive path. Reuse the existing manifest/digest/revision-bound commands;
 never replace them with a direct rollback or Compose invocation.
 
-- [ ] **Step 7: Run input, preview, secret, registry, and redaction tests**
+- [x] **Step 7: Run input, preview, secret, registry, and redaction tests**
 
 Run:
 
@@ -904,7 +924,7 @@ git diff --check
 
 Expected: PASS with no secret canary in any output or audit surface.
 
-- [ ] **Step 8: Commit protected self-service mutation**
+- [x] **Step 8: Commit protected self-service mutation**
 
 ```bash
 git add bin/v-run-user-docker-command func/vx/compose/shell-access.sh \
@@ -914,7 +934,17 @@ git add bin/v-run-user-docker-command func/vx/compose/shell-access.sh \
 git commit -m "feat(compose): protect Docker shell mutation inputs"
 ```
 
-### Task 6: Bind audit identity and revocation ordering
+#### Closeout Report
+
+- Summary: Added bounded root-owned stdin snapshots and owner-bound immutable preview/apply, secret, registry, backup, rollback, reconcile, and retained-data mutation paths with cleanup/redaction coverage.
+- Files changed: `bin/v-run-user-docker-command`, `func/vx/compose/shell-access.sh`, `test/compose/test-shell-input.sh`, and affected preview/secret/registry/redaction tests.
+- Tests: Input, preview/apply, secrets, registry, redaction, managed-directory symlink, syntax, ShellCheck, and `git diff --check` PASS.
+- Commit SHA(s): `980dbafb`, `bec409d6`, `15184a1e`.
+- Spec review: APPROVED; no remaining input or mutation-boundary blockers.
+- Code quality review: Deferred to final closeout per milestone-driven workflow.
+- Follow-ups or concerns: None.
+
+### Task 6: Bind audit identity and revocation ordering - COMPLETE
 
 **Files:**
 
@@ -927,7 +957,7 @@ git commit -m "feat(compose): protect Docker shell mutation inputs"
 - Create: `test/compose/test-shell-access-concurrency.sh`
 - Modify: `test/compose/test-owner-lifecycle.sh`
 
-- [ ] **Step 1: Write failing race and audit tests**
+- [x] **Step 1: Write failing race and audit tests**
 
 Use controllable FIFOs in fake underlying actions to prove:
 
@@ -942,7 +972,7 @@ Use controllable FIFOs in fake underlying actions to prove:
 - a gateway action audit records `ACTOR=alice`, never `root`, `admin`, or a
   caller-supplied value.
 
-- [ ] **Step 2: Run the concurrency test and verify it fails**
+- [x] **Step 2: Run the concurrency test and verify it fails**
 
 Run:
 
@@ -953,7 +983,7 @@ bash test/compose/test-shell-access-concurrency.sh
 Expected: FAIL because lifecycle commands do not yet coordinate with the owner
 access lock.
 
-- [ ] **Step 3: Make the audit actor explicit and validated**
+- [x] **Step 3: Make the audit actor explicit and validated**
 
 Change `vx_compose_owner_audit OWNER ACTION RESULT DETAILS` to accept an
 optional fifth actor, validate it as `admin`, `root`, or an active Vesta actor,
@@ -962,7 +992,7 @@ route, registry, backup-policy, notification, and delete action passes the
 authenticated actor explicitly. Never infer actor from `USER` or environment
 inside audit code.
 
-- [ ] **Step 4: Put authority transitions under the owner access lock**
+- [x] **Step 4: Put authority transitions under the owner access lock**
 
 Use this sequence for suspension/package disable/shell disable/deletion:
 
@@ -990,7 +1020,7 @@ root-owned transient deny marker under the access-lock root and make the broker
 reject it until the command commits or rolls back. Do not leave a window where
 the account is logically suspended but can restart its project.
 
-- [ ] **Step 5: Run concurrency and lifecycle tests**
+- [x] **Step 5: Run concurrency and lifecycle tests**
 
 Run:
 
@@ -1006,7 +1036,7 @@ git diff --check
 
 Expected: PASS without a deadlock or nested lock-target mismatch.
 
-- [ ] **Step 6: Commit audit and revocation ordering**
+- [x] **Step 6: Commit audit and revocation ordering**
 
 ```bash
 git add func/vx/compose/audit.sh bin/v-suspend-user \
@@ -1016,13 +1046,23 @@ git add func/vx/compose/audit.sh bin/v-suspend-user \
 git commit -m "fix(compose): serialize Docker shell revocation"
 ```
 
-### Milestone 2 security review gate
+#### Closeout Report
 
-- [ ] Review caller attestation, environment construction, operation mapping,
+- Summary: Bound audit identity to the authenticated broker actor and serialized suspension, package, shell, unsuspend, and deletion transitions through owner access locks and fail-closed deny markers.
+- Files changed: `func/vx/compose/audit.sh`, lifecycle commands, `test/compose/test-shell-access-concurrency.sh`, and `test/compose/test-owner-lifecycle.sh`.
+- Tests: Concurrency, owner lifecycle, shell access, affected existing Compose suites, syntax, ShellCheck, and `git diff --check` PASS.
+- Commit SHA(s): `980dbafb`, `bec409d6`, `15184a1e`.
+- Spec review: APPROVED after two focused remediation rounds; authenticated FD context, executable race evidence, and revocation ordering passed.
+- Code quality review: Deferred to final closeout per milestone-driven workflow.
+- Follow-ups or concerns: None.
+
+### Milestone 2 security review gate - COMPLETE
+
+- [x] Review caller attestation, environment construction, operation mapping,
   input snapshots, audit actor, and lock order as one privilege boundary.
-- [ ] Prove every rejected identity/profile/input case occurs before the fake
+- [x] Prove every rejected identity/profile/input case occurs before the fake
   Docker invocation.
-- [ ] Search for forbidden dispatch patterns:
+- [x] Search for forbidden dispatch patterns:
 
 ```bash
 rg -n 'eval|bash -c|sh -c|docker.sock|usermod.*docker|vesta/bin/[*]' \
@@ -1032,7 +1072,14 @@ rg -n 'eval|bash -c|sh -c|docker.sock|usermod.*docker|vesta/bin/[*]' \
 
 Expected: no dynamic shell dispatch, Docker group/socket permission, or Vesta
 wildcard.
-- [ ] Record milestone commit SHAs and security-review findings in this plan.
+- [x] Record milestone commit SHAs and security-review findings in this plan.
+
+Milestone 2 outcome: the authenticated broker, explicit operation catalog,
+protected stdin mutation flows, authenticated audit context, and revocation
+ordering are implemented and independently specification-approved. Commits
+`980dbafb`, `bec409d6`, and `15184a1e` passed the focused security suite.
+The only initial findings were corrected before approval; real sudoers and
+disposable-host acceptance remains in Milestone 3 Task 9.
 
 ---
 
