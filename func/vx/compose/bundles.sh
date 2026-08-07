@@ -283,9 +283,9 @@ vx_compose_runtime_secrets_materialize() {
     env -i PATH="$VX_COMPOSE_SAFE_PATH" /usr/bin/python3 \
         "$VX_COMPOSE_LIB_DIR/runtime-secrets.py" "$root" "$workload" \
         || materialize_status=$?
+    # The refresh flag is consumed by lifecycle.sh after this helper returns.
+    # shellcheck disable=SC2034
     case "$materialize_status" in
-        # Consumed by the lifecycle helper after this sourced helper returns.
-        # shellcheck disable=SC2034
         0) VX_COMPOSE_RUNTIME_SECRETS_REFRESHED=yes ;;
         20) return 0 ;;
         *) return 1 ;;
