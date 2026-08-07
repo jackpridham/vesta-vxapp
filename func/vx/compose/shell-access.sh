@@ -119,7 +119,7 @@ vx_compose_shell_user_conf_secure() {
 vx_compose_shell_group_revoke() {
     local actor="$1"
     /usr/bin/getent group "$VX_COMPOSE_SHELL_GROUP" >/dev/null 2>&1 || return 1
-    /usr/sbin/gpasswd -d "$actor" -- "$VX_COMPOSE_SHELL_GROUP" >/dev/null 2>&1 || {
+    /usr/bin/gpasswd -d "$actor" -- "$VX_COMPOSE_SHELL_GROUP" >/dev/null 2>&1 || {
         vx_compose_shell_group_state "$actor"
         case $? in 1) return 0 ;; *) return 1 ;; esac
     }

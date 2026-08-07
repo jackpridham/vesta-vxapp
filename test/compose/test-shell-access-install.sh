@@ -15,7 +15,7 @@ grep -Fxq 'Defaults:%vesta-compose-users env_reset' "$policy" || fail 'env_reset
 grep -Fxq 'Defaults:%vesta-compose-users !setenv' "$policy" || fail '!setenv is missing'
 grep -Fxq 'Defaults:%vesta-compose-users secure_path=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin' "$policy" || fail 'secure_path is not exact'
 grep -Fxq '%vesta-compose-users ALL=(root) NOPASSWD:NOSETENV: /usr/local/vesta/bin/v-run-user-docker-command *' "$policy" || fail 'broker grant is not exact'
-grep -Fq 'env_delete += "VESTA BASH_ENV ENV CDPATH GLOBIGNORE BASHOPTS SHELLOPTS PYTHONPATH PYTHONHOME LD_PRELOAD LD_LIBRARY_PATH DOCKER_HOST DOCKER_CONFIG COMPOSE_FILE COMPOSE_PROJECT_NAME"' "$policy" || fail 'dangerous environment deletion is incomplete'
+grep -Fq 'env_keep -= "VESTA BASH_ENV ENV CDPATH GLOBIGNORE BASHOPTS SHELLOPTS PYTHONPATH PYTHONHOME LD_PRELOAD LD_LIBRARY_PATH DOCKER_HOST DOCKER_CONFIG COMPOSE_FILE COMPOSE_PROJECT_NAME", env_delete += "VESTA BASH_ENV ENV CDPATH GLOBIGNORE BASHOPTS SHELLOPTS PYTHONPATH PYTHONHOME LD_PRELOAD LD_LIBRARY_PATH DOCKER_HOST DOCKER_CONFIG COMPOSE_FILE COMPOSE_PROJECT_NAME"' "$policy" || fail 'dangerous environment removal is incomplete'
 if grep -Eqi 'log_input|(^|[^O])SETENV:|/bin/(ba)?sh|/usr/bin/(docker|env|python|perl|ruby|cp|vi|vim)|docker\.sock|%docker|/usr/local/vesta/bin/v-docker' "$policy"; then
     fail 'sudo policy grants a forbidden surface'
 fi
