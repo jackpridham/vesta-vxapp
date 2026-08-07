@@ -87,7 +87,7 @@ memory_swap_max=${VX_READINESS_MEMORY_SWAP_MAX:-512M}
 memory_reserve_mib=${VX_READINESS_MEMORY_RESERVE_MB:-2048}
 # Deterministic input for the focused launcher test; production leaves it unset.
 available_memory_mib=${VX_READINESS_TEST_AVAILABLE_MEMORY_MB:-}
-tasks_max=${VX_READINESS_TASKS_MAX:-32}
+tasks_max=${VX_READINESS_TASKS_MAX:-64}
 nice_level=${VX_READINESS_NICE:-19}
 allow_unlimited=${VX_READINESS_ALLOW_UNLIMITED:-no}
 systemd_run_candidate=${VX_READINESS_SYSTEMD_RUN:-systemd-run}

@@ -181,7 +181,7 @@ The repository-owned limited launcher runs the canonical
 scope. It defaults to one-half CPU, reserves 2 GiB of currently available
 memory for the host, gives the scope the remainder, places its soft memory
 watermark 1 GiB below that dynamic maximum, and limits swap to 512 MiB, tasks
-to 32, and nice level to 19. Parent-cgroup availability further constrains the
+to 64, and nice level to 19. Parent-cgroup availability further constrains the
 calculation when applicable. Override limits for an approved host without
 editing the script:
 

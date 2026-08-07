@@ -42,6 +42,15 @@ PATH="$fixture/bin:$PATH" \
 VX_TEST_SYSTEMD_LOG="$systemd_log" \
 VX_TEST_GATE_EXIT=37 \
 VX_READINESS_TEST_AVAILABLE_MEMORY_MB=8192 \
+VX_READINESS_CPU_QUOTA=50% \
+VX_READINESS_MEMORY_HIGH= \
+VX_READINESS_MEMORY_MAX= \
+VX_READINESS_MEMORY_RESERVE_MB=2048 \
+VX_READINESS_MEMORY_SWAP_MAX=512M \
+VX_READINESS_TASKS_MAX=64 \
+VX_READINESS_NICE=19 \
+VX_READINESS_ALLOW_UNLIMITED=no \
+VX_READINESS_SYSTEMD_RUN=systemd-run \
     "$launcher" >"$fixture/default.out" 2>"$fixture/default.err"
 status=$?
 set -e
@@ -58,7 +67,7 @@ grep -Fq 'MemoryHigh=5120M MemoryMax=6144M' "$fixture/default.err" \
     || fail "calculated dynamic memory limits were not reported"
 grep -Fq 'MemorySwapMax=512M' "$systemd_log" \
     || fail "default swap maximum was not passed to systemd"
-grep -Fq 'TasksMax=32' "$systemd_log" \
+grep -Fq 'TasksMax=64' "$systemd_log" \
     || fail "default task maximum was not passed to systemd"
 grep -Fq -- '-n 19' "$systemd_log" \
     || fail "default nice level was not passed to the scoped command"
