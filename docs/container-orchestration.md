@@ -172,9 +172,31 @@ native reverse-proxy tests when route or vhost behavior changes, and finish
 with:
 
 ```text
-test/compose/run-production-readiness.sh
+test/compose/run-production-readiness-limited.sh
 git diff --check
 ```
+
+The repository-owned limited launcher runs the canonical
+`run-production-readiness.sh` gate unchanged inside a transient user systemd
+scope. It defaults to one-half CPU, a 2 GiB memory high watermark, a 3 GiB
+hard memory limit, 512 MiB swap, 32 tasks, and nice level 19. Override limits
+for an approved host without editing the script:
+
+```bash
+VX_READINESS_CPU_QUOTA=75% \
+VX_READINESS_MEMORY_HIGH=2500M \
+VX_READINESS_MEMORY_MAX=3500M \
+test/compose/run-production-readiness-limited.sh
+```
+
+Supported settings are `VX_READINESS_CPU_QUOTA`,
+`VX_READINESS_MEMORY_HIGH`, `VX_READINESS_MEMORY_MAX`,
+`VX_READINESS_MEMORY_SWAP_MAX`, `VX_READINESS_TASKS_MAX`, and
+`VX_READINESS_NICE`. The launcher probes the requested systemd controls before
+starting and preserves the canonical gate's exit status. Unsupported hosts
+fail closed. `VX_READINESS_ALLOW_UNLIMITED=yes` is an explicit operator opt-in
+for an approved unconstrained host; it retains the configured nice level but
+does not claim resource isolation.
 
 The current shell-access release archive and exact commit were verified
 locally, but deployment was not applied because local release-readiness

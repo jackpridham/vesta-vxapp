@@ -42,8 +42,10 @@ transaction suites pass and the fix is independently approved.
 The operator prohibited further broad ShellCheck and expensive full-suite runs
 on this constrained workstation after severe machine lag and terminal-session
 crashes. Therefore the complete readiness gate has not been rerun at
-`da52561b`, and no release-gate PASS is claimed. It must be rerun on a suitably
-sized approved environment before development deployment.
+`da52561b`, and no release-gate PASS is claimed. A repository-owned constrained
+launcher is now available at
+`test/compose/run-production-readiness-limited.sh`; it must be used to rerun
+the canonical gate with suitable cgroup limits before development deployment.
 
 The root integration test returned `SKIP: root-only disposable integration`.
 It deliberately skips unless it is running in an explicitly approved

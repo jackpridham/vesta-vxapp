@@ -152,6 +152,19 @@ do
         || fail "operator guide omits shell-access repair command: $repair_command"
 done
 
+limited_readiness="$repo_root/test/compose/run-production-readiness-limited.sh"
+[[ -x "$limited_readiness" ]] \
+    || fail 'resource-limited production readiness launcher is missing'
+for required_text in \
+    'test/compose/run-production-readiness-limited.sh' \
+    'VX_READINESS_CPU_QUOTA' \
+    'VX_READINESS_MEMORY_MAX' \
+    'VX_READINESS_ALLOW_UNLIMITED=yes'
+do
+    grep -Fq "$required_text" "$repo_root/docs/container-orchestration.md" \
+        || fail "operator guide omits limited readiness guidance: $required_text"
+done
+
 if rg -n \
     '(usermod|gpasswd).*(docker|vesta-compose-users)|chmod.*docker\.sock|setfacl.*docker\.sock|sudo[[:space:]]+(-n[[:space:]]+)?(/usr/local/vesta/bin/)?v-[a-z0-9-]+|^[[:space:]]*(\$[[:space:]]*)?(sudo[[:space:]]+)?docker[[:space:]]+(ps|compose|logs|inspect|restart|start|stop|exec|run)|v-docker.*(ACTOR|OWNER)|manual(ly)? (add|remove|maintain).*(vesta-compose-users|group membership)' \
     "${shell_access_docs[@]/#/$repo_root/}"

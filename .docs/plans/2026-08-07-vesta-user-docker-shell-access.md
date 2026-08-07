@@ -1780,12 +1780,16 @@ Run only after the focused suite passes and on a host sized for the complete
 gate:
 
 ```bash
-test/compose/run-production-readiness.sh
+test/compose/run-production-readiness-limited.sh
 git diff --check
 ```
 
-Expected: PASS. Do not run concurrent ShellCheck workers on constrained
-machines; keep the gate sequential or use the gate's bounded configuration.
+Expected: PASS. The repository-owned launcher applies validated cgroup CPU,
+memory, swap, task, and nice limits before running the canonical gate
+unchanged. Do not run concurrent ShellCheck workers on constrained machines.
+Use `VX_READINESS_*` overrides only to match an approved host's capacity; an
+unsupported limited environment fails closed unless the operator explicitly
+sets `VX_READINESS_ALLOW_UNLIMITED=yes` on an unconstrained host.
 
 - [x] **Step 8: Commit documentation and closeout**
 
