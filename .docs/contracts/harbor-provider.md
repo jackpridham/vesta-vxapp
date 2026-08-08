@@ -212,3 +212,12 @@ change the running provider. Applied restore requires explicit confirmation,
 version compatibility, a pre-restore backup, health and authenticated manifest
 checks, mapping reconciliation, and audit; account absence never causes
 artifact deletion.
+
+First-release restore is validation-only. `apply` exits with status 78 without
+decrypting or mutating state. Validation uses protected temporary storage and
+rejects absolute/traversing members, links, devices, FIFOs, duplicates and
+unexpected members before verifying schema, version, ownership, capacity and
+every manifest digest. Ciphertext is stored in Vesta's system-backup layout;
+root-owned metadata remains provider authority. Curl configuration, robot
+secrets, plaintext age identities and transient sockets are never archived.
+Automated restore apply and automated provider updates are deferred.

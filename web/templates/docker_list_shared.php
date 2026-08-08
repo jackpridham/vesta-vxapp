@@ -246,6 +246,25 @@
       </section>
 
       <div class="docker-overview-grid">
+        <?php if ($docker_actor_is_admin && !empty($harbor_admin_status)) { ?>
+        <article class="docker-overview-card" data-harbor-admin-status>
+          <span class="docker-overview-card__label"><?=__('Managed registry')?></span>
+          <strong class="docker-overview-card__value"><?=htmlspecialchars(($harbor_admin_status['MODE'] ?? 'disabled').' / '.($harbor_admin_status['HEALTH'] ?? 'unavailable'), ENT_QUOTES)?></strong>
+          <p class="docker-overview-card__meta"><?=htmlspecialchars(__('Certificate').': '.($harbor_admin_status['CERTIFICATE_STATE'] ?? 'unavailable').' · '.__('Storage').': '.($harbor_admin_status['STORAGE_USED_BYTES'] ?? 0).'/'.($harbor_admin_status['STORAGE_TOTAL_BYTES'] ?? 0).' B · '.__('Backup age').': '.($harbor_admin_status['BACKUP_AGE_SECONDS'] ?? 'n/a').' · '.__('Pending/failed').': '.($harbor_admin_status['PENDING_OPERATIONS'] ?? 0).'/'.($harbor_admin_status['FAILED_OPERATIONS'] ?? 0), ENT_QUOTES)?></p>
+        </article>
+        <?php } elseif (!$docker_actor_is_admin && !empty($harbor_tenant_status)) { ?>
+        <article class="docker-overview-card" data-harbor-tenant-status>
+          <span class="docker-overview-card__label"><?=__('Managed registry')?></span>
+          <strong class="docker-overview-card__value"><?=htmlspecialchars(($harbor_tenant_status['REGISTRY'] ?? '').'/'.($harbor_tenant_status['NAMESPACE'] ?? ''), ENT_QUOTES)?></strong>
+          <p class="docker-overview-card__meta"><?=htmlspecialchars(__('Quota/usage').': '.($harbor_tenant_status['USED_MB'] ?? 0).'/'.($harbor_tenant_status['QUOTA_MB'] ?? 0).' MB · '.__('Runtime').': '.($harbor_tenant_status['STATE'] ?? 'unavailable').' · '.($harbor_tenant_status['FRESHNESS'] ?? 'unavailable'), ENT_QUOTES)?></p>
+          <button type="button" class="button" onclick="more_button_click(900)" data-harbor-publisher-rotate><?=__('Rotate publisher')?></button>
+          <button type="button" class="button" onclick="more_button_click(901)" data-harbor-publisher-disable><?=__('Disable publisher')?></button>
+        </article>
+        <script>
+          dataset_values[900] = {url:'/ajax/docker/router.php',harbor_publisher:'1',publisher_action:'rotate'};
+          dataset_values[901] = {url:'/ajax/docker/router.php',harbor_publisher:'1',publisher_action:'disable'};
+        </script>
+        <?php } ?>
         <article class="docker-overview-card">
           <span class="docker-overview-card__label"><?=__('Owner scope')?></span>
           <strong class="docker-overview-card__value"><?=htmlspecialchars($docker_scope_label, ENT_QUOTES)?></strong>

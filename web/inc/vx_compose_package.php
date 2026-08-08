@@ -1,5 +1,55 @@
 <?php
 
+function vx_harbor_panel_command_json($command, $arguments = array())
+{
+    $parts = array(VESTA_CMD.$command);
+    foreach ($arguments as $argument) {
+        $parts[] = escapeshellarg((string) $argument);
+    }
+    $output = array();
+    $status = 0;
+    exec(implode(' ', $parts), $output, $status);
+    if ($status !== 0 || strlen(implode('', $output)) > 1048576) {
+        return array();
+    }
+    $value = json_decode(implode('', $output), true);
+    return is_array($value) ? $value : array();
+}
+
+function vx_harbor_admin_panel_status()
+{
+    $status = vx_harbor_panel_command_json('v-list-harbor-registry', array('json'));
+    $allowed = array('MODE', 'HEALTH', 'CERTIFICATE_STATE', 'BACKUP_AGE_SECONDS', 'PENDING_OPERATIONS', 'FAILED_OPERATIONS', 'STORAGE_USED_BYTES', 'STORAGE_TOTAL_BYTES');
+    return array_intersect_key($status, array_flip($allowed));
+}
+
+function vx_harbor_tenant_panel_status($owner, $project)
+{
+    if (!preg_match('/^[a-z0-9][a-z0-9_-]{0,31}$/', $owner)
+        || !preg_match('/^[a-z0-9][a-z0-9-]{0,62}$/', $project)) {
+        return array();
+    }
+    $status = vx_harbor_panel_command_json('v-list-user-harbor-registry', array($owner, $project, 'json'));
+    $allowed = array('MANAGED', 'STATE', 'REGISTRY', 'NAMESPACE', 'QUOTA_MB', 'USED_MB', 'HEALTH', 'FRESHNESS', 'PUBLISHER_ENABLED');
+    return array_intersect_key($status, array_flip($allowed));
+}
+
+function vx_harbor_publisher_rotate_from_panel($owner, $secret)
+{
+    if (!preg_match('/^[a-z0-9][a-z0-9_-]{0,31}$/', $owner)
+        || strlen($secret) < 16 || strlen($secret) > 256 || preg_match('/[\r\n\x00-\x1f\x7f]/', $secret)) {
+        return false;
+    }
+    $command = VESTA_CMD.'v-change-user-harbor-registry-publisher '.escapeshellarg($owner);
+    $pipes = array();
+    $process = proc_open($command, array(0 => array('pipe', 'r'), 1 => array('pipe', 'w'), 2 => array('pipe', 'w')), $pipes, null, array());
+    if (!is_resource($process)) return false;
+    fwrite($pipes[0], $secret); fclose($pipes[0]);
+    stream_get_contents($pipes[1], 4096); fclose($pipes[1]);
+    stream_get_contents($pipes[2], 4096); fclose($pipes[2]);
+    return proc_close($process) === 0;
+}
+
 define('VX_COMPOSE_PACKAGE_MAX_VALUE', '2147483647');
 
 function vx_compose_package_fields()

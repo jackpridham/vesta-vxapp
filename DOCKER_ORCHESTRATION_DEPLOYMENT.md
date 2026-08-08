@@ -275,6 +275,33 @@ invent any of these values or approve a mutable tag as identity.
 
 ### Private registry login
 
+### Vesta-managed registry tenant pipeline
+
+When the package grants Docker projects and registry quota, connect with the
+account's ordinary SSH identity. Build and test locally; Vesta exposes no build
+daemon or raw Docker. Obtain the publisher credential through the protected
+operator channel and keep it in the local credential store, never argv,
+environment files, Compose, logs, panel fields, or archives.
+
+Run `v-docker registry-info PROJECT json` to discover the Vesta TLS origin,
+namespace, repository, quota/usage and readiness. Authenticate the local OCI
+client with publisher credentials on stdin, push, and resolve the immutable
+digest. Deployment input is the exact repository plus
+`@sha256:<64-lowercase-hex>`, never a tag. Use immutable preview, owner-scoped
+pull, preview inspection and server-issued-token apply. Acceptance requires a
+converged revision and fresh service/route health; publication alone never
+deploys.
+
+Rotate with `v-docker registry-publisher-change` and a 16–256 byte credential
+on bounded stdin; revoke with `v-docker registry-publisher-disable`.
+Revocation blocks pushes but retains artifacts and running workloads. During
+outage, publication, discovery freshness and pulls may fail or remain pending;
+workloads, routes, firewall and DNS do not change.
+
+No SCP, rsync, source/image archive or raw Docker path belongs to this
+pipeline. Application-specific private-repository caveats remain in the
+owning application repository.
+
 The tenant may install an owner-scoped registry credential through bounded
 stdin. The registry is a hostname accepted by the tenant broker, such as
 `ghcr.io` or `registry.example.com`:

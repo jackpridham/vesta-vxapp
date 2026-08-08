@@ -21,9 +21,14 @@ shell_tests=(
     "$test_dir/test-publisher.sh"
     "$test_dir/test-discovery.sh"
     "$test_dir/test-revocation.sh"
+    "$test_dir/test-health.sh"
+    "$test_dir/test-backup.sh"
+    "$test_dir/test-disable.sh"
+    "$test_dir/test-doc-contract.sh"
 )
 
 php_tests=(
+    "$test_dir/../test_harbor_panel.php"
 )
 
 run_isolated() {

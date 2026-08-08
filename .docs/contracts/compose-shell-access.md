@@ -1,5 +1,10 @@
 # Compose Tenant Shell-Access Contract
 
+Managed-registry discovery and publisher lifecycle are exact `v-docker`
+subcommands. Identity is kernel/sudo-derived; callers cannot provide an owner,
+Harbor endpoint, namespace, robot identity, or secret path. Publisher secret
+input is bounded stdin and never argv or environment.
+
 This contract defines the only supported shell access to the Vesta-owned
 Compose control plane. It applies to an ordinary Vesta tenant using the
 installed `v-docker` client and to the privileged broker that serves that

@@ -106,6 +106,36 @@ convergence or rollback.
 
 ## Backup and restore
 
+### Optional Vesta-managed Harbor provider
+
+Eligible packages may use the managed registry at the existing Vesta TLS
+origin. Vesta remains authoritative for entitlement, owner namespace, quota,
+credentials, image evidence and deployment; Harbor stores OCI artifacts and
+measured usage only. Health collection writes bounded timestamped observations
+of API health, certificate hostname/expiry, storage, owner quota/usage,
+operation backlog and credential readiness. Observations never change desired
+state.
+
+Provider backup holds the exclusive lock, stops only a previously running
+provider, snapshots configuration/mappings and Harbor data, hashes a manifest,
+encrypts with age inside protected staging, restarts only that service, and
+places ciphertext in Vesta's system-backup layout. Curl files, robot secrets,
+plaintext keys and sockets are excluded. First-release restore supports
+`validate` only; `apply` returns status 78.
+
+Disable requires a fresh blocker-free plan. It revalidates owners, revokes
+publisher then runtime access, removes only Harbor public ingress, stops the
+provider and marks it disabled. Database, artifacts, mappings and encrypted
+backups remain; workloads, routes, firewall, DNS and packages are untouched.
+
+Recovery is operator-controlled: validate the ciphertext; provision an
+isolated host with the same pinned version and sufficient capacity; decrypt
+only in protected offline staging; reverify manifest hashes and ownership;
+start without public ingress; verify database, blobs, mappings and
+authenticated health; then use transactional ingress activation. Take a new
+encrypted backup before replacing an existing provider. Automated restore
+apply and automated updates are deferred.
+
 Backups include definitions, revisions, image evidence, managed routes, bind
 data, named volumes, audit state, and encrypted secret payloads when
 configured. Project data is retained by default. Restore validates archive

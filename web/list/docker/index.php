@@ -6,6 +6,7 @@ $TAB = 'DOCKER';
 include($_SERVER['DOCUMENT_ROOT']."/inc/main.php");
 include($_SERVER['DOCUMENT_ROOT']."/inc/vx_docker.php");
 include($_SERVER['DOCUMENT_ROOT']."/inc/vx_compose.php");
+include($_SERVER['DOCUMENT_ROOT']."/inc/vx_compose_package.php");
 
 $docker_state = vx_docker_get_engine_state();
 $docker_available = vx_docker_is_engine_available($docker_state);
@@ -43,6 +44,13 @@ if ($docker_available) {
             $docker_grouped_data[$docker_container_owner][$docker_key] = $container;
         }
     }
+}
+$harbor_admin_status = $docker_actor_is_admin ? vx_harbor_admin_panel_status() : array();
+$harbor_tenant_status = array();
+if (!$docker_actor_is_admin && !empty($data)) {
+    $harbor_first_project = reset($data);
+    $harbor_project_name = !empty($harbor_first_project['PROJECT']) ? $harbor_first_project['PROJECT'] : (!empty($harbor_first_project['NAME']) ? $harbor_first_project['NAME'] : '');
+    if ($harbor_project_name !== '') $harbor_tenant_status = vx_harbor_tenant_panel_status($user, $harbor_project_name);
 }
 
 render_page($user, $TAB, 'list_docker');

@@ -1,5 +1,10 @@
 # Compose Images, Archives, and Registry Contract
 
+The optional Vesta-managed registry is only a source of immutable OCI digest
+evidence. Publisher access cannot create previews, change desired state, or
+deploy. Tenants submit exact `registry/namespace/repository@sha256:<digest>`
+references through the existing preview, pull, and apply workflow.
+
 ## Image policy
 
 Every service uses an immutable digest for deployment evidence. A submitted tag
