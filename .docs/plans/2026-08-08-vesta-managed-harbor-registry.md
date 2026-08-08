@@ -229,7 +229,7 @@ git commit -m "test(harbor): define provider authority harness"
   harness cleanup may sharpen synchronization so the timing assertion detects
   lock-order regressions without relying on a one-second upper bound.
 
-### Task 2: Implement provider state, validation, locking, and audit
+### Task 2: Implement provider state, validation, locking, and audit - COMPLETE
 
 **Files:**
 - Create: `func/vx/harbor/main.sh`
@@ -237,7 +237,7 @@ git commit -m "test(harbor): define provider authority harness"
 - Create: `func/vx/harbor/audit.sh`
 - Modify: `test/harbor/test-state.sh`
 
-- [ ] **Step 1: Implement secure common primitives**
+- [x] **Step 1: Implement secure common primitives**
 
 Define and use these signatures consistently:
 
@@ -263,7 +263,7 @@ single-label names, ports outside `1..65535`, multiple listener ports, and a
 certificate that fails hostname/expiry verification. All JSON writes use a
 same-directory `mktemp`, `jq -S`, `chmod 0600`, `fsync`, and atomic rename.
 
-- [ ] **Step 2: Implement disabled provider initialization**
+- [x] **Step 2: Implement disabled provider initialization**
 
 `vx_harbor_provider_prepare` creates the fixed tree and a state document with
 this exact initial meaning:
@@ -287,7 +287,7 @@ this exact initial meaning:
 No disabled-mode helper may call Docker, systemctl, nginx, curl, package
 mutation, firewall, DNS, route, or tenant reconciliation.
 
-- [ ] **Step 3: Run state tests**
+- [x] **Step 3: Run state tests**
 
 ```bash
 bash test/harbor/test-state.sh
@@ -296,12 +296,35 @@ bash test/harbor/test-state.sh
 Expected: state, ownership, atomic-write, endpoint-derivation, and disabled-mode
 no-mutation assertions pass.
 
-- [ ] **Step 4: Commit provider primitives**
+- [x] **Step 4: Commit provider primitives**
 
 ```bash
 git add func/vx/harbor test/harbor
 git commit -m "feat(harbor): add disabled provider authority"
 ```
+
+#### Closeout Report
+
+- Summary: Added root-owned Harbor provider state, exact-schema validation,
+  secure path preparation, shared/exclusive provider locking, bounded audit
+  records, atomic JSON persistence, and fail-closed origin derivation for both
+  modern inline-TLS and legacy Vesta `ssl on` panel configurations. Hardened
+  initialization against concurrent state creation and authenticated the fixed
+  static `mime.types` include without rejecting normal non-authoritative nginx
+  variables.
+- Files changed: `func/vx/harbor/{main.sh,common.sh,audit.sh}` and
+  `test/harbor/test-state.sh`.
+- Tests: Bash syntax PASS; `test/harbor/test-state.sh` PASS;
+  `test/harbor/run-focused.sh` PASS; `git diff --check` PASS. No broad
+  ShellCheck or full readiness suite was run.
+- Commits: `f693e830`, `c0f2b7d7`, `48ed9d97`, `81a99287`, `accb81ba`,
+  `ed8cec28`, `d132b88b`.
+- Spec review: PASS after shipped nginx compatibility, legacy TLS, and
+  authority-bearing include fixes.
+- Code quality review: APPROVED with no Critical or Important findings.
+- Follow-up: Consider extracting the embedded nginx parser into a dedicated
+  root-owned helper, adding a canonical runtime `mime.types` fixture,
+  descriptor-relative lock/audit opens, and true inter-process lock tests.
 
 ### Task 3: Add registry package entitlement and measured usage
 
