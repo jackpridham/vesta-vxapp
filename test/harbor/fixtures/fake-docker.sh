@@ -8,13 +8,16 @@ set -o pipefail
 : "${FAKE_DOCKER_STATE:?FAKE_DOCKER_STATE is required}"
 
 (( $# <= 64 )) || { printf 'fake-docker: too many arguments\n' >&2; exit 64; }
+original_args=("$@")
 for argument in "$@"; do
     (( ${#argument} <= 4096 )) || { printf 'fake-docker: argument too long\n' >&2; exit 64; }
+    case "${argument,,}" in
+        --password|--password=*|--secret|--secret=*|--token|--token=*|--authorization|--authorization=*|authorization:*)
+            printf 'fake-docker: secret-bearing argument rejected\n' >&2
+            exit 64
+            ;;
+    esac
 done
-printf '%q ' "$@" >>"$FAKE_DOCKER_LOG"
-printf '\n' >>"$FAKE_DOCKER_LOG"
-
-mkdir -p "$FAKE_DOCKER_STATE"
 
 if [[ "${1:-}" != compose ]]; then
     printf 'fake-docker: unsupported command\n' >&2
@@ -31,6 +34,13 @@ while (( $# )); do
         *) break ;;
     esac
 done
+
+[[ "$project" =~ ^[a-z0-9][a-z0-9_-]{0,62}$ ]] \
+    || { printf 'fake-docker: invalid project name\n' >&2; exit 64; }
+
+printf '%q ' "${original_args[@]}" >>"$FAKE_DOCKER_LOG"
+printf '\n' >>"$FAKE_DOCKER_LOG"
+mkdir -p "$FAKE_DOCKER_STATE"
 
 case "${1:-}" in
     config)

@@ -7,6 +7,7 @@ import json
 import os
 import re
 import tempfile
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit
 
@@ -70,8 +71,11 @@ class HarborHandler(BaseHTTPRequestHandler):
         self.end_headers()
         if body and self.command != "HEAD":
             self.wfile.write(body)
-        self.server.log_handle.write(f"{self.command} {urlsplit(self.path).path} {status}\n")
-        self.server.log_handle.flush()
+        with self.server.log_lock:
+            self.server.log_handle.write(
+                f"{self.command} {urlsplit(self.path).path} {status}\n"
+            )
+            self.server.log_handle.flush()
 
     def authenticated(self):
         expected = base64.b64encode(
@@ -148,6 +152,10 @@ class HarborHandler(BaseHTTPRequestHandler):
         raise AttributeError(name)
 
     def dispatch(self):
+        with self.server.state_lock:
+            self.dispatch_serialized()
+
+    def dispatch_serialized(self):
         path = unquote(urlsplit(self.path).path)
         if self.bounded_content_length() is None:
             return
@@ -312,18 +320,39 @@ def main():
     parser.add_argument("--port", required=True, type=int)
     parser.add_argument("--state", required=True)
     parser.add_argument("--log", required=True)
-    parser.add_argument("--username", default="integration")
-    parser.add_argument("--password", default="integration-secret")
+    parser.add_argument("--credential-file", required=True)
+    parser.add_argument("--ready-file", required=True)
     args = parser.parse_args()
-    if not 1 <= args.port <= 65535:
-        parser.error("--port must be between 1 and 65535")
+    if not 0 <= args.port <= 65535:
+        parser.error("--port must be between 0 and 65535")
+
+    credential_mode = os.stat(args.credential_file).st_mode & 0o777
+    if credential_mode & 0o077:
+        parser.error("--credential-file must not be accessible by group or other")
+    with open(args.credential_file, encoding="utf-8") as credential_handle:
+        credential = json.load(credential_handle)
+    username = credential.get("username")
+    password = credential.get("password")
+    if not isinstance(username, str) or not username or not isinstance(password, str) or not password:
+        parser.error("--credential-file must contain non-empty username and password strings")
 
     with open(args.log, "a", encoding="utf-8", buffering=1) as log_handle:
         server = ThreadingHTTPServer(("127.0.0.1", args.port), HarborHandler)
         server.store = StateStore(args.state)
+        server.state_lock = threading.Lock()
+        server.log_lock = threading.Lock()
         server.log_handle = log_handle
-        server.username = args.username
-        server.password = args.password
+        server.username = username
+        server.password = password
+        ready_directory = os.path.dirname(os.path.abspath(args.ready_file))
+        ready_fd, ready_temporary = tempfile.mkstemp(prefix=".fake-harbor-ready.", dir=ready_directory)
+        try:
+            with os.fdopen(ready_fd, "w", encoding="utf-8") as ready_handle:
+                ready_handle.write(f"{server.server_address[1]}\n")
+            os.replace(ready_temporary, args.ready_file)
+        finally:
+            if os.path.exists(ready_temporary):
+                os.unlink(ready_temporary)
         server.serve_forever()
 
 
