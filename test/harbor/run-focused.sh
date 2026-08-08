@@ -7,6 +7,7 @@ set -o pipefail
 test_dir="$(cd "$(dirname "$0")" && pwd)"
 
 shell_tests=(
+    "$test_dir/test-fixtures.sh"
     "$test_dir/test-state.sh"
 )
 

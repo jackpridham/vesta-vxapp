@@ -68,7 +68,7 @@ class HarborHandler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        if body:
+        if body and self.command != "HEAD":
             self.wfile.write(body)
         self.server.log_handle.write(f"{self.command} {urlsplit(self.path).path} {status}\n")
         self.server.log_handle.flush()
@@ -118,6 +118,23 @@ class HarborHandler(BaseHTTPRequestHandler):
 
     def do_DELETE(self):
         self.dispatch()
+
+    def unsupported_method(self):
+        self.finish_status(404)
+
+    def do_HEAD(self):
+        self.unsupported_method()
+
+    def do_PATCH(self):
+        self.unsupported_method()
+
+    def do_OPTIONS(self):
+        self.unsupported_method()
+
+    def __getattr__(self, name):
+        if name.startswith("do_"):
+            return self.unsupported_method
+        raise AttributeError(name)
 
     def dispatch(self):
         path = unquote(urlsplit(self.path).path)
