@@ -1,0 +1,14 @@
+#!/bin/bash
+# info: reconcile all Vesta owners with managed Harbor
+# options:
+
+VESTA=${VESTA:-/usr/local/vesta}
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/compose/main.sh"
+source "$VESTA/func/vx/harbor/main.sh"
+source "$VESTA/conf/vesta.conf"
+check_args '0' "$#" ''
+vx_harbor_owners_reconcile
+check_result $? 'Harbor owner reconciliation failed'
+log_history 'synchronized Harbor registry owners' '' 'admin'
+log_event "$OK" "$ARGUMENTS"

@@ -17,6 +17,7 @@ restart=$2
 source $VESTA/func/main.sh
 source $VESTA/func/docker.sh
 source $VESTA/func/vx/compose/main.sh
+source $VESTA/func/vx/harbor/main.sh
 source $VESTA/conf/vesta.conf
 
 
@@ -118,6 +119,8 @@ check_result $? "Cron restart failed" >/dev/null
 
 vx_compose_shell_access_transition_complete "$user"
 check_result $? "Compose shell access grant failed"
+vx_compose_shell_access_lock_release
+vx_harbor_owner_reconcile "$user" || echo 'Warning: Harbor reconciliation remains pending' >&2
 
 # Logging
 log_event "$OK" "$ARGUMENTS"

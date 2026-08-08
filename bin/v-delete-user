@@ -20,6 +20,7 @@ source $VESTA/func/domain.sh
 source $VESTA/func/db.sh
 source $VESTA/func/docker.sh
 source $VESTA/func/vx/compose/main.sh
+source $VESTA/func/vx/harbor/main.sh
 source $VESTA/func/ip.sh
 source $VESTA/conf/vesta.conf
 
@@ -35,6 +36,8 @@ is_object_unsuspended 'user' 'USER' "$user"
 if [ "$user" = 'admin' ]; then
     exit
 fi
+
+vx_harbor_owner_revoke "$user" || echo 'Warning: Harbor revocation remains pending' >&2
 
 vx_compose_shell_access_lock_acquire "$user"
 check_result $? "Compose owner access lock failed"

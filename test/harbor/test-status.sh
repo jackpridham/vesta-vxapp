@@ -39,7 +39,8 @@ status="$(vx_harbor_status_json)"
 jq -e '.MODE=="disabled" and .PINNED_VERSION=="v2.15.0" and .RUNNING_VERSION==null and .ORIGIN=="https://panel.example.com:8083" and .HEALTH=="disabled" and .PENDING_OPERATIONS==0 and .FAILED_OPERATIONS==0 and .BACKUP_AGE_SECONDS==null and .CERTIFICATE_STATE=="valid"' <<<"$status" >/dev/null || fail 'disabled status incorrect'
 if grep -Eqi 'password|secret|/run/|/usr/|api/v2|environment' <<<"$status"; then fail 'status leaked protected detail'; fi
 vx_harbor_local_api_guard /run/vesta-harbor/proxy.sock GET /api/v2.0/health || fail 'fixed local API rejected'
-for value in '/tmp/proxy.sock GET /api/v2.0/health' '/run/vesta-harbor/proxy.sock POST /api/v2.0/health' '/run/vesta-harbor/proxy.sock GET /api/v2.0/projects'; do
+vx_harbor_local_api_guard /run/vesta-harbor/proxy.sock GET /api/v2.0/projects || fail 'pinned project API rejected'
+for value in '/tmp/proxy.sock GET /api/v2.0/health' '/run/vesta-harbor/proxy.sock POST /api/v2.0/health' '/run/vesta-harbor/proxy.sock GET /api/v2.0/configurations'; do
   read -r socket method path <<<"$value"; if vx_harbor_local_api_guard "$socket" "$method" "$path"; then fail 'unsafe local API accepted'; fi
 done
 vx_harbor_public_endpoint_guard GET /v2/ || fail '/v2/ rejected'

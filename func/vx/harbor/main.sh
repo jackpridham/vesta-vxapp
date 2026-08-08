@@ -17,6 +17,16 @@ source "$_vx_harbor_dir/common.sh"
 source "$_vx_harbor_dir/audit.sh"
 # shellcheck source=func/vx/harbor/status.sh
 source "$_vx_harbor_dir/status.sh"
+# shellcheck source=func/vx/harbor/api.sh
+source "$_vx_harbor_dir/api.sh"
+# shellcheck source=func/vx/harbor/quota.sh
+source "$_vx_harbor_dir/quota.sh"
+# shellcheck source=func/vx/harbor/credentials.sh
+source "$_vx_harbor_dir/credentials.sh"
+# shellcheck source=func/vx/harbor/publisher.sh
+source "$_vx_harbor_dir/publisher.sh"
+# shellcheck source=func/vx/harbor/owners.sh
+source "$_vx_harbor_dir/owners.sh"
 # shellcheck source=func/vx/harbor/package.sh
 source "$_vx_harbor_dir/package.sh"
 # shellcheck source=func/vx/harbor/release.sh

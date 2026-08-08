@@ -287,6 +287,15 @@ fi
 if ! vx_harbor_package_transition_recover "$user"; then
     echo "Warning: package changed; Harbor reconciliation remains pending ($operation_id)" >&2
 fi
+if vx_harbor_provider_enabled; then
+    if vx_compose_registry_lock_acquire "$user"; then
+        vx_harbor_owner_reconcile_locked "$user" \
+            || echo 'Warning: Harbor owner reconciliation remains pending' >&2
+        vx_compose_registry_lock_release
+    else
+        echo 'Warning: Harbor registry lock unavailable; reconciliation remains pending' >&2
+    fi
+fi
 
 #----------------------------------------------------------#
 #                       Vesta                              #

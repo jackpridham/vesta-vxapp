@@ -127,6 +127,19 @@ case "$operation" in
         run_vesta_user_command v-pull-docker-project-image \
             "$actor" "$actor" "$project" "$2" "$3" "$4" "$5" "$6"
         ;;
+    registry-info)
+        require_count 1 2 "$@" || exit 1; valid_project "$1" || exit 1; require_standard "$1" || exit 1
+        format=${2-json}; valid_format "$format" || exit 1
+        run_vesta_user_command v-list-user-harbor-registry "$actor" "$1" "$format"
+        ;;
+    registry-publisher-change)
+        require_count 0 0 "$@" || exit 1; snapshot registry-publisher 65536 || exit 1
+        run_vesta_user_command v-change-user-harbor-registry-publisher "$actor" "$snapshot_file"
+        ;;
+    registry-publisher-disable)
+        require_count 0 0 "$@" || exit 1
+        run_vesta_user_command v-disable-user-harbor-registry-publisher "$actor"
+        ;;
     show|definition|validate|health|alerts|routes|backups|secrets)
         require_count 1 2 "$@" || exit 1; valid_project "$1" || exit 1; require_standard "$1" || exit 1
         format=${2-json}; valid_format "$format" || exit 1

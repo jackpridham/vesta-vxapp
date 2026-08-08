@@ -437,19 +437,19 @@ git commit -m "feat(harbor): install registry behind Vesta TLS"
 - Create: `func/vx/harbor/api.sh`
 - Create: `test/harbor/test-api.sh`
 
-- [ ] **Step 1: Test allowlist and secret transport**
+- [x] **Step 1: Test allowlist and secret transport**
 
 Cover only pinned API methods/routes, fixed Unix socket, bounded stdin/output,
 empty environment, curl config credentials, redaction, status validation,
 timeouts, malformed JSON, and provider outage.
 
-- [ ] **Step 2: Implement fixed adapters**
+- [x] **Step 2: Implement fixed adapters**
 
 Expose typed helpers for health, project, quota, robot, artifact, repository,
 and volume operations. No caller supplies a URL, socket, arbitrary path,
 permission set, owner, or credentials.
 
-- [ ] **Step 3: Validate and commit**
+- [x] **Step 3: Validate and commit**
 
 ```bash
 bash -n func/vx/harbor/api.sh test/harbor/test-api.sh
@@ -468,26 +468,26 @@ git commit -m "feat(harbor): add protected API adapter"
 - Modify: `func/vx/harbor/package.sh`
 - Create: `test/harbor/{test-owner-reconcile.sh,test-credentials.sh}`
 
-- [ ] **Step 1: Test deterministic owner isolation**
+- [x] **Step 1: Test deterministic owner isolation**
 
 Derive owner from Vesta state, map one private Harbor project per eligible
 owner, enforce byte quota from `DOCKER_REGISTRY_MB`, observe usage, create a
 pull-only runtime robot, and reject cross-owner IDs/names/permissions.
 
-- [ ] **Step 2: Implement idempotent reconciliation**
+- [x] **Step 2: Implement idempotent reconciliation**
 
 Use operation IDs and owner mappings to create/update project, quota, runtime
 robot, protected pull credential, observation, and package-operation state.
 Repeated calls converge; outage records pending/failed state without changing
 workloads. Startup and owner reconciliation invoke pending-operation recovery.
 
-- [ ] **Step 3: Protect runtime credentials**
+- [x] **Step 3: Protect runtime credentials**
 
 Store runtime credentials only in existing protected Compose registry state,
 never argv/environment/output. Rotation writes new credential, validates it,
 switches authority, then revokes the old robot.
 
-- [ ] **Step 4: Validate and commit**
+- [x] **Step 4: Validate and commit**
 
 ```bash
 bash -n func/vx/harbor/{owners,quota,credentials,package}.sh \
@@ -508,20 +508,20 @@ git commit -m "feat(harbor): reconcile owner registry authority"
 - Modify: owner/package suspend, unsuspend, delete, and package lifecycle hooks
 - Create: `test/harbor/{test-publisher.sh,test-discovery.sh,test-revocation.sh}`
 
-- [ ] **Step 1: Test owner-derived tenant flows**
+- [x] **Step 1: Test owner-derived tenant flows**
 
 `registry-info` returns only the derived origin, repository namespace,
 project, quota/usage, and readiness. Publisher change consumes a bounded secret
 from stdin and returns no secret. Runtime and publisher robots are separate.
 
-- [ ] **Step 2: Implement lifecycle and revocation**
+- [x] **Step 2: Implement lifecycle and revocation**
 
 Suspend/package-ineligible/delete transitions revoke publisher then runtime
 credentials, block new pulls/pushes, and preserve artifacts by default.
 Unsuspend/eligibility reconciles fresh credentials. Existing running
 containers and routes are never mutated by provider outage or revocation.
 
-- [ ] **Step 3: Validate and commit**
+- [x] **Step 3: Validate and commit**
 
 ```bash
 bash -n func/vx/harbor/publisher.sh bin/v-docker bin/v-run-user-docker-command
@@ -534,10 +534,37 @@ git commit -m "feat(harbor): add tenant registry lifecycle"
 
 ### Milestone 3 acceptance
 
-- [ ] Run `bash test/harbor/run-focused.sh` once.
+- [x] Run `bash test/harbor/run-focused.sh` once (the one run stopped on a
+  stale Milestone 1 status assertion after the allowlist expansion; the
+  corrected affected suite then passed directly and the runner was not
+  rerun).
 - [ ] Perform one specification/security review of API isolation, ownership,
   quota, credentials, publisher/discovery, revocation, and outage behavior.
 - [ ] Fix only milestone blockers and record the milestone result.
+
+#### Milestone 3 implementation record
+
+- Product behavior: Added fixed protected typed Harbor API adapters; exact
+  deterministic private owner mapping; byte quota and measured usage;
+  idempotent runtime robot reconciliation using protected Compose registry
+  state; separate publisher rotation/disable; redacted tenant discovery; and
+  suspend, unsuspend, delete, package, owner, and provider-start recovery
+  hooks. Harbor calls follow provider -> owner -> registry locking and never
+  take a tenant project lock. Revocation retains artifacts and contains no
+  Docker, route, nginx, or firewall mutation.
+- Focused tests: touched Bash syntax, API, owner reconciliation, credentials,
+  publisher, discovery, revocation, package quota, status, transactional
+  install, and `git diff --check` passed. The exactly-once milestone runner
+  was invoked once and stopped at the stale status assertion; after updating
+  only that assertion, `test-status.sh` and all Task 5-7 suites passed
+  directly. The milestone runner was deliberately not invoked a second time.
+- Review: Implementer self-review corrected secret-equivalent process argv,
+  preserved unrelated registry credentials, made robot responses redacted,
+  retained publisher state across convergence, and fixed unsuspend lock
+  ordering. Independent milestone specification/security review remains open.
+- Deferred: A clean aggregate focused-run result and independent milestone
+  review remain closeout concerns; no broad ShellCheck, readiness, deployment,
+  host Docker, network, systemctl, nginx, or production action was run.
 
 ## Milestone 4: Operations and operator surfaces
 

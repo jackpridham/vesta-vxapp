@@ -1,0 +1,12 @@
+#!/bin/bash
+# info: list redacted managed Harbor owner authority
+# options: [FORMAT]
+
+format=${1:-plain}
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/harbor/main.sh"
+source "$VESTA/conf/vesta.conf"
+check_args '0' "$#" '[FORMAT]'
+[[ "$format" == json || "$format" == plain ]]; check_result $? 'Invalid format'
+owners="$(vx_harbor_owners_list_json)"; check_result $? 'Harbor owner state unavailable'
+if [[ "$format" == json ]]; then /usr/bin/jq -cS . <<<"$owners"; else /usr/bin/jq -r '.[]|[.OWNER,.NAMESPACE,.STATE,(.QUOTA_MB|tostring),(.PUBLISHER_ENABLED|tostring),.UPDATED_AT]|@tsv' <<<"$owners"; fi

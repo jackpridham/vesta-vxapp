@@ -1,0 +1,11 @@
+#!/bin/bash
+# info: disable one owner's managed Harbor publisher credential
+# options: USER
+
+user=${1:-}
+source "$VESTA/func/main.sh"; source "$VESTA/func/vx/compose/main.sh"; source "$VESTA/func/vx/harbor/main.sh"; source "$VESTA/conf/vesta.conf"
+check_args '1' "$#" 'USER'; is_format_valid 'user'; is_object_valid 'user' 'USER' "$user"
+vx_harbor_provider_lock_acquire shared; check_result $? 'Harbor provider lock failed'; vx_compose_shell_access_lock_acquire "$user"; check_result $? 'Owner lock failed'; vx_compose_registry_lock_acquire "$user"; check_result $? 'Registry lock failed'
+trap 'vx_compose_registry_lock_release; vx_compose_shell_access_lock_release; vx_harbor_provider_lock_release' EXIT
+vx_harbor_publisher_revoke_locked "$user" "$(vx_harbor_owner_state_path "$user")"; check_result $? 'Publisher disable failed'
+printf 'publisher-disabled\n'

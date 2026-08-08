@@ -15,6 +15,12 @@ shell_tests=(
     "$test_dir/test-install.sh"
     "$test_dir/test-ingress.sh"
     "$test_dir/test-host-boundary.sh"
+    "$test_dir/test-api.sh"
+    "$test_dir/test-owner-reconcile.sh"
+    "$test_dir/test-credentials.sh"
+    "$test_dir/test-publisher.sh"
+    "$test_dir/test-discovery.sh"
+    "$test_dir/test-revocation.sh"
 )
 
 php_tests=(

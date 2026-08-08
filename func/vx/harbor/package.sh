@@ -184,8 +184,7 @@ _vx_harbor_package_operation_update() {
 vx_harbor_owner_quota_set() {
     local owner="$1" quota="$2" generation="$3" observed_at="$4"
     local operation_id="$5" intent="$6" operation owner_state quota_id
-    local observation socket secret path storage payload status socket_mode
-    local authority_uid authority_gid
+    local observation storage
     [[ "$owner" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ \
         && "$quota" =~ ^(0|[1-9][0-9]*|unlimited)$ \
         && "$generation" =~ ^[A-Za-z0-9._:-]{1,128}$ \
@@ -209,25 +208,6 @@ vx_harbor_owner_quota_set() {
         .SCHEMA==1 and .OWNER==$owner) |
       .QUOTA_ID | select(type=="number" and floor==. and .>=1)' \
       "$owner_state" 2>/dev/null)" || return 1
-    socket="$(vx_harbor_local_socket_path)" || return 1
-    path="/api/v2.0/quotas/$quota_id"
-    vx_harbor_local_api_guard "$socket" PUT "$path" || return 1
-    authority_uid="$(_vx_harbor_authority_uid)" || return 1
-    authority_gid="$(_vx_harbor_authority_gid)" || return 1
-    [[ -S "$socket" && ! -L "$socket" \
-        && "$(/usr/bin/stat -c '%u:%g:%F' "$socket" 2>/dev/null)" \
-            == "$authority_uid:$authority_gid:socket" ]] || return 1
-    socket_mode="$(/usr/bin/stat -c '%a' "$socket" 2>/dev/null)" || return 1
-    (( (8#$socket_mode & 0022) == 0 )) || return 1
-    secret="$(vx_harbor_root)/secrets/integration.curl"
-    vx_harbor_secure_regular_file "$secret" 0600 || return 1
-    /usr/bin/awk '
-      NR==1 { if ($0 != "silent") exit 1; next }
-      NR==2 { if ($0 != "show-error") exit 1; next }
-      NR==3 { if ($0 !~ /^user = "[^"[:cntrl:]]+:[^"[:cntrl:]]+"$/) exit 1; next }
-      { exit 1 }
-      END { if (NR != 3) exit 1 }
-    ' "$secret" || return 1
     if [[ "$quota" == unlimited ]]; then
         storage=-1
     else
@@ -238,15 +218,7 @@ vx_harbor_owner_quota_set() {
         storage=$((10#$quota * 1024 * 1024))
         (( storage >= 0 )) || return 1
     fi
-    payload="$(/usr/bin/jq -cn --argjson storage "$storage" '{hard:{storage:$storage}}')" \
-        || return 1
-    status="$(/usr/bin/printf '%s' "$payload" | /usr/bin/env -i PATH=/usr/bin:/bin \
-      /usr/bin/curl --config "$secret" --unix-socket "$socket" \
-      --request PUT --header 'Content-Type: application/json' --data-binary @- \
-      --connect-timeout 3 --max-time 10 --max-filesize 65536 \
-      --output /dev/null --write-out '%{http_code}' "http://localhost$path" \
-      2>/dev/null)" || return 1
-    [[ "$status" == 200 ]]
+    vx_harbor_api_quota_set_bytes "$quota_id" "$storage"
 }
 
 vx_harbor_package_transition_recover() {

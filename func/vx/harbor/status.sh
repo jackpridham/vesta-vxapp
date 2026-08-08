@@ -7,10 +7,14 @@ vx_harbor_local_socket_path() {
 vx_harbor_local_api_guard() {
     local socket="$1" method="$2" path="$3"
     [[ "$socket" == "$(vx_harbor_local_socket_path)" ]] || return 1
-    if [[ "$method" == GET && "$path" == /api/v2.0/health ]]; then
-        return 0
-    fi
-    [[ "$method" == PUT && "$path" =~ ^/api/v2\.0/quotas/[1-9][0-9]*$ ]]
+    case "$method $path" in
+        'GET /api/v2.0/health'|'GET /api/v2.0/projects'|'POST /api/v2.0/projects'|'GET /api/v2.0/robots'|'POST /api/v2.0/robots'|'GET /api/v2.0/systeminfo/volumes') return 0 ;;
+    esac
+    [[ "$method $path" =~ ^(GET|PUT)\ /api/v2\.0/projects/[a-z0-9][a-z0-9-]{0,127}$ \
+        || "$method $path" =~ ^(GET|PUT)\ /api/v2\.0/quotas/[1-9][0-9]*$ \
+        || "$method $path" =~ ^(GET|PUT|DELETE)\ /api/v2\.0/robots/[1-9][0-9]*$ \
+        || "$method $path" =~ ^GET\ /api/v2\.0/projects/[a-z0-9][a-z0-9-]{0,127}/repositories$ \
+        || "$method $path" =~ ^GET\ /api/v2\.0/projects/[a-z0-9][a-z0-9-]{0,127}/repositories/[A-Za-z0-9._-]+/artifacts/sha256:[a-f0-9]{64}$ ]]
 }
 
 vx_harbor_public_endpoint_guard() {
