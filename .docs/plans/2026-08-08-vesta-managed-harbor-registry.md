@@ -712,16 +712,22 @@ git commit -m "docs(harbor): add operator and tenant registry guidance"
   service and provider-state rollback. Added minimal admin/tenant panel status,
   protected publisher actions, and the complete immutable tenant delivery and
   operator recovery documentation.
-- Commits: `c29fec42`, `6598e87b`, `bc4c31c5`.
+- Commits: `c29fec42`, `6598e87b`, `bc4c31c5`, `d6f88895`,
+  `5a0572b3`, `d17e54bd`.
 - Focused tests: touched Bash and PHP syntax, status, health, discovery, package
   quota, backup, disable, panel, documentation, and `git diff --check` passed.
   `test/harbor/run-focused.sh` ran exactly once and all nineteen configured
   shell/PHP suites passed. It was not rerun after review corrections; only the
   directly affected suites passed again.
-- Review: The fresh specification/security review identified observation-schema
-  integration, two-phase modal routing, backup-age lookup, and disable ingress/
-  service rollback blockers. `bc4c31c5` corrected them; direct discovery,
-  package, health, backup, disable and panel regressions passed.
+- Review: Implementer self-review corrected observation-schema integration,
+  two-phase modal routing, backup-age lookup, and disable ingress/service
+  rollback before the independent boundary review. The independent review then
+  found three blockers: plaintext secret selection, incomplete exact restore
+  validation, and stale disable blockers. `d6f88895` introduced explicit
+  backup classes and blocker revalidation. Two focused rechecks found remaining
+  authority and nested provider-detail schema gaps; `5a0572b3` and
+  `d17e54bd` fixed them. The same reviewer rechecked only those numbered
+  blockers/direct regressions and returned PASS.
 - Deferred: Automated restore apply, automated provider update, richer metrics
   and richer Harbor administration UI remain explicitly deferred. No broad
   ShellCheck, readiness gate, deployment, host-service action, or production
