@@ -56,10 +56,11 @@ _vx_harbor_install_transform_generated() {
         ingress_gid="$(/usr/bin/getent group www-data | /usr/bin/awk -F: 'NR==1 {print $3}')" || return 1
     fi
     [[ "$ingress_gid" =~ ^[1-9][0-9]*$ ]] || return 1
-    /usr/bin/python3 - "$stage/docker-compose.yml" "$stage/common/config/nginx/nginx.conf" "$manifest" "$ingress_gid" <<'PY'
+    /usr/bin/python3 - "$stage/docker-compose.yml" "$stage/common/config/nginx/nginx.conf" \
+      "$stage/common/config/nginx/proxy-entrypoint.sh" "$manifest" "$ingress_gid" <<'PY'
 import json,pathlib,re,sys
-compose_path,nginx_path,manifest_path=map(pathlib.Path,sys.argv[1:4])
-ingress_gid=sys.argv[4]
+compose_path,nginx_path,entrypoint_path,manifest_path=map(pathlib.Path,sys.argv[1:5])
+ingress_gid=sys.argv[5]
 images=json.loads(manifest_path.read_text())['images']
 text=compose_path.read_text()
 for name,digest in images.items():
@@ -83,6 +84,8 @@ if block.count(upstream_hardening) != 1: raise SystemExit(1)
 managed_hardening='''    cap_drop:
       - ALL
     cap_add:
+      - CHOWN
+      - FOWNER
       - SETGID
       - SETUID
     security_opt:
@@ -91,7 +94,9 @@ managed_hardening='''    cap_drop:
 block=block.replace(upstream_hardening, managed_hardening, 1)
 block=block.replace('  proxy:\n', f'''  proxy:
     user: "0:{ingress_gid}"
-    command: ["/bin/sh", "-c", "umask 0117; exec nginx -g 'daemon off;'"]
+    command: ["/bin/sh", "/etc/nginx/proxy-entrypoint.sh"]
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--unix-socket", "/run/vesta-harbor/proxy.sock", "http://localhost/"]
 ''', 1)
 block=block.replace('    volumes:\n', '    volumes:\n      - /run/vesta-harbor:/run/vesta-harbor\n', 1)
 text='name: vesta-harbor\n'+text[:proxy.start(1)]+block+text[proxy.end(1):]
@@ -102,9 +107,35 @@ nginx='user nginx;\n'+nginx
 nginx,count=re.subn(r'listen\s+8080\s*;', 'listen unix:/run/vesta-harbor/proxy.sock;', nginx, count=1)
 if count != 1: raise SystemExit(1)
 nginx_path.write_text(nginx)
+entrypoint_path.write_text(f'''#!/bin/sh
+set -eu
+socket=/run/vesta-harbor/proxy.sock
+pid=
+shutdown() {{ [ -z "$pid" ] || kill -QUIT "$pid" 2>/dev/null || :; }}
+trap shutdown INT TERM QUIT
+if [ -e "$socket" ] || [ -L "$socket" ]; then
+    [ -S "$socket" ] && [ ! -L "$socket" ] || exit 1
+    rm -f "$socket"
+fi
+/usr/sbin/nginx -g 'daemon off;' &
+pid=$!
+attempt=0
+while [ ! -S "$socket" ]; do
+    if ! kill -0 "$pid" 2>/dev/null; then
+        status=0; wait "$pid" || status=$?; exit "$status"
+    fi
+    attempt=$((attempt + 1))
+    [ "$attempt" -le 100 ] || {{ kill -QUIT "$pid" 2>/dev/null || :; wait "$pid" || :; exit 1; }}
+    sleep 0.1
+done
+chown 0:{ingress_gid} "$socket"
+chmod 0660 "$socket"
+wait "$pid"
+''')
 PY
     _vx_harbor_secure_file_set "$stage/docker-compose.yml" 0600 || return 1
     _vx_harbor_secure_file_set "$stage/common/config/nginx/nginx.conf" 0644 || return 1
+    _vx_harbor_secure_file_set "$stage/common/config/nginx/proxy-entrypoint.sh" 0644 || return 1
     vx_harbor_release_images_validate "$manifest" "$stage/docker-compose.yml"
 }
 
