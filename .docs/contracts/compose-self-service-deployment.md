@@ -66,6 +66,24 @@ revision checks under the project lock before entering global-tenant-pull and
 owner-registry locks. Apply subsequently uses the same unchanged preview
 tuple.
 
+## Client and release-pipeline boundary
+
+Vesta supplies the owner-scoped deployment transaction; it does not build an
+application repository. Repository or CI adapters own clean-source checks,
+external build/test, registry push, immutable digest resolution, local Compose
+rendering, approval UX, and structured client output. They must use tenant SSH
+and `v-docker` for recurring `standard` releases and validate the returned
+owner, project, profile, mode, preview ID, both digests, and expected revision.
+They must not restore raw Docker, direct tenant sudo, administrator SSH,
+archive upload, or file-copy fallbacks for desired state.
+
+A client may expose a production environment while production deployment is
+deferred. It must complete that request without connecting to production and
+without preview, image pull, apply, lifecycle, route, secret, or other workload
+mutation. A deferred result does not create deployment authority. Removing the
+deferral requires separate explicit authorization naming the production
+target, immutable release, and workload mutation scope.
+
 Successful stage output is JSON:
 
 ```json

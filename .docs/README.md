@@ -5,6 +5,7 @@ Current documents:
 
 - [Repository overview](../README.md)
 - [Operator architecture and runbook](../docs/container-orchestration.md)
+- [Complete source-to-Vesta deployment runbook](../DOCKER_ORCHESTRATION_DEPLOYMENT.md)
 - [Compose project user guide](user-guides/docker-compose-projects.md)
 - [Native web-domain reverse-proxy guide](user-guides/native-web-domain-proxy.md)
 - [Native web-domain proxy validation](validation/2026-08-06-native-web-proxy-release.md)
@@ -43,3 +44,7 @@ standard-only, redacted, immutable for preview/apply, and accepts payloads
 only through bounded stdin.
 Production mutation always requires separate explicit authorization naming the
 target, release, and workload scope.
+Application repositories own external build/registry work and their deployment
+adapter; recurring standard releases use tenant SSH plus preview-bound
+`v-docker` pull/apply. A repository may defer production only by returning
+before any production connection or workload operation.

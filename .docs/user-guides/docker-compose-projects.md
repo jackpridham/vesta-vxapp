@@ -24,7 +24,8 @@ access changes apply immediately.
 
 The broker derives your identity and permits only your own `standard`
 projects. It does not accept owner or actor arguments. Administrator,
-`admin-approved`, `slave-vxapp`, and privileged operations remain excluded.
+compatibility-profile, `admin-approved`, and privileged operations remain
+excluded.
 Use the redacted, immutable interface; Compose input is accepted through
 bounded stdin.
 
@@ -42,6 +43,147 @@ v-docker restart app
 Use the IDs, digests, and revision returned by preview exactly. If the source,
 project revision, entitlement, or policy changes, create a new preview. Shell
 access never grants Docker daemon access or a route around Vesta policy.
+
+## Deploy from an application repository
+
+A normal release is built outside the Vesta host and deployed by the same
+tenant Unix/Vesta account that owns the `standard` project. The application
+repository or CI system owns its build and deployment adapter; Vesta owns
+authorization, image admission, immutable preview/apply, runtime convergence,
+health, drift, routes, backup, and audit.
+
+Before writing a deployment script, verify:
+
+- the account has an interactive Bash shell and sufficient package
+  `DOCKER_*` quotas;
+- SSH public-key login works as the tenant and `v-docker quota json` succeeds;
+- the account is not in the Docker group and cannot use the Docker socket;
+- an external builder or CI runner supports the approved target architecture;
+- an approved registry repository exists; and
+- Compose contains no `build:`, mutable image tag, secret value, privileged
+  setting, or arbitrary host path.
+
+Registry publication and Vesta pull authentication are separate. The builder
+uses its credential store to push. For a private registry, install the
+tenant's pull credential once through bounded stdin:
+
+```bash
+printf '%s' "$REGISTRY_TOKEN" |
+  ssh appuser@vesta.example.com \
+    'v-docker registry-add registry.example.com deploy-user'
+ssh appuser@vesta.example.com 'v-docker registries json' | jq .
+```
+
+Never put that token in argv, Compose, Git, logs, deployment JSON, or an
+unencrypted artifact.
+
+For every release, the repository-owned script must:
+
+1. Require a clean commit recoverable from a configured remote.
+2. Build and test outside Vesta, push the release, and resolve the immutable
+   `REGISTRY/REPOSITORY@sha256:<64-lowercase-hex>` reference.
+3. Render policy-compliant Compose locally with that exact reference and only
+   non-secret environment settings.
+4. Query the target through `v-docker`; require the expected owner, project,
+   `standard` profile, state, and revision. Use `add` only when the project is
+   absent and expected revision is zero; use `change` for an existing project.
+5. Stream Compose on SSH stdin to preview and validate every returned identity
+   and evidence field without editing it.
+6. Pull each newly delivered immutable image through the same preview tuple.
+7. Require explicit approval before applying that exact tuple.
+8. Require health, declared readiness probes, and drift match after apply.
+
+The core update transaction is:
+
+```bash
+preview_json="$(
+  ssh appuser@vesta.example.com \
+    'v-docker preview app change' < rendered-compose.yaml
+)"
+
+jq -e '
+  .VALID == true
+  and .OWNER == "appuser"
+  and .PROJECT == "app"
+  and .PROFILE == "standard"
+  and .MODE == "change"
+  and (.PREVIEW_ID | test("^[a-f0-9]{32}$"))
+  and (.SOURCE_SHA256 | test("^[a-f0-9]{64}$"))
+  and (.CANDIDATE_SHA256 | test("^[a-f0-9]{64}$"))
+  and (.EXPECTED_CURRENT_REVISION | type == "number" and . > 0)
+' <<<"$preview_json" >/dev/null
+
+preview_id="$(jq -er '.PREVIEW_ID' <<<"$preview_json")"
+source_sha="$(jq -er '.SOURCE_SHA256' <<<"$preview_json")"
+candidate_sha="$(jq -er '.CANDIDATE_SHA256' <<<"$preview_json")"
+revision="$(jq -er '.EXPECTED_CURRENT_REVISION' <<<"$preview_json")"
+image='registry.example.com/team/app@sha256:<64-lowercase-hex>'
+
+ssh appuser@vesta.example.com -- \
+  v-docker image-pull app "$preview_id" "$source_sha" \
+  "$candidate_sha" "$revision" "$image"
+
+# Run only after the deployment's explicit confirmation gate.
+ssh appuser@vesta.example.com -- \
+  v-docker apply app "$preview_id" "$source_sha" \
+  "$candidate_sha" "$revision"
+
+ssh appuser@vesta.example.com \
+  'v-docker health app json' | jq -e '.STATUS == "healthy"'
+ssh appuser@vesta.example.com \
+  'v-docker drift app json' | jq -e '.MATCH == true'
+```
+
+When the current workload manifest declares a readiness probe, also require:
+
+```bash
+ssh appuser@vesta.example.com \
+  'v-docker probe app ready json' | jq -e '.STATE == "pass"'
+```
+
+The adapter should support environment selection, `--dry-run`, an explicit
+`--yes` or equivalent approval gate, and structured JSON. Progress belongs on
+bounded redacted stderr. JSON stdout must not contain credentials, secrets,
+complete environments, private-key material, or unredacted child output. Dry
+run may build, resolve, render, and preview according to repository policy,
+but it must not pull or apply.
+
+### Deferring production deployment
+
+An application may deliberately defer production while development delivery
+is implemented and exercised. The adapter may validate the `production`
+argument and non-secret configuration, but it must return a stable deferred
+result before opening production SSH, creating a preview, pulling an image,
+applying, or invoking any lifecycle operation. It must not silently redirect
+production to development.
+
+For example, a JSON adapter can return before network setup with a stable
+result such as:
+
+```json
+{
+  "ok": true,
+  "code": "production_deferred",
+  "environment": "production",
+  "mutated": false,
+  "message": "Production deployment is deferred by repository policy."
+}
+```
+
+Removing deferral is a separate release decision. The production target,
+immutable release, workload mutation, approval gate, and rollback/continuity
+plan must be explicitly authorized. Development success never authorizes
+production promotion.
+
+Recurring deployments do not require an administrator or Debian SSH.
+Administrator participation remains necessary for package/shell onboarding,
+new managed bind leaves, privileged or compatibility profiles, protected
+first installation of secret-dependent workloads, local archive admission,
+and migrations. Deployment scripts must never fall back to raw Docker,
+direct tenant sudo, administrator SSH, archive upload, or SCP/rsync of Vesta control
+state. See the [complete source-to-Vesta runbook](../../DOCKER_ORCHESTRATION_DEPLOYMENT.md)
+for package fields, an approval-separated reusable script, bootstrap, routes,
+secrets, backup, rollback, and troubleshooting.
 
 ## Create a project
 
@@ -129,10 +271,7 @@ panel never treats a missing off-host target as success.
 
 ## Current boundaries
 
-The single-host control plane and managed `slave-vxapp` workload are live on
-production. The 2026-07-31 product corrections are staging-validated on a
-recoverable release branch but are not production-promoted without separate
-authorization. The implementation does not provide Kubernetes/Swarm
+The implementation does not provide Kubernetes/Swarm
 scheduling, multi-host placement, arbitrary host access, privileged workloads,
 automatic firewall changes, global Docker prune, managed-secret UI, route CRUD
 UI, catalog deployment, Git/OCI synchronization, or automatic production

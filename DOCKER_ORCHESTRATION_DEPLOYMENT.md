@@ -457,7 +457,7 @@ compose_file="${1:-compose.yaml}"
 [[ "$VESTA_OWNER" =~ ^[a-z][a-z0-9_-]{0,31}$ ]]
 [[ "$VESTA_PROJECT" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]
 [[ "$VESTA_MODE" == add || "$VESTA_MODE" == change ]]
-[[ "$VESTA_IMAGE" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,181}@sha256:[a-f0-9]{64}$ ]]
+[[ "$VESTA_IMAGE" =~ ^[A-Za-z0-9][A-Za-z0-9._:/-]{0,181}@sha256:[a-f0-9]{64}$ ]]
 [[ "$VESTA_APPLY" == yes || "$VESTA_APPLY" == no ]]
 
 if [[ -n "$VESTA_APPROVED_PREVIEW" ]]; then
@@ -532,6 +532,58 @@ uses those exact server-issued bytes; it does not create a replacement preview.
 It pulls only the exact immutable image named by `VESTA_IMAGE`, then applies
 the same tuple before the 15-minute expiry. For multiple distinct new images,
 repeat the preview-bound `image-pull` call for each one before apply.
+
+### 6.4 Repository-owned deployment adapters
+
+Vesta does not build application source or prescribe a repository framework.
+Each application repository or CI system owns its deploy adapter. The adapter
+should accept an environment, dry-run mode, explicit confirmation gate, and a
+machine-readable output mode. Keep non-secret target settings—tenant SSH
+target, project, registry repository, platform, and public API URL—in
+validated per-environment configuration. Keep SSH private keys and registry
+credentials outside Git.
+
+For a normal tenant release, preserve this ownership split:
+
+```text
+application repository/CI:
+  validate source -> build/test -> registry push -> resolve immutable digest
+  -> render Compose -> validate returned preview -> explicit approval
+
+tenant SSH and v-docker:
+  preview -> preview-bound image-pull -> apply -> health/probe/drift
+
+Vesta:
+  authenticate owner -> enforce standard policy/quota -> admit exact image
+  -> persist revision -> converge or roll back -> retain audit evidence
+```
+
+The adapter must query and validate current owner, project, profile, and
+revision instead of hard-coding `add` or `change`. An existing project that is
+not `standard` is not a tenant deployment target and must fail closed. A
+machine-readable adapter should emit one bounded redacted result envelope;
+secrets, registry tokens, private keys, complete environments, and unredacted
+child output never belong in it.
+
+Production may be intentionally deferred. A deferred adapter may parse and
+validate a production request, but it must return a stable deferred result
+before any production network connection or `v-docker` operation. It must not
+preview, pull, apply, restart, recreate, route, or otherwise mutate production,
+and it must never redirect production to another environment. Enabling
+production later requires separate authorization naming the production target,
+immutable release, workload mutation, and rollback/continuity plan.
+
+A machine-readable adapter can represent that state explicitly:
+
+```json
+{
+  "ok": true,
+  "code": "production_deferred",
+  "environment": "production",
+  "mutated": false,
+  "message": "Production deployment is deferred by repository policy."
+}
+```
 
 ## 7. SCP, rsync, and managed bind data
 

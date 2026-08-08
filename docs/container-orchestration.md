@@ -145,6 +145,22 @@ exact server-issued tuple and follows owner-access, project,
 global-tenant-pull, owner-registry lock order. It cannot populate a general
 registry cache or pull an image absent from the protected candidate.
 
+Application repositories and CI systems own source validation, external image
+build/test, registry publication, immutable digest resolution, local Compose
+rendering, and their deploy adapter. A recurring tenant deployment
+authenticates as the owner over SSH and uses only `v-docker`: inspect current
+owner/profile/revision, preview through stdin, pull exact preview images,
+apply the unchanged tuple after approval, then require health, declared probes,
+and drift match. It does not require administrator SSH and must not fall back
+to raw Docker, direct `sudo v-*`, image archives, or copying desired state into
+Vesta paths.
+
+A repository may explicitly defer production. Deferral must happen before a
+production SSH connection or any preview, pull, apply, or lifecycle command
+and must return an unambiguous stable result. Development success is not
+production authorization; enabling promotion requires explicit target,
+immutable release, workload mutation, approval, and rollback/continuity scope.
+
 Install, inspect, or repair derived access with these exact administrator
 commands:
 

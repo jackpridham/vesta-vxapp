@@ -8,42 +8,13 @@ Compose owns workload desired state. Vesta owns tenant authorization, package
 quotas, deny-first policy, stable project storage, nginx routes, backup and
 restore, monitoring, alerts, audit history, and the web panel.
 
-The Docker Compose orchestration implementation is production ready and live
-on SydVortex. The control plane was promoted on 2026-07-29, the package
-validation prerequisite followed on 2026-07-30, and the exact-image
-`slave-vxapp` workload cut over on 2026-07-31 as Vesta owner `slave`, project
-`slave-vxapp`, revision 4. The old external project and volumes remain
-preserved for no-build rollback during the documented soak and retention
-period.
-
-A 2026-07-31 read-only product audit confirmed the production container was
-healthy and identified product/operations gaps. The successor release now
-implements and validates the software corrections: accurate endpoints/health/quotas,
-redacted native-ingress consumers and secret metadata, managed backup policy,
-human-readable operator controls, drift/reconcile, roles/notifications, and
-trusted image delivery. The separately authorized successor promotion applied
-the protected `vxslave-compose` quota package; backup-policy changes still
-require external off-host inputs and new authorization.
-The canonical audit and correction status are under
-`kb-vxapp/@Reports/@Servers/syd.vortexenterprises.com.au/`
-`vesta-compose-orchestration-product-audit/`.
-
-The successor runtime candidate is
-`8dc0dc9c0317d833d5aa57656ab0a180758a8df0` on
-`release/vesta-compose-product-corrections-20260801`. It replaces byte-wise
-image-evidence comparison with strict versioned semantic identity, accepts
-only the exact production five-field legacy shape, restores a stopped healthy
-runtime after successful or failed user backup, and stores generated
-ownership-labelled preview definitions while retaining submitted source
-separately. The complete gate and sydlocal rehearsal are green, including
-23 passed/7 skipped browser tests, exact no-build rollback, mount-guard
-rollback/reinstall, and a 600-second post-backup soak. The successor is now
-the immutable production authority after a separately authorized 2026-08-02
-control-plane promotion. Production now runs the exact 250-path candidate;
-managed `slave/slave-vxapp` remains revision 4, healthy, and restart-free with
-its five-field evidence unchanged. The stopped external rollback authority is
-preserved, the mount guard is active, and `vxslave-compose` reports 109 MB used
-of 1024 MB. No production backup or workload mutation occurred.
+The Docker Compose orchestration implementation is production ready.
+Host-specific
+promotion evidence belongs in dated validation records, while
+application-specific runtime and migration caveats belong to the application
+repository. The standing Vesta documentation remains application-neutral and
+defines the generic package, SSH, registry, preview/pull/apply, acceptance,
+backup, and recovery boundaries.
 
 ## Docker Compose Orchestrator
 
@@ -89,7 +60,9 @@ The implemented orchestrator provides:
 The implementation deliberately does not provide Kubernetes, Swarm, multi-node
 scheduling, host firewall mutation, Docker socket mounts, privileged workloads,
 arbitrary host-path mounting, host PID/IPC, devices, global Docker prune, or
-production deployment automation.
+built-in application builds or automatic production promotion. Application
+repositories own their deployment adapters and use the documented tenant
+preview/pull/apply transaction.
 
 The self-service milestone reports route impact warnings but does not provide
 route mutation UI or managed-secret create/rotate UI. Separate follow-on work
@@ -126,9 +99,9 @@ bridges. The full command contract is in
 Start here for current Compose work:
 
 - [Documentation index and status](.docs/README.md)
+- [Complete source-to-Vesta deployment runbook](DOCKER_ORCHESTRATION_DEPLOYMENT.md)
 - [Operator architecture and migration guide](docs/container-orchestration.md)
 - [Compose project user guide](.docs/user-guides/docker-compose-projects.md)
-- [Successor production promotion](.docs/validation/2026-08-02-compose-image-evidence-backup-recovery-production-promotion.md)
 - [Security contract](.docs/contracts/compose-security.md)
 - [Policy and quota contract](.docs/contracts/compose-policy.md)
 - [Storage contract](.docs/contracts/compose-storage.md)
