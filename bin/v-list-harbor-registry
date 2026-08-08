@@ -3,6 +3,7 @@
 # options: [FORMAT]
 
 format=${1:-plain}
+VESTA=${VESTA:-/usr/local/vesta}
 source "$VESTA/func/main.sh"
 source "$VESTA/func/vx/harbor/main.sh"
 source "$VESTA/conf/vesta.conf"

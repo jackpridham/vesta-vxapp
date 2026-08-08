@@ -2,6 +2,7 @@
 # info: create an encrypted Harbor provider backup
 # options:
 
+VESTA=${VESTA:-/usr/local/vesta}
 source "$VESTA/func/main.sh"
 source "$VESTA/func/vx/harbor/main.sh"
 source "$VESTA/conf/vesta.conf"

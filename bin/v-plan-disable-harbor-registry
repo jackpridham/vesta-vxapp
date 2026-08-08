@@ -3,6 +3,7 @@
 # options: [FORMAT]
 
 format=${1:-plain}
+VESTA=${VESTA:-/usr/local/vesta}
 source "$VESTA/func/main.sh"; source "$VESTA/func/vx/harbor/main.sh"; source "$VESTA/conf/vesta.conf"
 check_args '0' "$#" '[FORMAT]'; [[ "$format" == json || "$format" == plain ]]; check_result $? 'Invalid format'
 plan="$(vx_harbor_disable_plan)"; check_result $? 'Harbor disable plan failed'

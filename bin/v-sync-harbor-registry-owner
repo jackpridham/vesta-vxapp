@@ -3,6 +3,7 @@
 # options: USER
 
 user=${1:-}
+VESTA=${VESTA:-/usr/local/vesta}
 source "$VESTA/func/main.sh"
 source "$VESTA/func/vx/compose/main.sh"
 source "$VESTA/func/vx/harbor/main.sh"

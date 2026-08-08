@@ -3,6 +3,7 @@
 # options: USER PROJECT [FORMAT]
 
 user=${1:-}; project=${2:-}; format=${3:-json}
+VESTA=${VESTA:-/usr/local/vesta}
 source "$VESTA/func/main.sh"
 source "$VESTA/func/vx/compose/main.sh"
 source "$VESTA/func/vx/harbor/main.sh"
