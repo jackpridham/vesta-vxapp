@@ -211,7 +211,7 @@ vx_harbor_provider_prepare() {
     # missing component. This keeps rejection paths entirely non-mutating.
     if [[ -e "$root" || -L "$root" ]]; then
         _vx_harbor_directory_prepare "$root" "$VESTA/data" || return 1
-        for directory in owners observations secrets release backups locks transactions; do
+        for directory in owners observations operations secrets release backups locks; do
             if [[ -e "$root/$directory" || -L "$root/$directory" ]]; then
                 _vx_harbor_directory_prepare "$root/$directory" "$root" || return 1
             fi
@@ -223,7 +223,7 @@ vx_harbor_provider_prepare() {
 
     _vx_harbor_directory_prepare "$root" "$VESTA/data" || return 1
     _vx_harbor_secure_directory "$root" || return 1
-    for directory in owners observations secrets release backups locks transactions; do
+    for directory in owners observations operations secrets release backups locks; do
         _vx_harbor_directory_prepare "$root/$directory" "$root" || return 1
         _vx_harbor_secure_directory "$root/$directory" || return 1
     done

@@ -15,6 +15,8 @@ _vx_harbor_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "$_vx_harbor_dir/common.sh"
 # shellcheck source=func/vx/harbor/audit.sh
 source "$_vx_harbor_dir/audit.sh"
+# shellcheck source=func/vx/harbor/status.sh
+source "$_vx_harbor_dir/status.sh"
 # shellcheck source=func/vx/harbor/package.sh
 source "$_vx_harbor_dir/package.sh"
 

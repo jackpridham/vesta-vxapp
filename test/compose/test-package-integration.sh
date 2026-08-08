@@ -537,74 +537,19 @@ cat >"$VESTA/func/vx/harbor/main.sh" <<'EOF'
 vx_harbor_provider_prepare() { :; }
 vx_harbor_provider_lock_acquire() { printf 'provider-lock\n' >>"$VX_TEST_MUTATIONS"; }
 vx_harbor_provider_lock_release() { :; }
-_vx_harbor_fsync() { :; }
-_vx_harbor_transition_shell_set() {
-    printf '%s\n' "$2" >"$VX_TEST_SHELL_STATE"
-    printf 'shell:%s\n' "$2" >>"$VX_TEST_MUTATIONS"
+vx_harbor_package_transition_check() {
+    [[ "${VX_TEST_CONFLICT:-no}" != yes ]]
 }
-vx_harbor_package_transition_prepare() {
-    printf 'prepare:%s:%s\n' "$2" "$3" >>"$VX_TEST_MUTATIONS"
-    printf '%s\n' "$5" >"$VX_TEST_OLD_SHELL"
-    printf '%s\n' "$6" >"$VX_TEST_OLD_GROUP"
-    printf '%s\n' "$7" >"$VX_TEST_OLD_DENY"
-    cp -p "$USER_DATA/user.conf" "$VX_TEST_CONF_SNAPSHOT"
-    printf 'prepared\n' >"$VX_TEST_TRANSITION_STATE"
-    printf 'disabled.token\n'
+vx_harbor_package_transition_publish() {
+    printf 'publish:%s:%s\n' "$2" "$3" >>"$VX_TEST_MUTATIONS"
+    printf 'pending\n' >"$VX_TEST_TRANSITION_STATE"
+    printf '0123456789abcdef0123456789abcdef\n'
 }
 vx_harbor_package_transition_recover() {
     printf 'recover\n' >>"$VX_TEST_MUTATIONS"
-    if [[ "$(<"$VX_TEST_TRANSITION_STATE")" == committed ]]; then
-        printf 'yes\n' >"$VX_TEST_GROUP_STATE"
-        printf 'no\n' >"$VX_TEST_DENY_STATE"
-    else
-        [[ ! -f "$VX_TEST_CONF_SNAPSHOT" ]] \
-            || cp -p "$VX_TEST_CONF_SNAPSHOT" "$USER_DATA/user.conf"
-        printf '%s\n' "$(<"$VX_TEST_OLD_SHELL")" >"$VX_TEST_SHELL_STATE"
-        printf '%s\n' "$(<"$VX_TEST_OLD_GROUP")" >"$VX_TEST_GROUP_STATE"
-        printf '%s\n' "$(<"$VX_TEST_OLD_DENY")" >"$VX_TEST_DENY_STATE"
-    fi
-    if [[ "$(<"$VX_TEST_TRIGGER_PENDING")" == yes ]]; then
-        printf 'trigger:old\n' >>"$VX_TEST_MUTATIONS"
-        [[ "${VX_TEST_COMPENSATE_FAIL:-no}" != yes ]] || return 1
-        printf 'no\n' >"$VX_TEST_TRIGGER_PENDING"
-    fi
-    if [[ "$(<"$VX_TEST_DISK_PENDING")" == yes ]]; then
-        "$VESTA/bin/v-update-user-quota" alice || return 1
-        printf 'no\n' >"$VX_TEST_DISK_PENDING"
-    fi
-}
-vx_harbor_package_transition_user_conf_applied() { printf 'conf-applied\n' >>"$VX_TEST_MUTATIONS"; }
-vx_harbor_package_transition_user_conf_apply() {
-    cp -p "$3" "$USER_DATA/user.conf"
-    printf 'user-conf-applied\n' >"$VX_TEST_TRANSITION_STATE"
-    printf 'conf-applied\n' >>"$VX_TEST_MUTATIONS"
-}
-vx_harbor_package_transition_disk_quota_pending() {
-    printf 'yes\n' >"$VX_TEST_DISK_PENDING"
-    printf 'quota-pending\n' >>"$VX_TEST_MUTATIONS"
-}
-vx_harbor_package_transition_trigger_pending() {
-    printf 'yes\n' >"$VX_TEST_TRIGGER_PENDING"
-    printf 'trigger-pending\n' >>"$VX_TEST_MUTATIONS"
-}
-vx_harbor_package_transition_side_effects_applied() {
-    printf 'side-effects\n' >"$VX_TEST_TRANSITION_STATE"
-    printf 'side-effects\n' >>"$VX_TEST_MUTATIONS"
-}
-vx_harbor_package_transition_commit() {
-    printf 'commit\n' >>"$VX_TEST_MUTATIONS"
-    [[ "${VX_TEST_COMMIT_FAIL:-no}" != yes ]] || return 1
-    printf 'committed\n' >"$VX_TEST_TRANSITION_STATE"
-}
-vx_harbor_package_transition_access_complete() {
-    printf 'access-complete\n' >>"$VX_TEST_MUTATIONS"
-    [[ "${VX_TEST_ACCESS_FAIL:-no}" != yes ]] || return 1
-    printf 'yes\n' >"$VX_TEST_GROUP_STATE"
-    printf 'no\n' >"$VX_TEST_DENY_STATE"
-}
-vx_harbor_package_transition_finalize() { printf 'finalize\n' >>"$VX_TEST_MUTATIONS"; }
-vx_harbor_package_transition_rollback() {
-    printf 'rollback\n' >>"$VX_TEST_MUTATIONS"
+    [[ "${VX_TEST_PROVIDER_OUTAGE:-no}" != yes ]] || return 1
+    vx_compose_shell_access_transition_complete "$1"
+    printf 'converged\n' >"$VX_TEST_TRANSITION_STATE"
 }
 EOF
 printf "DISK_QUOTA='no'\n" >"$VESTA/conf/vesta.conf"
@@ -646,6 +591,12 @@ printf 'disk-quota\n' >>"$VX_TEST_MUTATIONS"
 [[ "${VX_TEST_DISK_FAIL:-no}" != yes ]]
 EOF
 chmod +x "$VESTA/bin/v-update-user-quota"
+cat >"$VESTA/bin/chsh" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$2" >"$VX_TEST_SHELL_STATE"
+printf 'shell:%s\n' "$2" >>"$VX_TEST_MUTATIONS"
+EOF
+chmod +x "$VESTA/bin/chsh"
 cat >"$VESTA/data/packages/under.pkg" <<'EOF'
 DOCKER_CONTAINERS='1'
 DOCKER_PROJECTS='1'
@@ -683,101 +634,27 @@ DOCKER_REGISTRY_MB='10'
 SHELL='sh'
 EOF
 : >"$mutations"
-printf "DISK_QUOTA='yes'\n" >"$VESTA/conf/vesta.conf"
-if VX_TEST_REPO_ROOT="$repo_root" VX_TEST_MUTATIONS="$mutations" \
-    VX_TEST_COMMIT_FAIL=yes \
+PATH="$VESTA/bin:$PATH" VX_TEST_REPO_ROOT="$repo_root" VX_TEST_MUTATIONS="$mutations" \
+    VX_TEST_PROVIDER_OUTAGE=yes \
     "$repo_root/bin/v-change-user-package" alice registry yes \
-    >"$change_root/registry-rollback.out" 2>&1; then
-    fail 'package transition succeeded after Harbor commit failure'
-fi
-printf "DISK_QUOTA='no'\n" >"$VESTA/conf/vesta.conf"
-[[ "$(sha256sum "$VESTA/data/users/alice/user.conf")" == "$change_user_before" ]] \
-    || fail 'Harbor transition failure did not restore exact user.conf content'
-[[ "$(<"$VX_TEST_SHELL_STATE")" == /bin/bash ]] \
-    || fail 'Harbor transition failure did not restore the login shell'
-[[ "$(<"$VX_TEST_GROUP_STATE")" == yes ]] \
-    || fail 'Harbor transition failure did not restore Compose group membership'
-[[ "$(<"$VX_TEST_DENY_STATE")" == no ]] \
-    || fail 'Harbor transition failure did not restore the deny marker state'
-grep -Fq 'recover' "$mutations" \
-    || fail 'Harbor transition failure did not restore the previous quota'
-[[ "$(grep -c '^disk-quota$' "$mutations")" == 2 ]] \
-    || fail 'later package failure did not reapply the old disk quota'
+    >"$change_root/registry-pending.out" 2>&1 \
+    || fail 'provider outage rejected authoritative package change'
+grep -Fq "PACKAGE='registry'" "$VESTA/data/users/alice/user.conf" \
+    || fail 'provider outage did not preserve desired package state'
+[[ "$(<"$VX_TEST_TRANSITION_STATE")" == pending ]] \
+    || fail 'provider outage did not retain pending operation'
+grep -Fq 'Warning: package changed; Harbor reconciliation remains pending' \
+    "$change_root/registry-pending.out" || fail 'pending operation warning missing'
 [[ "$(sed -n '1p' "$mutations")" == provider-lock ]] \
     || fail 'package transition did not take the provider lock first'
 [[ "$(sed -n '2p' "$mutations")" == lock ]] \
     || fail 'package transition did not take the owner lock second'
-
-cat >"$VESTA/data/packages/registry.sh" <<'EOF'
-#!/usr/bin/env bash
-printf 'trigger:new\n' >>"$VX_TEST_MUTATIONS"
-[[ "${VX_TEST_TRIGGER_FAIL:-no}" != yes ]]
-EOF
-chmod +x "$VESTA/data/packages/registry.sh"
-cat >"$VESTA/data/packages/current.sh" <<'EOF'
-#!/usr/bin/env bash
-printf 'trigger:old-direct\n' >>"$VX_TEST_MUTATIONS"
-EOF
-chmod +x "$VESTA/data/packages/current.sh"
-for failure in trigger disk; do
-    cp -p "$VX_TEST_CONF_SNAPSHOT" "$VESTA/data/users/alice/user.conf"
-    printf '/bin/bash\n' >"$VX_TEST_SHELL_STATE"
-    printf 'yes\n' >"$VX_TEST_GROUP_STATE"
-    printf 'no\n' >"$VX_TEST_DENY_STATE"
-    : >"$mutations"
-    if [[ "$failure" == disk ]]; then
-        printf "DISK_QUOTA='yes'\n" >"$VESTA/conf/vesta.conf"
-        failure_env=VX_TEST_DISK_FAIL=yes
-    else
-        failure_env=VX_TEST_TRIGGER_FAIL=yes
-    fi
-    if env VX_TEST_REPO_ROOT="$repo_root" VX_TEST_MUTATIONS="$mutations" \
-        "$failure_env" "$repo_root/bin/v-change-user-package" alice registry yes \
-        >"$change_root/$failure.out" 2>&1; then
-        fail "$failure failure incorrectly reported package success"
-    fi
-    [[ "$(sha256sum "$VESTA/data/users/alice/user.conf")" == "$change_user_before" ]] \
-        || fail "$failure failure did not restore user.conf"
-    [[ "$(<"$VX_TEST_SHELL_STATE")" == /bin/bash \
-        && "$(<"$VX_TEST_GROUP_STATE")" == yes \
-        && "$(<"$VX_TEST_DENY_STATE")" == no ]] \
-        || fail "$failure failure did not restore shell access authority"
-    grep -Fq 'trigger:old' "$mutations" \
-        || fail "$failure failure did not compensate the old package trigger"
-    printf "DISK_QUOTA='no'\n" >"$VESTA/conf/vesta.conf"
-done
-
-cp -p "$VX_TEST_CONF_SNAPSHOT" "$VESTA/data/users/alice/user.conf"
-printf 'no\n' >"$VX_TEST_TRIGGER_PENDING"
 : >"$mutations"
-printf "DISK_QUOTA='yes'\n" >"$VESTA/conf/vesta.conf"
-if env VX_TEST_REPO_ROOT="$repo_root" VX_TEST_MUTATIONS="$mutations" \
-    VX_TEST_DISK_FAIL=yes VX_TEST_COMPENSATE_FAIL=yes \
+PATH="$VESTA/bin:$PATH" VX_TEST_REPO_ROOT="$repo_root" VX_TEST_MUTATIONS="$mutations" \
     "$repo_root/bin/v-change-user-package" alice registry yes \
-    >"$change_root/compensation-failure.out" 2>&1; then
-    fail 'failed old-package compensation reported package success'
-fi
-[[ "$(<"$VX_TEST_TRIGGER_PENDING")" == yes ]] \
-    || fail 'failed trigger compensation discarded durable retry state'
-grep -Fq 'trigger:old' "$mutations" \
-    || fail 'failed trigger compensation was not attempted'
-printf "DISK_QUOTA='no'\n" >"$VESTA/conf/vesta.conf"
-
-cp -p "$VX_TEST_CONF_SNAPSHOT" "$VESTA/data/users/alice/user.conf"
-printf '/bin/bash\n' >"$VX_TEST_SHELL_STATE"
-printf 'yes\n' >"$VX_TEST_GROUP_STATE"
-printf 'no\n' >"$VX_TEST_DENY_STATE"
-: >"$mutations"
-VX_TEST_REPO_ROOT="$repo_root" VX_TEST_MUTATIONS="$mutations" \
-    VX_TEST_ACCESS_FAIL=yes \
-    "$repo_root/bin/v-change-user-package" alice registry yes \
-    >"$change_root/access-warning.out" 2>&1 \
-    || fail 'recoverable post-commit access failure reported package failure'
-grep -Fq "PACKAGE='registry'" "$VESTA/data/users/alice/user.conf" \
-    || fail 'post-commit access recovery rolled back new user.conf'
+    >"$change_root/converged.out" 2>&1 || fail 'forward convergence failed'
+[[ "$(<"$VX_TEST_TRANSITION_STATE")" == converged ]] || fail 'operation did not converge'
 [[ "$(<"$VX_TEST_GROUP_STATE")" == yes && "$(<"$VX_TEST_DENY_STATE")" == no ]] \
-    || fail 'post-commit access recovery did not converge group/deny state'
-grep -Fq 'Warning: package changed' "$change_root/access-warning.out" \
-    || fail 'recovered post-commit access failure omitted its warning'
+    || fail 'forward convergence did not converge shell access'
 
 echo "Compose package integration tests passed."

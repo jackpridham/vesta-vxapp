@@ -210,17 +210,14 @@ NOTIFICATIONS='$NOTIFICATIONS'
 TIME='$TIME'
 DATE='$DATE'" > "$transition_user_conf_new"
     chmod --reference="$USER_DATA/user.conf" "$transition_user_conf_new" \
-        && chown --reference="$USER_DATA/user.conf" "$transition_user_conf_new"
-    check_result $? "User package state staging failed"
+        && chown --reference="$USER_DATA/user.conf" "$transition_user_conf_new" \
+        && mv -fT -- "$transition_user_conf_new" "$USER_DATA/user.conf"
+    check_result $? "User package state update failed"
 }
 
 harbor_package_transition_cleanup() {
     local result=$?
     trap - EXIT
-    if [[ "${harbor_package_transition_complete:-no}" != yes \
-        && "${harbor_package_transition_started:-no}" == yes ]]; then
-        vx_harbor_package_transition_recover "$user" || result=1
-    fi
     [[ -z "${transition_user_conf_new:-}" ]] \
         || rm -f -- "$transition_user_conf_new"
     vx_compose_shell_access_lock_release 2>/dev/null || :
@@ -250,6 +247,8 @@ check_result $? "Harbor provider lock failed"
 vx_compose_shell_access_lock_acquire "$user"
 check_result $? "Compose owner access lock failed"
 trap harbor_package_transition_cleanup EXIT
+vx_harbor_package_transition_check "$user" "$package" "$DOCKER_REGISTRY_MB"
+check_result $? 'Harbor registry quota transition rejected' "$E_LIMIT"
 
 
 #----------------------------------------------------------#
@@ -260,56 +259,20 @@ trap harbor_package_transition_cleanup EXIT
 transition_user_conf_new="$(mktemp "$USER_DATA/.user.conf.new.XXXXXX")"
 check_result $? "User package state staging failed"
 change_user_package
-_vx_harbor_fsync "$transition_user_conf_new"
-check_result $? "User package state staging sync failed"
+operation_id="$(vx_harbor_package_transition_publish \
+    "$user" "$package" "$DOCKER_REGISTRY_MB")"
+check_result $? 'Harbor registry operation publication failed'
 
-old_login_shell="$(vx_compose_shell_passwd_by_name "$user" \
-    | awk -F: 'NR == 1 { print $7 }')"
-[[ "$old_login_shell" == /* ]]
-check_result $? "Current user shell lookup failed"
-if vx_compose_shell_group_state "$user"; then
-    old_group_member=yes
-else
-    group_state_result=$?
-    [[ "$group_state_result" == 1 ]]
-    check_result $? "Compose shell group state lookup failed"
-    old_group_member=no
-fi
-if vx_compose_shell_access_deny_is_clear "$user"; then
-    old_deny_marker=no
-else
-    old_deny_path="$(vx_compose_shell_access_deny_path "$user")"
-    [[ -f "$old_deny_path" && ! -L "$old_deny_path" \
-        && "$(stat -c '%u:%g:%a' "$old_deny_path")" == '0:0:600' ]]
-    check_result $? "Compose shell deny marker state is invalid"
-    old_deny_marker=yes
-fi
-
-harbor_package_transition_started=yes
-transition_token="$(vx_harbor_package_transition_prepare \
-    "$user" "$DOCKER_REGISTRY_MB" "$package" "$transition_user_conf_new" \
-    "$old_login_shell" "$old_group_member" "$old_deny_marker")"
-check_result $? 'Harbor registry quota transition rejected' "$E_LIMIT"
-vx_compose_shell_access_deny_establish "$user"
-check_result $? "Compose shell access deny marker failed"
-vx_compose_shell_group_revoke "$user"
-check_result $? "Compose shell access revocation failed"
-vx_harbor_package_transition_user_conf_apply \
-    "$user" "$transition_token" "$transition_user_conf_new"
-check_result $? 'Harbor registry user state transition failed'
-
-# Update user shell while the durable recovery journal can still restore it.
+# Update user shell as part of the ordinary Vesta package change.
 shell_conf=$(echo "$pkg_data" | grep 'SHELL' | cut -f 2 -d \')
 shell=$(grep -w "$shell_conf" /etc/shells |head -n1)
 [[ -n "$shell" ]]
 check_result $? "Package shell is unavailable"
-_vx_harbor_transition_shell_set "$user" "$shell"
+chsh -s "$shell" "$user" &>/dev/null
 check_result $? "User shell update failed"
 
 # Run template trigger
 if [ -x "$VESTA/data/packages/$package.sh" ]; then
-    vx_harbor_package_transition_trigger_pending "$user" "$transition_token"
-    check_result $? "Package trigger transition state failed"
     $VESTA/data/packages/$package.sh "$user" "$CONTACT" "$FNAME" "$LNAME"
     check_result $? "Package trigger failed"
 fi
@@ -317,31 +280,12 @@ fi
 # Update disk quota
 source $VESTA/conf/vesta.conf
 if [ "$DISK_QUOTA" = 'yes' ]; then
-    vx_harbor_package_transition_disk_quota_pending "$user" "$transition_token"
-    check_result $? "Disk quota transition state failed"
     $BIN/v-update-user-quota $user
     check_result $? "User quota update failed"
 fi
 
-vx_harbor_package_transition_side_effects_applied "$user" "$transition_token"
-check_result $? "Package side-effect transition state failed"
-vx_harbor_package_transition_commit "$user" "$transition_token"
-check_result $? 'Harbor registry quota transition commit failed'
-
-# Post-commit convergence is idempotent. If its first attempt fails but durable
-# recovery completes it, preserve the successful package change with a warning.
-committed_warning=
-if ! vx_harbor_package_transition_access_complete "$user" "$transition_token" \
-    || ! vx_harbor_package_transition_finalize "$user" "$transition_token"; then
-    if vx_harbor_package_transition_recover "$user"; then
-        committed_warning=yes
-    else
-        check_result 1 "Committed package access recovery failed"
-    fi
-fi
-harbor_package_transition_complete=yes
-if [[ "$committed_warning" == yes ]]; then
-    echo "Warning: package changed; shell access convergence recovered after an initial failure" >&2
+if ! vx_harbor_package_transition_recover "$user"; then
+    echo "Warning: package changed; Harbor reconciliation remains pending ($operation_id)" >&2
 fi
 
 #----------------------------------------------------------#

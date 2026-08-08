@@ -1,0 +1,23 @@
+#!/bin/bash
+# info: list redacted Harbor registry provider status
+# options: [FORMAT]
+
+format=${1:-plain}
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/harbor/main.sh"
+source "$VESTA/conf/vesta.conf"
+
+check_args '0' "$#" '[FORMAT]'
+[[ "$format" == json || "$format" == plain ]]
+check_result $? 'Invalid format'
+vx_harbor_provider_prepare
+check_result $? 'Harbor provider state preparation failed'
+status="$(vx_harbor_status_json)"
+check_result $? 'Harbor provider status unavailable'
+if [[ "$format" == json ]]; then
+    /usr/bin/jq -cS . <<<"$status"
+else
+    /usr/bin/jq -r '[.MODE,.PINNED_VERSION,(.RUNNING_VERSION // ""),(.ORIGIN // ""),.HEALTH,
+      (.PENDING_OPERATIONS|tostring),(.FAILED_OPERATIONS|tostring),
+      ((.BACKUP_AGE_SECONDS // "")|tostring),.CERTIFICATE_STATE] | @tsv' <<<"$status"
+fi

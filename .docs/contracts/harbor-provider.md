@@ -51,39 +51,20 @@ files. Metadata files are mode `0600`. Secrets are mode `0600`, stored
 separately from metadata, and are never included in an unencrypted backup.
 Provider backups are system backups outside tenant Compose backup roots.
 
-Package quota transitions use `data/harbor/transactions/<owner>.json` plus
-protected before/after `user.conf` authorities. The secret-free journal is
-written atomically before Harbor mutation and records one expiring operation,
-old/new quota, package and user-state digests, observation generation, and
-rollback state. Package-controlled fields use a compare/merge transaction:
-exact rollback applies when no other writer intervened, while a third digest
-preserves fresh counters and measured usage and restores only package fields.
-Recovery runs under provider-then-owner locks before another owner transition.
-Linux `renameat2(RENAME_EXCHANGE)` installs a merged candidate atomically; the
-exchanged inode is the compare authority. A protected deterministic swap file
-is recovered on either side of that exchange and both affected directories are
-fsynced. Package fields absent from staged authority, including the independent
-`BACKEND_TEMPLATE`, retain their current user-state value.
-The journal records swap intent and explicit `candidate-ready`, `exchanged`, or
-`superseded` phases together with basis, candidate, displaced, and freshest
-device/inode/digest identities. Recovery never infers direction from package
-names. A mismatched exchange is not blindly reversed: a later pathname writer
-remains authoritative, while every displaced newer inode is retained until a
-conditional identity-verified exchange or coherent field merge completes. If
-bounded convergence cannot be established, recovery keeps the journal and all
-candidate authorities and fails closed.
+Package quota transitions use `data/harbor/operations/<owner>.json`. Vesta
+package and user state is desired authority. Before external Harbor mutation,
+the command atomically publishes one secret-free operation containing exactly
+the schema, idempotent operation ID, owner, desired package and quota,
+`pending|converged|failed` state, bounded attempts, redacted last error, and
+created/updated timestamps fixed by the implementation plan. Reconciliation
+moves Harbor quota and Compose shell access forward toward desired state.
 
-The package trigger and disk-quota update remain pre-commit and any failure
-rolls back Vesta and Harbor authority. Commit does not remove recovery state:
-idempotent Compose shell-access convergence must complete before final cleanup.
-An initial post-commit convergence failure may return success only after
-durable recovery converges the committed package and emits an explicit warning.
-Before a new-package trigger runs, the journal records pending compensation.
-Rollback first restores old package authority, invokes the old package trigger
-with its prior user arguments, and reapplies the old disk quota. Failed
-compensation leaves the journal retriable and blocks later owner transitions.
-Package triggers therefore remain responsible for idempotent reconciliation
-when recovery repeats after interruption.
+An interrupted or unavailable provider leaves the operation pending and does
+not mutate workloads. Retry reuses the same operation ID. A bounded terminal
+failure records `failed`; pending and failed operations block conflicting
+package changes while the same desired operation may resume. There are no
+transition HMACs, `user.conf` preimages, exchange/CAS machinery, package-trigger
+compensation, or shell/group/disk rollback authorities.
 
 ## Provider and owner states
 
@@ -126,15 +107,12 @@ lock before owner lock; ordinary Compose operations do not take a provider
 lock.
 
 Managed package quota changes accept only owner observations no more than 300
-seconds old and no more than 30 seconds in the future. The observation must
-carry an immutable generation, which is bound into the journal and signed
-transition token and must be revalidated by the authoritative quota setter.
-The Task 10 setter must treat `(owner, operation ID, intent)` idempotently,
-verify generation and timestamp again for forward apply, and permit bounded
-idempotent rollback from the durable journal without requiring a still-fresh
-observation. Provider startup and owner reconciliation must source Compose
-access helpers, take the shared provider lock before the owner access lock,
-and call package-transition recovery before other owner mutation.
+seconds old and no more than 30 seconds in the future. The observation carries
+an immutable generation and the authoritative quota setter treats owner and
+operation ID idempotently while revalidating freshness for forward apply.
+Provider startup and owner reconciliation source Compose access helpers, take
+the shared provider lock before the owner access lock, and call package
+transition recovery before other owner mutation.
 
 No external Harbor request may occur while a tenant project lock is held.
 Provider reconciliation that later needs a workload transaction must finish
