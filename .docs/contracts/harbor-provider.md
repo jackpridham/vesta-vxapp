@@ -106,6 +106,16 @@ lock. Harbor-aware tenant/package/owner reconciliation takes shared provider
 lock before owner lock; ordinary Compose operations do not take a provider
 lock.
 
+Deleted-owner tombstone replay uses the distinct fixed order `provider shared
+lock -> Harbor tombstone owner-registry lock`. The second lock is a root-owned
+mode-0600 file under `data/harbor/locks/`, derived only from the validated
+tombstone owner. Replay never prepares or locks deleted `data/users/OWNER`
+state. Existing-owner flows continue to use the normal provider -> owner
+access -> Compose owner-registry order. Delete preparation extends that order
+with the same Harbor tombstone owner-registry lock before publishing the
+tombstone, preventing startup replay from racing publication or live-owner
+credential mutation.
+
 Managed package quota changes accept only owner observations no more than 300
 seconds old and no more than 30 seconds in the future. The observation carries
 an immutable generation and the authoritative quota setter treats owner and

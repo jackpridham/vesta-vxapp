@@ -3,20 +3,20 @@
 vx_harbor_publisher_change_locked() {
     local owner="$1" path namespace old generation username response id now json operation secret retry_status
     path="$(vx_harbor_owner_state_path "$owner")"; vx_harbor_owner_state_validate "$path" || return 1
-    _vx_harbor_rotation_retry_revoke "$owner" publisher >/dev/null && return 0
+    _vx_harbor_rotation_recover "$owner" publisher >/dev/null && return 0
     retry_status=$?; [[ "$retry_status" == 1 ]] || return "$retry_status"
     IFS= read -r -N 257 secret <&0 || [[ ${#secret} -gt 0 ]]; [[ ${#secret} -ge 16 && ${#secret} -le 256 && "$secret" != *$'\n'* ]] || return 1
     namespace="$(/usr/bin/jq -r '.NAMESPACE' "$path")"; old="$(/usr/bin/jq -r '.PUBLISHER_ROBOT_ID' "$path")"; generation="$(/usr/bin/date -u +%s)"; username="$namespace-publisher-$generation"
     response="$(printf %s "$secret" | vx_harbor_api_robot_create "$namespace" "$username" push-pull)" || return 75; id="$(/usr/bin/jq -er '.id' <<<"$response")" || return 1
     printf %s "$secret" | vx_harbor_api_credential_probe "$username" || { vx_harbor_api_robot_delete "$id" >/dev/null 2>&1 || :; return 75; }
     unset secret
-    now="$(/usr/bin/date -u +%Y-%m-%dT%H:%M:%SZ)"; json="$(/usr/bin/jq --argjson id "$id" --arg user "$username" --arg now "$now" '.PUBLISHER_ROBOT_ID=$id|.PUBLISHER_USERNAME=$user|.PUBLISHER_ENABLED=true|.STATE="publisher-ready"|.UPDATED_AT=$now|.LAST_ERROR=null' "$path")"
-    _vx_harbor_owner_write "$path" "$json" || { vx_harbor_api_robot_delete "$id" >/dev/null 2>&1 || :; return 1; }
     operation="$(/usr/bin/od -An -N16 -tx1 /dev/urandom | /usr/bin/tr -d ' \n')"
-    _vx_harbor_rotation_write "$owner" publisher "$operation" pending-revoke "$id" "$username" "$old" || return 1
-    if [[ "$old" == null ]] || vx_harbor_api_robot_delete "$old" >/dev/null; then
-        _vx_harbor_rotation_write "$owner" publisher "$operation" converged "$id" "$username" "$old" || return 1
+    if ! _vx_harbor_rotation_write "$owner" publisher "$operation" pending-switch "$id" "$username" "$old"; then
+        vx_harbor_api_robot_delete "$id" >/dev/null 2>&1 || :
+        return 1
     fi
+    _vx_harbor_rotation_checkpoint publisher journal-published || return 76
+    _vx_harbor_rotation_recover "$owner" publisher >/dev/null
 }
 
 vx_harbor_publisher_revoke_locked() { local owner="$1" path="$2" id now json; vx_harbor_owner_state_validate "$path" || return 1; id="$(/usr/bin/jq -r '.PUBLISHER_ROBOT_ID' "$path")"; [[ "$id" == null ]] || vx_harbor_api_robot_disable "$id" >/dev/null || return 75; now="$(/usr/bin/date -u +%Y-%m-%dT%H:%M:%SZ)"; json="$(/usr/bin/jq --arg now "$now" '.PUBLISHER_ROBOT_ID=null|.PUBLISHER_USERNAME=null|.PUBLISHER_ENABLED=false|.STATE=(if .RUNTIME_ROBOT_ID==null then "retained" else "publisher-disabled" end)|.UPDATED_AT=$now' "$path")"; _vx_harbor_owner_write "$path" "$json"; }

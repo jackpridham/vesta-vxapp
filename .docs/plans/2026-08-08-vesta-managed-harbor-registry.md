@@ -589,6 +589,25 @@ git commit -m "feat(harbor): add tenant registry lifecycle"
 - Direct Task 5-7, package, status, and provider-state suites passed. The
   aggregate focused runner was not invoked during blocker correction.
 
+#### Milestone 3 rotation and tombstone lock correction
+
+- Runtime and publisher rotation now fsync a nonsecret `pending-switch`
+  journal before activating protected registry or owner mapping authority.
+  Runtime candidate material is staged only inside protected Compose registry
+  state. Recovery inspects durable active authority and converges
+  `pending-switch -> pending-revoke -> converged` without creating another
+  robot. Injection covers journal-write failure and crashes immediately after
+  journal publication and authority switch for both credential classes.
+- Deleted-owner replay now follows `provider shared -> Harbor tombstone
+  owner-registry` locking. The dedicated root-owned lock is derived from the
+  validated tombstone owner and never prepares or locks deleted Vesta user
+  state. Executable replay coverage removes the user directory, leaves Compose
+  lock functions unavailable, and proves ordered revocation, artifact/mapping
+  retention, and tombstone cleanup.
+- Only direct credentials, publisher, revocation, owner, and API tests plus
+  touched Bash syntax and `git diff --check` are required for this correction;
+  the aggregate runner remains prohibited.
+
 ## Milestone 4: Operations and operator surfaces
 
 ### Task 8: Add health, encrypted backup validation, disable, and bounded operations
