@@ -21,12 +21,22 @@ _vx_harbor_install_secret() {
 }
 
 _vx_harbor_install_harbor_yml() {
-    local stage origin_json secrets template
+    local stage origin_json secrets template current_secrets
     stage="$1"; origin_json="$2"
     secrets="$stage/secrets"; template="$stage/extracted/harbor/harbor.yml.tmpl"
     /usr/bin/mkdir -m 0700 "$secrets" || return 1
-    _vx_harbor_install_secret "$secrets/admin" || return 1
-    _vx_harbor_install_secret "$secrets/database" || return 1
+    current_secrets="$(vx_harbor_root)/release/current/secrets"
+    if [[ -e "$current_secrets/admin" || -e "$current_secrets/database" ]]; then
+        vx_harbor_secure_regular_file "$current_secrets/admin" 0600 \
+            && vx_harbor_secure_regular_file "$current_secrets/database" 0600 \
+            && /usr/bin/install -o "$(_vx_harbor_authority_uid)" -g "$(_vx_harbor_authority_gid)" \
+              -m 0600 "$current_secrets/admin" "$secrets/admin" \
+            && /usr/bin/install -o "$(_vx_harbor_authority_uid)" -g "$(_vx_harbor_authority_gid)" \
+              -m 0600 "$current_secrets/database" "$secrets/database" || return 1
+    else
+        _vx_harbor_install_secret "$secrets/admin" || return 1
+        _vx_harbor_install_secret "$secrets/database" || return 1
+    fi
     /usr/bin/python3 - "$template" "$stage/harbor.yml" "$secrets/admin" "$secrets/database" "$origin_json" <<'PY'
 import json,pathlib,re,sys
 src,dst,admin_path,db_path,origin_path=sys.argv[1:]
@@ -247,11 +257,25 @@ _vx_harbor_install_bootstrap_retry() {
     return 75
 }
 
+_vx_harbor_install_configuration_subset() {
+    /usr/bin/jq -ce '
+        def setting:
+            if type == "object" and has("value") then .value else . end;
+        {
+            self_registration: (.self_registration | setting),
+            project_creation_restriction: (.project_creation_restriction | setting)
+        }
+        | select(.self_registration | type == "boolean")
+        | select(.project_creation_restriction | type == "string")
+    '
+}
+
 _vx_harbor_install_external_cleanup() {
-    local stage="$1" path journal prior candidate response body
+    local stage="$1" path journal prior candidate response body observed
     path="$(_vx_harbor_install_journal_path)"; [[ -f "$path" ]] || return 0
     journal="$(/usr/bin/jq -cS . "$path")" || return 1
-    prior="$(/usr/bin/jq -c '.PRIOR_CONFIGURATION' <<<"$journal")" || return 1
+    prior="$(/usr/bin/jq -c '.PRIOR_CONFIGURATION' <<<"$journal" \
+      | _vx_harbor_install_configuration_subset)" || return 1
     candidate="$(/usr/bin/jq -r '.CANDIDATE_ROBOT_ID // empty' <<<"$journal")" || return 1
     response="$stage/integration-cleanup.json"
     if [[ -n "$candidate" ]]; then
@@ -261,20 +285,20 @@ _vx_harbor_install_external_cleanup() {
     fi
     _vx_harbor_install_bootstrap_retry "$stage" PUT /api/v2.0/configurations "$prior" "$response" || return 75
     _vx_harbor_install_bootstrap_retry "$stage" GET /api/v2.0/configurations '' "$response" || return 75
-    /usr/bin/jq -e --argjson prior "$prior" '.==$prior' "$response" >/dev/null || return 75
+    observed="$(_vx_harbor_install_configuration_subset <"$response")" || return 75
+    [[ "$observed" == "$prior" ]] || return 75
     /usr/bin/rm -f -- "$(vx_harbor_root)/secrets/.integration.curl.candidate" "$path"
     _vx_harbor_fsync "$(vx_harbor_root)/operations"
 }
 
 _vx_harbor_install_integration_configure() {
-    local stage="$1" root response config_body secret username robot_body candidate probe robots existing installation operation journal robot_id prior
+    local stage="$1" root response config_body secret username robot_body candidate probe robots existing installation operation journal robot_id prior observed
     root="$(vx_harbor_root)"; response="$stage/integration-response.json"
     _vx_harbor_install_external_cleanup "$stage" || return 75
     installation="$(/usr/bin/jq -r '.INSTALLATION_ID // "vesta-harbor"' "$root/provider.json")"
     operation="$(/usr/bin/od -An -N16 -tx1 /dev/urandom | /usr/bin/tr -d ' \n')"
     _vx_harbor_install_bootstrap_retry "$stage" GET /api/v2.0/configurations '' "$response" || return 75
-    /usr/bin/jq -e 'type=="object"' "$response" >/dev/null || return 1
-    prior="$(/usr/bin/jq -cS . "$response")"
+    prior="$(_vx_harbor_install_configuration_subset <"$response")" || return 1
     _vx_harbor_install_bootstrap_retry "$stage" GET /api/v2.0/robots '' "$response" || return 75
     robots="$(/usr/bin/jq -cS 'map(select(.name=="vesta-integration"))' "$response")" || return 1
     (( $(/usr/bin/jq 'length' <<<"$robots") <= 1 )) || return 1
@@ -285,7 +309,8 @@ _vx_harbor_install_integration_configure() {
     config_body='{"self_registration":false,"project_creation_restriction":"adminonly"}'
     _vx_harbor_install_bootstrap_retry "$stage" PUT /api/v2.0/configurations "$config_body" "$response" || return 75
     _vx_harbor_install_bootstrap_retry "$stage" GET /api/v2.0/configurations '' "$response" || return 75
-    /usr/bin/jq -e '.self_registration==false and .project_creation_restriction=="adminonly"' "$response" >/dev/null || return 1
+    observed="$(_vx_harbor_install_configuration_subset <"$response")" || return 1
+    [[ "$observed" == "$config_body" ]] || return 1
     if [[ "$existing" != null && -f "$root/secrets/integration.curl" ]]; then
         robot_id="$(/usr/bin/jq -r .id <<<"$existing")"; candidate="$root/secrets/integration.curl"
     else

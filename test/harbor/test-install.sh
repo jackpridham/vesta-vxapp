@@ -70,6 +70,18 @@ grep -q '^external_url: https://host.example:8083$' "$config_stage/harbor.yml" \
   || fail 'external proxy origin was not rendered'
 grep -q '^    location: /var/lib/vesta-harbor/log$' "$config_stage/harbor.yml" \
   || fail 'managed Harbor log path was not rendered'
+current_secrets="$VESTA/data/harbor/release/current/secrets"
+mkdir -p "$current_secrets"
+install -m 0600 "$config_stage/secrets/admin" "$current_secrets/admin"
+install -m 0600 "$config_stage/secrets/database" "$current_secrets/database"
+resume_stage="$HARBOR_TEST_ROOT/resume-stage"
+mkdir -p "$resume_stage/extracted/harbor"
+cp "$config_stage/extracted/harbor/harbor.yml.tmpl" "$resume_stage/extracted/harbor/harbor.yml.tmpl"
+_vx_harbor_install_harbor_yml "$resume_stage" '{"HOSTNAME":"host.example","ORIGIN":"https://host.example:8083"}'
+cmp -s "$current_secrets/admin" "$resume_stage/secrets/admin" || fail 'resumable install rotated bootstrap authority'
+cmp -s "$current_secrets/database" "$resume_stage/secrets/database" || fail 'resumable install rotated database authority'
+rm -rf "$VESTA/data/harbor/release/current"
+chmod 0700 "$VESTA/data/harbor/release"
 saved_image="$HARBOR_TEST_ROOT/saved-image.tar"; saved_root="$HARBOR_TEST_ROOT/saved-image"
 mkdir -p "$saved_root"
 printf '[{"Config":"blobs/sha256/%064d","Layers":["layer"],"RepoTags":null}]\n' 0 >"$saved_root/manifest.json"
