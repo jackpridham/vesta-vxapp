@@ -289,6 +289,13 @@ jq -e '. == {
     REGISTRY:"panel.example.com:8083", ORIGIN:"https://panel.example.com:8083"
 }' <<<"$origin" >/dev/null || fail 'derived origin is incorrect'
 
+mime_types="$VESTA/nginx/conf/mime.types"
+write_valid_mime_types() {
+    printf 'types {\n  text/html html htm;\n  application/json json;\n  image/svg+xml svg;\n}\n' \
+        >"$mime_types"
+    chmod 0644 "$mime_types"
+}
+write_valid_mime_types
 printf 'http {\n  include mime.types;\n  log_format main '\''$remote_addr $host $request_uri'\'';\n  server {\n    root /srv/unrelated;\n    listen 9443 ssl;\n    ssl_certificate %s;\n  }\n  server {\n    root %s/web;\n    server_name panel.example.com;\n    listen 8083 ssl;\n    ssl_certificate %s;\n    access_log /var/log/vesta/access.log main;\n    location / { proxy_set_header Host $host; proxy_set_header X-Request-ID $request_id; }\n  }\n}\n' \
     "$certificate" "$VESTA" "$certificate" >"$VESTA/nginx/conf/nginx.conf"
 origin="$(vx_harbor_origin_json)" || fail 'shipped-style Vesta nginx config was rejected'
@@ -296,6 +303,50 @@ jq -e 'keys == ["HOSTNAME", "ORIGIN", "PORT", "REGISTRY"] and . == {
     HOSTNAME:"panel.example.com", PORT:8083,
     REGISTRY:"panel.example.com:8083", ORIGIN:"https://panel.example.com:8083"
 }' <<<"$origin" >/dev/null || fail 'shipped-style config derived the wrong origin'
+
+mv "$mime_types" "$mime_types.saved"
+if vx_harbor_origin_json >/dev/null 2>&1; then
+    fail 'missing mime.types authority was accepted'
+fi
+mv "$mime_types.saved" "$mime_types"
+mv "$mime_types" "$mime_types.saved"
+ln -s "$mime_types.saved" "$mime_types"
+if vx_harbor_origin_json >/dev/null 2>&1; then
+    fail 'symlinked mime.types authority was accepted'
+fi
+unlink "$mime_types"
+ln "$mime_types.saved" "$mime_types"
+if vx_harbor_origin_json >/dev/null 2>&1; then
+    fail 'hard-linked mime.types authority was accepted'
+fi
+unlink "$mime_types"
+mv "$mime_types.saved" "$mime_types"
+chmod 0666 "$mime_types"
+if vx_harbor_origin_json >/dev/null 2>&1; then
+    fail 'insecure mime.types authority was accepted'
+fi
+write_valid_mime_types
+printf 'types { text/html html; }\nserver { listen 9999; }\n' >"$mime_types"
+chmod 0644 "$mime_types"
+if vx_harbor_origin_json >/dev/null 2>&1; then
+    fail 'server-bearing mime.types authority was accepted'
+fi
+printf 'types { text/html $dynamic_extension; }\n' >"$mime_types"
+chmod 0644 "$mime_types"
+if vx_harbor_origin_json >/dev/null 2>&1; then
+    fail 'dynamic mime.types authority was accepted'
+fi
+write_valid_mime_types
+
+printf 'http {\n  include %s;\n  log_format main '\''$remote_addr - $remote_user [$time_local] $request'\'';\n  proxy_set_header Host $host;\n  server {\n    listen 8083;\n    server_name _;\n    root %s/web;\n    ssl on;\n    ssl_certificate %s;\n    location ~ php { include %s/nginx/conf/fastcgi_params; fastcgi_param SCRIPT_FILENAME %s/web/$fastcgi_script_name; }\n  }\n}\n' \
+    "$mime_types" "$VESTA" "$certificate" "$VESTA" "$VESTA" \
+    >"$VESTA/nginx/conf/nginx.conf"
+origin="$(vx_harbor_origin_json)" || fail 'shipped legacy Vesta TLS form was rejected'
+jq -e 'keys == ["HOSTNAME", "ORIGIN", "PORT", "REGISTRY"] and . == {
+    HOSTNAME:"panel.example.com", PORT:8083,
+    REGISTRY:"panel.example.com:8083", ORIGIN:"https://panel.example.com:8083"
+}' <<<"$origin" >/dev/null || fail 'legacy Vesta TLS form derived the wrong origin'
+
 write_nginx
 
 for invalid_hostname in localhost panel 127.0.0.1 '[::1]' '-bad.example.com'; do
@@ -346,6 +397,12 @@ if vx_harbor_origin_json >/dev/null 2>&1; then
     fail 'nginx include ambiguity was accepted'
 fi
 
+printf 'server { root /srv/unrelated; include conf.d/unrelated.conf; }\nserver { root %s/web; listen 8083 ssl; ssl_certificate %s; }\n' \
+    "$VESTA" "$certificate" >"$VESTA/nginx/conf/nginx.conf"
+if vx_harbor_origin_json >/dev/null 2>&1; then
+    fail 'direct include in an unrelated server context was accepted'
+fi
+
 printf 'server { root %s/web; listen $panel_port ssl; ssl_certificate %s; }\n' \
     "$VESTA" "$certificate" >"$VESTA/nginx/conf/nginx.conf"
 if vx_harbor_origin_json >/dev/null 2>&1; then
@@ -368,6 +425,24 @@ printf 'http { include conf.d/*.conf; server { root %s/web; listen 8083 ssl; ssl
     "$VESTA" "$certificate" >"$VESTA/nginx/conf/nginx.conf"
 if vx_harbor_origin_json >/dev/null 2>&1; then
     fail 'server-capable global include ambiguity was accepted'
+fi
+
+for legacy_ssl in 'off' '$ssl_mode' 'on; ssl on'; do
+    printf 'server { root %s/web; listen 8083; ssl %s; ssl_certificate %s; }\n' \
+        "$VESTA" "$legacy_ssl" "$certificate" >"$VESTA/nginx/conf/nginx.conf"
+    if vx_harbor_origin_json >/dev/null 2>&1; then
+        fail "unsafe legacy ssl form was accepted: $legacy_ssl"
+    fi
+done
+printf 'server { root %s/web; listen 8083 ssl; ssl on; ssl_certificate %s; }\n' \
+    "$VESTA" "$certificate" >"$VESTA/nginx/conf/nginx.conf"
+if vx_harbor_origin_json >/dev/null 2>&1; then
+    fail 'ambiguous inline and legacy TLS combination was accepted'
+fi
+printf 'server { root %s/web; listen 8083; listen 8443; ssl on; ssl_certificate %s; }\n' \
+    "$VESTA" "$certificate" >"$VESTA/nginx/conf/nginx.conf"
+if vx_harbor_origin_json >/dev/null 2>&1; then
+    fail 'multiple legacy panel listeners were accepted'
 fi
 
 printf 'http {\n  # unrelated listener must not become panel authority\n  server { root /srv/other; listen 9443 ssl; ssl_certificate %s; }\n  server {\n    root\n      %s/web; # panel marker\n    listen\n      8083\n      ssl; # numeric TLS authority\n    ssl_certificate\n      %s; # panel certificate\n  }\n}\n' \
