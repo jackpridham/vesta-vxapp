@@ -31,6 +31,7 @@ export PROVIDER_LOCK_PATH="$VESTA/data/harbor/locks/provider.lock" RECONCILE_DON
 VX_HARBOR_SYSTEMCTL="$systemctl"
 VX_HARBOR_SYSTEMD_TARGET="$HARBOR_TEST_ROOT/systemd/vesta-harbor.service"
 VX_HARBOR_NGINX_TARGET="$VESTA/nginx/conf/harbor-registry.conf"
+VX_HARBOR_SOCKET_GID=33
 printf 'events {}\nhttp { server { root %s/web; listen 8083 ssl; ssl_certificate /panel.pem; } }\n' "$VESTA" >"$VESTA/nginx/conf/nginx.conf"
 VX_HARBOR_MIN_FREE_KB=0
 _vx_harbor_install_requirements() { return 0; }
@@ -176,10 +177,11 @@ vx_harbor_release_images_validate "$VESTA/install/harbor/release-manifest.json" 
 [[ "$(grep -c '^  [a-z].*:$' "$compose")" -ge 10 ]] || fail 'canonical service graph missing'
 grep -q '/var/lib/vesta-harbor' "$compose" || fail 'durable provider storage missing'
 grep -q '/run/vesta-harbor:/run/vesta-harbor' "$compose" || fail 'socket creation mount missing'
-grep -A14 '^  proxy:' "$compose" | grep -q '^    user: "0:0"$' || fail 'proxy master cannot create protected socket'
-grep -A14 '^  proxy:' "$compose" | grep -q '^      - ALL$' || fail 'proxy capability drop missing'
-grep -A14 '^  proxy:' "$compose" | grep -q '^      - no-new-privileges:true$' || fail 'proxy privilege ceiling missing'
-! grep -A14 '^  proxy:' "$compose" | grep -qE 'CHOWN|NET_BIND_SERVICE' || fail 'unneeded proxy capabilities survived transform'
+grep -A16 '^  proxy:' "$compose" | grep -q '^    user: "0:33"$' || fail 'proxy master cannot create group-protected socket'
+grep -A16 '^  proxy:' "$compose" | grep -Fq 'umask 0117; exec nginx' || fail 'proxy socket mode is not deterministic'
+grep -A16 '^  proxy:' "$compose" | grep -q '^      - ALL$' || fail 'proxy capability drop missing'
+grep -A16 '^  proxy:' "$compose" | grep -q '^      - no-new-privileges:true$' || fail 'proxy privilege ceiling missing'
+! grep -A16 '^  proxy:' "$compose" | grep -qE 'CHOWN|NET_BIND_SERVICE' || fail 'unneeded proxy capabilities survived transform'
 ! grep -q '^    ports:' "$compose" || fail 'canonical host ports survived transform'
 grep -q 'depends_on:' "$compose" || fail 'canonical dependency graph missing'
 grep -q 'env_file:' "$compose" || fail 'canonical generated component configuration missing'

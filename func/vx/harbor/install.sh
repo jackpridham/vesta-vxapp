@@ -50,10 +50,16 @@ PY
 }
 
 _vx_harbor_install_transform_generated() {
-    local stage="$1" manifest="$2"
-    /usr/bin/python3 - "$stage/docker-compose.yml" "$stage/common/config/nginx/nginx.conf" "$manifest" <<'PY'
+    local stage="$1" manifest="$2" ingress_gid
+    ingress_gid="${VX_HARBOR_SOCKET_GID:-}"
+    if [[ -z "$ingress_gid" ]]; then
+        ingress_gid="$(/usr/bin/getent group www-data | /usr/bin/awk -F: 'NR==1 {print $3}')" || return 1
+    fi
+    [[ "$ingress_gid" =~ ^[1-9][0-9]*$ ]] || return 1
+    /usr/bin/python3 - "$stage/docker-compose.yml" "$stage/common/config/nginx/nginx.conf" "$manifest" "$ingress_gid" <<'PY'
 import json,pathlib,re,sys
-compose_path,nginx_path,manifest_path=map(pathlib.Path,sys.argv[1:])
+compose_path,nginx_path,manifest_path=map(pathlib.Path,sys.argv[1:4])
+ingress_gid=sys.argv[4]
 images=json.loads(manifest_path.read_text())['images']
 text=compose_path.read_text()
 for name,digest in images.items():
@@ -64,7 +70,7 @@ text=re.sub(r'(?m)^    logging:\n      driver: "syslog"\n      options:\n(?:    
 proxy=re.search(r'(?ms)^(  proxy:\n.*?)(?=^  [a-z]|^networks:)', text)
 if not proxy: raise SystemExit(1)
 block=proxy.group(1)
-if re.search(r'(?m)^    (?:user|security_opt):', block): raise SystemExit(1)
+if re.search(r'(?m)^    (?:user|command|security_opt):', block): raise SystemExit(1)
 upstream_hardening='''    cap_drop:
       - ALL
     cap_add:
@@ -83,8 +89,9 @@ managed_hardening='''    cap_drop:
       - no-new-privileges:true
 '''
 block=block.replace(upstream_hardening, managed_hardening, 1)
-block=block.replace('  proxy:\n', '''  proxy:
-    user: "0:0"
+block=block.replace('  proxy:\n', f'''  proxy:
+    user: "0:{ingress_gid}"
+    command: ["/bin/sh", "-c", "umask 0117; exec nginx -g 'daemon off;'"]
 ''', 1)
 block=block.replace('    volumes:\n', '    volumes:\n      - /run/vesta-harbor:/run/vesta-harbor\n', 1)
 text='name: vesta-harbor\n'+text[:proxy.start(1)]+block+text[proxy.end(1):]

@@ -11,6 +11,7 @@ grep -q '/run/vesta-harbor/proxy.sock' "$HARBOR_REPO_ROOT/install/harbor/harbor-
 grep -q 'listen unix:/run/vesta-harbor/proxy.sock' "$HARBOR_REPO_ROOT/func/vx/harbor/install.sh" || fail 'real Unix socket listener transform missing'
 grep -q 'install -o 0 -g www-data -m 0750 -d /run/vesta-harbor' "$HARBOR_REPO_ROOT/install/harbor/vesta-harbor.service" || fail 'protected ingress directory missing'
 grep -q "nginx='user nginx;" "$HARBOR_REPO_ROOT/func/vx/harbor/install.sh" || fail 'proxy worker privilege drop missing'
+grep -q 'umask 0117; exec nginx' "$HARBOR_REPO_ROOT/func/vx/harbor/install.sh" || fail 'protected socket creation mode missing'
 ! grep -q '/bin/true' "$HARBOR_REPO_ROOT/func/vx/harbor/install.sh" || fail 'placeholder health or migration check remains'
 grep -q 'pg_isready' "$HARBOR_REPO_ROOT/func/vx/harbor/install.sh" || fail 'database migration readiness check missing'
 grep -q 'for attempt in {1..30}' "$HARBOR_REPO_ROOT/func/vx/harbor/install.sh" || fail 'bounded startup retries missing'
