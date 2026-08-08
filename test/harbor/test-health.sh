@@ -7,5 +7,5 @@ vx_harbor_api_quota_get(){ printf '{"id":1,"used":{"storage":0}}'; }; vx_harbor_
 vx_harbor_provider_lock_acquire shared; result="$(vx_harbor_health_observe_locked)"; vx_harbor_provider_lock_release
 jq -e '.SCHEMA==1 and .HEALTH=="healthy" and .STORAGE.USED_BYTES==12 and .CERTIFICATE.HOSTNAME_VALID and (.OBSERVED_AT|type=="string")' <<<"$result" >/dev/null || fail 'bounded health observation invalid'
 grep -Eq 'password|secret|/run/vesta' <<<"$result" && fail 'health observation leaked protected detail'
-jq -e 'keys==["HEALTH","OBSERVED_AT"]' "$(vx_harbor_root)/observations/provider.json" >/dev/null || fail 'provider discovery observation schema regressed'
+jq -e 'keys==["HEALTH","OBSERVED_AT","SCHEMA"] and .SCHEMA==1' "$(vx_harbor_root)/observations/provider.json" >/dev/null || fail 'provider discovery observation schema regressed'
 printf 'PASS: bounded Harbor health observations\n'
