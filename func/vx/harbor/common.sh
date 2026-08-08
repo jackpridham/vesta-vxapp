@@ -8,12 +8,24 @@ vx_harbor_data_root() {
     printf '%s\n' '/var/lib/vesta-harbor'
 }
 
-_vx_harbor_expected_uid() {
-    if (( EUID == 0 )); then
-        printf '0\n'
-    else
-        printf '%s\n' "$EUID"
-    fi
+_vx_harbor_authority_uid() {
+    printf '0\n'
+}
+
+_vx_harbor_authority_gid() {
+    printf '0\n'
+}
+
+_vx_harbor_require_root() {
+    (( EUID == 0 ))
+}
+
+_vx_harbor_install_directory() {
+    /usr/bin/install -d -o 0 -g 0 -m 0700 "$1"
+}
+
+_vx_harbor_secure_file_set() {
+    /usr/bin/chown 0:0 "$1" && /usr/bin/chmod "$2" "$1"
 }
 
 _vx_harbor_fsync() {
@@ -34,43 +46,43 @@ PY
 
 _vx_harbor_secure_directory() {
     local path="$1"
-    local expected_uid
+    local expected_uid expected_gid
     [[ -d "$path" && ! -L "$path" ]] || return 1
-    expected_uid="$(_vx_harbor_expected_uid)" || return 1
-    [[ "$(/usr/bin/stat -c '%u:%a' -- "$path" 2>/dev/null)" == "$expected_uid:700" ]]
+    expected_uid="$(_vx_harbor_authority_uid)" || return 1
+    expected_gid="$(_vx_harbor_authority_gid)" || return 1
+    [[ "$(/usr/bin/stat -c '%u:%g:%a' -- "$path" 2>/dev/null)" \
+        == "$expected_uid:$expected_gid:700" ]]
 }
 
 vx_harbor_secure_regular_file() {
     local path="$1"
     local mode="$2"
-    local expected_uid
+    local expected_uid expected_gid
 
     [[ "$mode" =~ ^0[0-7]{3}$ ]] || return 1
     [[ -f "$path" && ! -L "$path" ]] || return 1
-    expected_uid="$(_vx_harbor_expected_uid)" || return 1
-    [[ "$(/usr/bin/stat -c '%u:%h:%a' -- "$path" 2>/dev/null)" \
-        == "$expected_uid:1:${mode#0}" ]]
+    expected_uid="$(_vx_harbor_authority_uid)" || return 1
+    expected_gid="$(_vx_harbor_authority_gid)" || return 1
+    [[ "$(/usr/bin/stat -c '%u:%g:%h:%a' -- "$path" 2>/dev/null)" \
+        == "$expected_uid:$expected_gid:1:${mode#0}" ]]
 }
 
 vx_harbor_json_write_atomic() {
     local destination="$1"
     local source="$2"
-    local directory temporary expected_uid
+    local directory temporary
 
+    _vx_harbor_require_root || return 1
     directory="$(dirname -- "$destination")" || return 1
     [[ -d "$directory" && ! -L "$directory" ]] || return 1
     [[ -f "$source" && ! -L "$source" ]] || return 1
     temporary="$(/usr/bin/mktemp "$directory/.harbor-json.XXXXXX")" || return 1
     if ! /usr/bin/jq -S . "$source" >"$temporary" \
-        || ! /usr/bin/chmod 0600 "$temporary"; then
+        || ! _vx_harbor_secure_file_set "$temporary" 0600; then
         /usr/bin/rm -f -- "$temporary"
         return 1
     fi
-    expected_uid="$(_vx_harbor_expected_uid)" || {
-        /usr/bin/rm -f -- "$temporary"
-        return 1
-    }
-    if [[ "$(/usr/bin/stat -c '%u' -- "$temporary" 2>/dev/null)" != "$expected_uid" ]] \
+    if ! vx_harbor_secure_regular_file "$temporary" 0600 \
         || ! _vx_harbor_fsync "$temporary" \
         || ! /usr/bin/mv -fT -- "$temporary" "$destination" \
         || ! _vx_harbor_fsync "$directory" \
@@ -82,12 +94,13 @@ vx_harbor_json_write_atomic() {
 
 vx_harbor_provider_prepare() {
     local root source directory
+    _vx_harbor_require_root || return 1
     root="$(vx_harbor_root)" || return 1
 
-    /usr/bin/install -d -m 0700 "$root" || return 1
+    _vx_harbor_install_directory "$root" || return 1
     _vx_harbor_secure_directory "$root" || return 1
     for directory in owners observations secrets release backups locks; do
-        /usr/bin/install -d -m 0700 "$root/$directory" || return 1
+        _vx_harbor_install_directory "$root/$directory" || return 1
         _vx_harbor_secure_directory "$root/$directory" || return 1
     done
     if [[ -e "$root/provider.json" || -L "$root/provider.json" ]]; then
@@ -137,6 +150,7 @@ vx_harbor_provider_lock_acquire() {
     local mode="$1"
     local root lock_path requested_flag
 
+    _vx_harbor_require_root || return 1
     [[ "$mode" == shared || "$mode" == exclusive ]] || return 1
     if [[ -n "${VX_HARBOR_PROVIDER_LOCK_FD:-}" ]]; then
         [[ "${VX_HARBOR_PROVIDER_LOCK_MODE:-}" == "$mode" \
@@ -145,13 +159,13 @@ vx_harbor_provider_lock_acquire() {
         return 0
     fi
     root="$(vx_harbor_root)" || return 1
-    /usr/bin/install -d -m 0700 "$root/locks" || return 1
+    _vx_harbor_install_directory "$root/locks" || return 1
     lock_path="$root/locks/provider.lock"
     if [[ -e "$lock_path" || -L "$lock_path" ]]; then
         vx_harbor_secure_regular_file "$lock_path" 0600 || return 1
     fi
     exec {VX_HARBOR_PROVIDER_LOCK_FD}>>"$lock_path" || return 1
-    /usr/bin/chmod 0600 "$lock_path" || {
+    _vx_harbor_secure_file_set "$lock_path" 0600 || {
         exec {VX_HARBOR_PROVIDER_LOCK_FD}>&-
         unset VX_HARBOR_PROVIDER_LOCK_FD
         return 1

@@ -33,6 +33,37 @@ assert_file "$HARBOR_REPO_ROOT/func/vx/harbor/audit.sh"
 # shellcheck source=func/vx/harbor/main.sh
 source "$VESTA/func/vx/harbor/main.sh"
 
+[[ "$(_vx_harbor_authority_uid)" == 0 ]] \
+    || fail 'production provider authority UID is not root'
+[[ "$(_vx_harbor_authority_gid)" == 0 ]] \
+    || fail 'production provider authority GID is not root'
+if (( EUID != 0 )); then
+    non_root_source="$HARBOR_TEST_ROOT/non-root-source.json"
+    printf '{}\n' >"$non_root_source"
+    if vx_harbor_provider_prepare 2>/dev/null; then
+        fail 'non-root provider preparation was accepted'
+    fi
+    if vx_harbor_json_write_atomic "$VESTA/data/harbor/non-root.json" \
+        "$non_root_source" 2>/dev/null; then
+        fail 'non-root atomic provider mutation was accepted'
+    fi
+    if vx_harbor_provider_lock_acquire exclusive 2>/dev/null; then
+        fail 'non-root provider lock mutation was accepted'
+    fi
+    if vx_harbor_audit system provider-prepare failed non-root 2>/dev/null; then
+        fail 'non-root provider audit mutation was accepted'
+    fi
+fi
+
+# Production helpers above always require root:root. The isolated harness
+# substitutes private functions only after sourcing so it can exercise the
+# same state behavior without granting inherited environment control.
+_vx_harbor_authority_uid() { printf '%s\n' "$EUID"; }
+_vx_harbor_authority_gid() { id -g; }
+_vx_harbor_require_root() { return 0; }
+_vx_harbor_install_directory() { install -d -m 0700 "$1"; }
+_vx_harbor_secure_file_set() { chmod "$2" "$1"; }
+
 assert_mode() {
     [[ "$(stat -c '%a' "$1")" == "$2" ]] || fail "unexpected mode for $1"
 }
@@ -45,8 +76,8 @@ for directory in "$root" "$root/owners" "$root/observations" "$root/secrets" \
     "$root/release" "$root/backups" "$root/locks"; do
     [[ -d "$directory" && ! -L "$directory" ]] || fail "missing secure directory: $directory"
     assert_mode "$directory" 700
-    [[ "$(stat -c '%u' "$directory")" == "$EUID" ]] \
-        || fail "unexpected owner for $directory"
+    [[ "$(stat -c '%u:%g' "$directory")" == "$EUID:$(id -g)" ]] \
+        || fail "unexpected test authority owner for $directory"
 done
 assert_mode "$root/provider.json" 600
 vx_harbor_secure_regular_file "$root/provider.json" 0600 \

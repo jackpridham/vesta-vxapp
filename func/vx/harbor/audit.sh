@@ -7,12 +7,14 @@ vx_harbor_audit() {
     local reason="$4"
     local root path lock_path event lock_fd timestamp
 
+    _vx_harbor_require_root || return 1
     [[ "$owner" == system || "$owner" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ ]] || return 1
     [[ "$operation" =~ ^[a-z][a-z0-9-]{0,63}$ ]] || return 1
     [[ "$result" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || return 1
     [[ ${#reason} -le 256 && "$reason" != *$'\n'* && "$reason" != *$'\r'* ]] || return 1
     root="$(vx_harbor_root)" || return 1
-    /usr/bin/install -d -m 0700 "$root" "$root/locks" || return 1
+    _vx_harbor_install_directory "$root" || return 1
+    _vx_harbor_install_directory "$root/locks" || return 1
     _vx_harbor_secure_directory "$root" || return 1
     _vx_harbor_secure_directory "$root/locks" || return 1
     path="$root/audit.log"
@@ -24,7 +26,8 @@ vx_harbor_audit() {
         vx_harbor_secure_regular_file "$lock_path" 0600 || return 1
     fi
     exec {lock_fd}>>"$lock_path" || return 1
-    /usr/bin/chmod 0600 "$lock_path" || { exec {lock_fd}>&-; return 1; }
+    _vx_harbor_secure_file_set "$lock_path" 0600 \
+        || { exec {lock_fd}>&-; return 1; }
     vx_harbor_secure_regular_file "$lock_path" 0600 \
         || { exec {lock_fd}>&-; return 1; }
     /usr/bin/flock -x "$lock_fd" || { exec {lock_fd}>&-; return 1; }
@@ -42,7 +45,7 @@ vx_harbor_audit() {
             return 1
         }
     if ! printf '%s\n' "$event" >>"$path" \
-        || ! /usr/bin/chmod 0600 "$path" \
+        || ! _vx_harbor_secure_file_set "$path" 0600 \
         || ! vx_harbor_secure_regular_file "$path" 0600 \
         || ! _vx_harbor_fsync "$path" \
         || ! _vx_harbor_fsync "$root"; then
