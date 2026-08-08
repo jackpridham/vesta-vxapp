@@ -110,6 +110,7 @@ for fail_phase in prerequisite release generation compose migration health socke
     [[ "$(jq -r .MODE "$VESTA/data/harbor/provider.json")" == disabled ]] || fail "$fail_phase provider rollback failed"
     [[ "$(sha256sum "$VESTA/data/harbor/provider.json"|awk '{print $1}')" == "$prior_provider" ]] || fail "$fail_phase provider bytes changed"
     [[ "$(cat "$VESTA/data/harbor/release/current/marker")" == prior-current && "$(cat "$VESTA/data/harbor/release/previous/marker")" == prior-previous ]] || fail "$fail_phase release rollback failed"
+    ! compgen -G "$VESTA/data/harbor/release/.install.*" >/dev/null || fail "$fail_phase retained pre-activation staging"
     vx_harbor_provider_lock_acquire exclusive || fail "$fail_phase stranded provider lock"
     vx_harbor_provider_lock_release
 done

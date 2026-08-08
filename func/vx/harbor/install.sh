@@ -290,6 +290,10 @@ vx_harbor_install() {
         if [[ "$previous_rotated" == yes ]]; then
             [[ "$previous_existed" == yes && -d "$rollback/previous" ]] && /usr/bin/mv "$rollback/previous" "$root/release/previous" || :
         fi
+        if [[ "$candidate_activated" != yes \
+            && "$stage" == "$root"/release/.install.* ]]; then
+            /usr/bin/rm -rf -- "$stage"
+        fi
         "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" daemon-reload >/dev/null 2>&1 || :
         [[ "$service_enabled" == yes ]] && "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" enable vesta-harbor.service >/dev/null 2>&1 || "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" disable vesta-harbor.service >/dev/null 2>&1 || :
         [[ "$service_active" == yes ]] && "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" start vesta-harbor.service >/dev/null 2>&1 || :
