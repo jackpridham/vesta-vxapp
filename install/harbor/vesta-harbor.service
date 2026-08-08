@@ -1,0 +1,16 @@
+[Unit]
+Description=Vesta-managed Harbor registry
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=PATH=/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/usr/bin/docker compose --project-name vesta-harbor --file /usr/local/vesta/data/harbor/release/current/compose.yaml up --detach --remove-orphans
+ExecStop=/usr/bin/docker compose --project-name vesta-harbor --file /usr/local/vesta/data/harbor/release/current/compose.yaml stop
+TimeoutStartSec=600
+TimeoutStopSec=180
+
+[Install]
+WantedBy=multi-user.target

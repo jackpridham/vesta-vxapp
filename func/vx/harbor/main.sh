@@ -19,5 +19,11 @@ source "$_vx_harbor_dir/audit.sh"
 source "$_vx_harbor_dir/status.sh"
 # shellcheck source=func/vx/harbor/package.sh
 source "$_vx_harbor_dir/package.sh"
+# shellcheck source=func/vx/harbor/release.sh
+source "$_vx_harbor_dir/release.sh"
+# shellcheck source=func/vx/harbor/ingress.sh
+source "$_vx_harbor_dir/ingress.sh"
+# shellcheck source=func/vx/harbor/install.sh
+source "$_vx_harbor_dir/install.sh"
 
 unset _vx_harbor_dir

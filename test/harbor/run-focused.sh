@@ -11,6 +11,10 @@ shell_tests=(
     "$test_dir/test-state.sh"
     "$test_dir/test-status.sh"
     "$test_dir/test-package-quota.sh"
+    "$test_dir/test-release-verification.sh"
+    "$test_dir/test-install.sh"
+    "$test_dir/test-ingress.sh"
+    "$test_dir/test-host-boundary.sh"
 )
 
 php_tests=(

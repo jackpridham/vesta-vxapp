@@ -1,0 +1,10 @@
+#!/bin/bash
+# info: install the pinned Vesta-managed Harbor registry
+# options:
+
+set -Eeuo pipefail
+VESTA="${VESTA:-/usr/local/vesta}"
+(( $# == 0 )) || { echo 'Error: no arguments are accepted' >&2; exit 2; }
+source "$VESTA/func/vx/harbor/main.sh"
+vx_harbor_install || { echo 'Error: Harbor installation failed and prior state was restored' >&2; exit 1; }
+echo '= Harbor registry installed behind Vesta TLS'
