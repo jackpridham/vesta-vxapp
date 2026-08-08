@@ -82,6 +82,9 @@ routes	PROJECT [json|plain]
 backups	PROJECT [json|plain]
 secrets	PROJECT [json|plain]
 registries	[json|plain]
+registry-info	PROJECT [json|plain]
+registry-publisher-change	< publisher-secret
+registry-publisher-disable
 image-pull	PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION IMAGE@sha256:DIGEST
 drift	PROJECT [json|plain]
 probe	PROJECT SERVICE [json|plain]
@@ -119,6 +122,16 @@ project. Secret and registry values are accepted only through bounded stdin or
 a broker-created protected snapshot and are never command-line arguments.
 Route and alert operations are limited to the owner's Vesta-owned model.
 Project removal is explicit and retained-data only.
+
+The managed Harbor operations remain owner-derived. `registry-info` accepts
+only an owner-scoped standard project and an optional bounded output format;
+it exposes no credential or Harbor administration. `registry-publisher-change`
+accepts the publisher secret only through bounded protected stdin, never argv
+or environment, and returns no secret. `registry-publisher-disable` accepts no
+tenant-selected owner, endpoint, namespace, robot identity, role, API path, or
+Harbor administration argument. All three operations use the authenticated
+broker owner and the fixed Vesta adapters defined by the Harbor provider
+contract.
 
 `image-pull` is not a free-standing pull. The broker derives the owner, fixes
 the profile to `standard`, and forwards the exact protected preview tuple plus

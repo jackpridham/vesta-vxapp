@@ -45,6 +45,9 @@ routes	PROJECT [json|plain]
 backups	PROJECT [json|plain]
 secrets	PROJECT [json|plain]
 registries	[json|plain]
+registry-info	PROJECT [json|plain]
+registry-publisher-change	< publisher-secret
+registry-publisher-disable
 image-pull	PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION IMAGE@sha256:DIGEST
 drift	PROJECT [json|plain]
 probe	PROJECT SERVICE [json|plain]
@@ -77,9 +80,9 @@ cmp -s "$expected_catalog" "$contract_catalog" \
     || { diff -u "$expected_catalog" "$contract_catalog" >&2 || :; fail 'shell catalog signature drift'; }
 
 cut -f1 "$contract_catalog" | sort >"$contract_operations"
-[[ "$(wc -l <"$contract_operations")" -eq 40 ]] \
-    || fail 'shell contract catalog must contain exactly 40 operations'
-[[ "$(uniq "$contract_operations" | wc -l)" -eq 40 ]] \
+[[ "$(wc -l <"$contract_operations")" -eq 43 ]] \
+    || fail 'shell contract catalog must contain exactly 43 operations'
+[[ "$(uniq "$contract_operations" | wc -l)" -eq 43 ]] \
     || fail 'shell contract catalog contains duplicate operations'
 
 awk '
