@@ -8,6 +8,7 @@ test_dir="$(cd "$(dirname "$0")" && pwd)"
 
 shell_tests=(
     "$test_dir/test-fixtures.sh"
+    "$test_dir/test-upstream-robot-contract.sh"
     "$test_dir/test-state.sh"
     "$test_dir/test-status.sh"
     "$test_dir/test-package-quota.sh"

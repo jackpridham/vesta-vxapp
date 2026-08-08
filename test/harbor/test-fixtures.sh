@@ -34,7 +34,7 @@ log_file="$HARBOR_TEST_ROOT/api.log"
 ready_file="$HARBOR_TEST_ROOT/api.ready"
 credential_file="$HARBOR_TEST_ROOT/api-credential.json"
 curl_config="$HARBOR_TEST_ROOT/curl.conf"
-username=integration
+username=admin
 password='fixture-credential-canary'
 printf '{"username":"%s","password":"%s"}\n' "$username" "$password" >"$credential_file"
 printf 'silent\nshow-error\nuser = "%s:%s"\n' "$username" "$password" >"$curl_config"
@@ -99,7 +99,8 @@ status="$(api_call GET /api/v2.0/configurations "$response")"
 [[ "$status" == 200 ]] || fail 'configuration GET failed'
 assert_json "$response" 'value == {}'
 status="$(api_call PUT /api/v2.0/configurations "$response" \
-    --header 'Content-Type: application/json' --data-binary '{"auth_mode":"db_auth"}')"
+    --header 'Content-Type: application/json' \
+    --data-binary '{"auth_mode":"db_auth","robot_name_prefix":"vxrobot-"}')"
 [[ "$status" == 200 ]] || fail 'configuration PUT failed'
 status="$(api_call GET /api/v2.0/configurations "$response")"
 assert_json "$response" 'value["auth_mode"] == "db_auth"'
@@ -114,10 +115,14 @@ status="$(api_call GET /api/v2.0/projects/vx-alice "$response")"
 [[ "$status" == 200 ]] || fail 'project read by name failed'
 assert_json "$response" 'value["id"] == 1 and value["quota_id"] == 1'
 status="$(api_call PUT /api/v2.0/projects/1 "$response" \
-    --header 'Content-Type: application/json' --data-binary '{"metadata":{"public":"false","owner":"alice"}}')"
+    --header 'Content-Type: application/json' --data-binary '{"metadata":{"public":"false"}}')"
 [[ "$status" == 200 ]] || fail 'project update failed'
 status="$(api_call GET /api/v2.0/projects/1 "$response")"
-assert_json "$response" 'value["metadata"]["owner"] == "alice"'
+assert_json "$response" 'value["metadata"] == {"public":"false"}'
+status="$(api_call PUT /api/v2.0/projects/1 "$response" \
+    --header 'Content-Type: application/json' \
+    --data-binary '{"metadata":{"public":"false","owner":"alice"}}')"
+[[ "$status" == 400 ]] || fail 'unsupported project metadata was accepted'
 
 status="$(api_call GET /api/v2.0/quotas/1 "$response")"
 [[ "$status" == 200 ]] || fail 'quota read failed'
@@ -127,21 +132,66 @@ status="$(api_call PUT /api/v2.0/quotas/1 "$response" \
 status="$(api_call GET /api/v2.0/quotas/1 "$response")"
 assert_json "$response" 'value["hard"]["storage"] == 1048576'
 
+requested_secret='fixture-request-secret-must-be-ignored'
+integration_body="$(jq -cn --arg secret "$requested_secret" '{
+  name:"vesta-integration",secret:$secret,duration:-1,level:"system",permissions:[
+    {kind:"system",namespace:"/",access:[
+      {resource:"project",action:"create"},
+      {resource:"project",action:"list"},
+      {resource:"system-volumes",action:"read"}
+    ]},
+    {kind:"project",namespace:"*",access:[
+      {resource:"project",action:"read"},
+      {resource:"project",action:"update"},
+      {resource:"quota",action:"read"},
+      {resource:"quota",action:"update"},
+      {resource:"repository",action:"list"},
+      {resource:"repository",action:"read"},
+      {resource:"repository",action:"pull"},
+      {resource:"repository",action:"push"},
+      {resource:"robot",action:"create"},
+      {resource:"robot",action:"read"},
+      {resource:"robot",action:"list"},
+      {resource:"robot",action:"delete"}
+    ]}
+  ]
+}')"
 status="$(api_call POST /api/v2.0/robots "$response" \
-    --header 'Content-Type: application/json' --data-binary '{"name":"publisher","disabled":false,"duration":-1}')"
-[[ "$status" == 201 ]] || fail 'robot create failed'
-assert_json "$response" 'value["id"] == 1'
+    --header 'Content-Type: application/json' --data-binary "$integration_body")"
+[[ "$status" == 201 ]] || fail 'integration robot create failed'
+integration_username="$(jq -er .name "$response")"
+integration_secret="$(jq -er .secret "$response")"
+[[ "$integration_username" == vxrobot-vesta-integration \
+    && "$integration_secret" != "$requested_secret" ]] \
+    || fail 'integration robot did not use generated secret and configured prefix'
 status="$(api_call GET /api/v2.0/robots/1 "$response")"
-[[ "$status" == 200 ]] || fail 'robot read failed'
-status="$(api_call PUT /api/v2.0/robots/1 "$response" \
+[[ "$status" == 200 ]] || fail 'integration robot read failed'
+assert_json "$response" '"secret" not in value'
+printf 'silent\nshow-error\nuser = "%s:%s"\n' \
+    "$integration_username" "$integration_secret" >"$curl_config"
+chmod 0600 "$curl_config"
+
+child_body='{"name":"publisher","description":"vesta-managed:candidate:fixture","secret":"ignored-child-secret-canary","disabled":false,"duration":-1,"level":"project","permissions":[{"kind":"project","namespace":"vx-alice","access":[{"resource":"repository","action":"pull"},{"resource":"repository","action":"push"}]}]}'
+status="$(api_call POST /api/v2.0/robots "$response" \
+    --header 'Content-Type: application/json' --data-binary "$child_body")"
+[[ "$status" == 201 ]] || fail 'project child robot create failed'
+assert_json "$response" 'value["id"] == 2 and value["name"] == "vxrobot-vx-alice+publisher" and "secret" in value'
+child_secret="$(jq -er .secret "$response")"
+status="$(api_call GET /api/v2.0/robots/2 "$response")"
+[[ "$status" == 200 ]] || fail 'project child robot read failed'
+assert_json "$response" '"secret" not in value and value["level"] == "project"'
+status="$(api_call PUT /api/v2.0/robots/2 "$response" \
     --header 'Content-Type: application/json' --data-binary '{"disabled":true}')"
-[[ "$status" == 200 ]] || fail 'robot update failed'
-status="$(api_call GET /api/v2.0/robots/1 "$response")"
-assert_json "$response" 'value["disabled"] is True'
-status="$(api_call DELETE /api/v2.0/robots/1 "$response")"
-[[ "$status" == 200 ]] || fail 'robot delete failed'
-status="$(api_call GET /api/v2.0/robots/1 "$response")"
-[[ "$status" == 404 ]] || fail 'deleted robot remained visible'
+[[ "$status" == 403 ]] || fail 'routine robot update did not require robot:update'
+status="$(api_call PATCH /api/v2.0/robots/2 "$response" \
+    --header 'Content-Type: application/json' --data-binary '{}')"
+[[ "$status" == 403 ]] || fail 'routine robot refresh did not require robot:update'
+status="$(api_call DELETE /api/v2.0/robots/2 "$response")"
+[[ "$status" == 200 ]] || fail 'child robot delete failed'
+status="$(api_call GET /api/v2.0/robots/2 "$response")"
+[[ "$status" == 404 ]] || fail 'deleted child robot remained visible'
+! grep -Fq "$requested_secret" "$state_file" \
+    || fail 'ignored RobotCreate.secret reached fixture state'
 
 pids=()
 for number in $(seq -w 1 16); do
@@ -165,7 +215,10 @@ assert len(projects) == 17
 assert len({item["id"] for item in projects}) == 17
 assert len(state["quotas"]) == 17
 assert state["next_project_id"] == 18
-assert state["next_quota_id"] == 18' "$state_file"
+assert state["next_quota_id"] == 18
+assert len(state["robots"]) == 1
+assert state["robots"][0]["name"] == "vxrobot-vesta-integration"
+assert "secret" in state["robots"][0]' "$state_file"
 
 python3 - "$credential_file" "$port" "$state_file" <<'PY'
 import base64
@@ -220,12 +273,16 @@ PY
 grep -Fxq 'POST /api/v2.0/projects 408' "$log_file" \
     || fail 'partial-body timeout was not logged as method/path/status'
 
-for method in HEAD PATCH OPTIONS BREW; do
+for method in HEAD OPTIONS BREW; do
     body_file="$HARBOR_TEST_ROOT/${method}.body"
     status="$(api_call "$method" /api/v2.0/health "$body_file")"
     [[ "$status" == 404 ]] || fail "$method returned $status instead of 404"
     [[ ! -s "$body_file" ]] || fail "$method 404 leaked a response body"
 done
+body_file="$HARBOR_TEST_ROOT/PATCH.body"
+status="$(api_call PATCH /api/v2.0/health "$body_file")"
+[[ "$status" == 404 ]] || fail "PATCH returned $status instead of 404"
+[[ "$(wc -c <"$body_file")" -le 128 ]] || fail 'PATCH 404 response was unbounded'
 for method in PATCH BREW; do
     body_file="$HARBOR_TEST_ROOT/${method}.oversized.body"
     status="$(head -c 1048577 /dev/zero | api_call "$method" /api/v2.0/health "$body_file" --data-binary @-)"
@@ -240,12 +297,11 @@ stop_api
 python3 -c 'import json, sys
 path=sys.argv[1]
 state=json.load(open(path, encoding="utf-8"))
+assert state["configurations"]["auth_mode"] == "db_auth"
 state["artifacts"]["vx-alice/app@sha256:abc"]={"digest":"sha256:abc","size":123}
 with open(path, "w", encoding="utf-8") as handle:
     json.dump(state, handle, sort_keys=True, separators=(",", ":")); handle.write("\n")' "$state_file"
 start_api
-status="$(api_call GET /api/v2.0/configurations "$response")"
-assert_json "$response" 'value["auth_mode"] == "db_auth"'
 status="$(api_call GET /api/v2.0/projects/vx-alice/repositories "$response")"
 [[ "$status" == 200 ]] || fail 'repository list failed'
 assert_json "$response" 'value == [{"name":"vx-alice/app"}]'
@@ -262,6 +318,9 @@ log=open(sys.argv[2], encoding="utf-8").read()
 assert credential["username"] not in log
 assert credential["password"] not in log' "$credential_file" "$log_file" \
     || fail 'API log contains credential material'
+for secret in "$integration_secret" "$child_secret"; do
+    if grep -Fq "$secret" "$log_file"; then fail 'API log contains generated robot secret'; fi
+done
 
 docker_log="$HARBOR_TEST_ROOT/docker.log"
 docker_state="$HARBOR_TEST_ROOT/docker-state"

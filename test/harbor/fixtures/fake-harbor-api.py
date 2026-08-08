@@ -3,14 +3,15 @@
 
 import argparse
 import base64
+import hashlib
 import json
 import os
 import re
 import socket
+import socketserver
 import tempfile
 import threading
 import time
-import socketserver
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit
 
@@ -24,6 +25,31 @@ class ThreadingUnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStre
 
 MAX_BODY = 1024 * 1024
 BODY_READ_TIMEOUT = 0.5
+
+SYSTEM_ROBOT_CATALOG = {
+    ("project", "create"),
+    ("project", "list"),
+    ("robot", "create"),
+    ("robot", "delete"),
+    ("robot", "list"),
+    ("robot", "read"),
+    ("system-volumes", "read"),
+}
+PROJECT_ROBOT_CATALOG = {
+    ("artifact", "read"),
+    ("project", "read"),
+    ("project", "update"),
+    ("quota", "read"),
+    ("quota", "update"),
+    ("repository", "list"),
+    ("repository", "pull"),
+    ("repository", "push"),
+    ("repository", "read"),
+    ("robot", "create"),
+    ("robot", "delete"),
+    ("robot", "list"),
+    ("robot", "read"),
+}
 
 
 def initial_state():
@@ -39,6 +65,13 @@ def initial_state():
         "next_robot_id": 1,
         "fault": None,
     }
+
+
+def generated_robot_secret(robot_id):
+    """Return a valid, deterministic fixture-only Harbor-style secret."""
+    digest = hashlib.sha256(f"fake-harbor-robot-{robot_id}".encode()).digest()
+    encoded = base64.urlsafe_b64encode(digest).decode().rstrip("=")
+    return encoded[:40] + "Aa0"
 
 
 class StateStore:
@@ -93,14 +126,84 @@ class HarborHandler(BaseHTTPRequestHandler):
             )
             self.server.log_handle.flush()
 
-    def authenticated(self):
+    @staticmethod
+    def public_robot(robot):
+        return {
+            key: value
+            for key, value in robot.items()
+            if key not in ("secret", "stored_name")
+        }
+
+    def authenticate(self):
         supplied = self.headers.get("Authorization")
-        credentials = [(self.server.username, self.server.password)]
+        bootstrap = "Basic " + base64.b64encode(
+            f"{self.server.username}:{self.server.password}".encode()
+        ).decode()
+        if supplied == bootstrap:
+            return {"kind": "bootstrap", "name": self.server.username}
         state = self.server.store.read()
-        credentials.extend((robot.get("name"), robot.get("secret"))
-                           for robot in state["robots"] if not robot.get("disabled"))
-        return any(supplied == "Basic " + base64.b64encode(f"{user}:{password}".encode()).decode()
-                   for user, password in credentials if user and password)
+        for robot in state["robots"]:
+            username = robot.get("name")
+            password = robot.get("secret")
+            if robot.get("disabled") or not username or not password:
+                continue
+            expected = "Basic " + base64.b64encode(
+                f"{username}:{password}".encode()
+            ).decode()
+            if supplied == expected:
+                return {"kind": "robot", "name": username, "robot": robot}
+        return None
+
+    def is_bootstrap(self):
+        return self.actor["kind"] == "bootstrap"
+
+    def can(self, kind, namespace, resource, action):
+        if self.is_bootstrap():
+            return True
+        for permission in self.actor["robot"].get("permissions", []):
+            if permission.get("kind") != kind:
+                continue
+            creator_namespace = permission.get("namespace")
+            if creator_namespace != namespace and creator_namespace != "*":
+                continue
+            if any(
+                access.get("resource") == resource and access.get("action") == action
+                for access in permission.get("access", [])
+            ):
+                return True
+        return False
+
+    def require(self, kind, namespace, resource, action):
+        if self.can(kind, namespace, resource, action):
+            return True
+        self.finish_status(403, {"errors": [{"code": "FORBIDDEN"}]})
+        return False
+
+    @staticmethod
+    def permission_subset(creating, creator):
+        for permission in creating:
+            matching = next(
+                (
+                    candidate
+                    for candidate in creator
+                    if candidate.get("kind") == permission.get("kind")
+                    and candidate.get("namespace")
+                    in (permission.get("namespace"), "*")
+                ),
+                None,
+            )
+            if matching is None:
+                return False
+            creator_access = {
+                (access.get("resource"), access.get("action"))
+                for access in matching.get("access", [])
+            }
+            if any(
+                (access.get("resource"), access.get("action")) not in creator_access
+                for access in permission.get("access", [])
+            ):
+                return False
+        return True
 
     def bounded_content_length(self):
         raw_length = self.headers.get("Content-Length", "0")
@@ -160,7 +263,7 @@ class HarborHandler(BaseHTTPRequestHandler):
             return True
         if method == "POST" and path in ("/api/v2.0/projects", "/api/v2.0/robots"):
             return True
-        if method == "PUT" and re.fullmatch(
+        if method in ("PUT", "PATCH") and re.fullmatch(
             r"/api/v2\.0/(projects/[^/]+|quotas/\d+|robots/\d+)", path
         ):
             return True
@@ -182,6 +285,9 @@ class HarborHandler(BaseHTTPRequestHandler):
     def do_PUT(self):
         self.dispatch()
 
+    def do_PATCH(self):
+        self.dispatch()
+
     def do_DELETE(self):
         self.dispatch()
 
@@ -191,9 +297,6 @@ class HarborHandler(BaseHTTPRequestHandler):
         self.finish_status(404)
 
     def do_HEAD(self):
-        self.unsupported_method()
-
-    def do_PATCH(self):
         self.unsupported_method()
 
     def do_OPTIONS(self):
@@ -206,9 +309,11 @@ class HarborHandler(BaseHTTPRequestHandler):
 
     def dispatch(self):
         path = unquote(urlsplit(self.path).path)
+        method = self.command
         if not self.read_bounded_body():
             return
-        if not self.authenticated():
+        self.actor = self.authenticate()
+        if self.actor is None:
             headers = {"WWW-Authenticate": 'Basic realm="harbor"'}
             if path == "/v2/":
                 headers["Docker-Distribution-Api-Version"] = "registry/2.0"
@@ -216,7 +321,12 @@ class HarborHandler(BaseHTTPRequestHandler):
             return
 
         fault = self.server.store.read().get("fault")
-        if isinstance(fault, dict) and fault.get("path") == path:
+        fault_matches = (
+            isinstance(fault, dict)
+            and fault.get("path") == path
+            and fault.get("method", method) == method
+        )
+        if fault_matches and fault.get("mode") != "lost-response":
             status = fault.get("status", 200)
             if fault.get("mode") == "delay":
                 time.sleep(float(fault.get("seconds", 1)))
@@ -235,7 +345,6 @@ class HarborHandler(BaseHTTPRequestHandler):
                 self.wfile.write(body)
                 return
 
-        method = self.command
         if path == "/api/v2.0/health" and method == "GET":
             self.finish_status(200, {"status": "healthy", "components": []})
             return
@@ -257,12 +366,75 @@ class HarborHandler(BaseHTTPRequestHandler):
             self.defer_response = False
         if self.deferred_response is None:
             raise RuntimeError("state dispatch did not produce a response")
+        if fault_matches and fault.get("mode") == "lost-response":
+            self.close_connection = True
+            with self.server.log_lock:
+                self.server.log_handle.write(f"{method} {path} 000\n")
+                self.server.log_handle.flush()
+            return
         self.finish_status(*self.deferred_response)
+
+    @staticmethod
+    def robot_prefix(state):
+        value = state.get("configurations", {}).get("robot_name_prefix", "robot$")
+        if isinstance(value, dict):
+            value = value.get("value")
+        return value if isinstance(value, str) and value else "robot$"
+
+    @staticmethod
+    def private_metadata(value):
+        return isinstance(value, dict) and value == {"public": "false"}
+
+    @staticmethod
+    def validate_permissions(level, permissions, state):
+        if level not in ("system", "project") or not isinstance(permissions, list):
+            return False
+        if not permissions or (level == "project" and len(permissions) != 1):
+            return False
+        for permission in permissions:
+            if not isinstance(permission, dict):
+                return False
+            kind = permission.get("kind")
+            namespace = permission.get("namespace")
+            access = permission.get("access")
+            if kind not in ("system", "project") or not isinstance(access, list) or not access:
+                return False
+            if kind == "system" and namespace != "/":
+                return False
+            if kind == "project" and namespace != "*" and not HarborHandler.find(
+                state["projects"], str(namespace)
+            ):
+                return False
+            catalog = SYSTEM_ROBOT_CATALOG if kind == "system" else PROJECT_ROBOT_CATALOG
+            seen = set()
+            for item in access:
+                if not isinstance(item, dict):
+                    return False
+                pair = (item.get("resource"), item.get("action"))
+                if pair not in catalog or pair in seen:
+                    return False
+                seen.add(pair)
+        if level == "project":
+            permission = permissions[0]
+            return permission.get("kind") == "project" and permission.get("namespace") != "*"
+        return True
+
+    @staticmethod
+    def robot_scope(robot):
+        level = robot.get("level")
+        if level == "project":
+            permissions = robot.get("permissions", [])
+            if permissions:
+                return "project", permissions[0].get("namespace")
+        return "system", "/"
 
     def dispatch_state(self, path, method):
         state = self.server.store.read()
 
         if path == "/api/v2.0/configurations" and method in ("GET", "PUT"):
+            if not self.is_bootstrap():
+                self.finish_status(403, {"errors": [{"code": "FORBIDDEN"}]})
+                return
             if method == "PUT":
                 body = self.read_json()
                 if body is None:
@@ -273,12 +445,36 @@ class HarborHandler(BaseHTTPRequestHandler):
             else:
                 self.finish_status(200, state["configurations"])
             return
+        if path == "/api/v2.0/permissions" and method == "GET":
+            if not self.is_bootstrap():
+                self.finish_status(403, {"errors": [{"code": "FORBIDDEN"}]})
+                return
+            self.finish_status(
+                200,
+                {
+                    "system": [
+                        {"resource": resource, "action": action}
+                        for resource, action in sorted(SYSTEM_ROBOT_CATALOG)
+                    ],
+                    "project": [
+                        {"resource": resource, "action": action}
+                        for resource, action in sorted(PROJECT_ROBOT_CATALOG)
+                    ],
+                },
+            )
+            return
         if path == "/api/v2.0/systeminfo/volumes" and method == "GET":
+            if not self.require("system", "/", "system-volumes", "read"):
+                return
             self.finish_status(200, state["volumes"])
             return
         if path == "/api/v2.0/projects" and method in ("GET", "POST"):
             if method == "GET":
+                if not self.require("system", "/", "project", "list"):
+                    return
                 self.finish_status(200, state["projects"])
+                return
+            if not self.require("system", "/", "project", "create"):
                 return
             body = self.read_json()
             if body is None:
@@ -290,12 +486,16 @@ class HarborHandler(BaseHTTPRequestHandler):
             if self.find(state["projects"], name):
                 self.finish_status(409, {"errors": [{"code": "CONFLICT"}]})
                 return
+            metadata = body.get("metadata", {"public": "false"})
+            if not self.private_metadata(metadata):
+                self.finish_status(400, {"errors": [{"code": "BAD_REQUEST"}]})
+                return
             project_id = state["next_project_id"]
             quota_id = state["next_quota_id"]
             state["next_project_id"] += 1
             state["next_quota_id"] += 1
             project = {"id": project_id, "name": name, "project_id": project_id,
-                       "metadata": body.get("metadata", {"public": "false"}),
+                       "metadata": metadata,
                        "quota_id": quota_id}
             state["projects"].append(project)
             state["quotas"].append({"id": quota_id, "ref": {"id": project_id},
@@ -311,13 +511,20 @@ class HarborHandler(BaseHTTPRequestHandler):
                 self.finish_status(404, {"errors": [{"code": "NOT_FOUND"}]})
                 return
             if method == "PUT":
+                if not self.require("project", project["name"], "project", "update"):
+                    return
                 body = self.read_json()
                 if body is None:
                     return
-                project.update({key: value for key, value in body.items() if key not in ("id", "project_id")})
+                if set(body) != {"metadata"} or not self.private_metadata(body["metadata"]):
+                    self.finish_status(400, {"errors": [{"code": "BAD_REQUEST"}]})
+                    return
+                project["metadata"] = body["metadata"]
                 self.server.store.write(state)
                 self.finish_status(200)
             else:
+                if not self.require("project", project["name"], "project", "read"):
+                    return
                 self.finish_status(200, project)
             return
 
@@ -326,6 +533,13 @@ class HarborHandler(BaseHTTPRequestHandler):
             quota = self.find(state["quotas"], quota_match.group(1))
             if not quota:
                 self.finish_status(404, {"errors": [{"code": "NOT_FOUND"}]})
+                return
+            project = self.find(state["projects"], str(quota["ref"]["id"]))
+            if not project:
+                self.finish_status(404, {"errors": [{"code": "NOT_FOUND"}]})
+                return
+            action = "update" if method == "PUT" else "read"
+            if not self.require("project", project["name"], "quota", action):
                 return
             if method == "PUT":
                 body = self.read_json()
@@ -340,7 +554,20 @@ class HarborHandler(BaseHTTPRequestHandler):
 
         if path == "/api/v2.0/robots" and method in ("GET", "POST"):
             if method == "GET":
-                self.finish_status(200, state["robots"])
+                visible = []
+                for robot in state["robots"]:
+                    kind, namespace = self.robot_scope(robot)
+                    if self.can(kind, namespace, "robot", "list"):
+                        visible.append(self.public_robot(robot))
+                if not visible and not self.is_bootstrap():
+                    has_list = self.can("system", "/", "robot", "list") or any(
+                        self.can("project", project["name"], "robot", "list")
+                        for project in state["projects"]
+                    )
+                    if not has_list:
+                        self.finish_status(403, {"errors": [{"code": "FORBIDDEN"}]})
+                        return
+                self.finish_status(200, visible)
                 return
             body = self.read_json()
             if body is None:
@@ -348,33 +575,84 @@ class HarborHandler(BaseHTTPRequestHandler):
             if body.get("duration") != -1:
                 self.finish_status(400, {"errors": [{"code": "BAD_REQUEST"}]})
                 return
+            basename = body.get("name")
+            level = body.get("level")
+            permissions = body.get("permissions")
+            if (
+                not isinstance(basename, str)
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", basename)
+                or not self.validate_permissions(level, permissions, state)
+            ):
+                self.finish_status(400, {"errors": [{"code": "BAD_REQUEST"}]})
+                return
+            if level == "project":
+                namespace = permissions[0]["namespace"]
+                if not self.require("project", namespace, "robot", "create"):
+                    return
+            else:
+                namespace = "/"
+                if not self.require("system", namespace, "robot", "create"):
+                    return
+            if self.actor["kind"] == "robot" and not self.permission_subset(
+                permissions, self.actor["robot"].get("permissions", [])
+            ):
+                self.finish_status(403, {"errors": [{"code": "FORBIDDEN"}]})
+                return
+            stored_name = f"{namespace}+{basename}" if level == "project" else basename
+            username = f"{self.robot_prefix(state)}{stored_name}"
+            if any(robot.get("name") == username for robot in state["robots"]):
+                self.finish_status(409, {"errors": [{"code": "CONFLICT"}]})
+                return
             robot_id = state["next_robot_id"]
             state["next_robot_id"] += 1
-            robot = dict(body)
-            robot["id"] = robot_id
-            robot.setdefault("disabled", False)
+            secret = generated_robot_secret(robot_id)
+            robot = {
+                "id": robot_id,
+                "name": username,
+                "description": body.get("description", ""),
+                "disabled": bool(body.get("disabled", body.get("disable", False))),
+                "duration": -1,
+                "level": level,
+                "permissions": permissions,
+                "secret": secret,
+            }
             state["robots"].append(robot)
+            fault = state.get("fault")
+            if (
+                isinstance(fault, dict)
+                and fault.get("path") == path
+                and fault.get("method", method) == method
+                and fault.get("mode") == "lost-response"
+            ):
+                state["fault"] = None
             self.server.store.write(state)
-            self.finish_status(201, robot)
+            self.finish_status(
+                201,
+                {"id": robot_id, "name": username, "secret": secret},
+                {"Location": f"/api/v2.0/robots/{robot_id}"},
+            )
             return
 
         robot_match = re.fullmatch(r"/api/v2\.0/robots/(\d+)", path)
-        if robot_match and method in ("GET", "PUT", "DELETE"):
+        if robot_match and method in ("GET", "PUT", "PATCH", "DELETE"):
             robot = self.find(state["robots"], robot_match.group(1))
             if not robot:
                 self.finish_status(404, {"errors": [{"code": "NOT_FOUND"}]})
                 return
+            if method in ("PUT", "PATCH"):
+                self.finish_status(403, {"errors": [{"code": "FORBIDDEN"}]})
+                return
+            kind, namespace = self.robot_scope(robot)
+            action = {
+                "GET": "read",
+                "DELETE": "delete",
+            }[method]
+            if not self.require(kind, namespace, "robot", action):
+                return
             if method == "GET":
-                self.finish_status(200, robot)
+                self.finish_status(200, self.public_robot(robot))
             elif method == "DELETE":
                 state["robots"].remove(robot)
-                self.server.store.write(state)
-                self.finish_status(200)
-            else:
-                body = self.read_json()
-                if body is None:
-                    return
-                robot.update({key: value for key, value in body.items() if key != "id"})
                 self.server.store.write(state)
                 self.finish_status(200)
             return
@@ -382,6 +660,11 @@ class HarborHandler(BaseHTTPRequestHandler):
         repositories = re.fullmatch(r"/api/v2\.0/projects/([^/]+)/repositories", path)
         if repositories and method == "GET":
             project = repositories.group(1)
+            if not self.find(state["projects"], project):
+                self.finish_status(404, {"errors": [{"code": "NOT_FOUND"}]})
+                return
+            if not self.require("project", project, "repository", "list"):
+                return
             names = sorted({key.split("@", 1)[0] for key in state["artifacts"]
                             if key.startswith(project + "/")})
             self.finish_status(200, [{"name": name} for name in names])
@@ -391,6 +674,8 @@ class HarborHandler(BaseHTTPRequestHandler):
             r"/api/v2\.0/projects/([^/]+)/repositories/(.+)/artifacts/([^/]+)", path
         )
         if artifact and method == "GET":
+            if not self.require("project", artifact.group(1), "repository", "read"):
+                return
             key = f"{artifact.group(1)}/{artifact.group(2)}@{artifact.group(3)}"
             value = state["artifacts"].get(key)
             if value is None:
