@@ -85,15 +85,25 @@ APP_PROJECT='APP_PROJECT'
 IMAGE_NAME='IMAGE_NAME'
 RELEASE_TAG='RELEASE_TAG'
 
+# DEVELOPMENT-ONLY target. Production remains deferred.
+VESTA_HOST='dev.jackpridham.com'
+
 [[ "$APP_OWNER" != APP_OWNER && "$APP_OWNER" =~ ^[a-z][a-z0-9_-]{0,31}$ ]]
 [[ "$APP_PROJECT" != APP_PROJECT && "$APP_PROJECT" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]
 [[ "$IMAGE_NAME" != IMAGE_NAME && "$IMAGE_NAME" =~ ^[a-z0-9][a-z0-9._-]{0,127}$ ]]
 [[ "$RELEASE_TAG" != RELEASE_TAG && "$RELEASE_TAG" != latest ]]
 [[ "$RELEASE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]
+[[ "$VESTA_HOST" == 'dev.jackpridham.com' ]]
 
-ssh_target="${APP_OWNER}@dev.jackpridham.com"
-ssh -- "$ssh_target" v-docker quota json | jq .
-ssh -- "$ssh_target" v-docker show "$APP_PROJECT" json \
+# Require explicit acknowledgement before the first network operation.
+read -r -p \
+  'Type DEVELOPMENT ONLY - PRODUCTION DEFERRED to continue: ' \
+  deployment_acknowledgement
+[[ "$deployment_acknowledgement" == 'DEVELOPMENT ONLY - PRODUCTION DEFERRED' ]]
+
+SSH_TARGET="${APP_OWNER}@${VESTA_HOST}"
+ssh -- "$SSH_TARGET" v-docker quota json | jq .
+ssh -- "$SSH_TARGET" v-docker show "$APP_PROJECT" json \
   | jq -e --arg owner "$APP_OWNER" --arg project "$APP_PROJECT" \
     '.OWNER == $owner and .PROJECT == $project and .PROFILE == "standard"'
 ```
@@ -170,7 +180,7 @@ allowed starting state because this flow creates a replacement.
 
 ```bash
 registry_json="$(
-  ssh -- "$ssh_target" v-docker registry-info "$APP_PROJECT" json
+  ssh -- "$SSH_TARGET" v-docker registry-info "$APP_PROJECT" json
 )"
 printf '%s\n' "$registry_json" | jq .
 jq -e '
@@ -184,6 +194,23 @@ jq -e '
 REGISTRY="$(jq -er '.REGISTRY' <<<"$registry_json")"
 REPOSITORY="$(jq -er '.REPOSITORY' <<<"$registry_json")"
 
+docker_config_dir="${DOCKER_CONFIG:-$HOME/.docker}"
+docker_config_file="${docker_config_dir}/config.json"
+[[ -f "$docker_config_file" && ! -L "$docker_config_file" ]]
+credential_helper="$(
+  jq -er --arg registry "$REGISTRY" '
+    (.credHelpers[$registry] // .credsStore // empty)
+    | select(type == "string" and test("^[A-Za-z0-9._-]+$"))
+    | select(length > 0)
+  ' "$docker_config_file"
+)"
+helper_binary="docker-credential-${credential_helper}"
+helper_path="$(command -v -- "$helper_binary")"
+[[ "$helper_path" == /* && -f "$helper_path" && -x "$helper_path" ]]
+jq -e --arg registry "$REGISTRY" '
+  ((.auths[$registry].auth? // "") == "")
+' "$docker_config_file" >/dev/null
+
 umask 077
 publisher_secret_file="$(mktemp)"
 trap 'rm -f -- "$publisher_secret_file"' EXIT
@@ -195,11 +222,11 @@ chmod 0600 "$publisher_secret_file"
 [[ "$(wc -c <"$publisher_secret_file")" -ge 43 ]]
 [[ "$(wc -c <"$publisher_secret_file")" -le 128 ]]
 
-ssh -- "$ssh_target" v-docker registry-publisher-change \
+ssh -- "$SSH_TARGET" v-docker registry-publisher-change \
   <"$publisher_secret_file"
 
 registry_json="$(
-  ssh -- "$ssh_target" v-docker registry-info "$APP_PROJECT" json
+  ssh -- "$SSH_TARGET" v-docker registry-info "$APP_PROJECT" json
 )"
 jq -e '
   .STATE == "ready"
@@ -211,15 +238,25 @@ PUBLISHER_USERNAME="$(jq -er '.PUBLISHER_USERNAME' <<<"$registry_json")"
 docker login "$REGISTRY" \
   --username "$PUBLISHER_USERNAME" \
   --password-stdin <"$publisher_secret_file"
+jq -e --arg registry "$REGISTRY" '
+  ((.auths[$registry].auth? // "") == "")
+' "$docker_config_file" >/dev/null
 rm -f -- "$publisher_secret_file"
 trap - EXIT
 ```
 
 The maintainer supplies the secret; `PUBLISHER_USERNAME` is non-secret output
 from Vesta. Configure Docker to use the workstation or CI platform's protected
-credential helper. Do not copy the secret into a command, environment variable,
-CI log, repository file, or Compose file. Keep the temporary file only until
-login completes and publisher rotation has succeeded.
+credential helper. Without `credsStore` or a registry-specific `credHelpers`
+entry, Docker may write a reversible base64 `auth` value to `config.json`; file
+permissions do not turn that value into encryption. The block above therefore
+fails before publisher rotation unless the selected helper is configured and
+its `docker-credential-HELPER` binary is available, then verifies login did not
+write inline auth. This guide does not offer a temporary isolated
+`DOCKER_CONFIG` fallback: interruption or incomplete cleanup could leave that
+base64 credential behind. Do not copy the secret into a command, environment
+variable, CI log, repository file, or Compose file. Keep the temporary file
+only until login completes and publisher rotation has succeeded.
 
 If a publisher secret is lost, generate a new protected file and repeat
 `registry-publisher-change`; Vesta never recovers or displays the old value.
@@ -257,15 +294,27 @@ application. Verify the rendered file locally before sending it:
 mapfile -t compose_images < <(
   docker compose -f compose.yaml config --images
 )
-printf '%s\n' "${compose_images[@]}" | grep -Fx -- "$IMAGE_REFERENCE"
+image_occurrences=0
 for compose_image in "${compose_images[@]}"; do
   [[ "$compose_image" =~ @sha256:[a-f0-9]{64}$ ]]
+  if [[ "$compose_image" == "$IMAGE_REFERENCE" ]]; then
+    ((image_occurrences += 1))
+  fi
 done
+[[ "$image_occurrences" -eq 1 ]]
 ```
 
 Never deploy `RELEASE_TAG`, even if it currently resolves to the same digest.
 Do not substitute an SCP/rsync transfer, `docker save` archive, `docker load`,
 raw Docker pull, or a direct edit of Vesta desired state.
+
+The current tenant command accepts one immutable image that occurs exactly
+once in the protected candidate. For multiple distinct newly delivered images,
+render each distinct digest exactly once and call `v-docker image-pull` once
+per image with the same preview tuple before apply. If one new image appears in
+multiple services, revise the definition or use the reviewed administrator
+delivery path; the tenant command fails closed rather than widening pull
+authority.
 
 ### 3. Preview, pull, apply, and verify
 
@@ -274,7 +323,7 @@ server-issued preview tuple and the exact digest from Harbor.
 
 ```bash
 before_json="$(
-  ssh -- "$ssh_target" v-docker show "$APP_PROJECT" json
+  ssh -- "$SSH_TARGET" v-docker show "$APP_PROJECT" json
 )"
 before_revision="$(
   jq -er --arg owner "$APP_OWNER" --arg project "$APP_PROJECT" '
@@ -286,7 +335,7 @@ before_revision="$(
 )"
 
 preview_json="$(
-  ssh -- "$ssh_target" v-docker preview "$APP_PROJECT" change \
+  ssh -- "$SSH_TARGET" v-docker preview "$APP_PROJECT" change \
     < compose.yaml
 )"
 printf '%s\n' "$preview_json" | jq .
@@ -308,46 +357,81 @@ source_sha="$(jq -er '.SOURCE_SHA256' <<<"$preview_json")"
 candidate_sha="$(jq -er '.CANDIDATE_SHA256' <<<"$preview_json")"
 expected_revision="$(jq -er '.EXPECTED_CURRENT_REVISION' <<<"$preview_json")"
 
-ssh -- "$ssh_target" v-docker image-pull \
+ssh -- "$SSH_TARGET" v-docker image-pull \
   "$APP_PROJECT" "$preview_id" "$source_sha" "$candidate_sha" \
   "$expected_revision" "$IMAGE_REFERENCE"
 
 # Run apply only after reviewing and approving preview_json unchanged.
-ssh -- "$ssh_target" v-docker apply \
+ssh -- "$SSH_TARGET" v-docker apply \
   "$APP_PROJECT" "$preview_id" "$source_sha" "$candidate_sha" \
   "$expected_revision"
 
 health_json="$(
-  ssh -- "$ssh_target" v-docker health "$APP_PROJECT" json
+  ssh -- "$SSH_TARGET" v-docker health "$APP_PROJECT" json
 )"
 operation_json="$(
-  ssh -- "$ssh_target" v-docker operation "$APP_PROJECT" json
+  ssh -- "$SSH_TARGET" v-docker operation "$APP_PROJECT" json
 )"
 after_json="$(
-  ssh -- "$ssh_target" v-docker show "$APP_PROJECT" json
+  ssh -- "$SSH_TARGET" v-docker show "$APP_PROJECT" json
 )"
 drift_json="$(
-  ssh -- "$ssh_target" v-docker drift "$APP_PROJECT" json
+  ssh -- "$SSH_TARGET" v-docker drift "$APP_PROJECT" json
 )"
 
 jq -e '.STATUS == "healthy"' <<<"$health_json" >/dev/null
 jq -e '.RESULT == "succeeded"' <<<"$operation_json" >/dev/null
+after_revision="$(jq -er '.REVISION' <<<"$after_json")"
 jq -e --argjson before "$before_revision" '.REVISION > $before' \
   <<<"$after_json" >/dev/null
 jq -e '.MATCH == true' <<<"$drift_json" >/dev/null
 
-mapfile -t probe_names < <(jq -er '.WORKLOAD.PROBES[]' <<<"$after_json")
-((${#probe_names[@]} > 0))
-for probe_name in "${probe_names[@]}"; do
-  ssh -- "$ssh_target" v-docker probe "$APP_PROJECT" "$probe_name" json \
-    | jq -e '.STATE == "pass"' >/dev/null
-done
+mapfile -t probe_names < <(jq -r '.WORKLOAD.PROBES[]?' <<<"$after_json")
+if ((${#probe_names[@]} > 0)); then
+  # Branch A: run every immutable Vesta-managed readiness probe.
+  for probe_name in "${probe_names[@]}"; do
+    ssh -- "$SSH_TARGET" v-docker probe "$APP_PROJECT" "$probe_name" json \
+      | jq -e '.STATE == "pass"' >/dev/null
+  done
+else
+  # Branch B: run the app repository's no-argument development acceptance
+  # wrapper. Replace only APP_ACCEPTANCE_COMMAND with its documented path.
+  APP_ACCEPTANCE_COMMAND='APP_ACCEPTANCE_COMMAND'
+  [[ "$APP_ACCEPTANCE_COMMAND" != APP_ACCEPTANCE_COMMAND ]]
+  [[ "$APP_ACCEPTANCE_COMMAND" =~ ^[.]/[A-Za-z0-9_./-]{1,255}$ ]]
+  app_acceptance_path="$(realpath -e -- "$APP_ACCEPTANCE_COMMAND")"
+  [[ "$app_acceptance_path" == "$PWD"/* ]]
+  [[ -f "$app_acceptance_path" && -x "$app_acceptance_path" ]]
+  [[ ! -L "$APP_ACCEPTANCE_COMMAND" ]]
+  "$app_acceptance_path"
+fi
+
+# Both readiness branches must reach the same non-mutating rollback check.
+rollback_check_json="$(
+  ssh -- "$SSH_TARGET" v-docker rollback-preview \
+    "$APP_PROJECT" "$before_revision"
+)"
+jq -e --argjson current "$after_revision" \
+  --argjson target "$before_revision" '
+  .ACTION == "rollback"
+  and .BOUND_CURRENT_REVISION == $current
+  and .BOUND_TARGET_REVISION == $target
+  and (.FROM_MANIFEST_SHA256 | test("^[a-f0-9]{64}$"))
+  and (.TO_MANIFEST_SHA256 | test("^[a-f0-9]{64}$"))
+' <<<"$rollback_check_json" >/dev/null
 ```
 
 Readiness names and commands come only from the application's immutable
-workload manifest; the caller supplies no command or arguments. If the
-application defines no bounded readiness probe, its repository must define the
-separate acceptance check and document that app-owned decision.
+workload manifest; the caller supplies no probe command or arguments. If the
+project has probes, every declared probe must pass. If it has none, the
+application repository must document a no-argument, development-only
+acceptance wrapper; replace the one `APP_ACCEPTANCE_COMMAND` placeholder with
+that relative executable path. The guard resolves it beneath the current
+repository, rejects a symlink or non-executable, and invokes it directly
+without `eval`. That wrapper owns its application-specific checks, must return
+nonzero on failure, and must not print secrets. Health, successful operation,
+forward revision, matching drift, and a manifest-bound rollback preview are
+mandatory before either branch is accepted.
 
 If apply or health fails, Vesta follows the existing convergence and rollback
 transaction. Publication does not alter the running revision, and a failed
@@ -360,7 +444,7 @@ image pull, or apply. Use it only when the accepted revision needs explicit
 runtime reconvergence:
 
 ```bash
-ssh -- "$ssh_target" v-docker deploy "$APP_PROJECT"
+ssh -- "$SSH_TARGET" v-docker deploy "$APP_PROJECT"
 ```
 
 ### 4. Revoke publisher access after publication
@@ -370,10 +454,10 @@ remove its local login. Runtime pulls continue through Vesta's separate
 pull-only identity.
 
 ```bash
-ssh -- "$ssh_target" v-docker registry-publisher-disable
+ssh -- "$SSH_TARGET" v-docker registry-publisher-disable
 docker logout "$REGISTRY"
 
-ssh -- "$ssh_target" v-docker registry-info "$APP_PROJECT" json \
+ssh -- "$SSH_TARGET" v-docker registry-info "$APP_PROJECT" json \
   | jq -e '
       .STATE == "publisher-disabled"
       and .PUBLISHER_ENABLED == false
@@ -393,7 +477,7 @@ explicit confirmation.
 
 ```bash
 current_json="$(
-  ssh -- "$ssh_target" v-docker show "$APP_PROJECT" json
+  ssh -- "$SSH_TARGET" v-docker show "$APP_PROJECT" json
 )"
 target_revision="$(
   jq -er '
@@ -403,7 +487,7 @@ target_revision="$(
   ' <<<"$current_json"
 )"
 rollback_json="$(
-  ssh -- "$ssh_target" v-docker rollback-preview \
+  ssh -- "$SSH_TARGET" v-docker rollback-preview \
     "$APP_PROJECT" "$target_revision"
 )"
 printf '%s\n' "$rollback_json" | jq .
@@ -416,11 +500,11 @@ bound_target="$(jq -er '.BOUND_TARGET_REVISION' <<<"$rollback_json")"
 from_manifest="$(jq -er '.FROM_MANIFEST_SHA256' <<<"$rollback_json")"
 to_manifest="$(jq -er '.TO_MANIFEST_SHA256' <<<"$rollback_json")"
 
-ssh -- "$ssh_target" v-docker rollback-apply \
+ssh -- "$SSH_TARGET" v-docker rollback-apply \
   "$APP_PROJECT" "$bound_target" "$bound_current" \
   "$from_manifest" "$to_manifest"
-ssh -- "$ssh_target" v-docker health "$APP_PROJECT" json | jq .
-ssh -- "$ssh_target" v-docker drift "$APP_PROJECT" json \
+ssh -- "$SSH_TARGET" v-docker health "$APP_PROJECT" json | jq .
+ssh -- "$SSH_TARGET" v-docker drift "$APP_PROJECT" json \
   | jq -e '.MATCH == true' >/dev/null
 ```
 
