@@ -284,7 +284,7 @@ git commit -m "refactor(harbor): reconcile package quota forward"
   recovery integration remains Task 6.
 - Next: Milestone 2, verified installation and shared TLS ingress.
 
-## Milestone 2: Verified installation and shared TLS ingress
+## Milestone 2: Verified installation and shared TLS ingress - COMPLETE
 
 ### Task 3: Pin and verify the Harbor release
 
@@ -377,7 +377,8 @@ git commit -m "feat(harbor): install registry behind Vesta TLS"
   and activates only the two managed Vesta TLS route families. Rollback
   restores prior unit, ingress, service activity/enablement, release, and
   provider state while retaining `/var/lib/vesta-harbor` data.
-- Commits: `e9a04f31`, `73d5e8a3`, `141d30b7`.
+- Commits: `e9a04f31`, `73d5e8a3`, `141d30b7`, `79cb21ae`,
+  `0c1b8dff`.
 - Focused tests: touched Bash syntax, release verification, transactional
   install, ingress, host-boundary, and `git diff --check` passed. The milestone
   `test/harbor/run-focused.sh` command ran exactly once and all eight suites
@@ -422,6 +423,11 @@ git commit -m "feat(harbor): install registry behind Vesta TLS"
 - Validation reran only touched Bash syntax, release, install, ingress, and
   host-boundary tests plus `git diff --check`; all passed. The milestone
   `run-focused.sh` suite was not rerun.
+- Review result: The independent review initially found four blockers:
+  non-runnable generated topology, ingress not attached to the panel TLS
+  server, provider publication outside rollback, and unproven literal pins.
+  The correction commits resolved all four. The same reviewer rechecked only
+  those blockers and direct regressions and returned PASS.
 
 ## Milestone 3: Owner registry lifecycle
 
