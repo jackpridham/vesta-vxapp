@@ -294,11 +294,8 @@ vx_compose_shell_access_deny_establish "$user"
 check_result $? "Compose shell access deny marker failed"
 vx_compose_shell_group_revoke "$user"
 check_result $? "Compose shell access revocation failed"
-mv -fT -- "$transition_user_conf_new" "$USER_DATA/user.conf"
-check_result $? "User package state update failed"
-_vx_harbor_fsync "$USER_DATA"
-check_result $? "User package state sync failed"
-vx_harbor_package_transition_user_conf_applied "$user" "$transition_token"
+vx_harbor_package_transition_user_conf_apply \
+    "$user" "$transition_token" "$transition_user_conf_new"
 check_result $? 'Harbor registry user state transition failed'
 
 # Update user shell while the durable recovery journal can still restore it.
@@ -309,14 +306,6 @@ check_result $? "Package shell is unavailable"
 _vx_harbor_transition_shell_set "$user" "$shell"
 check_result $? "User shell update failed"
 
-vx_harbor_package_transition_commit "$user" "$transition_token"
-check_result $? 'Harbor registry quota transition commit failed'
-harbor_package_transition_complete=yes
-
-# Final access reconciliation occurs only after the cross-authority commit.
-vx_compose_shell_access_transition_complete "$user"
-check_result $? "Compose shell access reconciliation failed"
-
 # Run template trigger
 if [ -x "$VESTA/data/packages/$package.sh" ]; then
     $VESTA/data/packages/$package.sh "$user" "$CONTACT" "$FNAME" "$LNAME"
@@ -326,8 +315,31 @@ fi
 # Update disk quota
 source $VESTA/conf/vesta.conf
 if [ "$DISK_QUOTA" = 'yes' ]; then
+    vx_harbor_package_transition_disk_quota_pending "$user" "$transition_token"
+    check_result $? "Disk quota transition state failed"
     $BIN/v-update-user-quota $user
     check_result $? "User quota update failed"
+fi
+
+vx_harbor_package_transition_side_effects_applied "$user" "$transition_token"
+check_result $? "Package side-effect transition state failed"
+vx_harbor_package_transition_commit "$user" "$transition_token"
+check_result $? 'Harbor registry quota transition commit failed'
+
+# Post-commit convergence is idempotent. If its first attempt fails but durable
+# recovery completes it, preserve the successful package change with a warning.
+committed_warning=
+if ! vx_harbor_package_transition_access_complete "$user" "$transition_token" \
+    || ! vx_harbor_package_transition_finalize "$user" "$transition_token"; then
+    if vx_harbor_package_transition_recover "$user"; then
+        committed_warning=yes
+    else
+        check_result 1 "Committed package access recovery failed"
+    fi
+fi
+harbor_package_transition_complete=yes
+if [[ "$committed_warning" == yes ]]; then
+    echo "Warning: package changed; shell access convergence recovered after an initial failure" >&2
 fi
 
 #----------------------------------------------------------#

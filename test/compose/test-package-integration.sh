@@ -469,6 +469,7 @@ mkdir -p \
     "$VESTA/conf" \
     "$VESTA/data/packages" \
     "$VESTA/data/users/alice" \
+    "$VESTA/bin" \
     "$VESTA/func/vx/compose" \
     "$VESTA/func/vx/harbor"
 cat >"$VESTA/func/main.sh" <<'EOF'
@@ -547,21 +548,45 @@ vx_harbor_package_transition_prepare() {
     printf '%s\n' "$6" >"$VX_TEST_OLD_GROUP"
     printf '%s\n' "$7" >"$VX_TEST_OLD_DENY"
     cp -p "$USER_DATA/user.conf" "$VX_TEST_CONF_SNAPSHOT"
+    printf 'prepared\n' >"$VX_TEST_TRANSITION_STATE"
     printf 'disabled.token\n'
 }
 vx_harbor_package_transition_recover() {
     printf 'recover\n' >>"$VX_TEST_MUTATIONS"
-    [[ ! -f "$VX_TEST_CONF_SNAPSHOT" ]] \
-        || cp -p "$VX_TEST_CONF_SNAPSHOT" "$USER_DATA/user.conf"
-    printf '%s\n' "$(<"$VX_TEST_OLD_SHELL")" >"$VX_TEST_SHELL_STATE"
-    printf '%s\n' "$(<"$VX_TEST_OLD_GROUP")" >"$VX_TEST_GROUP_STATE"
-    printf '%s\n' "$(<"$VX_TEST_OLD_DENY")" >"$VX_TEST_DENY_STATE"
+    if [[ "$(<"$VX_TEST_TRANSITION_STATE")" == committed ]]; then
+        printf 'yes\n' >"$VX_TEST_GROUP_STATE"
+        printf 'no\n' >"$VX_TEST_DENY_STATE"
+    else
+        [[ ! -f "$VX_TEST_CONF_SNAPSHOT" ]] \
+            || cp -p "$VX_TEST_CONF_SNAPSHOT" "$USER_DATA/user.conf"
+        printf '%s\n' "$(<"$VX_TEST_OLD_SHELL")" >"$VX_TEST_SHELL_STATE"
+        printf '%s\n' "$(<"$VX_TEST_OLD_GROUP")" >"$VX_TEST_GROUP_STATE"
+        printf '%s\n' "$(<"$VX_TEST_OLD_DENY")" >"$VX_TEST_DENY_STATE"
+    fi
 }
 vx_harbor_package_transition_user_conf_applied() { printf 'conf-applied\n' >>"$VX_TEST_MUTATIONS"; }
+vx_harbor_package_transition_user_conf_apply() {
+    cp -p "$3" "$USER_DATA/user.conf"
+    printf 'user-conf-applied\n' >"$VX_TEST_TRANSITION_STATE"
+    printf 'conf-applied\n' >>"$VX_TEST_MUTATIONS"
+}
+vx_harbor_package_transition_disk_quota_pending() { printf 'quota-pending\n' >>"$VX_TEST_MUTATIONS"; }
+vx_harbor_package_transition_side_effects_applied() {
+    printf 'side-effects\n' >"$VX_TEST_TRANSITION_STATE"
+    printf 'side-effects\n' >>"$VX_TEST_MUTATIONS"
+}
 vx_harbor_package_transition_commit() {
     printf 'commit\n' >>"$VX_TEST_MUTATIONS"
-    [[ "${VX_TEST_COMMIT_FAIL:-no}" != yes ]]
+    [[ "${VX_TEST_COMMIT_FAIL:-no}" != yes ]] || return 1
+    printf 'committed\n' >"$VX_TEST_TRANSITION_STATE"
 }
+vx_harbor_package_transition_access_complete() {
+    printf 'access-complete\n' >>"$VX_TEST_MUTATIONS"
+    [[ "${VX_TEST_ACCESS_FAIL:-no}" != yes ]] || return 1
+    printf 'yes\n' >"$VX_TEST_GROUP_STATE"
+    printf 'no\n' >"$VX_TEST_DENY_STATE"
+}
+vx_harbor_package_transition_finalize() { printf 'finalize\n' >>"$VX_TEST_MUTATIONS"; }
 vx_harbor_package_transition_rollback() {
     printf 'rollback\n' >>"$VX_TEST_MUTATIONS"
 }
@@ -590,9 +615,17 @@ export VX_TEST_OLD_SHELL="$change_root/old-shell.state"
 export VX_TEST_OLD_GROUP="$change_root/old-group.state"
 export VX_TEST_OLD_DENY="$change_root/old-deny.state"
 export VX_TEST_CONF_SNAPSHOT="$change_root/user.conf.before"
+export VX_TEST_TRANSITION_STATE="$change_root/transition.state"
 printf '/bin/bash\n' >"$VX_TEST_SHELL_STATE"
 printf 'yes\n' >"$VX_TEST_GROUP_STATE"
 printf 'no\n' >"$VX_TEST_DENY_STATE"
+printf 'idle\n' >"$VX_TEST_TRANSITION_STATE"
+cat >"$VESTA/bin/v-update-user-quota" <<'EOF'
+#!/usr/bin/env bash
+printf 'disk-quota\n' >>"$VX_TEST_MUTATIONS"
+[[ "${VX_TEST_DISK_FAIL:-no}" != yes ]]
+EOF
+chmod +x "$VESTA/bin/v-update-user-quota"
 cat >"$VESTA/data/packages/under.pkg" <<'EOF'
 DOCKER_CONTAINERS='1'
 DOCKER_PROJECTS='1'
@@ -650,5 +683,54 @@ grep -Fq 'recover' "$mutations" \
     || fail 'package transition did not take the provider lock first'
 [[ "$(sed -n '2p' "$mutations")" == lock ]] \
     || fail 'package transition did not take the owner lock second'
+
+cat >"$VESTA/data/packages/registry.sh" <<'EOF'
+#!/usr/bin/env bash
+printf 'trigger\n' >>"$VX_TEST_MUTATIONS"
+[[ "${VX_TEST_TRIGGER_FAIL:-no}" != yes ]]
+EOF
+chmod +x "$VESTA/data/packages/registry.sh"
+for failure in trigger disk; do
+    cp -p "$VX_TEST_CONF_SNAPSHOT" "$VESTA/data/users/alice/user.conf"
+    printf '/bin/bash\n' >"$VX_TEST_SHELL_STATE"
+    printf 'yes\n' >"$VX_TEST_GROUP_STATE"
+    printf 'no\n' >"$VX_TEST_DENY_STATE"
+    : >"$mutations"
+    if [[ "$failure" == disk ]]; then
+        printf "DISK_QUOTA='yes'\n" >"$VESTA/conf/vesta.conf"
+        failure_env=VX_TEST_DISK_FAIL=yes
+    else
+        failure_env=VX_TEST_TRIGGER_FAIL=yes
+    fi
+    if env VX_TEST_REPO_ROOT="$repo_root" VX_TEST_MUTATIONS="$mutations" \
+        "$failure_env" "$repo_root/bin/v-change-user-package" alice registry yes \
+        >"$change_root/$failure.out" 2>&1; then
+        fail "$failure failure incorrectly reported package success"
+    fi
+    [[ "$(sha256sum "$VESTA/data/users/alice/user.conf")" == "$change_user_before" ]] \
+        || fail "$failure failure did not restore user.conf"
+    [[ "$(<"$VX_TEST_SHELL_STATE")" == /bin/bash \
+        && "$(<"$VX_TEST_GROUP_STATE")" == yes \
+        && "$(<"$VX_TEST_DENY_STATE")" == no ]] \
+        || fail "$failure failure did not restore shell access authority"
+    printf "DISK_QUOTA='no'\n" >"$VESTA/conf/vesta.conf"
+done
+
+cp -p "$VX_TEST_CONF_SNAPSHOT" "$VESTA/data/users/alice/user.conf"
+printf '/bin/bash\n' >"$VX_TEST_SHELL_STATE"
+printf 'yes\n' >"$VX_TEST_GROUP_STATE"
+printf 'no\n' >"$VX_TEST_DENY_STATE"
+: >"$mutations"
+VX_TEST_REPO_ROOT="$repo_root" VX_TEST_MUTATIONS="$mutations" \
+    VX_TEST_ACCESS_FAIL=yes \
+    "$repo_root/bin/v-change-user-package" alice registry yes \
+    >"$change_root/access-warning.out" 2>&1 \
+    || fail 'recoverable post-commit access failure reported package failure'
+grep -Fq "PACKAGE='registry'" "$VESTA/data/users/alice/user.conf" \
+    || fail 'post-commit access recovery rolled back new user.conf'
+[[ "$(<"$VX_TEST_GROUP_STATE")" == yes && "$(<"$VX_TEST_DENY_STATE")" == no ]] \
+    || fail 'post-commit access recovery did not converge group/deny state'
+grep -Fq 'Warning: package changed' "$change_root/access-warning.out" \
+    || fail 'recovered post-commit access failure omitted its warning'
 
 echo "Compose package integration tests passed."

@@ -51,11 +51,20 @@ files. Metadata files are mode `0600`. Secrets are mode `0600`, stored
 separately from metadata, and are never included in an unencrypted backup.
 Provider backups are system backups outside tenant Compose backup roots.
 
-Package quota transitions use `data/harbor/transactions/<owner>.json` plus a
-protected `user.conf` preimage. The secret-free journal is written atomically
-before Harbor mutation and records one expiring operation, old/new quota,
-package and user-state digests, observation generation, and rollback state.
+Package quota transitions use `data/harbor/transactions/<owner>.json` plus
+protected before/after `user.conf` authorities. The secret-free journal is
+written atomically before Harbor mutation and records one expiring operation,
+old/new quota, package and user-state digests, observation generation, and
+rollback state. Package-controlled fields use a compare/merge transaction:
+exact rollback applies when no other writer intervened, while a third digest
+preserves fresh counters and measured usage and restores only package fields.
 Recovery runs under provider-then-owner locks before another owner transition.
+
+The package trigger and disk-quota update remain pre-commit and any failure
+rolls back Vesta and Harbor authority. Commit does not remove recovery state:
+idempotent Compose shell-access convergence must complete before final cleanup.
+An initial post-commit convergence failure may return success only after
+durable recovery converges the committed package and emits an explicit warning.
 
 ## Provider and owner states
 
@@ -101,6 +110,12 @@ Managed package quota changes accept only owner observations no more than 300
 seconds old and no more than 30 seconds in the future. The observation must
 carry an immutable generation, which is bound into the journal and signed
 transition token and must be revalidated by the authoritative quota setter.
+The Task 10 setter must treat `(owner, operation ID, intent)` idempotently,
+verify generation and timestamp again for forward apply, and permit bounded
+idempotent rollback from the durable journal without requiring a still-fresh
+observation. Provider startup and owner reconciliation must source Compose
+access helpers, take the shared provider lock before the owner access lock,
+and call package-transition recovery before other owner mutation.
 
 No external Harbor request may occur while a tenant project lock is held.
 Provider reconciliation that later needs a workload transaction must finish
