@@ -10,8 +10,6 @@ source "$VESTA/conf/vesta.conf"
 check_args '0' "$#" '[FORMAT]'
 [[ "$format" == json || "$format" == plain ]]
 check_result $? 'Invalid format'
-vx_harbor_provider_prepare
-check_result $? 'Harbor provider state preparation failed'
 status="$(vx_harbor_status_json)"
 check_result $? 'Harbor provider status unavailable'
 if [[ "$format" == json ]]; then

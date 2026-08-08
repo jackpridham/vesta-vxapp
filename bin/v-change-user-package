@@ -210,9 +210,8 @@ NOTIFICATIONS='$NOTIFICATIONS'
 TIME='$TIME'
 DATE='$DATE'" > "$transition_user_conf_new"
     chmod --reference="$USER_DATA/user.conf" "$transition_user_conf_new" \
-        && chown --reference="$USER_DATA/user.conf" "$transition_user_conf_new" \
-        && mv -fT -- "$transition_user_conf_new" "$USER_DATA/user.conf"
-    check_result $? "User package state update failed"
+        && chown --reference="$USER_DATA/user.conf" "$transition_user_conf_new"
+    check_result $? "User package state staging failed"
 }
 
 harbor_package_transition_cleanup() {
@@ -259,9 +258,10 @@ check_result $? 'Harbor registry quota transition rejected' "$E_LIMIT"
 transition_user_conf_new="$(mktemp "$USER_DATA/.user.conf.new.XXXXXX")"
 check_result $? "User package state staging failed"
 change_user_package
-operation_id="$(vx_harbor_package_transition_publish \
-    "$user" "$package" "$DOCKER_REGISTRY_MB")"
-check_result $? 'Harbor registry operation publication failed'
+operation_id="$(vx_harbor_package_transition_install_desired \
+    "$user" "$package" "$DOCKER_REGISTRY_MB" "$transition_user_conf_new" \
+    "$USER_DATA/user.conf")"
+check_result $? 'Harbor registry desired-state publication failed'
 
 # Update user shell as part of the ordinary Vesta package change.
 shell_conf=$(echo "$pkg_data" | grep 'SHELL' | cut -f 2 -d \')

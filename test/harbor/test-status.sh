@@ -10,6 +10,28 @@ _vx_harbor_authority_uid() { printf '%s\n' "$EUID"; }
 _vx_harbor_authority_gid() { id -g; }
 _vx_harbor_require_root() { return 0; }
 _vx_harbor_secure_file_set() { chmod "$2" "$1"; }
+rm -rf -- "$VESTA/data/harbor"
+before="$(find "$VESTA/data" -mindepth 1 -printf '%P\n' | sort)"
+mkdir -p "$VESTA/conf"
+cat >"$VESTA/func/main.sh" <<'EOF'
+check_args() { (( $2 >= $1 )); }
+check_result() { local result="$1"; (( result == 0 )) || exit "$result"; }
+EOF
+: >"$VESTA/conf/vesta.conf"
+command_status="$(VESTA="$VESTA" "$HARBOR_REPO_ROOT/bin/v-list-harbor-registry" json)"
+after_command="$(find "$VESTA/data" -mindepth 1 -printf '%P\n' | sort)"
+[[ "$before" == "$after_command" ]] || fail 'v-list-harbor-registry mutated absent authority'
+jq -e '.MODE=="disabled" and .HEALTH=="uninitialized"' <<<"$command_status" >/dev/null \
+  || fail 'v-list-harbor-registry did not emit uninitialized status'
+vx_harbor_origin_json() { return 1; }
+uninitialized="$(vx_harbor_status_json)"
+after="$(find "$VESTA/data" -mindepth 1 -printf '%P\n' | sort)"
+[[ "$before" == "$after" ]] || fail 'read-only status created provider authority'
+jq -e '.MODE=="disabled" and .PINNED_VERSION=="v2.15.0" and
+  .RUNNING_VERSION==null and .ORIGIN==null and .HEALTH=="uninitialized" and
+  .PENDING_OPERATIONS==0 and .FAILED_OPERATIONS==0 and
+  .BACKUP_AGE_SECONDS==null and .CERTIFICATE_STATE=="unavailable"' \
+  <<<"$uninitialized" >/dev/null || fail 'uninitialized status incorrect'
 vx_harbor_provider_prepare
 vx_harbor_origin_json() { printf '{"ORIGIN":"https://panel.example.com:8083"}\n'; }
 status="$(vx_harbor_status_json)"

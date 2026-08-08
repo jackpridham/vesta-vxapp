@@ -9,8 +9,14 @@ import re
 import socket
 import tempfile
 import threading
+import socketserver
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit
+
+
+class ThreadingUnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+    daemon_threads = True
+    allow_reuse_address = True
 
 MAX_BODY = 1024 * 1024
 BODY_READ_TIMEOUT = 0.5
@@ -367,13 +373,15 @@ class HarborHandler(BaseHTTPRequestHandler):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--port", required=True, type=int)
+    endpoint = parser.add_mutually_exclusive_group(required=True)
+    endpoint.add_argument("--port", type=int)
+    endpoint.add_argument("--unix-socket")
     parser.add_argument("--state", required=True)
     parser.add_argument("--log", required=True)
     parser.add_argument("--credential-file", required=True)
     parser.add_argument("--ready-file", required=True)
     args = parser.parse_args()
-    if not 0 <= args.port <= 65535:
+    if args.port is not None and not 0 <= args.port <= 65535:
         parser.error("--port must be between 0 and 65535")
 
     credential_mode = os.stat(args.credential_file).st_mode & 0o777
@@ -387,7 +395,12 @@ def main():
         parser.error("--credential-file must contain non-empty username and password strings")
 
     with open(args.log, "a", encoding="utf-8", buffering=1) as log_handle:
-        server = ThreadingHTTPServer(("127.0.0.1", args.port), HarborHandler)
+        if args.unix_socket:
+            if os.path.exists(args.unix_socket):
+                os.unlink(args.unix_socket)
+            server = ThreadingUnixHTTPServer(args.unix_socket, HarborHandler)
+        else:
+            server = ThreadingHTTPServer(("127.0.0.1", args.port), HarborHandler)
         server.store = StateStore(args.state)
         server.state_lock = threading.Lock()
         server.log_lock = threading.Lock()
@@ -398,12 +411,19 @@ def main():
         ready_fd, ready_temporary = tempfile.mkstemp(prefix=".fake-harbor-ready.", dir=ready_directory)
         try:
             with os.fdopen(ready_fd, "w", encoding="utf-8") as ready_handle:
-                ready_handle.write(f"{server.server_address[1]}\n")
+                ready_handle.write(
+                    f"{args.unix_socket if args.unix_socket else server.server_address[1]}\n"
+                )
             os.replace(ready_temporary, args.ready_file)
         finally:
             if os.path.exists(ready_temporary):
                 os.unlink(ready_temporary)
-        server.serve_forever()
+        try:
+            server.serve_forever()
+        finally:
+            server.server_close()
+            if args.unix_socket and os.path.exists(args.unix_socket):
+                os.unlink(args.unix_socket)
 
 
 if __name__ == "__main__":

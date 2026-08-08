@@ -545,6 +545,12 @@ vx_harbor_package_transition_publish() {
     printf 'pending\n' >"$VX_TEST_TRANSITION_STATE"
     printf '0123456789abcdef0123456789abcdef\n'
 }
+vx_harbor_package_transition_install_desired() {
+    local operation_id
+    operation_id="$(vx_harbor_package_transition_publish "$1" "$2" "$3")" || return 1
+    cp -p -- "$4" "$5" || return 1
+    printf '%s\n' "$operation_id"
+}
 vx_harbor_package_transition_recover() {
     printf 'recover\n' >>"$VX_TEST_MUTATIONS"
     [[ "${VX_TEST_PROVIDER_OUTAGE:-no}" != yes ]] || return 1
