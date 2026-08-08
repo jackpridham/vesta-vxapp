@@ -6,6 +6,8 @@ new_vesta_root; install_harbor_helpers
 mkdir -p "$VESTA/install/harbor" "$VESTA/nginx/conf" "$HARBOR_TEST_ROOT/systemd" "$HARBOR_TEST_ROOT/run"
 cp "$HARBOR_REPO_ROOT/install/harbor/"* "$VESTA/install/harbor/"
 source "$VESTA/func/vx/harbor/main.sh"
+test_data_root="$HARBOR_TEST_ROOT/provider-data"
+vx_harbor_data_root() { printf '%s\n' "$test_data_root"; }
 _vx_harbor_require_root() { return 0; }
 _vx_harbor_authority_uid() { id -u; }
 _vx_harbor_authority_gid() { id -g; }
@@ -80,6 +82,7 @@ _vx_harbor_install_loaded_image_config_validate "sha256:$(printf '%064d' 1)" "sh
 _vx_harbor_docker_bounded() { return 0; }
 _vx_harbor_install_generate() {
   local stage="$1" manifest="$2"
+  mkdir -m 0700 -p "$(vx_harbor_data_root)"
   mkdir -p "$stage/common/config/nginx" "$stage/secrets"
   cp "$HARBOR_REPO_ROOT/test/harbor/fixtures/harbor-v2.15.0-generated-compose.yml" "$stage/docker-compose.yml"
   cp "$HARBOR_REPO_ROOT/test/harbor/fixtures/harbor-v2.15.0-generated-nginx.conf" "$stage/common/config/nginx/nginx.conf"
@@ -122,6 +125,7 @@ prior_main="$(sha256sum "$VESTA/nginx/conf/nginx.conf"|awk '{print $1}')"
 prior_provider="$(sha256sum "$VESTA/data/harbor/provider.json"|awk '{print $1}')"
 _vx_harbor_install_phase() { [[ "$1" != health ]]; }
 ! vx_harbor_install || fail 'failed health was accepted'
+[[ ! -e "$test_data_root" ]] || fail 'failed fresh install retained mutated provider data'
 [[ "$(cat "$VX_HARBOR_SYSTEMD_TARGET")" == prior-unit ]] || fail 'unit rollback failed'
 [[ "$(cat "$VX_HARBOR_NGINX_TARGET")" == prior-ingress ]] || fail 'ingress rollback failed'
 [[ "$(jq -r .MODE "$VESTA/data/harbor/provider.json")" == disabled ]] || fail 'provider state changed on failure'
@@ -134,6 +138,7 @@ for fail_phase in prerequisite release generation compose migration health socke
     printf 'prior-unit\n' >"$VX_HARBOR_SYSTEMD_TARGET"
     printf 'prior-ingress\n' >"$VX_HARBOR_NGINX_TARGET"
     ! vx_harbor_install || fail "$fail_phase failure was accepted"
+    [[ ! -e "$test_data_root" ]] || fail "$fail_phase fresh install retained mutated provider data"
     [[ "$(cat "$VX_HARBOR_SYSTEMD_TARGET")" == prior-unit ]] || fail "$fail_phase unit rollback failed"
     [[ "$(cat "$VX_HARBOR_NGINX_TARGET")" == prior-ingress ]] || fail "$fail_phase ingress rollback failed"
     jq -e '.self_registration==true and .project_creation_restriction=="everyone"' "$bootstrap_config" >/dev/null || fail "$fail_phase external configuration rollback failed"
@@ -160,6 +165,7 @@ jq -e '.self_registration==true and .project_creation_restriction=="everyone"' "
 printf '[]\n' >"$bootstrap_robots"
 rm -f "$RECONCILE_DONE"
 vx_harbor_install || fail 'valid transactional install failed'
+[[ -d "$test_data_root" ]] || fail 'committed install lost provider data'
 for _ in {1..100}; do [[ -e "$RECONCILE_DONE" ]] && break; sleep .02; done
 [[ -e "$RECONCILE_DONE" ]] || fail 'nonblocking post-start reconciliation did not proceed after install lock release'
 [[ "$(jq -r .MODE "$VESTA/data/harbor/provider.json")" == managed ]] || fail 'provider not managed after commit'

@@ -316,11 +316,21 @@ _vx_harbor_install_restore_file() {
 }
 
 vx_harbor_install() {
-    local root stage manifest compose ingress unit_target ingress_target nginx_main rollback provider_next candidate_main activation_main rollback_status
-    local unit_existed=no ingress_existed=no integration_existed=no current_existed=no previous_existed=no previous_rotated=no candidate_activated=no service_active=no service_enabled=no committed=no
+    local root data_root stage manifest compose ingress unit_target ingress_target nginx_main rollback provider_next candidate_main activation_main rollback_status
+    local unit_existed=no ingress_existed=no integration_existed=no current_existed=no previous_existed=no previous_rotated=no candidate_activated=no service_active=no service_enabled=no data_root_existed=no committed=no
     root="$(vx_harbor_root)" || return 1
     vx_harbor_provider_prepare || return 1
     vx_harbor_provider_lock_acquire exclusive || return 1
+    data_root="$(vx_harbor_data_root)" || { vx_harbor_provider_lock_release; return 1; }
+    [[ "$data_root" == /* && "$data_root" != / && "$(dirname "$data_root")" != / ]] \
+        || { vx_harbor_provider_lock_release; return 1; }
+    if [[ -e "$data_root" || -L "$data_root" ]]; then
+        [[ -d "$data_root" && ! -L "$data_root" \
+            && "$(/usr/bin/stat -c '%u:%g:%a' "$data_root")" \
+              == "$(_vx_harbor_authority_uid):$(_vx_harbor_authority_gid):700" ]] \
+            || { vx_harbor_provider_lock_release; return 1; }
+        data_root_existed=yes
+    fi
     stage="$(/usr/bin/mktemp -d "$root/release/.install.XXXXXX")" || { vx_harbor_provider_lock_release; return 1; }
     rollback="$(/usr/bin/mktemp -d "$root/.install-rollback.XXXXXX")" || { vx_harbor_provider_lock_release; return 1; }
     unit_target="$(vx_harbor_systemd_target)"; ingress_target="$(vx_harbor_ingress_target)"
@@ -349,6 +359,7 @@ vx_harbor_install() {
     "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" is-active vesta-harbor.service >/dev/null 2>&1 && service_active=yes || :
     "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" is-enabled vesta-harbor.service >/dev/null 2>&1 && service_enabled=yes || :
     _vx_harbor_install_rollback() {
+        local data_cleanup_status=0
         [[ "$committed" == yes ]] && return 0
         _vx_harbor_install_external_cleanup "$stage" || return 75
         "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" stop vesta-harbor.service >/dev/null 2>&1 || :
@@ -356,6 +367,13 @@ vx_harbor_install() {
             _vx_harbor_docker_bounded 120 compose --project-name vesta-harbor \
                 --file "$stage/docker-compose.yml" down --remove-orphans \
                 >/dev/null 2>&1 || :
+        fi
+        if [[ "$data_root_existed" == no && ( -e "$data_root" || -L "$data_root" ) ]]; then
+            if [[ -d "$data_root" && ! -L "$data_root" ]]; then
+                /usr/bin/rm -rf --one-file-system -- "$data_root" || data_cleanup_status=75
+            else
+                data_cleanup_status=75
+            fi
         fi
         _vx_harbor_install_restore_file "$unit_target" "$rollback/unit" "$unit_existed" || :
         _vx_harbor_install_restore_file "$ingress_target" "$rollback/ingress" "$ingress_existed" || :
@@ -384,6 +402,7 @@ vx_harbor_install() {
         [[ "$service_enabled" == yes ]] && "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" enable vesta-harbor.service >/dev/null 2>&1 || "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" disable vesta-harbor.service >/dev/null 2>&1 || :
         [[ "$service_active" == yes ]] && "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" start vesta-harbor.service >/dev/null 2>&1 || :
         "${VX_HARBOR_NGINX:-/usr/sbin/nginx}" -t >/dev/null 2>&1 && "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" reload nginx.service >/dev/null 2>&1 || :
+        return "$data_cleanup_status"
     }
     trap '_vx_harbor_install_rollback; vx_harbor_provider_lock_release 2>/dev/null || :; exit 1' HUP INT TERM
     _vx_harbor_install_apply() {
