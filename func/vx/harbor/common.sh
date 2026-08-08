@@ -356,8 +356,9 @@ _vx_harbor_authoritative_hostname() {
 _vx_harbor_nginx_panel_endpoint() {
     local nginx_file="$1"
     local panel_root="$VESTA/web"
+    local mime_types="$VESTA/nginx/conf/mime.types"
 
-    /usr/bin/python3 - "$nginx_file" "$panel_root" <<'PY'
+    /usr/bin/python3 - "$nginx_file" "$panel_root" "$mime_types" <<'PY'
 import json
 import pathlib
 import re
@@ -365,6 +366,7 @@ import sys
 
 config = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
 panel_root = sys.argv[2]
+safe_mime_types = {"mime.types", sys.argv[3]}
 
 tokens = []
 token = []
@@ -406,9 +408,6 @@ if quote or escaped or token:
     if quote or escaped:
         raise SystemExit(1)
     tokens.append("".join(token))
-if any(value == "include" or "$" in value for value in tokens):
-    raise SystemExit(1)
-
 root = {"name": "root", "directives": [], "children": []}
 stack = [root]
 statement = []
@@ -435,6 +434,15 @@ for value in tokens:
 if statement or len(stack) != 1:
     raise SystemExit(1)
 
+# Root/http includes can add server blocks and invalidate uniqueness. The
+# shipped static mime map is the sole safe include needed by the panel config.
+for context in [root] + [child for child in root["children"]
+                         if child["name"] == "http"]:
+    for item in context["directives"]:
+        if item[0] == "include" \
+                and (len(item) != 2 or item[1] not in safe_mime_types):
+            raise SystemExit(1)
+
 servers = []
 def visit(node):
     if node["name"] == "server":
@@ -456,6 +464,11 @@ panel = panel_servers[0]
 listeners = []
 certificates = []
 for item in panel["directives"]:
+    if item[0] == "include":
+        raise SystemExit(1)
+    if item[0] in {"root", "listen", "server_name", "ssl_certificate"} \
+            and any("$" in value for value in item[1:]):
+        raise SystemExit(1)
     if item[0] == "listen" and "ssl" in item[2:]:
         if len(item) < 3:
             raise SystemExit(1)

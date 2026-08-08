@@ -289,6 +289,15 @@ jq -e '. == {
     REGISTRY:"panel.example.com:8083", ORIGIN:"https://panel.example.com:8083"
 }' <<<"$origin" >/dev/null || fail 'derived origin is incorrect'
 
+printf 'http {\n  include mime.types;\n  log_format main '\''$remote_addr $host $request_uri'\'';\n  server {\n    root /srv/unrelated;\n    listen 9443 ssl;\n    ssl_certificate %s;\n  }\n  server {\n    root %s/web;\n    server_name panel.example.com;\n    listen 8083 ssl;\n    ssl_certificate %s;\n    access_log /var/log/vesta/access.log main;\n    location / { proxy_set_header Host $host; proxy_set_header X-Request-ID $request_id; }\n  }\n}\n' \
+    "$certificate" "$VESTA" "$certificate" >"$VESTA/nginx/conf/nginx.conf"
+origin="$(vx_harbor_origin_json)" || fail 'shipped-style Vesta nginx config was rejected'
+jq -e 'keys == ["HOSTNAME", "ORIGIN", "PORT", "REGISTRY"] and . == {
+    HOSTNAME:"panel.example.com", PORT:8083,
+    REGISTRY:"panel.example.com:8083", ORIGIN:"https://panel.example.com:8083"
+}' <<<"$origin" >/dev/null || fail 'shipped-style config derived the wrong origin'
+write_nginx
+
 for invalid_hostname in localhost panel 127.0.0.1 '[::1]' '-bad.example.com'; do
     printf '%s\n' "$invalid_hostname" >"$hostname_file"
     if vx_harbor_origin_json >/dev/null 2>&1; then
@@ -341,6 +350,24 @@ printf 'server { root %s/web; listen $panel_port ssl; ssl_certificate %s; }\n' \
     "$VESTA" "$certificate" >"$VESTA/nginx/conf/nginx.conf"
 if vx_harbor_origin_json >/dev/null 2>&1; then
     fail 'variable TLS listener was accepted'
+fi
+
+printf 'server { root %s/web; server_name $host; listen 8083 ssl; ssl_certificate %s; }\n' \
+    "$VESTA" "$certificate" >"$VESTA/nginx/conf/nginx.conf"
+if vx_harbor_origin_json >/dev/null 2>&1; then
+    fail 'variable panel server name was accepted'
+fi
+
+printf 'server { root %s/web; listen 8083 ssl; ssl_certificate $panel_certificate; }\n' \
+    "$VESTA" >"$VESTA/nginx/conf/nginx.conf"
+if vx_harbor_origin_json >/dev/null 2>&1; then
+    fail 'variable panel certificate was accepted'
+fi
+
+printf 'http { include conf.d/*.conf; server { root %s/web; listen 8083 ssl; ssl_certificate %s; } }\n' \
+    "$VESTA" "$certificate" >"$VESTA/nginx/conf/nginx.conf"
+if vx_harbor_origin_json >/dev/null 2>&1; then
+    fail 'server-capable global include ambiguity was accepted'
 fi
 
 printf 'http {\n  # unrelated listener must not become panel authority\n  server { root /srv/other; listen 9443 ssl; ssl_certificate %s; }\n  server {\n    root\n      %s/web; # panel marker\n    listen\n      8083\n      ssl; # numeric TLS authority\n    ssl_certificate\n      %s; # panel certificate\n  }\n}\n' \
