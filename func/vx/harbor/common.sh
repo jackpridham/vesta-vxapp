@@ -193,14 +193,36 @@ vx_harbor_owner_state_path() {
     printf '%s/owners/%s.json\n' "$(vx_harbor_root)" "$owner"
 }
 
+_vx_harbor_authoritative_hostname() {
+    local hostname_file
+
+    if [[ -d /etc/sysconfig ]]; then
+        hostname_file=/etc/sysconfig/network
+        [[ -f "$hostname_file" && ! -L "$hostname_file" ]] || return 1
+        /usr/bin/awk -F= '
+            $1 == "HOSTNAME" {
+                value=substr($0, index($0, "=") + 1)
+                gsub(/^[[:space:]\047\"]+|[[:space:]\047\"]+$/, "", value)
+                print value
+                found++
+            }
+            END { if (found != 1) exit 1 }
+        ' "$hostname_file"
+        return
+    fi
+
+    hostname_file=/etc/hostname
+    [[ -f "$hostname_file" && ! -L "$hostname_file" ]] || return 1
+    /usr/bin/awk 'NF { print; found++ } END { if (found != 1) exit 1 }' \
+        "$hostname_file"
+}
+
 vx_harbor_origin_json() {
-    local hostname_file nginx_file hostname certificate
+    local nginx_file hostname certificate
     local -a ports certificates
-    hostname_file="${VX_HARBOR_HOSTNAME_FILE:-/etc/hostname}"
     nginx_file="$VESTA/nginx/conf/nginx.conf"
-    [[ -f "$hostname_file" && ! -L "$hostname_file" \
-        && -f "$nginx_file" && ! -L "$nginx_file" ]] || return 1
-    IFS= read -r hostname <"$hostname_file" || return 1
+    [[ -f "$nginx_file" && ! -L "$nginx_file" ]] || return 1
+    hostname="$(_vx_harbor_authoritative_hostname)" || return 1
     hostname="${hostname%.}"
     hostname="${hostname,,}"
     [[ "$hostname" != localhost && "$hostname" == *.* \
@@ -221,7 +243,7 @@ vx_harbor_origin_json() {
                 }
             }
         }
-    ' "$nginx_file" | /usr/bin/sort -u) || return 1
+    ' "$nginx_file") || return 1
     [[ "${#ports[@]}" -eq 1 && "${ports[0]}" -ge 1 && "${ports[0]}" -le 65535 ]] \
         || return 1
     mapfile -t certificates < <(/usr/bin/awk '

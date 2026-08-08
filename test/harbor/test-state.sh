@@ -136,7 +136,12 @@ write_nginx() {
         >"$VESTA/nginx/conf/nginx.conf"
 }
 write_nginx
-export VX_HARBOR_HOSTNAME_FILE="$hostname_file"
+_vx_harbor_authoritative_hostname() {
+    awk 'NF { print; found++ } END { if (found != 1) exit 1 }' "$hostname_file"
+}
+untrusted_hostname_file="$HARBOR_TEST_ROOT/untrusted-hostname"
+printf 'attacker.example.com\n' >"$untrusted_hostname_file"
+export VX_HARBOR_HOSTNAME_FILE="$untrusted_hostname_file"
 origin="$(vx_harbor_origin_json)" || fail 'valid Vesta origin was rejected'
 jq -e '. == {
     HOSTNAME:"panel.example.com", PORT:8083,
@@ -154,6 +159,11 @@ if vx_harbor_origin_json >/dev/null 2>&1; then
     fail 'certificate hostname mismatch was accepted'
 fi
 printf 'panel.example.com\n' >"$hostname_file"
+printf 'server {\n    listen 8083 ssl;\n    listen 8083 ssl;\n    ssl_certificate %s;\n}\n' \
+    "$certificate" >"$VESTA/nginx/conf/nginx.conf"
+if vx_harbor_origin_json >/dev/null 2>&1; then
+    fail 'duplicate same-port TLS listeners were accepted'
+fi
 printf 'server { listen 0 ssl; ssl_certificate %s; }\n' "$certificate" \
     >"$VESTA/nginx/conf/nginx.conf"
 if vx_harbor_origin_json >/dev/null 2>&1; then
