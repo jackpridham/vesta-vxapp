@@ -70,3 +70,10 @@ raise SystemExit(len(value) > 256 or any(byte < 32 or byte == 127 for byte in va
     /usr/bin/flock -u "$lock_fd" || { exec {lock_fd}>&-; return 1; }
     exec {lock_fd}>&-
 }
+
+vx_harbor_failure_audit() {
+    local owner="$1" operation="$2" reason="$3" status="${4:-1}"
+    case "$reason" in schema|journal|api|authentication|switch|revoke|outage|quota) ;; *) return 1;; esac
+    vx_harbor_audit "$owner" "$operation" failed "$reason" || return 1
+    return "$status"
+}

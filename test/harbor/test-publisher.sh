@@ -32,4 +32,9 @@ prepare_owner crashswitch; crash_point=authority-switched
 journal="$(vx_harbor_rotation_path crashswitch publisher)"; jq -e '.PHASE=="pending-switch"' "$journal" >/dev/null; jq -e '.PUBLISHER_ROBOT_ID==43' "$(vx_harbor_owner_state_path crashswitch)" >/dev/null; before="$(cat "$create_count")"; mapping_hash="$(sha256sum "$(vx_harbor_owner_state_path crashswitch)")"
 crash_point=none; printf %s "$publisher_secret" | vx_harbor_publisher_change_locked crashswitch
 [[ "$(cat "$create_count")" == "$before" && "$(sha256sum "$(vx_harbor_owner_state_path crashswitch)")" == "$mapping_hash" ]]; jq -e '.PHASE=="converged"' "$journal" >/dev/null
+jq -e 'select(.OPERATION=="publisher-rotation" and .RESULT=="failed") | .REASON|IN("schema","journal","switch")' "$(vx_harbor_root)/audit.log" >/dev/null || fail 'publisher failures were not enum-audited'
+! grep -Fq "$publisher_secret" "$(vx_harbor_root)/audit.log" || fail 'publisher secret entered audit'
+prepare_owner revokeaudit; vx_harbor_api_robot_disable(){ return 1; }
+! vx_harbor_publisher_revoke_locked revokeaudit "$(vx_harbor_owner_state_path revokeaudit)"
+jq -e 'select(.OPERATION=="publisher-revocation" and .RESULT=="failed" and .REASON=="outage")' "$(vx_harbor_root)/audit.log" >/dev/null || fail 'publisher revocation failure was not audited'
 printf 'PASS: publisher journal-before-switch crash recovery\n'

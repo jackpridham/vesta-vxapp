@@ -37,4 +37,9 @@ journal="$(vx_harbor_rotation_path crashswitch runtime)"; jq -e '.PHASE=="pendin
 jq -e '.["panel.example:8083"].USERNAME=="vx-crashswitch-runtime-103"' "$(vx_compose_registry_root crashswitch)/registries.json" >/dev/null; before="$(cat "$create_count")"; mapping_hash="$(sha256sum "$(vx_compose_registry_root crashswitch)/config.json" "$(vx_compose_registry_root crashswitch)/registries.json")"
 crash_point=none; vx_harbor_runtime_rotate crashswitch vx-crashswitch https://panel.example:8083 13 104 >/dev/null
 [[ "$(cat "$create_count")" == "$before" && "$(sha256sum "$(vx_compose_registry_root crashswitch)/config.json" "$(vx_compose_registry_root crashswitch)/registries.json")" == "$mapping_hash" ]]; jq -e '.PHASE=="converged"' "$journal" >/dev/null
+jq -e 'select(.OPERATION=="runtime-rotation" and .RESULT=="failed") | .REASON|IN("journal","switch")' "$(vx_harbor_root)/audit.log" >/dev/null || fail 'runtime failures were not enum-audited'
+! grep -Fq runtime-secret-0123456789abcdef "$(vx_harbor_root)/audit.log" || fail 'runtime secret entered audit'
+prepare_owner revokeaudit; vx_harbor_api_robot_disable(){ return 1; }
+! vx_harbor_runtime_revoke revokeaudit https://panel.example:8083 99
+jq -e 'select(.OPERATION=="runtime-revocation" and .RESULT=="failed" and .REASON=="outage")' "$(vx_harbor_root)/audit.log" >/dev/null || fail 'runtime revocation failure was not audited'
 printf 'PASS: runtime journal-before-switch crash recovery\n'

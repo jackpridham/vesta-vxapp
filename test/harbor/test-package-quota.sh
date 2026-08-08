@@ -105,6 +105,7 @@ chmod --reference="$VESTA/data/users/alice/user.conf" "$staged"
 managed_id="$(vx_harbor_package_transition_install_desired alice larger 25 "$staged" "$VESTA/data/users/alice/user.conf")"
 if vx_harbor_package_transition_recover alice; then fail 'unavailable API converged'; fi
 [[ "$(jq -r '.STATE,.LAST_ERROR' "$operation")" == $'pending\nprovider-unavailable' ]] || fail 'outage not pending'
+jq -e 'select(.OPERATION=="quota-reconcile" and .RESULT=="failed" and .REASON=="outage")' "$VESTA/data/harbor/audit.log" >/dev/null || fail 'quota outage was not enum-audited'
 start_api
 vx_harbor_package_transition_recover alice
 [[ "$(jq -r '.STATE' "$operation")" == converged ]] || fail 'real quota adapter did not converge'

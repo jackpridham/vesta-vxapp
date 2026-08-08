@@ -121,7 +121,7 @@ vx_harbor_owner_reconcile_locked() {
       <<<"$project" >/dev/null || return 1
     project_id="$(/usr/bin/jq -er '.project_id' <<<"$project")"; quota_id="$(/usr/bin/jq -er '.quota_id' <<<"$project")"
     [[ ! -f "$path" ]] || { vx_harbor_owner_state_validate "$path" || return 1; /usr/bin/jq -e --arg o "$owner" --arg n "$namespace" --argjson p "$project_id" --argjson q "$quota_id" '.OWNER==$o and .NAMESPACE==$n and .PROJECT_ID==$p and .QUOTA_ID==$q' "$path" >/dev/null || return 1; }
-    vx_harbor_api_quota_set_bytes "$quota_id" "$(vx_harbor_quota_bytes "$quota")" >/dev/null || return 75
+    vx_harbor_api_quota_set_bytes "$quota_id" "$(vx_harbor_quota_bytes "$quota")" >/dev/null || { vx_harbor_failure_audit "$owner" quota-reconcile quota 75; return; }
     vx_harbor_audit "$owner" quota-reconcile succeeded applied || return 1
     vx_harbor_quota_observe "$owner" "$quota_id" || return 75
     old_runtime=null; [[ ! -f "$path" ]] || old_runtime="$(/usr/bin/jq -r '.RUNTIME_ROBOT_ID' "$path")"

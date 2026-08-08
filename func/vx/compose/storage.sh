@@ -328,6 +328,13 @@ vx_compose_require_project() {
         }
 }
 
+vx_compose_require_profile() {
+    local owner="$1" project="$2" expected="$3" root
+    vx_compose_require_project "$owner" "$project" || return 1
+    root="$(vx_compose_project_root "$owner" "$project")"
+    [[ "$(vx_compose_meta_get "$root/project.conf" PROFILE)" == "$expected" ]]
+}
+
 vx_compose_prepare_owner_roots() {
     local owner="$1"
     local projects_root data_parent

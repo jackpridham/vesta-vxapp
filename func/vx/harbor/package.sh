@@ -200,7 +200,7 @@ vx_harbor_owner_quota_set() {
         storage=$((10#$quota * 1024 * 1024))
         (( storage >= 0 )) || return 1
     fi
-    vx_harbor_api_quota_set_bytes "$quota_id" "$storage"
+    vx_harbor_api_quota_set_bytes "$quota_id" "$storage" || { vx_harbor_failure_audit "$owner" quota-reconcile outage 75; return; }
 }
 
 vx_harbor_package_transition_recover() {

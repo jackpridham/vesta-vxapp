@@ -111,35 +111,35 @@ vx_harbor_runtime_credential_switch() {
 vx_harbor_runtime_rotate() {
     local owner="$1" namespace="$2" origin="$3" old_id="$4" generation="$5" secret username response id operation retry_status retry_output
     retry_output="$(_vx_harbor_rotation_recover "$owner" runtime "$origin")" && { printf '%s\n' "$retry_output"; return 0; }
-    retry_status=$?; [[ "$retry_status" == 1 ]] || return "$retry_status"
-    secret="$(_vx_harbor_random_secret)" || return 1; username="$namespace-runtime-$generation"
-    response="$(printf %s "$secret" | vx_harbor_api_robot_create "$namespace" "$username" pull)" || return 1
-    id="$(/usr/bin/jq -er '.id' <<<"$response")" || return 1
-    printf %s "$secret" | vx_harbor_api_credential_probe "$username" || { vx_harbor_api_robot_delete "$id" >/dev/null 2>&1 || :; return 1; }
+    retry_status=$?; [[ "$retry_status" == 1 ]] || { vx_harbor_failure_audit "$owner" runtime-rotation revoke "$retry_status"; return; }
+    secret="$(_vx_harbor_random_secret)" || { vx_harbor_failure_audit "$owner" runtime-rotation outage 1; return; }; username="$namespace-runtime-$generation"
+    response="$(printf %s "$secret" | vx_harbor_api_robot_create "$namespace" "$username" pull)" || { unset secret; vx_harbor_failure_audit "$owner" runtime-rotation api 75; return; }
+    id="$(/usr/bin/jq -er '.id' <<<"$response")" || { unset secret; vx_harbor_failure_audit "$owner" runtime-rotation schema 1; return; }
+    printf %s "$secret" | vx_harbor_api_credential_probe "$username" || { unset secret; vx_harbor_api_robot_delete "$id" >/dev/null 2>&1 || :; vx_harbor_failure_audit "$owner" runtime-rotation authentication 75; return; }
     operation="$(/usr/bin/od -An -N16 -tx1 /dev/urandom | /usr/bin/tr -d ' \n')"
     [[ -n "$old_id" ]] || old_id=null
-    _vx_harbor_runtime_candidate_stage "$owner" "$operation" "$secret" || { vx_harbor_api_robot_delete "$id" >/dev/null 2>&1 || :; return 1; }
+    _vx_harbor_runtime_candidate_stage "$owner" "$operation" "$secret" || { unset secret; vx_harbor_api_robot_delete "$id" >/dev/null 2>&1 || :; vx_harbor_failure_audit "$owner" runtime-rotation switch 1; return; }
     unset secret
     if ! _vx_harbor_rotation_write "$owner" runtime "$operation" pending-switch "$id" "$username" "$old_id"; then
         /usr/bin/unlink "$(_vx_harbor_runtime_candidate_path "$owner" "$operation")" 2>/dev/null || :
         vx_harbor_api_robot_delete "$id" >/dev/null 2>&1 || :
-        return 1
+        vx_harbor_failure_audit "$owner" runtime-rotation journal 1; return
     fi
-    _vx_harbor_rotation_checkpoint runtime journal-published || return 76
-    _vx_harbor_rotation_recover "$owner" runtime "$origin" || return
+    _vx_harbor_rotation_checkpoint runtime journal-published || { vx_harbor_failure_audit "$owner" runtime-rotation journal 76; return; }
+    _vx_harbor_rotation_recover "$owner" runtime "$origin" || { retry_status=$?; vx_harbor_failure_audit "$owner" runtime-rotation switch "$retry_status"; return; }
     vx_harbor_audit "$owner" runtime-rotation succeeded converged
 }
 
 vx_harbor_runtime_revoke() {
     local owner="$1" origin="$2" id="$3" root host temporary
-    [[ "$id" == null || -z "$id" ]] || vx_harbor_api_robot_disable "$id" >/dev/null || return 1
+    [[ "$id" == null || -z "$id" ]] || vx_harbor_api_robot_disable "$id" >/dev/null || { vx_harbor_failure_audit "$owner" runtime-revocation outage 75; return; }
     root="$(vx_compose_registry_root "$owner")"; host="${origin#https://}"
     [[ -d "$root" ]] || return 0
     for file in config.json registries.json; do
         [[ -f "$root/$file" ]] || continue
-        temporary="$(/usr/bin/mktemp "$root/.$file.XXXXXX")" || return 1
+        temporary="$(/usr/bin/mktemp "$root/.$file.XXXXXX")" || { vx_harbor_failure_audit "$owner" runtime-revocation switch 1; return; }
         if [[ "$file" == config.json ]]; then /usr/bin/jq --arg h "$host" 'del(.auths[$h])' "$root/$file" >"$temporary"; else /usr/bin/jq --arg h "$host" 'del(.[$h])' "$root/$file" >"$temporary"; fi
-        /usr/bin/chown 0:0 "$temporary" && /usr/bin/chmod 0600 "$temporary" && /usr/bin/mv -fT "$temporary" "$root/$file" || return 1
+        /usr/bin/chown 0:0 "$temporary" && /usr/bin/chmod 0600 "$temporary" && /usr/bin/mv -fT "$temporary" "$root/$file" || { vx_harbor_failure_audit "$owner" runtime-revocation switch 1; return; }
     done
     vx_harbor_audit "$owner" runtime-revocation succeeded retained
 }

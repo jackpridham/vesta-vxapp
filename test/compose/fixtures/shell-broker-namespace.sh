@@ -441,4 +441,53 @@ jq -e 'select(.ACTION == "broker-child") | .ACTOR == "alice"' \
     /usr/local/vesta/data/users/alice/docker-audit.log >/dev/null \
     || fail 'authoritative child audit contains forged actor'
 
+# Dispatch the repository adapters themselves. Dependencies are fixture-backed,
+# but each adapter acquires and revalidates the owner lock after broker release.
+mkdir -p /usr/local/vesta/func/vx/harbor /usr/local/vesta/conf
+cp "$repo_root/bin/v-list-user-harbor-registry" "$repo_root/bin/v-change-user-harbor-registry-publisher" "$repo_root/bin/v-disable-user-harbor-registry-publisher" /usr/local/vesta/bin/
+cat >/usr/local/vesta/func/main.sh <<'EOF'
+check_args(){ [[ "$2" -ge "$1" ]]; }
+is_format_valid(){ :; }
+is_object_valid(){ :; }
+check_result(){ local status="$1"; shift; (( status == 0 )) || exit "$status"; }
+EOF
+cat >/usr/local/vesta/conf/vesta.conf <<'EOF'
+E_FORBIDEN=4
+EOF
+cat >/usr/local/vesta/func/vx/harbor/main.sh <<EOF
+vx_harbor_provider_lock_acquire(){ :; }; vx_harbor_provider_lock_release(){ :; }
+vx_harbor_owner_is_eligible(){ grep -q "DOCKER_PROJECTS='2'" /usr/local/vesta/data/users/\$1/user.conf; }
+vx_harbor_registry_info_json(){ printf '%s\n' '{"MANAGED":true,"STATE":"ready","REGISTRY":"registry.example","NAMESPACE":"vx-alice","REPOSITORY":"registry.example/vx-alice/app","PUBLISHER_USERNAME":null,"PUBLISHER_ENABLED":false,"QUOTA_MB":100,"USED_MB":0,"HEALTH":"healthy","OBSERVED_AT":null,"FRESHNESS":"unavailable"}'; }
+vx_harbor_publisher_change_locked(){ wc -c >/dev/null; printf '%s\n' changed >>'$fixture/real-adapter.log'; }
+vx_harbor_publisher_revoke_locked(){ printf '%s\n' disabled >>'$fixture/real-adapter.log'; }
+vx_harbor_owner_state_path(){ printf '%s\n' /usr/local/vesta/data/users/alice/owner.json; }
+EOF
+printf '{}\n' >/usr/local/vesta/data/users/alice/owner.json
+printf "OWNER='alice'\nPROJECT='app'\nPROFILE='standard'\nREVISION='1'\n" >/usr/local/vesta/data/users/alice/docker-projects/app/project.conf
+chmod 0600 /usr/local/vesta/data/users/alice/docker-projects/app/project.conf
+write_user no bash 2
+: >"$fixture/real-adapter.log"
+for operation in 'registry-info app json' registry-publisher-change registry-publisher-disable; do
+    read -r -a operation_args <<<"$operation"
+    if [[ "$operation" == registry-publisher-change ]]; then
+        printf %s ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq >"$fixture/publisher.input"
+        timeout 3 "${broker[@]}" "${operation_args[@]}" <"$fixture/publisher.input" >/dev/null
+    else
+        timeout 3 "${broker[@]}" "${operation_args[@]}" >/dev/null
+    fi || fail "real lock-taking adapter deadlocked: $operation"
+done
+grep -Fxq changed "$fixture/real-adapter.log" && grep -Fxq disabled "$fixture/real-adapter.log" || fail 'real publisher adapters did not dispatch'
+
+# Hold the owner lock across a package revocation. The adapter must wait, then
+# reject against current authority instead of using the broker's old snapshot.
+exec 8>/run/lock/vesta-compose-user-access/alice.lock
+flock -x 8
+timeout 3 "${broker[@]}" registry-info app json >/dev/null 2>&1 & blocked_adapter=$!
+sleep .1; kill -0 "$blocked_adapter" 2>/dev/null || fail 'adapter did not serialize on owner lock'
+write_user no bash 0
+flock -u 8
+! wait "$blocked_adapter" || fail 'adapter ignored concurrent package revocation'
+exec 8>&-
+write_user no bash 2
+
 echo 'Executable broker fixture passed.'

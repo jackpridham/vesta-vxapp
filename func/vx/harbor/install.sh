@@ -136,25 +136,82 @@ _vx_harbor_install_integration_probe() {
     [[ "$status" == 200 ]] && /usr/bin/jq -e '.status=="healthy"' "$output" >/dev/null
 }
 
+_vx_harbor_install_journal_path() { printf '%s/operations/provider-install.json\n' "$(vx_harbor_root)"; }
+
+_vx_harbor_install_journal_write() {
+    local json="$1" path source
+    path="$(_vx_harbor_install_journal_path)"
+    source="$(/usr/bin/mktemp "$(vx_harbor_root)/operations/.provider-install.XXXXXX")" || return 1
+    printf '%s\n' "$json" >"$source" && vx_harbor_json_write_atomic "$path" "$source"
+    local result=$?; /usr/bin/rm -f "$source"; return "$result"
+}
+
+_vx_harbor_install_bootstrap_retry() {
+    local attempt
+    for attempt in 1 2 3; do _vx_harbor_install_bootstrap_call "$@" && return 0; done
+    return 75
+}
+
+_vx_harbor_install_external_cleanup() {
+    local stage="$1" path journal prior candidate response body
+    path="$(_vx_harbor_install_journal_path)"; [[ -f "$path" ]] || return 0
+    journal="$(/usr/bin/jq -cS . "$path")" || return 1
+    prior="$(/usr/bin/jq -c '.PRIOR_CONFIGURATION' <<<"$journal")" || return 1
+    candidate="$(/usr/bin/jq -r '.CANDIDATE_ROBOT_ID // empty' <<<"$journal")" || return 1
+    response="$stage/integration-cleanup.json"
+    if [[ -n "$candidate" ]]; then
+        body='{"disabled":true}'
+        _vx_harbor_install_bootstrap_retry "$stage" PUT "/api/v2.0/robots/$candidate" "$body" "$response" || return 75
+        _vx_harbor_install_bootstrap_retry "$stage" DELETE "/api/v2.0/robots/$candidate" '' "$response" || return 75
+    fi
+    _vx_harbor_install_bootstrap_retry "$stage" PUT /api/v2.0/configurations "$prior" "$response" || return 75
+    _vx_harbor_install_bootstrap_retry "$stage" GET /api/v2.0/configurations '' "$response" || return 75
+    /usr/bin/jq -e --argjson prior "$prior" '.==$prior' "$response" >/dev/null || return 75
+    /usr/bin/rm -f -- "$(vx_harbor_root)/secrets/.integration.curl.candidate" "$path"
+    _vx_harbor_fsync "$(vx_harbor_root)/operations"
+}
+
 _vx_harbor_install_integration_configure() {
-    local stage="$1" root response config_body secret username robot_body candidate probe status
+    local stage="$1" root response config_body secret username robot_body candidate probe robots existing installation operation journal robot_id prior
     root="$(vx_harbor_root)"; response="$stage/integration-response.json"
+    _vx_harbor_install_external_cleanup "$stage" || return 75
+    installation="$(/usr/bin/jq -r '.INSTALLATION_ID // "vesta-harbor"' "$root/provider.json")"
+    operation="$(/usr/bin/od -An -N16 -tx1 /dev/urandom | /usr/bin/tr -d ' \n')"
+    _vx_harbor_install_bootstrap_retry "$stage" GET /api/v2.0/configurations '' "$response" || return 75
+    /usr/bin/jq -e 'type=="object"' "$response" >/dev/null || return 1
+    prior="$(/usr/bin/jq -cS . "$response")"
+    _vx_harbor_install_bootstrap_retry "$stage" GET /api/v2.0/robots '' "$response" || return 75
+    robots="$(/usr/bin/jq -cS 'map(select(.name=="vesta-integration"))' "$response")" || return 1
+    (( $(/usr/bin/jq 'length' <<<"$robots") <= 1 )) || return 1
+    existing="$(/usr/bin/jq -c '.[0] // null' <<<"$robots")"
+    if [[ "$existing" != null ]] && ! /usr/bin/jq -e --arg marker "vesta-managed:$installation" '.description==$marker' <<<"$existing" >/dev/null; then return 1; fi
+    journal="$(/usr/bin/jq -cn --arg operation "$operation" --argjson prior "$prior" --argjson existing "$existing" '{SCHEMA:1,OPERATION_ID:$operation,PHASE:"prepared",PRIOR_CONFIGURATION:$prior,PRIOR_ROBOT:$existing,CANDIDATE_ROBOT_ID:null}')" || return 1
+    _vx_harbor_install_journal_write "$journal" || return 1
     config_body='{"self_registration":false,"project_creation_restriction":"adminonly"}'
-    _vx_harbor_install_bootstrap_call "$stage" PUT /api/v2.0/configurations "$config_body" "$response" || return 1
+    _vx_harbor_install_bootstrap_retry "$stage" PUT /api/v2.0/configurations "$config_body" "$response" || return 75
+    _vx_harbor_install_bootstrap_retry "$stage" GET /api/v2.0/configurations '' "$response" || return 75
+    /usr/bin/jq -e '.self_registration==false and .project_creation_restriction=="adminonly"' "$response" >/dev/null || return 1
+    if [[ "$existing" != null && -f "$root/secrets/integration.curl" ]]; then
+        robot_id="$(/usr/bin/jq -r .id <<<"$existing")"; candidate="$root/secrets/integration.curl"
+    else
     secret="$(/usr/bin/od -An -N36 -tx1 /dev/urandom | /usr/bin/tr -d ' \n')" || return 1
     username=vesta-integration
-    robot_body="$(/usr/bin/jq -cn --arg name "$username" --arg secret "$secret" \
-      '{name:$name,secret:$secret,level:"system",permissions:[{kind:"system",namespace:"/",access:[{resource:"project",action:"create"},{resource:"project",action:"list"},{resource:"project",action:"update"},{resource:"quota",action:"read"},{resource:"quota",action:"update"},{resource:"robot",action:"create"},{resource:"robot",action:"read"},{resource:"robot",action:"update"},{resource:"robot",action:"delete"},{resource:"system-volumes",action:"read"}]}]}')" || return 1
-    _vx_harbor_install_bootstrap_call "$stage" POST /api/v2.0/robots "$robot_body" "$response" || return 1
-    /usr/bin/jq -e --arg name "$username" '.id as $id | ($id|type)=="number" and $id>0 and .name==$name' "$response" >/dev/null || return 1
+    robot_body="$(/usr/bin/jq -cn --arg name "$username" --arg secret "$secret" --arg marker "vesta-managed:$installation" \
+      '{name:$name,description:$marker,secret:$secret,level:"system",permissions:[{kind:"system",namespace:"/",access:[{resource:"project",action:"create"},{resource:"project",action:"list"},{resource:"project",action:"update"},{resource:"quota",action:"read"},{resource:"quota",action:"update"},{resource:"robot",action:"create"},{resource:"robot",action:"read"},{resource:"robot",action:"update"},{resource:"robot",action:"delete"},{resource:"system-volumes",action:"read"}]}]}')" || return 1
+    _vx_harbor_install_bootstrap_retry "$stage" POST /api/v2.0/robots "$robot_body" "$response" || return 75
+    robot_id="$(/usr/bin/jq -er '.id|select(type=="number" and .>0)' "$response")" || return 1
+    journal="$(/usr/bin/jq -c --argjson id "$robot_id" '.PHASE="candidate-created"|.CANDIDATE_ROBOT_ID=$id' <<<"$journal")"; _vx_harbor_install_journal_write "$journal" || return 1
     candidate="$root/secrets/.integration.curl.candidate"
     { printf '%s\n' silent show-error; printf 'user = "%s:%s"\n' "$username" "$secret"; } >"$candidate" || return 1
     unset secret robot_body
     _vx_harbor_secure_file_set "$candidate" 0600 || return 1
     _vx_harbor_api_credentials_validate "$candidate" || return 1
+    fi
+    _vx_harbor_install_bootstrap_retry "$stage" GET "/api/v2.0/robots/$robot_id" '' "$response" || return 75
+    /usr/bin/jq -e --arg marker "vesta-managed:$installation" '.name=="vesta-integration" and .disabled==false and .description==$marker and .level=="system" and ([.permissions[].access[]|.resource+":"+.action]|sort)==(["project:create","project:list","project:update","quota:read","quota:update","robot:create","robot:delete","robot:read","robot:update","system-volumes:read"]|sort)' "$response" >/dev/null || return 1
     probe="$stage/integration-probe.json"
     _vx_harbor_install_integration_probe "$candidate" "$probe" || return 1
-    /usr/bin/mv -fT "$candidate" "$root/secrets/integration.curl" || return 1
+    [[ "$candidate" == "$root/secrets/integration.curl" ]] || /usr/bin/mv -fT "$candidate" "$root/secrets/integration.curl" || return 1
     vx_harbor_secure_regular_file "$root/secrets/integration.curl" 0600
 }
 
@@ -164,7 +221,7 @@ _vx_harbor_install_restore_file() {
 }
 
 vx_harbor_install() {
-    local root stage manifest compose ingress unit_target ingress_target nginx_main rollback provider_next candidate_main activation_main
+    local root stage manifest compose ingress unit_target ingress_target nginx_main rollback provider_next candidate_main activation_main rollback_status
     local unit_existed=no ingress_existed=no integration_existed=no current_existed=no previous_existed=no previous_rotated=no candidate_activated=no service_active=no service_enabled=no committed=no
     root="$(vx_harbor_root)" || return 1
     vx_harbor_provider_prepare || return 1
@@ -198,6 +255,7 @@ vx_harbor_install() {
     "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" is-enabled vesta-harbor.service >/dev/null 2>&1 && service_enabled=yes || :
     _vx_harbor_install_rollback() {
         [[ "$committed" == yes ]] && return 0
+        _vx_harbor_install_external_cleanup "$stage" || return 75
         "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" stop vesta-harbor.service >/dev/null 2>&1 || :
         _vx_harbor_install_restore_file "$unit_target" "$rollback/unit" "$unit_existed" || :
         _vx_harbor_install_restore_file "$ingress_target" "$rollback/ingress" "$ingress_existed" || :
@@ -269,14 +327,20 @@ vx_harbor_install() {
         _vx_harbor_install_phase final_cleanup || return 1
     }
     if ! _vx_harbor_install_apply; then
-        _vx_harbor_install_rollback
+        rollback_status=0; _vx_harbor_install_rollback || rollback_status=$?
         trap - HUP INT TERM
-        /usr/bin/rm -rf -- "$rollback"
+        (( rollback_status != 0 )) || /usr/bin/rm -rf -- "$rollback"
         vx_harbor_provider_lock_release
+        if (( rollback_status != 0 )); then
+            vx_harbor_audit system provider-install failed cleanup-pending || return 1
+            return "$rollback_status"
+        fi
         vx_harbor_audit system provider-install failed transaction-rolled-back || return 1
         return 1
     fi
     committed=yes
+    /usr/bin/rm -f -- "$(_vx_harbor_install_journal_path)"
+    _vx_harbor_fsync "$root/operations" || return 1
     trap - HUP INT TERM
     /usr/bin/rm -rf -- "$rollback"
     vx_harbor_provider_lock_release
