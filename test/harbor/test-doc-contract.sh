@@ -118,9 +118,40 @@ rg -Fq 'call `v-docker image-pull` once' "$guide" \
     && rg -Fq 'per image with the same preview tuple before apply' "$guide" \
     || fail 'multi-image pull contract is missing'
 
+# The exact v-docker show schema must fail closed before probe extraction or
+# branch selection. WORKLOAD may be null; an object must contain a valid,
+# unique probe-name array. Optional []? extraction is forbidden here.
+schema_start_line="$(line_of '# Validate the exact v-docker show WORKLOAD contract before extraction.')"
+[[ "$(sed -n "$((schema_start_line + 1))p" "$guide")" == "jq -e '" ]] \
+    || fail 'WORKLOAD schema guard is not an enforcing jq expression'
+schema_end_line="$(awk -v start="$schema_start_line" \
+    'NR > start && /<<<"\$after_json" >\/dev\/null/ {print NR; exit}' \
+    "$guide")"
+[[ "$schema_end_line" =~ ^[1-9][0-9]*$ ]] \
+    || fail 'WORKLOAD schema guard has no fail-closed completion'
+for schema_anchor in \
+    'has("WORKLOAD")' '.WORKLOAD == null' \
+    '(.WORKLOAD | type) == "object"' \
+    '.WORKLOAD | has("PROBES")' \
+    '(.WORKLOAD.PROBES | type) == "array"' \
+    '.WORKLOAD.PROBES[];' \
+    'test("^[a-z0-9][a-z0-9-]{0,62}$")' \
+    '.WORKLOAD.PROBES | unique | length'
+do
+    schema_anchor_line="$(line_of "$schema_anchor")"
+    (( schema_start_line < schema_anchor_line \
+        && schema_anchor_line < schema_end_line )) \
+        || fail "WORKLOAD schema anchor is outside guard: $schema_anchor"
+done
+probe_extract_line="$(line_of 'if .WORKLOAD == null then empty else .WORKLOAD.PROBES[] end')"
+probe_if_line="$(line_of 'if ((${#probe_names[@]} > 0)); then')"
+(( schema_end_line < probe_extract_line && probe_extract_line < probe_if_line )) \
+    || fail 'WORKLOAD schema is not validated before extraction and branching'
+! rg -Fq '.WORKLOAD.PROBES[]?' "$guide" \
+    || fail 'optional probe extraction can hide malformed WORKLOAD schema'
+
 # Both readiness paths are executable branches and converge on common health,
 # revision, drift, and rollback-preview evidence.
-probe_if_line="$(line_of 'if ((${#probe_names[@]} > 0)); then')"
 probe_command_line="$(line_of 'v-docker probe "$APP_PROJECT" "$probe_name" json')"
 probe_else_line="$(awk -v start="$probe_if_line" \
     'NR > start && /^else$/ {print NR; exit}' "$guide")"

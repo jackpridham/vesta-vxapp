@@ -386,7 +386,29 @@ jq -e --argjson before "$before_revision" '.REVISION > $before' \
   <<<"$after_json" >/dev/null
 jq -e '.MATCH == true' <<<"$drift_json" >/dev/null
 
-mapfile -t probe_names < <(jq -r '.WORKLOAD.PROBES[]?' <<<"$after_json")
+# Validate the exact v-docker show WORKLOAD contract before extraction.
+jq -e '
+  has("WORKLOAD")
+  and (
+    .WORKLOAD == null
+    or (
+      (.WORKLOAD | type) == "object"
+      and (.WORKLOAD | has("PROBES"))
+      and (.WORKLOAD.PROBES | type) == "array"
+      and all(
+        .WORKLOAD.PROBES[];
+        type == "string" and test("^[a-z0-9][a-z0-9-]{0,62}$")
+      )
+      and ((.WORKLOAD.PROBES | length)
+        == (.WORKLOAD.PROBES | unique | length))
+    )
+  )
+' <<<"$after_json" >/dev/null
+mapfile -t probe_names < <(
+  jq -r '
+    if .WORKLOAD == null then empty else .WORKLOAD.PROBES[] end
+  ' <<<"$after_json"
+)
 if ((${#probe_names[@]} > 0)); then
   # Branch A: run every immutable Vesta-managed readiness probe.
   for probe_name in "${probe_names[@]}"; do
@@ -422,8 +444,19 @@ jq -e --argjson current "$after_revision" \
 ```
 
 Readiness names and commands come only from the application's immutable
-workload manifest; the caller supplies no probe command or arguments. If the
-project has probes, every declared probe must pass. If it has none, the
+workload manifest; the caller supplies no probe command or arguments. Under
+the actual command contract, `WORKLOAD` belongs to `v-docker show` output, not
+`registry-info` or `health`; those results are checked separately above. If
+the verified project has workload metadata, `v-docker show` returns `WORKLOAD`
+as an object and `PROBES` as its array of probe names. Without verified
+workload metadata, the command returns `WORKLOAD: null`. A missing `WORKLOAD`
+key, any other `WORKLOAD` type, a missing or non-array `PROBES`, duplicate
+names, or a name outside the broker's lowercase probe-name contract stops
+before branch selection. There is no optional `[]?` extraction that could
+turn malformed data into the no-probe path.
+
+If the validated project has probes, every declared probe must pass. If the
+validated result is `WORKLOAD: null` or has an empty probe array, the
 application repository must document a no-argument, development-only
 acceptance wrapper; replace the one `APP_ACCEPTANCE_COMMAND` placeholder with
 that relative executable path. The guard resolves it beneath the current
