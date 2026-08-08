@@ -7,6 +7,7 @@ Current documents:
 - [Operator architecture and runbook](../docs/container-orchestration.md)
 - [Complete source-to-Vesta deployment runbook](../DOCKER_ORCHESTRATION_DEPLOYMENT.md)
 - [Vesta-managed Harbor registry specification](specs/2026-08-08-vesta-managed-harbor-registry.md)
+- [Vesta-managed Harbor provider contract](contracts/harbor-provider.md)
 - [Compose project user guide](user-guides/docker-compose-projects.md)
 - [Native web-domain reverse-proxy guide](user-guides/native-web-domain-proxy.md)
 - [Native web-domain proxy validation](validation/2026-08-06-native-web-proxy-release.md)
