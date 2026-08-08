@@ -167,6 +167,59 @@ assert len(state["quotas"]) == 17
 assert state["next_project_id"] == 18
 assert state["next_quota_id"] == 18' "$state_file"
 
+python3 - "$credential_file" "$port" "$state_file" <<'PY'
+import base64
+import json
+import socket
+import sys
+import time
+import urllib.request
+
+credential = json.load(open(sys.argv[1], encoding="utf-8"))
+port = int(sys.argv[2])
+state_path = sys.argv[3]
+authorization = base64.b64encode(
+    f'{credential["username"]}:{credential["password"]}'.encode()
+).decode()
+partial = socket.create_connection(("127.0.0.1", port), timeout=1)
+partial.sendall(
+    (
+        "POST /api/v2.0/projects HTTP/1.1\r\n"
+        f"Host: 127.0.0.1:{port}\r\n"
+        f"Authorization: Basic {authorization}\r\n"
+        "Content-Type: application/json\r\n"
+        "Content-Length: 100\r\n"
+        "Connection: close\r\n\r\n"
+    ).encode()
+    + b"{"
+)
+request = urllib.request.Request(
+    f"http://127.0.0.1:{port}/api/v2.0/health",
+    headers={"Authorization": f"Basic {authorization}"},
+)
+started = time.monotonic()
+with urllib.request.urlopen(request, timeout=1) as response:
+    assert response.status == 200
+    assert json.load(response)["status"] == "healthy"
+assert time.monotonic() - started < 1
+partial.settimeout(2)
+reply = b""
+while True:
+    chunk = partial.recv(4096)
+    if not chunk:
+        break
+    reply += chunk
+partial.close()
+assert b" 408 " in reply.split(b"\r\n", 1)[0]
+assert b"REQUEST_TIMEOUT" in reply
+assert len(reply) < 512
+state = json.load(open(state_path, encoding="utf-8"))
+assert len(state["projects"]) == 17
+assert state["next_project_id"] == 18
+PY
+grep -Fxq 'POST /api/v2.0/projects 408' "$log_file" \
+    || fail 'partial-body timeout was not logged as method/path/status'
+
 for method in HEAD PATCH OPTIONS BREW; do
     body_file="$HARBOR_TEST_ROOT/${method}.body"
     status="$(api_call "$method" /api/v2.0/health "$body_file")"

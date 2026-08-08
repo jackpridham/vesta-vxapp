@@ -6,12 +6,14 @@ import base64
 import json
 import os
 import re
+import socket
 import tempfile
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit
 
 MAX_BODY = 1024 * 1024
+BODY_READ_TIMEOUT = 0.5
 
 
 def initial_state():
@@ -59,6 +61,9 @@ class HarborHandler(BaseHTTPRequestHandler):
         return
 
     def finish_status(self, status, payload=None, headers=None):
+        if getattr(self, "defer_response", False):
+            self.deferred_response = (status, payload, headers)
+            return
         body = b""
         if payload is not None:
             body = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
@@ -98,20 +103,54 @@ class HarborHandler(BaseHTTPRequestHandler):
             return None
         return length
 
-    def read_json(self):
+    def read_bounded_body(self):
         length = self.bounded_content_length()
         if length is None:
-            return None
-        body = self.rfile.read(length)
+            return False
+        self.request_body = b""
+        if length == 0:
+            return True
+        previous_timeout = self.connection.gettimeout()
+        self.connection.settimeout(BODY_READ_TIMEOUT)
         try:
-            value = json.loads(body.decode("utf-8"))
+            while len(self.request_body) < length:
+                chunk = self.rfile.read(length - len(self.request_body))
+                if not chunk:
+                    self.finish_status(408, {"errors": [{"code": "REQUEST_TIMEOUT"}]})
+                    return False
+                self.request_body += chunk
+        except (TimeoutError, socket.timeout):
+            self.finish_status(408, {"errors": [{"code": "REQUEST_TIMEOUT"}]})
+            return False
+        finally:
+            self.connection.settimeout(previous_timeout)
+        return True
+
+    def read_json(self):
+        if hasattr(self, "request_json"):
+            return self.request_json
+        try:
+            value = json.loads(self.request_body.decode("utf-8"))
         except (UnicodeDecodeError, json.JSONDecodeError):
             self.finish_status(400, {"errors": [{"code": "BAD_REQUEST"}]})
             return None
         if not isinstance(value, dict):
             self.finish_status(400, {"errors": [{"code": "BAD_REQUEST"}]})
             return None
+        self.request_json = value
         return value
+
+    @staticmethod
+    def expects_json(method, path):
+        if method == "PUT" and path == "/api/v2.0/configurations":
+            return True
+        if method == "POST" and path in ("/api/v2.0/projects", "/api/v2.0/robots"):
+            return True
+        if method == "PUT" and re.fullmatch(
+            r"/api/v2\.0/(projects/[^/]+|quotas/\d+|robots/\d+)", path
+        ):
+            return True
+        return False
 
     @staticmethod
     def find(items, key):
@@ -133,7 +172,7 @@ class HarborHandler(BaseHTTPRequestHandler):
         self.dispatch()
 
     def unsupported_method(self):
-        if self.bounded_content_length() is None:
+        if not self.read_bounded_body():
             return
         self.finish_status(404)
 
@@ -152,12 +191,8 @@ class HarborHandler(BaseHTTPRequestHandler):
         raise AttributeError(name)
 
     def dispatch(self):
-        with self.server.state_lock:
-            self.dispatch_serialized()
-
-    def dispatch_serialized(self):
         path = unquote(urlsplit(self.path).path)
-        if self.bounded_content_length() is None:
+        if not self.read_bounded_body():
             return
         if not self.authenticated():
             headers = {"WWW-Authenticate": 'Basic realm="harbor"'}
@@ -166,8 +201,32 @@ class HarborHandler(BaseHTTPRequestHandler):
             self.finish_status(401, {"errors": [{"code": "UNAUTHORIZED"}]}, headers)
             return
 
-        state = self.server.store.read()
         method = self.command
+        if path == "/api/v2.0/health" and method == "GET":
+            self.finish_status(200, {"status": "healthy", "components": []})
+            return
+        if path == "/v2/" and method == "GET":
+            self.finish_status(200, headers={"Docker-Distribution-Api-Version": "registry/2.0"})
+            return
+        if path == "/service/token" and method == "GET":
+            self.finish_status(200, {"token": "fake-token", "expires_in": 300})
+            return
+        if self.expects_json(method, path) and self.read_json() is None:
+            return
+
+        self.defer_response = True
+        self.deferred_response = None
+        try:
+            with self.server.state_lock:
+                self.dispatch_state(path, method)
+        finally:
+            self.defer_response = False
+        if self.deferred_response is None:
+            raise RuntimeError("state dispatch did not produce a response")
+        self.finish_status(*self.deferred_response)
+
+    def dispatch_state(self, path, method):
+        state = self.server.store.read()
 
         if path == "/api/v2.0/configurations" and method in ("GET", "PUT"):
             if method == "PUT":
@@ -180,17 +239,8 @@ class HarborHandler(BaseHTTPRequestHandler):
             else:
                 self.finish_status(200, state["configurations"])
             return
-        if path == "/api/v2.0/health" and method == "GET":
-            self.finish_status(200, {"status": "healthy", "components": []})
-            return
         if path == "/api/v2.0/systeminfo/volumes" and method == "GET":
             self.finish_status(200, state["volumes"])
-            return
-        if path == "/v2/" and method == "GET":
-            self.finish_status(200, headers={"Docker-Distribution-Api-Version": "registry/2.0"})
-            return
-        if path == "/service/token" and method == "GET":
-            self.finish_status(200, {"token": "fake-token", "expires_in": 300})
             return
         if path == "/api/v2.0/projects" and method in ("GET", "POST"):
             if method == "GET":
