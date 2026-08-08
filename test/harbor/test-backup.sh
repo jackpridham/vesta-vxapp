@@ -4,6 +4,15 @@ _vx_harbor_require_root(){ :; }; _vx_harbor_authority_uid(){ id -u; }; _vx_harbo
 root="$(vx_harbor_root)"; tmp="$(mktemp "$root/.provider.XXXXXX")"; jq '.MODE="managed"' "$root/provider.json" >"$tmp"; vx_harbor_json_write_atomic "$root/provider.json" "$tmp"; rm -f "$tmp"
 
 identity="$root/secrets/backup.agekey"; age-keygen -o "$identity" >/dev/null 2>&1; age-keygen -y "$identity" >"$root/backup-recipient.txt"; chmod 0600 "$identity" "$root/backup-recipient.txt"
+write_authority(){ local path="$1" value="$2" source; source="$(mktemp "$(dirname "$path")/.fixture.XXXXXX")"; printf '%s\n' "$value" >"$source"; vx_harbor_json_write_atomic "$path" "$source"; rm -f "$source"; }
+now="2026-08-08T00:00:00Z"; operation="0123456789abcdef0123456789abcdef"
+write_authority "$root/owners/alice.json" "$(jq -cn --arg now "$now" '{SCHEMA:1,OWNER:"alice",NAMESPACE:"vx-alice",PROJECT_ID:1,QUOTA_ID:2,QUOTA_MB:1024,STATE:"publisher-ready",RUNTIME_ROBOT_ID:10,RUNTIME_USERNAME:"runtime",PUBLISHER_ROBOT_ID:20,PUBLISHER_USERNAME:"publisher",PUBLISHER_ENABLED:true,LAST_ERROR:null,UPDATED_AT:$now}')"
+write_authority "$root/operations/alice.json" "$(jq -cn --arg op "$operation" '{SCHEMA:1,OPERATION_ID:$op,OWNER:"alice",DESIRED_PACKAGE:"default",DESIRED_REGISTRY_MB:"1024",STATE:"failed",ATTEMPTS:1,LAST_ERROR:"bounded failure",CREATED_AT:1,UPDATED_AT:2}')"
+write_authority "$root/operations/provider-disable.json" "$(jq -cn --arg token "$operation" --arg op "$operation" '{SCHEMA:1,TOKEN:$token,CREATED_AT:1,EXPIRES_AT:301,MODE:"managed",OPERATIONS:[{FILE:"alice.json",OWNER:"alice",OPERATION_ID:$op,STATE:"failed",UPDATED_AT:2}],BLOCKERS:[{OWNER:"alice",OPERATION_ID:$op,STATE:"failed"}],AFFECTED_OWNERS:[{OWNER:"alice",NAMESPACE:"vx-alice",STATE:"publisher-ready"}],RETAINED_DATA:["provider database","OCI artifacts","owner mappings","encrypted backups"]}')"
+for kind in runtime publisher; do write_authority "$root/rotations/alice-$kind.json" "$(jq -cn --arg op "$operation" --arg kind "$kind" --arg now "$now" '{SCHEMA:1,OPERATION_ID:$op,OWNER:"alice",KIND:$kind,PHASE:"pending-revoke",NEW_ROBOT_ID:30,NEW_USERNAME:("alice-"+$kind),OLD_ROBOT_ID:10,UPDATED_AT:$now}')"; done
+write_authority "$root/tombstones/deleted.json" "$(jq -cn --arg op "$operation" --arg now "$now" '{SCHEMA:1,OPERATION_ID:$op,OWNER:"deleted",NAMESPACE:"vx-deleted",PUBLISHER_ROBOT_ID:40,RUNTIME_ROBOT_ID:41,PHASE:"publisher",UPDATED_AT:$now}')"
+generation="$(printf fixture | sha256sum | awk '{print $1}')"; write_authority "$root/observations/alice.json" "$(jq -cn --arg now "$now" --arg generation "$generation" '{SCHEMA:1,GENERATION:$generation,OBSERVED_AT:$now,USED_MB:7}')"; write_authority "$root/observations/provider.json" "$(jq -cn --arg now "$now" '{SCHEMA:1,HEALTH:"healthy",OBSERVED_AT:$now}')"; write_authority "$root/observations/provider-detail.json" "$(jq -cn --arg now "$now" '{SCHEMA:1,OBSERVED_AT:$now,HEALTH:"healthy",CERTIFICATE:{STATE:"valid",EXPIRES_AT:$now,HOSTNAME_VALID:true},STORAGE:{USED_BYTES:1,TOTAL_BYTES:2},OPERATIONS:{PENDING:0,FAILED:1},OWNERS:[]}')"
+old_backup=harbor-20260808T000000Z-00000000; write_authority "$root/backups/$old_backup.json" "$(jq -cn --arg id "$old_backup" --arg now "$now" --arg sha "$(printf old | sha256sum | awk '{print $1}')" '{SCHEMA:1,BACKUP_ID:$id,CIPHERTEXT:($id+".tar.age"),SHA256:$sha,CREATED_AT:$now,VERSION:"v2.15.0"}')"
 release="$root/release/current"; mkdir -p "$release/common/config/nginx" "$release/common/config/portal"
 printf 'services: {}\n' >"$release/docker-compose.yml"; printf 'events {}\n' >"$release/common/config/nginx/nginx.conf"; printf 'server {}\n' >"$release/common/config/portal/nginx.conf"
 printf 'harbor_admin_password: ADMIN_SECRET_SENTINEL\n' >"$release/harbor.yml"
@@ -42,9 +51,18 @@ elif kind=='manifest-duplicate': manifest['FILES'].append(dict(manifest['FILES']
 elif kind=='provider-schema':
     path='authority/provider.json'; value=json.loads(payload[path]); value['SCHEMA']=9; payload[path]=(json.dumps(value)+'\n').encode(); item=next(x for x in manifest['FILES'] if x['PATH']==path); item.update(SHA256=hashlib.sha256(payload[path]).hexdigest(),SIZE=len(payload[path]))
 elif kind=='observation-schema':
-    payload['authority/observations/alice.json']=b'{"SCHEMA":1,"OBSERVED_AT":"bad"}\n'; record('authority/observations/alice.json',payload['authority/observations/alice.json'])
+    path='authority/observations/alice.json'; payload[path]=b'{"SCHEMA":1,"OBSERVED_AT":"bad"}\n'; item=next(x for x in manifest['FILES'] if x['PATH']==path); item.update(SHA256=hashlib.sha256(payload[path]).hexdigest(),SIZE=len(payload[path]))
 elif kind=='backup-schema':
-    path='authority/backups/harbor-20260808T000000Z-00000000.json'; payload[path]=b'{"SCHEMA":1}\n'; record(path,payload[path])
+    path='authority/backups/harbor-20260808T000000Z-00000000.json'; payload[path]=b'{"SCHEMA":1}\n'; item=next(x for x in manifest['FILES'] if x['PATH']==path); item.update(SHA256=hashlib.sha256(payload[path]).hexdigest(),SIZE=len(payload[path]))
+elif kind in {'owner-schema','operation-schema','disable-schema','rotation-schema','tombstone-schema'}:
+    path={'owner-schema':'authority/owners/alice.json','operation-schema':'authority/operations/alice.json','disable-schema':'authority/operations/provider-disable.json','rotation-schema':'authority/rotations/alice-runtime.json','tombstone-schema':'authority/tombstones/deleted.json'}[kind]
+    value=json.loads(payload[path])
+    if kind=='owner-schema': value['PUBLISHER_ENABLED']=False
+    elif kind=='operation-schema': value={}
+    elif kind=='disable-schema': value['BLOCKERS']=[]
+    elif kind=='rotation-schema': value['OWNER']='other'
+    else: value['UNKNOWN']=True
+    payload[path]=(json.dumps(value)+'\n').encode(); item=next(x for x in manifest['FILES'] if x['PATH']==path); item.update(SHA256=hashlib.sha256(payload[path]).hexdigest(),SIZE=len(payload[path]))
 with tarfile.open(target,'w',format=tarfile.PAX_FORMAT) as archive:
     manifest_raw=(json.dumps(manifest,separators=(',',':'),sort_keys=True)+'\n').encode()
     info=tarfile.TarInfo('manifest.json'); info.size=len(manifest_raw); info.mode=0o600; archive.addfile(info,io.BytesIO(manifest_raw))
@@ -71,7 +89,7 @@ if kind=='mode-mismatch':
             archive.addfile(member,io.BytesIO(data))
 PY
 }
-for variant in unexpected missing duplicate link traversal manifest-duplicate mode-mismatch provider-schema observation-schema backup-schema; do
+for variant in unexpected missing duplicate link traversal manifest-duplicate mode-mismatch provider-schema owner-schema operation-schema disable-schema rotation-schema tombstone-schema observation-schema backup-schema; do
     make_variant "$variant"; rm -f "$layout/$id.tar.age"; age -R "$root/backup-recipient.txt" -o "$layout/$id.tar.age" "$outer"; sha="$(sha256sum "$layout/$id.tar.age"|awk '{print $1}')"; jq --arg sha "$sha" '.SHA256=$sha' "$root/backups/$id.json" >"$tmp"; vx_harbor_json_write_atomic "$root/backups/$id.json" "$tmp"
     set +e; vx_harbor_provider_lock_acquire exclusive; vx_harbor_restore_validate_locked "$id" >/dev/null 2>&1; code=$?; vx_harbor_provider_lock_release; set -e
     [[ "$code" != 0 ]] || fail "restore accepted adversarial $variant archive"

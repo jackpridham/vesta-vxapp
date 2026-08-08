@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+_vx_harbor_authority_schema_validate() {
+    /usr/bin/python3 "$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/authority-schema.py" "$1" "$2" "$3"
+}
+
 vx_harbor_root() {
     printf '%s\n' "$VESTA/data/harbor"
 }

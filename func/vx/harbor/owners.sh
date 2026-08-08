@@ -9,7 +9,7 @@ vx_harbor_owner_namespace() {
 vx_harbor_owner_state_validate() {
     local path="$1"
     vx_harbor_secure_regular_file "$path" 0600 || return 1
-    /usr/bin/jq -e 'type=="object" and keys==["LAST_ERROR","NAMESPACE","OWNER","PROJECT_ID","PUBLISHER_ENABLED","PUBLISHER_ROBOT_ID","PUBLISHER_USERNAME","QUOTA_ID","QUOTA_MB","RUNTIME_ROBOT_ID","RUNTIME_USERNAME","SCHEMA","STATE","UPDATED_AT"] and .SCHEMA==1 and (.OWNER|test("^[a-z0-9][a-z0-9_-]{0,31}$")) and (.NAMESPACE|test("^[a-z0-9][a-z0-9-]{0,127}$")) and (.PROJECT_ID|type=="number" and .>=1) and (.QUOTA_ID|type=="number" and .>=1) and (.QUOTA_MB=="unlimited" or (.QUOTA_MB|type=="number" and .>=0)) and (.STATE|IN("project-ready","runtime-ready","publisher-ready","publisher-disabled","retained","unavailable")) and (.PUBLISHER_ENABLED|type=="boolean") and ([.RUNTIME_ROBOT_ID,.PUBLISHER_ROBOT_ID]|all(.==null or (type=="number" and .>=1))) and ([.RUNTIME_USERNAME,.PUBLISHER_USERNAME,.LAST_ERROR]|all(.==null or type=="string")) and (.UPDATED_AT|type=="string")' "$path" >/dev/null 2>&1
+    _vx_harbor_authority_schema_validate owner "$path" "$(basename "$path" .json)"
 }
 
 _vx_harbor_owner_desired() {
@@ -32,7 +32,7 @@ vx_harbor_namespace_collision_check() {
 }
 
 vx_harbor_tombstone_path() { [[ "$1" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ ]] && printf '%s/tombstones/%s.json\n' "$(vx_harbor_root)" "$1"; }
-vx_harbor_tombstone_validate() { vx_harbor_secure_regular_file "$1" 0600 && /usr/bin/jq -e 'type=="object" and keys==["NAMESPACE","OPERATION_ID","OWNER","PHASE","PUBLISHER_ROBOT_ID","RUNTIME_ROBOT_ID","SCHEMA","UPDATED_AT"] and .SCHEMA==1 and (.OPERATION_ID|test("^[a-f0-9]{32}$")) and (.PHASE|IN("publisher","runtime"))' "$1" >/dev/null 2>&1; }
+vx_harbor_tombstone_validate() { vx_harbor_secure_regular_file "$1" 0600 && _vx_harbor_authority_schema_validate tombstone "$1" "$(basename "$1" .json)"; }
 _vx_harbor_tombstone_write() { local owner="$1" json="$2" source path; path="$(vx_harbor_tombstone_path "$owner")"; source="$(/usr/bin/mktemp "$(vx_harbor_root)/tombstones/.tombstone.XXXXXX")" || return 1; printf '%s\n' "$json" >"$source" && vx_harbor_json_write_atomic "$path" "$source"; local r=$?; /usr/bin/rm -f "$source"; return "$r"; }
 
 vx_harbor_tombstone_lock_acquire() {
@@ -108,7 +108,7 @@ vx_harbor_owner_reconcile_locked() {
     fi
     if vx_harbor_api_health >/dev/null; then
         provider_observation_source="$(/usr/bin/mktemp "$(vx_harbor_root)/observations/.provider.XXXXXX")" || return 1
-        /usr/bin/jq -n --arg at "$(/usr/bin/date -u +%Y-%m-%dT%H:%M:%SZ)" '{HEALTH:"healthy",OBSERVED_AT:$at}' >"$provider_observation_source" && vx_harbor_json_write_atomic "$(vx_harbor_root)/observations/provider.json" "$provider_observation_source" || { /usr/bin/rm -f "$provider_observation_source"; return 1; }
+        /usr/bin/jq -n --arg at "$(/usr/bin/date -u +%Y-%m-%dT%H:%M:%SZ)" '{SCHEMA:1,HEALTH:"healthy",OBSERVED_AT:$at}' >"$provider_observation_source" && vx_harbor_json_write_atomic "$(vx_harbor_root)/observations/provider.json" "$provider_observation_source" || { /usr/bin/rm -f "$provider_observation_source"; return 1; }
         /usr/bin/rm -f "$provider_observation_source"
     else
         return 75

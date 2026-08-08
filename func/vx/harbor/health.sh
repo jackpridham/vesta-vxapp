@@ -43,7 +43,7 @@ vx_harbor_health_observe_locked() {
         owner_json="$(/usr/bin/jq -c --argjson used "$(((used_bytes + 1048575) / 1048576))" --argjson runtime "$runtime_ready" --argjson publisher "$publisher_ready" '{OWNER,QUOTA_MB,STATE,USED_MB:$used,CREDENTIAL_READY:$runtime,PUBLISHER_READY:$publisher}' "$owner_file")"
         owners="$(/usr/bin/jq -c --argjson item "$owner_json" '.+[$item]' <<<"$owners")"
         owner_source="$(/usr/bin/mktemp "$root/observations/.owner.XXXXXX")" || return 1
-        /usr/bin/jq -n --arg at "$now" --arg generation "$(/usr/bin/sha256sum <<<"$owner:$quota_id:$used_bytes:$now" | /usr/bin/awk '{print $1}')" --argjson used "$(((used_bytes + 1048575) / 1048576))" '{GENERATION:$generation,OBSERVED_AT:$at,USED_MB:$used}' >"$owner_source" \
+        /usr/bin/jq -n --arg at "$now" --arg generation "$(/usr/bin/sha256sum <<<"$owner:$quota_id:$used_bytes:$now" | /usr/bin/awk '{print $1}')" --argjson used "$(((used_bytes + 1048575) / 1048576))" '{SCHEMA:1,GENERATION:$generation,OBSERVED_AT:$at,USED_MB:$used}' >"$owner_source" \
           && vx_harbor_json_write_atomic "$root/observations/$owner.json" "$owner_source" || { /usr/bin/rm -f "$owner_source"; return 1; }
         /usr/bin/rm -f "$owner_source"
     done
@@ -54,7 +54,7 @@ vx_harbor_health_observe_locked() {
     vx_harbor_json_write_atomic "$root/observations/provider-detail.json" "$source" || { /usr/bin/rm -f "$source"; return 1; }
     /usr/bin/rm -f "$source"
     source="$(/usr/bin/mktemp "$root/observations/.provider.XXXXXX")" || return 1
-    /usr/bin/jq -n --arg at "$now" --arg health "$provider_health" '{HEALTH:$health,OBSERVED_AT:$at}' >"$source" \
+    /usr/bin/jq -n --arg at "$now" --arg health "$provider_health" '{SCHEMA:1,HEALTH:$health,OBSERVED_AT:$at}' >"$source" \
       && vx_harbor_json_write_atomic "$root/observations/provider.json" "$source" || { /usr/bin/rm -f "$source"; return 1; }
     /usr/bin/rm -f "$source"
     /usr/bin/jq -cS . "$root/observations/provider-detail.json"

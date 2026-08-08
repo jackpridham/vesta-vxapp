@@ -34,4 +34,5 @@ cleanup_vesta_root() {
 install_harbor_helpers() {
     mkdir -p "$VESTA/func/vx/harbor"
     cp "$HARBOR_REPO_ROOT"/func/vx/harbor/*.sh "$VESTA/func/vx/harbor/"
+    cp "$HARBOR_REPO_ROOT"/func/vx/harbor/authority-schema.py "$VESTA/func/vx/harbor/"
 }

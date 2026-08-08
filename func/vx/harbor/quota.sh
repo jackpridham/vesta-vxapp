@@ -17,7 +17,7 @@ vx_harbor_quota_observe() {
     source="$(/usr/bin/mktemp "$(vx_harbor_root)/observations/.owner.XXXXXX")" || return 1
     path="$(vx_harbor_root)/observations/$owner.json"
     /usr/bin/jq -n --argjson used "$used" --arg at "$now" --arg generation "$generation" \
-      '{USED_MB:$used,OBSERVED_AT:$at,GENERATION:$generation}' >"$source" \
+      '{SCHEMA:1,USED_MB:$used,OBSERVED_AT:$at,GENERATION:$generation}' >"$source" \
       && vx_harbor_json_write_atomic "$path" "$source"
     local result=$?; /usr/bin/rm -f "$source"; (( result == 0 )) || return "$result"
     vx_harbor_registry_usage_set "$owner" "$used"

@@ -69,7 +69,7 @@ for directory, pattern in authority_patterns.items():
     for source in sorted(source_dir.iterdir()):
         if not pattern.fullmatch(source.name): raise SystemExit(1)
         value=json_value(source)
-        if value.get('SCHEMA', 1) != 1: raise SystemExit(1)
+        if value.get('SCHEMA') != 1: raise SystemExit(1)
         copy(source, f'authority/{directory}/{source.name}')
 
 # Generated recovery configuration is exact, not a recursive release copy.
@@ -134,6 +134,26 @@ manifest={'SCHEMA':2,'PROVIDER_VERSION':'v2.15.0','FILES':files}
 (root/'manifest.json').write_text(json.dumps(manifest,sort_keys=True,separators=(',',':'))+'\n')
 os.chmod(root/'manifest.json',0o600)
 PY
+}
+
+_vx_harbor_restore_authority_validate() {
+    local extract="$1" path name owner kind
+    /usr/bin/grep -Eq '^age1[ac-hj-np-z02-9]{20,}$' "$extract/authority/backup-recipient.txt" || return 1
+    for path in "$extract"/authority/owners/*.json; do [[ -f "$path" ]] || continue; _vx_harbor_authority_schema_validate owner "$path" "$(basename "$path" .json)" || return 1; done
+    for path in "$extract"/authority/operations/*.json; do
+        [[ -f "$path" ]] || continue; name="$(basename "$path" .json)"
+        if [[ "$name" == provider-disable ]]; then
+            _vx_harbor_authority_schema_validate disable-plan "$path" provider-disable || return 1
+        else _vx_harbor_authority_schema_validate package-operation "$path" "$name" || return 1; fi
+    done
+    for path in "$extract"/authority/rotations/*.json; do [[ -f "$path" ]] || continue; name="$(basename "$path" .json)"; kind="${name##*-}"; owner="${name%-$kind}"; _vx_harbor_authority_schema_validate rotation "$path" "$owner:$kind" || return 1; done
+    for path in "$extract"/authority/tombstones/*.json; do [[ -f "$path" ]] || continue; _vx_harbor_authority_schema_validate tombstone "$path" "$(basename "$path" .json)" || return 1; done
+    for path in "$extract"/authority/backups/*.json; do [[ -f "$path" ]] || continue; _vx_harbor_authority_schema_validate backup "$path" "$(basename "$path" .json)" || return 1; done
+    for path in "$extract"/authority/observations/*.json; do
+        [[ -f "$path" ]] || continue; name="$(basename "$path" .json)"
+        case "$name" in provider) kind=observation-provider;; provider-detail) kind=observation-detail;; *) kind=observation-owner;; esac
+        _vx_harbor_authority_schema_validate "$kind" "$path" "$name" || return 1
+    done
 }
 
 _vx_harbor_archive_create() {
@@ -241,7 +261,7 @@ for path in (extract/'authority').rglob('*.json'):
         if set(value)!={'SCHEMA','BACKUP_ID','CIPHERTEXT','SHA256','CREATED_AT','VERSION'} or value['VERSION']!='v2.15.0' or not re.fullmatch(r'[a-f0-9]{64}',str(value['SHA256'])): raise SystemExit(1)
     if '/observations/' in rel:
         keys=set(value)
-        if not (keys=={'GENERATION','OBSERVED_AT','USED_MB'} or keys=={'HEALTH','OBSERVED_AT'} or (keys=={'SCHEMA','OBSERVED_AT','HEALTH','CERTIFICATE','STORAGE','OPERATIONS','OWNERS'} and value['SCHEMA']==1)): raise SystemExit(1)
+        if not (keys=={'SCHEMA','GENERATION','OBSERVED_AT','USED_MB'} or keys=={'SCHEMA','HEALTH','OBSERVED_AT'} or keys=={'SCHEMA','OBSERVED_AT','HEALTH','CERTIFICATE','STORAGE','OPERATIONS','OWNERS'}): raise SystemExit(1)
 PY
 }
 
@@ -258,6 +278,7 @@ vx_harbor_restore_validate_locked() {
     "$( _vx_harbor_age )" -d -i "$identity" -o "$archive" "$cipher" || result=1
     if (( result == 0 )); then available="$(/usr/bin/df -Pk "$root" | /usr/bin/awk 'NR==2{print $4*1024}')" || result=1; [[ "$available" =~ ^[0-9]+$ ]] || result=1; fi
     (( result != 0 )) || _vx_harbor_restore_archive_validate "$archive" "$stage/extract" "$available" || result=1
+    (( result != 0 )) || _vx_harbor_restore_authority_validate "$stage/extract" || result=1
     _vx_harbor_cleanup_stage; trap - HUP INT TERM
     (( result == 0 )) || return 1
     printf 'validated\n'

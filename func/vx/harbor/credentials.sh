@@ -8,8 +8,10 @@ vx_harbor_rotation_path() {
 }
 
 vx_harbor_rotation_validate() {
-    vx_harbor_secure_regular_file "$1" 0600 || return 1
-    /usr/bin/jq -e 'type=="object" and keys==["KIND","NEW_ROBOT_ID","NEW_USERNAME","OLD_ROBOT_ID","OPERATION_ID","OWNER","PHASE","SCHEMA","UPDATED_AT"] and .SCHEMA==1 and (.KIND|IN("runtime","publisher")) and (.OPERATION_ID|test("^[a-f0-9]{32}$")) and (.PHASE|IN("pending-switch","pending-revoke","converged")) and ([.NEW_ROBOT_ID,.OLD_ROBOT_ID]|all(.==null or (type=="number" and .>=1)))' "$1" >/dev/null 2>&1
+    local path="$1" name owner kind
+    vx_harbor_secure_regular_file "$path" 0600 || return 1
+    name="$(basename "$path" .json)"; kind="${name##*-}"; owner="${name%-$kind}"
+    _vx_harbor_authority_schema_validate rotation "$path" "$owner:$kind"
 }
 
 _vx_harbor_rotation_write() {

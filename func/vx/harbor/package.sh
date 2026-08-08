@@ -17,24 +17,7 @@ vx_harbor_operation_path() {
 vx_harbor_package_operation_validate() {
     local path="$1"
     vx_harbor_secure_regular_file "$path" 0600 || return 1
-    /usr/bin/jq -e '
-      type == "object" and (keys == [
-        "ATTEMPTS","CREATED_AT","DESIRED_PACKAGE","DESIRED_REGISTRY_MB",
-        "LAST_ERROR","OPERATION_ID","OWNER","SCHEMA","STATE","UPDATED_AT"
-      ]) and .SCHEMA == 1
-      and (.OPERATION_ID | type == "string" and test("^[a-f0-9]{32}$"))
-      and (.OWNER | type == "string" and test("^[a-z0-9][a-z0-9_-]{0,31}$"))
-      and (.DESIRED_PACKAGE | type == "string" and test("^[A-Za-z0-9._-]+$"))
-      and (.DESIRED_REGISTRY_MB | type == "string" and
-           test("^(0|[1-9][0-9]*|unlimited)$"))
-      and (.STATE == "pending" or .STATE == "converged" or .STATE == "failed")
-      and (.ATTEMPTS | type == "number" and floor == . and . >= 0)
-      and (.LAST_ERROR == null or
-           (.LAST_ERROR | type == "string" and length >= 1 and length <= 160))
-      and (.CREATED_AT | type == "number" and floor == . and . >= 0)
-      and (.CREATED_AT as $created |
-           (.UPDATED_AT | type == "number" and floor == . and . >= $created))
-    ' "$path" >/dev/null 2>&1
+    _vx_harbor_authority_schema_validate package-operation "$path" "$(basename "$path" .json)"
 }
 
 _vx_harbor_observation_json() {
