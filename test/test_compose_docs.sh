@@ -46,7 +46,7 @@ backups	PROJECT [json|plain]
 secrets	PROJECT [json|plain]
 registries	[json|plain]
 registry-info	PROJECT [json|plain]
-registry-publisher-change	< publisher-secret
+registry-publisher-rotate	< age-recipient
 registry-publisher-disable
 image-pull	PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION IMAGE@sha256:DIGEST
 drift	PROJECT [json|plain]

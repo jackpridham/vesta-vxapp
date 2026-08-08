@@ -175,12 +175,27 @@ environment, process metadata, stdout, JSON, HTML, logs, audit, or an
 unencrypted backup. A tenant shall never supply an API endpoint, project ID,
 permission set, Harbor username, or system credential.
 
-Installation shall generate unique Harbor bootstrap-administrator and Vesta
-integration secrets. The bootstrap secret is retained only as protected
-recovery authority and is not used for routine API calls. After bootstrap,
-the least-privilege integration robot is the only routine API identity. The
-installer shall verify its exact permissions and disable Harbor self-sign-up
-and non-administrator project creation before reporting readiness.
+Installation shall establish unique Harbor bootstrap-administrator and Vesta
+integration credentials. The bootstrap secret is retained only as protected
+recovery authority and is not used for routine API calls. Harbor v2.15.0
+commit `e2b5ce92728f86c4b02f6a9a667741c1e5b62678` ignores
+`RobotCreate.secret`: its controller always generates a valid secret and the
+create handler returns it once in `RobotCreated.secret`. Vesta shall consume
+that response through protected descriptors and shall not attempt to select
+or later refresh the secret.
+
+After bootstrap, the least-privilege integration robot is the only routine API
+identity. It is system-level with system scope `/` and wildcard project scope
+`*`. Its exact grants are the required system project create/list and volume
+read actions plus wildcard project read/update, quota read/update, repository
+read/list/pull/push, and robot create/read/list/delete actions needed to
+provision, verify, and revoke project children. Harbor's robot RBAC catalogs
+deliberately omit `robot:update`; integration and child update/refresh
+attempts therefore return `403`. Routine Vesta lifecycle shall use create, verify, switch, and
+delete only, never robot update/refresh or bootstrap-administrator fallback.
+The installer shall verify these exact levels, scopes, and actions and disable
+Harbor self-sign-up and non-administrator project creation before reporting
+readiness.
 
 ### R6: Deterministic tenant namespace
 
@@ -197,9 +212,10 @@ the full lowercase SHA-256 of the owner. Persisted mapping is authoritative
 and shall prevent remapping an existing owner to a different Harbor project.
 
 Projects are private, administrator-created, and tenant project creation in
-the Harbor portal is disabled. Vesta shall add a machine-readable description
-or metadata marker identifying the owning Vesta installation and owner,
-without disclosing private tenant data.
+the Harbor portal is disabled. Project API requests use only Harbor-supported
+private metadata, exactly `{"public":"false"}`. Installation identity, owner,
+and deterministic namespace mapping remain in protected Vesta state; Vesta
+does not invent unsupported Harbor project metadata keys.
 
 ### R7: Registry package entitlement and quota
 
@@ -223,43 +239,59 @@ publishing changes but shall not stop running workloads.
 
 ### R8: Publisher credential lifecycle
 
-An eligible tenant shall be able to create or rotate one deterministic
-project-scoped publisher robot by sending a caller-generated secret through
-bounded stdin to `v-docker`. The robot receives only the Harbor permissions
-required for OCI push and pull within that tenant project. Harbor requires
-pull permission with push permission; no delete, project administration,
-member, scanner-administration, or cross-project permission is granted.
+An eligible tenant shall create or rotate one deterministic project-scoped
+publisher generation with
+`v-docker registry-publisher-rotate < age-recipient`. Stdin contains exactly
+one bounded public age recipient, not a publisher secret. The robot receives
+only OCI pull and push within that tenant project. Harbor requires pull with
+push; no delete, project administration, member, scanner-administration, or
+cross-project permission is granted.
 
 Vesta shall configure a Harbor robot prefix compatible with the existing
-registry username validator, such as `vxrobot-`. The publisher username is
-non-secret metadata. The submitted secret shall be 43 through 128 URL-safe
-base64 characters and shall be snapshotted only in a root-owned, mode-`0700`
-temporary directory as a mode-`0600` regular file, used through the protected
-API adapter, and removed on every outcome. Vesta shall not persist or return
-the publisher secret.
+registry username validator, such as `vxrobot-`. Harbor returns a project
+robot username in the exact form `PREFIX + PROJECT + "+" + ROBOT_BASENAME`.
+The username is non-secret metadata. Harbor generates the publisher secret
+and returns it once in the create response. Vesta shall verify that credential
+and stream it directly to fixed-path age encryption for the supplied
+recipient. Publisher plaintext shall never be written to a regular file,
+Vesta state, a journal, backup, log, audit event, argv, or environment.
 
-Suspension, administrator conversion, loss of shell/package eligibility,
-`DOCKER_REGISTRY_MB=0`, or explicit publisher disable shall disable the
-publisher robot under the owner access lock. Re-enablement requires a new
-secret. Runtime pull authority and retained images shall not be removed by a
-publisher revocation.
+Successful stdout is only one complete ASCII-armored age ciphertext carrying
+the generated publisher secret. It contains no surrounding human text,
+JSON, username, or plaintext. Failed rotation emits no successful ciphertext.
+The tenant decrypts outside Vesta and supplies the result to
+`docker login --password-stdin`.
 
-User deletion shall disable publisher access and place the Harbor project in
-retained state. Deletion of the Harbor project and image content requires a
-separate administrator retention-expiry and purge workflow outside this
-specification.
+Each child create carries a unique non-secret Vesta candidate marker. Vesta
+creates, verifies, atomically switches owner metadata, and deletes the prior
+publisher child. If Harbor commits a create but the one-time response is lost,
+the marked candidate is discoverable but its secret is unrecoverable; Vesta
+deletes it and retry creates a fresh generation. Suspension, administrator
+conversion, loss of shell/package eligibility, `DOCKER_REGISTRY_MB=0`, or
+explicit publisher disable deletes the publisher child and validates a
+subsequent `404`. Runtime pull authority and retained images are not removed
+by publisher revocation.
+
+User deletion shall revoke publisher access through validated child deletion
+and place the Harbor project in retained state. Deletion of the Harbor project
+and image content requires a separate administrator retention-expiry and purge
+workflow outside this specification.
 
 ### R9: Runtime pull credential lifecycle
 
 Vesta shall create a distinct project-scoped pull-only robot for each
-provisioned owner. Its secret is generated and consumed by Vesta and stored
-through the existing protected owner registry configuration. It is never
-given to the tenant.
+provisioned owner. Harbor generates its one-time create secret; Vesta consumes
+and stores the plaintext-equivalent through the existing protected owner
+registry configuration because unattended immutable pulls require it. It is
+never given to the tenant.
 
 Runtime credential rotation shall be transactional: create a replacement
-generation, validate an authenticated manifest request, atomically install
-the replacement in owner registry state, and only then disable/delete the old
-generation. A failed rotation preserves the last validated pull credential.
+generation with a unique candidate marker, validate an authenticated manifest
+request, atomically install the replacement in owner registry state, and only
+then delete the old generation and validate its absence. A lost create
+response causes deletion of the marked unrecoverable candidate. A failed
+rotation preserves the last validated pull credential. Runtime lifecycle does
+not update, refresh, or disable a robot.
 
 The managed registry entry shall be marked as provider-managed. Generic
 tenant `registry-change` and `registry-delete` operations shall reject changes
@@ -272,7 +304,7 @@ The tenant command surface shall add these owner-derived operations:
 
 ```text
 v-docker registry-info PROJECT [json|plain]
-v-docker registry-publisher-change < publisher-secret
+v-docker registry-publisher-rotate < age-recipient
 v-docker registry-publisher-disable
 ```
 
@@ -315,9 +347,10 @@ authentication, CSRF validation, escaped arguments, and the existing bounded
 job workflow.
 
 Tenant panel views may display only the same non-secret fields as
-`registry-info`. Publisher secrets shall not be accepted or displayed by the
-web panel in the first release; tenant publisher creation/rotation is a
-bounded-stdin CLI operation.
+`registry-info`. Publisher plaintext and age recipients shall not be accepted
+or displayed by the web panel in the first release; tenant publisher rotation
+is a bounded-stdin CLI operation whose only successful output is
+ASCII-armored age ciphertext.
 
 ### R13: Health, metrics, and audit
 
@@ -489,27 +522,29 @@ artifacts while denying new tenant publishing.
 Publisher flow:
 
 ```text
-developer generates secret
-  -> bounded SSH stdin
+developer supplies age recipient on bounded SSH stdin
   -> v-docker broker derives owner
   -> Vesta validates entitlement and locks owner
-  -> Harbor API creates/rotates exact publisher robot
-  -> secret snapshot is destroyed
-  -> developer uses same secret with docker login --password-stdin
+  -> Harbor API creates a marked pull+push child and returns one-time secret
+  -> Vesta verifies, encrypts to recipient, switches metadata, deletes old child
+  -> stdout is only ASCII-armored age ciphertext
+  -> developer decrypts outside Vesta and uses docker login --password-stdin
 ```
 
 Runtime flow:
 
 ```text
-Vesta generates replacement pull secret
-  -> Harbor API creates pull-only generation
+Harbor API creates marked pull-only generation and returns one-time secret
   -> Vesta validates a manifest request
   -> existing owner registry configuration is atomically updated
-  -> old robot generation is disabled/deleted
+  -> old robot generation is deleted and absence is validated
 ```
 
 Publisher and runtime credentials are never interchangeable. The publisher
-cannot mutate Vesta. The runtime credential cannot push to Harbor.
+cannot mutate Vesta. The runtime credential cannot push to Harbor. Neither
+lifecycle uses robot update or refresh. Publisher plaintext is never durable
+on Vesta; runtime plaintext-equivalent remains Vesta-owned for unattended
+pulls.
 
 ### Deployment data flow
 
@@ -630,11 +665,16 @@ validated runtime pull credential.
   credential/state, and append a redacted failure audit event.
 - Partial project creation: keep the private project disabled for publishing
   and reconcile idempotently; never grant broad temporary permissions.
-- Publisher rotation interrupted: the caller may repeat rotation with a new
-  secret. Vesta never reports success before Harbor confirms the exact robot
-  permissions.
+- Publisher rotation interrupted: Vesta preserves the prior validated
+  generation unless the metadata switch completed. A committed create with a
+  lost one-time response is found by its candidate marker and deleted. The
+  caller may repeat rotation with the same or a new age recipient; Vesta never
+  reports success before Harbor confirms the exact child permissions and
+  produces one complete ciphertext.
 - Runtime rotation interrupted: retain the old validated credential until the
-  replacement passes an authenticated check and is atomically installed.
+  replacement passes an authenticated check and is atomically installed. A
+  marked candidate whose create response was lost is deleted because its
+  secret cannot be recovered.
 - Push succeeds but deploy fails: the immutable artifact remains in Harbor;
   Vesta desired/runtime state follows normal preview/apply rollback rules.
 - Registry quota exceeded: Harbor rejects additional content; Vesta reports
@@ -647,10 +687,12 @@ validated runtime pull credential.
   workloads or remove the last-known-good backup.
 
 Tenant inputs never select another owner, namespace, provider endpoint,
-Harbor role, or API path. Harbor credentials never appear in Compose,
-application environment metadata, Docker labels, Vesta audit, web pages, or
-unencrypted backups. Registry operations use the same bounded-stdin and
-redacted-output rules as the existing Compose shell contract.
+Harbor role, or API path. Harbor plaintext credentials never appear in
+Compose, application environment metadata, Docker labels, Vesta audit, web
+pages, or unencrypted backups. Publisher plaintext is never durable on Vesta;
+the command's sole credential-bearing output is its complete ASCII-armored age
+ciphertext. Registry operations use the same bounded-stdin and redacted-output
+rules as the existing Compose shell contract.
 
 ## Compatibility and Migration
 
@@ -728,6 +770,14 @@ repository and digest through preview/apply.
 
 - API tests prove exact method/path allowlists, request/response size bounds,
   timeout handling, schema rejection, fixed endpoint use, and redaction.
+- A network-free source-parity test pinned to Harbor v2.15.0 commit
+  `e2b5ce92728f86c4b02f6a9a667741c1e5b62678` proves create-secret
+  generation, one-time response disclosure, prefixed system/project names,
+  wildcard subset delegation, secret-redacted reads, and `403` routine
+  update/refresh behavior.
+- Bootstrap creates the exact system integration robot once. Every routine
+  project, quota, repository, and child lifecycle request authenticates as
+  that integration robot; bootstrap-admin routine-call canaries fail.
 - Two owners receive distinct private Harbor projects and cannot list, push,
   pull, or modify each other's private artifacts.
 - Repeated reconciliation returns the same persisted namespace and does not
@@ -747,16 +797,25 @@ repository and digest through preview/apply.
 
 ### AC-R8/R9: Credential boundaries
 
-- A same-owner eligible tenant can create/rotate its publisher through stdin,
-  push within its namespace, and cannot administer or delete the Harbor
-  project.
-- Publisher secrets are absent from argv, environment, files after cleanup,
-  stdout, JSON, HTML, logs, audit, process listings, and unencrypted backups.
+- A same-owner eligible tenant can rotate its publisher by supplying an age
+  recipient through stdin, decrypt the returned ASCII-armored ciphertext
+  outside Vesta, push within its namespace, and cannot administer or delete
+  the Harbor project.
+- Successful publisher-rotation stdout is exactly one ASCII-armored age
+  ciphertext. Publisher plaintext is absent from durable files, Vesta state,
+  argv, environment, stdout, JSON, HTML, logs, audit, process listings, and
+  unencrypted backups.
 - Suspension, package revocation, and explicit disable prevent subsequent
   publisher authentication while preserving running workloads and runtime
   pull evidence.
-- Runtime robots can pull but cannot push. Transactional rotation preserves
-  the old credential on every injected pre-commit failure.
+- Runtime children are pull-only and publisher children are pull-plus-push.
+  Transactional rotation preserves the old credential on every injected
+  pre-commit failure. Lost create responses leave only a marked candidate
+  that is discovered, deleted, and validated absent.
+- Routine lifecycle traces contain child create/read/delete and no robot PUT,
+  PATCH, refresh, update, disable, or bootstrap-admin fallback. Every
+  revocation is a successful delete followed by a not-found read while the
+  project and artifacts remain.
 - Generic registry change/delete rejects the provider-managed runtime entry
   but still manages a separate external registry.
 
@@ -858,13 +917,23 @@ header, cookie, logging, authentication, quota, timeout, and concurrency
 boundaries therefore form part of the release contract. Harbor remains
 loopback-only and all non-registry paths remain Vesta-owned.
 
-### Selected: caller-generated publisher secret and Vesta-generated runtime secret
+### Selected: Harbor-generated child secrets with encrypted publisher delivery
 
-The developer must possess a push credential, so providing it to Harbor
-through bounded stdin avoids Vesta returning or persisting that secret. Vesta
-alone needs the pull credential and can rotate it transactionally without
-disclosing it. Separating the roles prevents a compromised builder from
-changing Vesta or obtaining broader registry access.
+The pinned Harbor controller generates every robot secret and returns it only
+from create; it does not honor `RobotCreate.secret`. The tenant therefore
+supplies an age recipient and receives only ciphertext, allowing the developer
+to possess a push credential without making publisher plaintext durable on
+Vesta. Vesta retains the runtime plaintext-equivalent because it alone needs
+the pull credential for unattended immutable deployment. Separating the roles
+prevents a compromised builder from changing Vesta or obtaining broader
+registry access.
+
+Harbor's robot RBAC catalog intentionally omits `robot:update`, so refresh and
+update cannot be part of routine least-privilege lifecycle. Marked child
+create, verification, metadata switch, and validated delete provide rotation
+and revocation without bootstrap-admin fallback. A lost create response is not
+recoverable; its marked candidate is deleted and a fresh generation is
+created.
 
 ### Selected: separate registry storage quota
 
@@ -886,6 +955,9 @@ cannot bypass explicit deployment approval.
 - [Harbor REST API explorer](https://goharbor.io/docs/edge/working-with-projects/using-api-explorer/)
 - [Harbor installation prerequisites](https://goharbor.io/docs/main/install-config/installation-prereqs/)
 - [Harbor project robot accounts](https://goharbor.io/docs/2.12.0/administration/robot-accounts/)
+- [Pinned Harbor robot controller](https://github.com/goharbor/harbor/blob/e2b5ce92728f86c4b02f6a9a667741c1e5b62678/src/controller/robot/controller.go)
+- [Pinned Harbor robot API handler](https://github.com/goharbor/harbor/blob/e2b5ce92728f86c4b02f6a9a667741c1e5b62678/src/server/v2.0/handler/robot.go)
+- [Pinned Harbor robot RBAC catalog](https://github.com/goharbor/harbor/blob/e2b5ce92728f86c4b02f6a9a667741c1e5b62678/src/common/rbac/const.go)
 - [Harbor project quotas](https://goharbor.io/docs/main/administration/configure-project-quotas/)
 - [Harbor metrics](https://goharbor.io/docs/main/administration/metrics/)
 - [Harbor upgrades](https://goharbor.io/docs/main/administration/upgrade/)

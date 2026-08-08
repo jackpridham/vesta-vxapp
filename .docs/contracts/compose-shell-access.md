@@ -2,8 +2,9 @@
 
 Managed-registry discovery and publisher lifecycle are exact `v-docker`
 subcommands. Identity is kernel/sudo-derived; callers cannot provide an owner,
-Harbor endpoint, namespace, robot identity, or secret path. Publisher secret
-input is bounded stdin and never argv or environment.
+Harbor endpoint, namespace, robot identity, or secret path. Publisher rotation
+reads a bounded public age recipient from stdin; publisher plaintext is never
+tenant input and is never durable on Vesta.
 
 This contract defines the only supported shell access to the Vesta-owned
 Compose control plane. It applies to an ordinary Vesta tenant using the
@@ -83,7 +84,7 @@ backups	PROJECT [json|plain]
 secrets	PROJECT [json|plain]
 registries	[json|plain]
 registry-info	PROJECT [json|plain]
-registry-publisher-change	< publisher-secret
+registry-publisher-rotate	< age-recipient
 registry-publisher-disable
 image-pull	PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION IMAGE@sha256:DIGEST
 drift	PROJECT [json|plain]
@@ -125,13 +126,23 @@ Project removal is explicit and retained-data only.
 
 The managed Harbor operations remain owner-derived. `registry-info` accepts
 only an owner-scoped standard project and an optional bounded output format;
-it exposes no credential or Harbor administration. `registry-publisher-change`
-accepts the publisher secret only through bounded protected stdin, never argv
-or environment, and returns no secret. `registry-publisher-disable` accepts no
-tenant-selected owner, endpoint, namespace, robot identity, role, API path, or
-Harbor administration argument. All three operations use the authenticated
+it exposes no credential or Harbor administration. `registry-publisher-rotate`
+accepts exactly one validated age recipient through bounded stdin, never argv
+or environment. Its successful stdout is only one complete ASCII-armored age
+ciphertext; no prefix, suffix, status line, username, JSON, or plaintext may
+accompany it. The ciphertext carries the one-time Harbor-generated publisher
+secret for the supplied recipient. `registry-publisher-disable` accepts
+no tenant-selected owner, endpoint, namespace, robot identity, role, API path,
+or Harbor administration argument. All three operations use the authenticated
 broker owner and the fixed Vesta adapters defined by the Harbor provider
 contract.
+
+Publisher rotation uses only Harbor child create, credential verification,
+an atomic Vesta metadata switch, and deletion of the prior child. Explicit
+disable and every other publisher revocation delete the child and validate a
+subsequent not-found response while retaining the Harbor project and
+artifacts. Routine update, refresh, bootstrap-admin fallback, and robot
+disable are outside the tenant contract.
 
 `image-pull` is not a free-standing pull. The broker derives the owner, fixes
 the profile to `standard`, and forwards the exact protected preview tuple plus
@@ -183,8 +194,13 @@ Compose, secret, and registry input is accepted only as bounded stdin and is
 snapshotted into root-owned mode-0700/mode-0600 storage. Compose input is
 limited to 1 MiB per preview. A secret or registry credential is limited to
 64 KiB; the snapshot is a mode-0700 directory containing mode-0600 regular
-files for the duration of the broker operation. The broker never opens a
-tenant-selected filesystem path as root. Restore accepts only a bounded
+files for the duration of the broker operation. The publisher-rotation age
+recipient is a public identifier, not a secret snapshot. Harbor's generated
+publisher plaintext is passed only through protected descriptors and pipes to
+credential verification and age encryption; it is never written to a regular
+file, Vesta authority, journal, backup, log, or audit record. The runtime pull
+plaintext-equivalent remains Vesta-owned for unattended immutable pulls. The
+broker never opens a tenant-selected filesystem path as root. Restore accepts only a bounded
 `BACKUP_ID`, which the server resolves as a managed backup; tenants never
 provide an archive or filesystem path. Immutable preview/apply identifiers and
 SHA-256 digests are exact lowercase hexadecimal values, while revisions are
@@ -197,7 +213,9 @@ Secret values, registry credentials, Compose source containing managed
 secrets, tenant paths, Docker environment, and raw adapter stderr never appear
 in argv, process metadata, environment, stdout, JSON, HTML, logs, audit, or
 unencrypted backup output. Reads expose only the contract's bounded redacted
-forms.
+forms. The sole credential-bearing stdout exception is the complete
+ASCII-armored age ciphertext from successful `registry-publisher-rotate`;
+failed rotation leaves stdout empty.
 
 Tenant image pull uses the owner's protected registry configuration. Lock
 order is owner access, project, global tenant pull, then owner registry. Before

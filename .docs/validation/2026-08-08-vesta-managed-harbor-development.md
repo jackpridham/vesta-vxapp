@@ -229,3 +229,54 @@ explicitly reviewed change to secret delivery/administrator use. Development
 DNS must also map `dev.jackpridham.com` to `192.168.200.100` for unpinned
 clients. Then stage the exact successor HEAD, create a new rollback, and rerun
 only the incomplete development-host acceptance. Production remains deferred.
+
+## Source-validated resolution — 2026-08-09
+
+The failed development evidence above is preserved as observed; none of its
+blocked checks are relabeled as passing. The product decision is now resolved
+in source and contract, but development acceptance remains incomplete.
+
+The selected behavior is pinned to Harbor v2.15.0 commit
+`e2b5ce92728f86c4b02f6a9a667741c1e5b62678`:
+
+- `src/controller/robot/controller.go` calls `CreateSec` unconditionally,
+  stores the generated hash, returns the generated plaintext once, composes a
+  project stored name as `PROJECT+ROBOT_BASENAME`, and adds the configured
+  prefix when populating the API model.
+- `src/server/v2.0/handler/robot.go` does not copy
+  `RobotCreate.secret` into the controller model, returns the generated value
+  in `RobotCreated.secret`, permits a robot-created child only when its
+  permission set is a subset of the creator, and gates update and refresh on
+  `robot:update`.
+- `src/common/rbac/const.go` exposes robot create/read/list/delete in the
+  system and project robot catalogs but deliberately omits `robot:update`.
+- `src/server/v2.0/handler/model/robot.go` builds ordinary robot read/list
+  models without a secret field.
+
+The corrected Vesta contract therefore uses one system integration robot with
+system scope `/` and wildcard project scope `*`. It creates project-level
+runtime pull-only and publisher pull-plus-push children only when those
+permissions are subsets. Routine Vesta performs create, verify, metadata
+switch, and validated delete; it never updates or refreshes a robot and never
+falls back to the retained bootstrap administrator.
+
+The owner publisher command is now
+`v-docker registry-publisher-rotate < age-recipient`. Harbor generates the
+publisher secret once. Vesta verifies it and sends only complete
+ASCII-armored age ciphertext to stdout. Publisher plaintext is never durable
+on Vesta. The runtime plaintext-equivalent remains protected Vesta authority
+for unattended pulls. Every create carries a non-secret candidate marker so a
+committed child with a lost response can be discovered and deleted before a
+fresh retry. Revocation is a successful child delete followed by a validated
+not-found read; the private project and artifacts remain. Project requests use
+only supported private metadata, exactly `{"public":"false"}`.
+
+The repository fixture and its network-free behavioral source-parity test now
+encode those upstream rules, including generated one-time secrets, configured
+prefixes, exact levels/scopes, subset enforcement, `403` update/refresh,
+secret-redacted GET/list, validated delete, and a marked lost-response
+candidate. This is design and local fixture evidence only. No corrected
+successor was staged on `dev.jackpridham.com`, the incomplete live checks in
+"Acceptance not claimed" were not rerun, the DNS discrepancy was not
+revalidated, and no production host was contacted. Development acceptance and
+all production deployment remain deferred.

@@ -26,8 +26,42 @@ assert_before() {
 
 [[ -s "$guide" ]] || fail 'canonical Harbor tenant guide missing'
 
+for contract_phrase in \
+    'e2b5ce92728f86c4b02f6a9a667741c1e5b62678' \
+    'RobotCreate.secret' \
+    'RobotCreated.secret' \
+    'create, verify, switch Vesta authority, and delete' \
+    'Publisher plaintext is never durable on Vesta' \
+    'runtime pull plaintext-equivalent remains Vesta-owned' \
+    'successful stdout is only one complete ASCII-armored age ciphertext' \
+    'subsequent read returns not found'
+do
+    rg -Fqi -- "$contract_phrase" \
+        "$root/.docs/contracts/harbor-provider.md" \
+        "$root/.docs/contracts/compose-shell-access.md" \
+        "$root/.docs/specs/2026-08-08-vesta-managed-harbor-registry.md" \
+        || fail "corrected Harbor contract omits: $contract_phrase"
+done
+
+active_harbor_docs=(
+    "$root/DOCKER_ORCHESTRATION_DEPLOYMENT.md"
+    "$root/docs/container-orchestration.md"
+    "$root/.docs/README.md"
+    "$root/.docs/contracts/harbor-provider.md"
+    "$root/.docs/contracts/compose-shell-access.md"
+    "$root/.docs/specs/2026-08-08-vesta-managed-harbor-registry.md"
+    "$guide"
+)
+if rg -n -i \
+    'registry-publisher-change|caller-generated publisher secret|developer generates secret' \
+    "${active_harbor_docs[@]}"
+then
+    fail 'active Harbor guidance retains the superseded publisher-secret contract'
+fi
+
 for phrase in \
-    'registry-info PROJECT' 'registry-publisher-change' \
+    'registry-info PROJECT' 'registry-publisher-rotate' \
+    'ASCII-armored age ciphertext' \
     'immutable preview' 'No SCP, rsync' 'Automated restore apply'
 do
     rg -q "$phrase" "$root/DOCKER_ORCHESTRATION_DEPLOYMENT.md" \
@@ -37,13 +71,16 @@ do
 done
 
 for phrase in \
-    'BLOCKED — PRODUCT' 'production is deferred' \
+    'production is deferred' \
     'no public host TCP listener' '/v2/' '/service/token' \
     'DOCKER_REGISTRY_MB' 'U_DOCKER_REGISTRY_MB' \
     'Runtime pull identity' 'Publisher identity' 'Vesta administrator' \
     'Tenant maintainer' 'Application repository' \
     'registry-info APP_PROJECT' \
-    'registry-publisher-change < publisher-secret' \
+    'registry-publisher-rotate < age-recipient' \
+    'ASCII-armored age ciphertext' \
+    '-----BEGIN AGE ENCRYPTED FILE-----' \
+    'age --decrypt' \
     'registry-publisher-disable' '--password-stdin' \
     'v-docker image-pull' 'v-docker rollback-preview' \
     '26b3764595a024b5b830a955b164f0ad95a25a2b'
@@ -51,6 +88,11 @@ do
     rg -Fq -- "$phrase" "$guide" \
         || fail "missing tenant guide behavior: $phrase"
 done
+
+! rg -Fq -- 'registry-publisher-change' "$guide" \
+    || fail 'tenant guide retains obsolete publisher-change command'
+! rg -Fqi -- 'caller-generated publisher secret' "$guide" \
+    || fail 'tenant guide retains obsolete caller-generated secret contract'
 
 for generic_name in slave-vxapp asterisk-vxapp; do
     rg -Fq -- "$generic_name" "$guide" \
@@ -71,14 +113,18 @@ assert_before 'SSH_TARGET="${APP_OWNER}@${VESTA_HOST}"' \
 [[ "$(rg -F -c -- 'dev.jackpridham.com' "$guide")" -ge 2 ]] \
     || fail 'required development hostname is not assigned and checked'
 
-# Credential-helper selection and executable validation must precede both
-# publisher rotation and login. Inline base64 auth must be absent before and
-# after login, and the password may enter Docker only on stdin.
+# Credential-helper selection and executable validation must precede publisher
+# rotation and login. The age recipient must enter rotation on stdin, the
+# returned ciphertext must be decrypted outside Vesta before login, inline
+# base64 auth must be absent before and after login, and the password may enter
+# Docker only on stdin.
 assert_before '(.credHelpers[$registry] // .credsStore // empty)' \
     'command -v -- "$helper_binary"'
 assert_before 'command -v -- "$helper_binary"' \
-    'ssh -- "$SSH_TARGET" v-docker registry-publisher-change'
-assert_before 'ssh -- "$SSH_TARGET" v-docker registry-publisher-change' \
+    'ssh -- "$SSH_TARGET" v-docker registry-publisher-rotate'
+assert_before 'ssh -- "$SSH_TARGET" v-docker registry-publisher-rotate' \
+    'age --decrypt'
+assert_before 'age --decrypt' \
     'docker login "$REGISTRY"'
 assert_before 'docker login "$REGISTRY"' \
     '--password-stdin <"$publisher_secret_file"'
@@ -93,7 +139,7 @@ mapfile -t inline_auth_lines < <(
 )
 [[ "${#inline_auth_lines[@]}" -eq 2 ]] \
     || fail 'inline Docker auth must be checked before and after login'
-rotation_line="$(line_of 'ssh -- "$SSH_TARGET" v-docker registry-publisher-change')"
+rotation_line="$(line_of 'ssh -- "$SSH_TARGET" v-docker registry-publisher-rotate')"
 login_line="$(line_of 'docker login "$REGISTRY"')"
 (( inline_auth_lines[0] < rotation_line && inline_auth_lines[1] > login_line )) \
     || fail 'inline Docker auth checks do not bracket credential use'
@@ -101,6 +147,10 @@ rg -Fq 'reversible base64 `auth` value' "$guide" \
     || fail 'Docker base64 credential risk is not documented'
 rg -Fq 'does not offer a temporary isolated' "$guide" \
     || fail 'unsafe isolated Docker config fallback is not rejected'
+rg -q 'registry-publisher-rotate.*<.*age.*recipient' "$guide" \
+    || fail 'age recipient is not passed to publisher rotation on stdin'
+rg -q 'registry-publisher-rotate.*>.*cipher' "$guide" \
+    || fail 'publisher rotation ciphertext is not captured from stdout'
 ! rg -q -- '--password([ =]|$)' "$guide" \
     || fail 'unsafe registry password argument in tenant guide'
 

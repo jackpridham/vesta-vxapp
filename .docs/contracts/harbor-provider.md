@@ -25,7 +25,7 @@ The owner-derived tenant catalog is fixed:
 
 ```text
 v-docker registry-info PROJECT [json|plain]
-v-docker registry-publisher-change < publisher-secret
+v-docker registry-publisher-rotate < age-recipient
 v-docker registry-publisher-disable
 ```
 
@@ -48,6 +48,10 @@ pinned root-owned Compose definition with the distinct project identity
 Authority and secret files are regular, non-symlink, single-link, root-owned
 files. Metadata files are mode `0600`. Secrets are mode `0600`, stored
 separately from metadata, and are never included in an unencrypted backup.
+Publisher plaintext is never durable on Vesta: it is not written to an
+authority file, temporary file, backup, journal, audit record, or log. The
+runtime pull plaintext-equivalent remains Vesta-owned in protected owner
+registry state because unattended immutable pulls require it.
 Provider backups are system backups outside tenant Compose backup roots.
 
 Package quota transitions use `data/harbor/operations/<owner>.json`. Vesta
@@ -84,7 +88,9 @@ An interrupted reconcile may retain a private empty project, but no credential
 is active until validated and atomically recorded. `retained` preserves
 artifacts and validated runtime pull authority while denying new publishing.
 Removing a user, entitlement, publisher, or workload does not delete its
-Harbor project or artifacts.
+Harbor project or artifacts. Credential revocation deletes the affected child
+robot and validates that a subsequent read returns not found; it never uses a
+robot update/disable call as a revocation substitute.
 
 ## Locks and external calls
 
@@ -143,6 +149,53 @@ a protected file or descriptor, an allowlisted method/path pair, schema
 validation, and bounded redacted errors. Tenants cannot select an endpoint,
 API path, project ID, Harbor identity, or permission set.
 
+The pinned Harbor source authority is v2.15.0 commit
+`e2b5ce92728f86c4b02f6a9a667741c1e5b62678`. Its robot controller ignores
+`RobotCreate.secret`, always generates a valid secret, and returns that secret
+once in `RobotCreated.secret`. The returned login is the configured robot
+prefix plus the stored name; a project child is therefore
+`PREFIX + PROJECT + "+" + ROBOT_BASENAME`. Robot GET and list responses are
+secret-redacted.
+
+Routine Vesta API calls use one protected system integration robot, never the
+bootstrap administrator. Its system scope is `/`; its project scope is the
+wildcard `*`. It receives only the project, quota, repository, robot, and
+system-volume actions required by reconciliation and child delegation.
+`robot:update` is absent because Harbor's system and project robot permission
+catalogs deliberately omit it. Update and refresh therefore return `403` to
+the integration robot and to project children. The integration robot may
+create a project-level child only when every child permission is a subset of
+its wildcard project permission.
+
+Project creation and update send only Harbor-supported private project
+metadata, exactly `{"public":"false"}`. Owner and installation mappings stay
+in Vesta authority; they are not invented as unsupported Harbor project
+metadata keys.
+
+## Credential lifecycle
+
+Runtime children are project-level and pull-only. Publisher children are
+project-level and pull-plus-push. Both use distinct generation basenames and
+Harbor-generated one-time create secrets. Routine lifecycle is exactly
+create, verify, switch Vesta authority, and delete the prior child. It never
+updates or refreshes a robot and never falls back to routine bootstrap-admin
+access.
+
+`registry-publisher-rotate` reads exactly one bounded age recipient from
+stdin. On success stdout contains only ASCII-armored age ciphertext carrying
+the newly generated publisher secret; there is no surrounding human or
+JSON output. Vesta verifies the child and encrypts the one-time create secret
+directly to that recipient without making publisher plaintext durable. A
+failed rotation emits no partial ciphertext as success and preserves the
+previous validated publisher generation.
+
+Every create request carries a unique non-secret candidate marker. If Harbor
+commits the child but its one-time create response is lost, reconciliation
+finds the marked candidate and deletes it because its secret cannot be
+recovered. Retry creates a fresh marked generation. Revocation is complete
+only after child deletion succeeds and a read validates `404`; projects and
+artifacts are retained.
+
 ## JSON schemas and enums
 
 `registry-info PROJECT json` has these fixed keys:
@@ -184,8 +237,9 @@ authoritative. A Harbor-safe owner maps to `vx-<owner>`; otherwise it maps to
 
 Harbor is authoritative only for OCI artifact storage and measured project
 usage. Vesta state is authoritative for provider mode, owner eligibility,
-namespace mapping, credentials, package quota, accepted image evidence,
-Compose desired state, revisions, routes, convergence, rollback, and audit.
+namespace mapping, runtime credentials, publisher robot metadata, package
+quota, accepted image evidence, Compose desired state, revisions, routes,
+convergence, rollback, and audit.
 
 A push, scan, Harbor API call, webhook, or publisher credential never creates
 or changes Vesta desired state and never pulls, starts, stops, restarts,
@@ -196,8 +250,10 @@ tenant preview, immutable-digest pull, and apply transaction.
 ## Retention, backup, and disable behavior
 
 Publisher revocation, lost eligibility, user deletion, workload deletion, and
-provider disable retain projects and artifacts. No first-release command
-combines service disablement with project, blob, or database purge. Disable
+provider disable retain projects and artifacts. Revocation deletes and
+validates the affected child robot while retaining those data authorities. No
+first-release command combines service disablement with project, blob, or
+database purge. Disable
 removes only managed listener locations and stops the provider service after
 dependency-plan revalidation; it does not alter any image, container, desired
 state, route, volume, bind, revision, tenant backup, or retained provider data.
