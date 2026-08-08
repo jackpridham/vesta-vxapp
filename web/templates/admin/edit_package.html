@@ -324,6 +324,15 @@
                                 </td>
                             </tr>
                             <tr>
+                                <td class="vst-text input-label"><?php print __('Registry Storage (MB)');?></td>
+                            </tr>
+                            <tr>
+                                <td>
+                                    <input type="text" size="20" class="vst-input" name="v_docker_registry_mb" value="<?=htmlentities(trim((string) $v_docker_registry_mb, "'"))?>">
+                                    <img id="unlim-docker-registry-mb" class="unlim-trigger" src="/images/unlim.png" />
+                                </td>
+                            </tr>
+                            <tr>
                                 <td class="vst-text input-label"><?php print __('Compose Ports');?></td>
                             </tr>
                             <tr>

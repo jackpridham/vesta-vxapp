@@ -31,6 +31,7 @@ quota_fields=(
     DOCKER_MEMORY_MB
     DOCKER_PIDS
     DOCKER_STORAGE_MB
+    DOCKER_REGISTRY_MB
     DOCKER_PORTS
     DOCKER_SECRETS
     DOCKER_VOLUMES
@@ -74,6 +75,11 @@ for field in "${quota_fields[@]}"; do
     grep -Eq "^${field}='0'$" <<<"$legacy_zero" \
         || fail "zero legacy limit did not derive $field=0"
 done
+
+grep -Fq 'U_DOCKER_REGISTRY_MB' "$repo_root/bin/v-add-user" \
+    || fail 'new users do not persist measured registry usage'
+grep -Fq 'U_DOCKER_REGISTRY_MB' "$repo_root/bin/v-change-user-package" \
+    || fail 'package changes do not preserve measured registry usage'
 
 legacy_positive="$(vx_compose_package_data_with_defaults "DOCKER_CONTAINERS='3'")"
 grep -Eq "^DOCKER_PROJECTS='3'$" <<<"$legacy_positive" \
@@ -151,6 +157,11 @@ fi
 
 legacy_unlimited="$(vx_compose_package_data_with_defaults "DOCKER_CONTAINERS='unlimited'")"
 for field in "${quota_fields[@]}"; do
+    if [[ "$field" == DOCKER_REGISTRY_MB ]]; then
+        grep -Eq "^${field}='0'$" <<<"$legacy_unlimited" \
+            || fail "registry entitlement did not retain its independent default"
+        continue
+    fi
     grep -Eq "^${field}='unlimited'$" <<<"$legacy_unlimited" \
         || fail "unlimited legacy limit did not derive $field"
 done
@@ -258,6 +269,12 @@ for field in "${quota_fields[@]}"; do
     grep -Fq "\"U_$field\"" "$repo_root/bin/v-list-user" \
         || fail "user JSON omits U_$field"
 done
+grep -Fq 'DOCKER REGISTRY:' "$repo_root/bin/v-list-user-package" \
+    || fail 'package shell output omits registry entitlement'
+grep -Fq 'DOCKER REGISTRY:' "$repo_root/bin/v-list-user" \
+    || fail 'user shell output omits registry entitlement and usage'
+grep -Fq 'U_REGISTRY' "$repo_root/bin/v-list-users" \
+    || fail 'users shell output omits measured registry usage'
 
 package_test_root="$test_root/package-validation"
 export VESTA="$package_test_root/vesta"
@@ -407,7 +424,8 @@ mkdir -p \
     "$VESTA/conf" \
     "$VESTA/data/packages" \
     "$VESTA/data/users/alice" \
-    "$VESTA/func/vx/compose"
+    "$VESTA/func/vx/compose" \
+    "$VESTA/func/vx/harbor"
 cat >"$VESTA/func/main.sh" <<'EOF'
 OK=0
 E_INVALID=3
@@ -443,12 +461,29 @@ parse_object_kv_list_non_eval() {
 EOF
 : >"$VESTA/func/domain.sh"
 cat >"$VESTA/func/vx/compose/main.sh" <<'EOF'
+source "$VX_TEST_REPO_ROOT/func/vx/compose/quota.sh"
 source "$VX_TEST_REPO_ROOT/func/vx/compose/package.sh"
 vx_compose_shell_access_lock_acquire() { printf 'lock\n' >>"$VX_TEST_MUTATIONS"; }
 vx_compose_shell_access_lock_release() { :; }
 vx_compose_shell_access_deny_establish() { printf 'deny\n' >>"$VX_TEST_MUTATIONS"; }
 vx_compose_shell_group_revoke() { printf 'revoke\n' >>"$VX_TEST_MUTATIONS"; }
 vx_compose_shell_access_transition_complete() { printf 'complete\n' >>"$VX_TEST_MUTATIONS"; }
+EOF
+cat >"$VESTA/func/vx/harbor/main.sh" <<'EOF'
+vx_harbor_provider_prepare() { :; }
+vx_harbor_provider_lock_acquire() { printf 'provider-lock\n' >>"$VX_TEST_MUTATIONS"; }
+vx_harbor_provider_lock_release() { :; }
+vx_harbor_package_transition_prepare() {
+    printf 'prepare:%s\n' "$2" >>"$VX_TEST_MUTATIONS"
+    printf 'disabled.token\n'
+}
+vx_harbor_package_transition_commit() {
+    printf 'commit\n' >>"$VX_TEST_MUTATIONS"
+    [[ "${VX_TEST_COMMIT_FAIL:-no}" != yes ]]
+}
+vx_harbor_package_transition_rollback() {
+    printf 'rollback\n' >>"$VX_TEST_MUTATIONS"
+}
 EOF
 printf "DISK_QUOTA='no'\n" >"$VESTA/conf/vesta.conf"
 cat >"$VESTA/data/users/alice/user.conf" <<'EOF'
@@ -459,6 +494,7 @@ U_DOCKER_CPUS='0.000'
 U_DOCKER_MEMORY_MB='0'
 U_DOCKER_PIDS='0'
 U_DOCKER_STORAGE_MB='0'
+U_DOCKER_REGISTRY_MB='0'
 U_DOCKER_PORTS='0'
 U_DOCKER_SECRETS='0'
 U_DOCKER_VOLUMES='0'
@@ -495,5 +531,27 @@ grep -Fq 'Docker package limits are invalid' "$change_root/oversized.out" \
 [[ ! -s "$mutations" ]] || fail 'forced oversized update reached package mutation'
 [[ "$(sha256sum "$VESTA/data/users/alice/user.conf")" == "$change_user_before" ]] \
     || fail 'forced oversized update changed user.conf'
+
+cat >"$VESTA/data/packages/registry.pkg" <<'EOF'
+DOCKER_CONTAINERS='1'
+DOCKER_PROJECTS='2'
+DOCKER_REGISTRY_MB='10'
+SHELL='bash'
+EOF
+: >"$mutations"
+if VX_TEST_REPO_ROOT="$repo_root" VX_TEST_MUTATIONS="$mutations" \
+    VX_TEST_COMMIT_FAIL=yes \
+    "$repo_root/bin/v-change-user-package" alice registry yes \
+    >"$change_root/registry-rollback.out" 2>&1; then
+    fail 'package transition succeeded after Harbor commit failure'
+fi
+[[ "$(sha256sum "$VESTA/data/users/alice/user.conf")" == "$change_user_before" ]] \
+    || fail 'Harbor transition failure did not restore exact user.conf content'
+grep -Fq 'rollback' "$mutations" \
+    || fail 'Harbor transition failure did not restore the previous quota'
+[[ "$(sed -n '1p' "$mutations")" == provider-lock ]] \
+    || fail 'package transition did not take the provider lock first'
+[[ "$(sed -n '2p' "$mutations")" == lock ]] \
+    || fail 'package transition did not take the owner lock second'
 
 echo "Compose package integration tests passed."

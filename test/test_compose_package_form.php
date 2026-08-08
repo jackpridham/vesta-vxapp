@@ -15,6 +15,7 @@ $expected = array(
     'DOCKER_MEMORY_MB' => '4096',
     'DOCKER_PIDS' => '512',
     'DOCKER_STORAGE_MB' => '8192',
+    'DOCKER_REGISTRY_MB' => '40960',
     'DOCKER_PORTS' => '6',
     'DOCKER_SECRETS' => '12',
     'DOCKER_VOLUMES' => '4',
@@ -31,6 +32,7 @@ $fields = array(
     'DOCKER_MEMORY_MB',
     'DOCKER_PIDS',
     'DOCKER_STORAGE_MB',
+    'DOCKER_REGISTRY_MB',
     'DOCKER_PORTS',
     'DOCKER_SECRETS',
     'DOCKER_VOLUMES',
@@ -109,7 +111,7 @@ if ($lines === false) {
 }
 $line_list = explode("\n", rtrim($lines, "\n"));
 if (count($line_list) !== count($fields)) {
-    fail_package_test('package serialization did not emit exactly nine lines');
+    fail_package_test('package serialization emitted the wrong number of lines');
 }
 foreach ($fields as $index => $field) {
     $expected_line = $field."='".$expected[$field]."'";
@@ -120,6 +122,13 @@ foreach ($fields as $index => $field) {
 
 if (vx_compose_package_lines(array('DOCKER_PROJECTS' => '-1')) !== false) {
     fail_package_test('invalid package values were serialized');
+}
+
+$measured = $expected;
+$measured['U_DOCKER_REGISTRY_MB'] = '123';
+$measured_lines = vx_compose_package_lines($measured);
+if ($measured_lines === false || strpos($measured_lines, 'U_DOCKER_REGISTRY_MB') !== false) {
+    fail_package_test('measured registry usage was accepted from a package form');
 }
 
 echo "Compose package form tests passed.\n";

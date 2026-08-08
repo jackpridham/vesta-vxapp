@@ -18,6 +18,7 @@ force=$3
 source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
 source $VESTA/func/vx/compose/main.sh
+source $VESTA/func/vx/harbor/main.sh
 source $VESTA/conf/vesta.conf
 
 is_package_avalable() {
@@ -153,6 +154,7 @@ DOCKER_CPUS='$DOCKER_CPUS'
 DOCKER_MEMORY_MB='$DOCKER_MEMORY_MB'
 DOCKER_PIDS='$DOCKER_PIDS'
 DOCKER_STORAGE_MB='$DOCKER_STORAGE_MB'
+DOCKER_REGISTRY_MB='$DOCKER_REGISTRY_MB'
 DOCKER_PORTS='$DOCKER_PORTS'
 DOCKER_SECRETS='$DOCKER_SECRETS'
 DOCKER_VOLUMES='$DOCKER_VOLUMES'
@@ -198,6 +200,7 @@ U_DOCKER_CPUS='$U_DOCKER_CPUS'
 U_DOCKER_MEMORY_MB='$U_DOCKER_MEMORY_MB'
 U_DOCKER_PIDS='$U_DOCKER_PIDS'
 U_DOCKER_STORAGE_MB='$U_DOCKER_STORAGE_MB'
+U_DOCKER_REGISTRY_MB='$U_DOCKER_REGISTRY_MB'
 U_DOCKER_PORTS='$U_DOCKER_PORTS'
 U_DOCKER_SECRETS='$U_DOCKER_SECRETS'
 U_DOCKER_VOLUMES='$U_DOCKER_VOLUMES'
@@ -205,7 +208,33 @@ U_BACKUPS='$U_BACKUPS'
 LANGUAGE='$LANGUAGE'
 NOTIFICATIONS='$NOTIFICATIONS'
 TIME='$TIME'
-DATE='$DATE'" > $USER_DATA/user.conf
+DATE='$DATE'" > "$transition_user_conf_new"
+    chmod --reference="$transition_user_conf_snapshot" "$transition_user_conf_new" \
+        && chown --reference="$transition_user_conf_snapshot" "$transition_user_conf_new" \
+        && mv -fT -- "$transition_user_conf_new" "$USER_DATA/user.conf"
+    check_result $? "User package state update failed"
+}
+
+harbor_package_transition_cleanup() {
+    local result=$?
+    trap - EXIT
+    if [[ "${harbor_package_transition_complete:-no}" != yes \
+        && -n "${transition_user_conf_snapshot:-}" ]]; then
+        if [[ -f "$transition_user_conf_snapshot" ]]; then
+            cp -p -- "$transition_user_conf_snapshot" "$USER_DATA/user.conf" || result=1
+        fi
+        if [[ -n "${transition_token:-}" ]]; then
+            vx_harbor_package_transition_rollback "$user" "$transition_token" \
+                || result=1
+        fi
+    fi
+    [[ -z "${transition_user_conf_new:-}" ]] \
+        || rm -f -- "$transition_user_conf_new"
+    [[ -z "${transition_user_conf_snapshot:-}" ]] \
+        || rm -f -- "$transition_user_conf_snapshot"
+    vx_compose_shell_access_lock_release 2>/dev/null || :
+    vx_harbor_provider_lock_release 2>/dev/null || :
+    exit "$result"
 }
 
 
@@ -223,9 +252,13 @@ else
     is_compose_package_avalable
 fi
 
+vx_harbor_provider_prepare
+check_result $? "Harbor provider state preparation failed"
+vx_harbor_provider_lock_acquire shared
+check_result $? "Harbor provider lock failed"
 vx_compose_shell_access_lock_acquire "$user"
 check_result $? "Compose owner access lock failed"
-trap 'vx_compose_shell_access_lock_release' EXIT
+trap harbor_package_transition_cleanup EXIT
 vx_compose_shell_access_deny_establish "$user"
 check_result $? "Compose shell access deny marker failed"
 vx_compose_shell_group_revoke "$user"
@@ -237,7 +270,18 @@ check_result $? "Compose shell access revocation failed"
 #----------------------------------------------------------#
 
 # Changing user package
+transition_user_conf_snapshot="$(mktemp "$USER_DATA/.user.conf.snapshot.XXXXXX")"
+check_result $? "User package snapshot failed"
+cp -p -- "$USER_DATA/user.conf" "$transition_user_conf_snapshot"
+check_result $? "User package snapshot failed"
+transition_user_conf_new="$(mktemp "$USER_DATA/.user.conf.new.XXXXXX")"
+check_result $? "User package state staging failed"
+transition_token="$(vx_harbor_package_transition_prepare \
+    "$user" "$DOCKER_REGISTRY_MB")"
+check_result $? 'Harbor registry quota transition rejected' "$E_LIMIT"
 change_user_package
+vx_harbor_package_transition_commit "$user" "$transition_token"
+check_result $? 'Harbor registry quota transition commit failed'
 
 # Update user shell
 shell_conf=$(echo "$pkg_data" | grep 'SHELL' | cut -f 2 -d \')
@@ -259,6 +303,7 @@ fi
 
 vx_compose_shell_access_transition_complete "$user"
 check_result $? "Compose shell access reconciliation failed"
+harbor_package_transition_complete=yes
 
 
 #----------------------------------------------------------#

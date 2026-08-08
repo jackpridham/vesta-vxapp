@@ -243,6 +243,7 @@ sort-star="<?if($_SESSION['favourites']['PACKAGE'][$key] == 1) echo '1'; else ec
                     <div class="l-unit__stat-col l-unit__stat-col--left"><?=__('Docker')?>:</div>
                     <div class="l-unit__stat-col l-unit__stat-col--right">
                       <b><?=(isset($data[$key]['DOCKER_CONTAINERS']) && $data[$key]['DOCKER_CONTAINERS'] !== '') ? $data[$key]['DOCKER_CONTAINERS'] : '0'?></b>
+                      / Registry <b><?=(isset($data[$key]['DOCKER_REGISTRY_MB']) && $data[$key]['DOCKER_REGISTRY_MB'] !== '') ? $data[$key]['DOCKER_REGISTRY_MB'] : '0'?> MB</b>
                     </div>
                   </div>
                 </td>

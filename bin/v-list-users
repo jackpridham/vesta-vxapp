@@ -55,6 +55,7 @@ json_list() {
         "DOCKER_MEMORY_MB": "'$DOCKER_MEMORY_MB'",
         "DOCKER_PIDS": "'$DOCKER_PIDS'",
         "DOCKER_STORAGE_MB": "'$DOCKER_STORAGE_MB'",
+        "DOCKER_REGISTRY_MB": "'$DOCKER_REGISTRY_MB'",
         "DOCKER_PORTS": "'$DOCKER_PORTS'",
         "DOCKER_SECRETS": "'$DOCKER_SECRETS'",
         "DOCKER_VOLUMES": "'$DOCKER_VOLUMES'",
@@ -98,6 +99,7 @@ json_list() {
         "U_DOCKER_MEMORY_MB": "'$U_DOCKER_MEMORY_MB'",
         "U_DOCKER_PIDS": "'$U_DOCKER_PIDS'",
         "U_DOCKER_STORAGE_MB": "'$U_DOCKER_STORAGE_MB'",
+        "U_DOCKER_REGISTRY_MB": "'$U_DOCKER_REGISTRY_MB'",
         "U_DOCKER_PORTS": "'$U_DOCKER_PORTS'",
         "U_DOCKER_SECRETS": "'$U_DOCKER_SECRETS'",
         "U_DOCKER_VOLUMES": "'$U_DOCKER_VOLUMES'",
@@ -114,8 +116,8 @@ json_list() {
 
 # SHELL list function
 shell_list() {
-    echo "USER   PKG   WEB   DNS   MAIL   DB   DOCKER   DISK   BW   SPND   DATE"
-    echo "----   ---   ---   ---   ----   --   ------   ----   --   ----   ----"
+    echo "USER   PKG   WEB   DNS   MAIL   DB   DOCKER   DISK   BW   SPND   DATE   REGISTRY   U_REGISTRY"
+    echo "----   ---   ---   ---   ----   --   ------   ----   --   ----   ----   --------   ----------"
     while read USER; do
         if [ ! -f "$VESTA/data/users/$USER/user.conf" ]; then
             continue;
@@ -126,7 +128,7 @@ shell_list() {
         U_DOCKER_CONTAINERS=${U_DOCKER_CONTAINERS-0}
         vx_compose_package_apply_defaults
         echo -n "$USER $PACKAGE $U_WEB_DOMAINS $U_DNS_DOMAINS $U_MAIL_DOMAINS"
-        echo " $U_DATABASES $U_DOCKER_CONTAINERS $U_DISK $U_BANDWIDTH $SUSPENDED $DATE"
+        echo " $U_DATABASES $U_DOCKER_CONTAINERS $U_DISK $U_BANDWIDTH $SUSPENDED $DATE $DOCKER_REGISTRY_MB $U_DOCKER_REGISTRY_MB"
     done < <(grep '@' /etc/passwd |cut -f1 -d:)
 }
 
@@ -154,7 +156,7 @@ plain_list() {
         echo -ne "$U_WEB_DOMAINS\t$U_WEB_SSL\t$U_WEB_ALIASES\t"
         echo -ne "$U_DNS_DOMAINS\t$U_DNS_RECORDS\t$U_MAIL_DOMAINS\t"
         echo -ne "$U_MAIL_DKIM\t$U_MAIL_ACCOUNTS\t$U_DATABASES\t"
-        echo -e "$U_DOCKER_CONTAINERS\t$U_CRON_JOBS\t$U_BACKUPS\t$LANGUAGE\t$TIME\t$DATE\t"
+        echo -e "$U_DOCKER_CONTAINERS\t$U_CRON_JOBS\t$U_BACKUPS\t$LANGUAGE\t$TIME\t$DATE\t$DOCKER_REGISTRY_MB\t$U_DOCKER_REGISTRY_MB\t"
     done < <(grep '@' /etc/passwd |cut -f1 -d:)
 }
 

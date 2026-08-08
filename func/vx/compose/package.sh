@@ -9,6 +9,7 @@ VX_COMPOSE_PACKAGE_FIELDS=(
     DOCKER_MEMORY_MB
     DOCKER_PIDS
     DOCKER_STORAGE_MB
+    DOCKER_REGISTRY_MB
     DOCKER_PORTS
     DOCKER_SECRETS
     DOCKER_VOLUMES
@@ -80,7 +81,9 @@ vx_compose_package_data_with_defaults() {
     for field in "${VX_COMPOSE_PACKAGE_FIELDS[@]}"; do
         if ! grep -q "^${field}=" <<<"$package_data"; then
             default_value=0
-            if [[ "$legacy_limit" == unlimited ]]; then
+            if [[ "$field" == DOCKER_REGISTRY_MB ]]; then
+                default_value=0
+            elif [[ "$legacy_limit" == unlimited ]]; then
                 default_value=unlimited
             elif normalized_legacy_limit="$(
                 vx_compose_package_integer_normalize "$legacy_limit"

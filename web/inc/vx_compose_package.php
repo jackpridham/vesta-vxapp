@@ -11,6 +11,7 @@ function vx_compose_package_fields()
         'DOCKER_MEMORY_MB',
         'DOCKER_PIDS',
         'DOCKER_STORAGE_MB',
+        'DOCKER_REGISTRY_MB',
         'DOCKER_PORTS',
         'DOCKER_SECRETS',
         'DOCKER_VOLUMES',
