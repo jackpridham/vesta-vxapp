@@ -51,6 +51,12 @@ files. Metadata files are mode `0600`. Secrets are mode `0600`, stored
 separately from metadata, and are never included in an unencrypted backup.
 Provider backups are system backups outside tenant Compose backup roots.
 
+Package quota transitions use `data/harbor/transactions/<owner>.json` plus a
+protected `user.conf` preimage. The secret-free journal is written atomically
+before Harbor mutation and records one expiring operation, old/new quota,
+package and user-state digests, observation generation, and rollback state.
+Recovery runs under provider-then-owner locks before another owner transition.
+
 ## Provider and owner states
 
 Provider mode is exactly `disabled` or `managed`. Owner reconciliation is
@@ -90,6 +96,11 @@ transactions. Provider install/update/backup/restore/disable use exclusive
 lock. Harbor-aware tenant/package/owner reconciliation takes shared provider
 lock before owner lock; ordinary Compose operations do not take a provider
 lock.
+
+Managed package quota changes accept only owner observations no more than 300
+seconds old and no more than 30 seconds in the future. The observation must
+carry an immutable generation, which is bound into the journal and signed
+transition token and must be revalidated by the authoritative quota setter.
 
 No external Harbor request may occur while a tenant project lock is held.
 Provider reconciliation that later needs a workload transaction must finish

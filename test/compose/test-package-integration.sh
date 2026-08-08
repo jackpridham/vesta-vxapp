@@ -276,6 +276,51 @@ grep -Fq 'DOCKER REGISTRY:' "$repo_root/bin/v-list-user" \
 grep -Fq 'U_REGISTRY' "$repo_root/bin/v-list-users" \
     || fail 'users shell output omits measured registry usage'
 
+list_root="$test_root/list-surfaces/vesta"
+mkdir -p "$list_root/func/vx/compose" "$list_root/data/packages" \
+    "$list_root/data/users/alice"
+cat >"$list_root/func/main.sh" <<'EOF'
+HOMEDIR='/home'
+check_args() { :; }
+is_format_valid() { :; }
+is_package_valid() { :; }
+is_object_valid() { :; }
+EOF
+cat >"$list_root/func/vx/compose/main.sh" <<'EOF'
+source "$VX_TEST_REPO_ROOT/func/vx/compose/package.sh"
+EOF
+cat >"$list_root/data/packages/registry.pkg" <<'EOF'
+DOCKER_CONTAINERS='1'
+DOCKER_REGISTRY_MB='25'
+EOF
+cat >"$list_root/data/users/alice/user.conf" <<'EOF'
+PACKAGE='registry'
+DOCKER_CONTAINERS='1'
+DOCKER_REGISTRY_MB='25'
+U_DOCKER_REGISTRY_MB='7'
+EOF
+package_json="$(VESTA="$list_root" VX_TEST_REPO_ROOT="$repo_root" \
+    "$repo_root/bin/v-list-user-package" registry json)"
+[[ "$(jq -r '.registry.DOCKER_REGISTRY_MB' <<<"$package_json")" == 25 ]] \
+    || fail 'package JSON registry entitlement format changed'
+package_shell="$(VESTA="$list_root" VX_TEST_REPO_ROOT="$repo_root" \
+    "$repo_root/bin/v-list-user-package" registry shell)"
+grep -Fxq 'DOCKER REGISTRY: 25 MB' <<<"$package_shell" \
+    || fail 'package shell registry entitlement format changed'
+user_json="$(VESTA="$list_root" VX_TEST_REPO_ROOT="$repo_root" \
+    "$repo_root/bin/v-list-user" alice json)"
+[[ "$(jq -r '.alice.DOCKER_REGISTRY_MB,.alice.U_DOCKER_REGISTRY_MB' \
+    <<<"$user_json")" == $'25\n7' ]] \
+    || fail 'user JSON registry entitlement/usage format changed'
+user_shell="$(VESTA="$list_root" VX_TEST_REPO_ROOT="$repo_root" \
+    "$repo_root/bin/v-list-user" alice shell)"
+grep -Fxq 'DOCKER REGISTRY: 7/25 MB' <<<"$user_shell" \
+    || fail 'user shell registry entitlement/usage format changed'
+user_plain="$(VESTA="$list_root" VX_TEST_REPO_ROOT="$repo_root" \
+    "$repo_root/bin/v-list-user" alice plain)"
+[[ "$(awk -F '\t' '{print $(NF-1) ":" $NF}' <<<"$user_plain")" == 25:7 ]] \
+    || fail 'user plain registry fields are not appended in exact order'
+
 package_test_root="$test_root/package-validation"
 export VESTA="$package_test_root/vesta"
 package_source="$package_test_root/source"
@@ -463,20 +508,56 @@ EOF
 cat >"$VESTA/func/vx/compose/main.sh" <<'EOF'
 source "$VX_TEST_REPO_ROOT/func/vx/compose/quota.sh"
 source "$VX_TEST_REPO_ROOT/func/vx/compose/package.sh"
-vx_compose_shell_access_lock_acquire() { printf 'lock\n' >>"$VX_TEST_MUTATIONS"; }
+vx_compose_shell_access_lock_acquire() {
+    VX_COMPOSE_ACCESS_LOCK_OWNER="$1"
+    printf 'lock\n' >>"$VX_TEST_MUTATIONS"
+}
 vx_compose_shell_access_lock_release() { :; }
-vx_compose_shell_access_deny_establish() { printf 'deny\n' >>"$VX_TEST_MUTATIONS"; }
-vx_compose_shell_group_revoke() { printf 'revoke\n' >>"$VX_TEST_MUTATIONS"; }
-vx_compose_shell_access_transition_complete() { printf 'complete\n' >>"$VX_TEST_MUTATIONS"; }
+vx_compose_shell_access_deny_establish() {
+    printf 'yes\n' >"$VX_TEST_DENY_STATE"
+    printf 'deny\n' >>"$VX_TEST_MUTATIONS"
+}
+vx_compose_shell_access_deny_is_clear() { [[ "$(<"$VX_TEST_DENY_STATE")" == no ]]; }
+vx_compose_shell_group_revoke() {
+    printf 'no\n' >"$VX_TEST_GROUP_STATE"
+    printf 'revoke\n' >>"$VX_TEST_MUTATIONS"
+}
+vx_compose_shell_group_state() { [[ "$(<"$VX_TEST_GROUP_STATE")" == yes ]]; }
+vx_compose_shell_passwd_by_name() {
+    printf '%s:x:1:1::/home/%s:%s\n' "$1" "$1" "$(<"$VX_TEST_SHELL_STATE")"
+}
+vx_compose_shell_access_transition_complete() {
+    printf 'yes\n' >"$VX_TEST_GROUP_STATE"
+    printf 'no\n' >"$VX_TEST_DENY_STATE"
+    printf 'complete\n' >>"$VX_TEST_MUTATIONS"
+}
 EOF
 cat >"$VESTA/func/vx/harbor/main.sh" <<'EOF'
 vx_harbor_provider_prepare() { :; }
 vx_harbor_provider_lock_acquire() { printf 'provider-lock\n' >>"$VX_TEST_MUTATIONS"; }
 vx_harbor_provider_lock_release() { :; }
+_vx_harbor_fsync() { :; }
+_vx_harbor_transition_shell_set() {
+    printf '%s\n' "$2" >"$VX_TEST_SHELL_STATE"
+    printf 'shell:%s\n' "$2" >>"$VX_TEST_MUTATIONS"
+}
 vx_harbor_package_transition_prepare() {
-    printf 'prepare:%s\n' "$2" >>"$VX_TEST_MUTATIONS"
+    printf 'prepare:%s:%s\n' "$2" "$3" >>"$VX_TEST_MUTATIONS"
+    printf '%s\n' "$5" >"$VX_TEST_OLD_SHELL"
+    printf '%s\n' "$6" >"$VX_TEST_OLD_GROUP"
+    printf '%s\n' "$7" >"$VX_TEST_OLD_DENY"
+    cp -p "$USER_DATA/user.conf" "$VX_TEST_CONF_SNAPSHOT"
     printf 'disabled.token\n'
 }
+vx_harbor_package_transition_recover() {
+    printf 'recover\n' >>"$VX_TEST_MUTATIONS"
+    [[ ! -f "$VX_TEST_CONF_SNAPSHOT" ]] \
+        || cp -p "$VX_TEST_CONF_SNAPSHOT" "$USER_DATA/user.conf"
+    printf '%s\n' "$(<"$VX_TEST_OLD_SHELL")" >"$VX_TEST_SHELL_STATE"
+    printf '%s\n' "$(<"$VX_TEST_OLD_GROUP")" >"$VX_TEST_GROUP_STATE"
+    printf '%s\n' "$(<"$VX_TEST_OLD_DENY")" >"$VX_TEST_DENY_STATE"
+}
+vx_harbor_package_transition_user_conf_applied() { printf 'conf-applied\n' >>"$VX_TEST_MUTATIONS"; }
 vx_harbor_package_transition_commit() {
     printf 'commit\n' >>"$VX_TEST_MUTATIONS"
     [[ "${VX_TEST_COMMIT_FAIL:-no}" != yes ]]
@@ -502,6 +583,16 @@ EOF
 change_user_before="$(sha256sum "$VESTA/data/users/alice/user.conf")"
 mutations="$change_root/mutations"
 : >"$mutations"
+export VX_TEST_SHELL_STATE="$change_root/shell.state"
+export VX_TEST_GROUP_STATE="$change_root/group.state"
+export VX_TEST_DENY_STATE="$change_root/deny.state"
+export VX_TEST_OLD_SHELL="$change_root/old-shell.state"
+export VX_TEST_OLD_GROUP="$change_root/old-group.state"
+export VX_TEST_OLD_DENY="$change_root/old-deny.state"
+export VX_TEST_CONF_SNAPSHOT="$change_root/user.conf.before"
+printf '/bin/bash\n' >"$VX_TEST_SHELL_STATE"
+printf 'yes\n' >"$VX_TEST_GROUP_STATE"
+printf 'no\n' >"$VX_TEST_DENY_STATE"
 cat >"$VESTA/data/packages/under.pkg" <<'EOF'
 DOCKER_CONTAINERS='1'
 DOCKER_PROJECTS='1'
@@ -536,7 +627,7 @@ cat >"$VESTA/data/packages/registry.pkg" <<'EOF'
 DOCKER_CONTAINERS='1'
 DOCKER_PROJECTS='2'
 DOCKER_REGISTRY_MB='10'
-SHELL='bash'
+SHELL='sh'
 EOF
 : >"$mutations"
 if VX_TEST_REPO_ROOT="$repo_root" VX_TEST_MUTATIONS="$mutations" \
@@ -547,7 +638,13 @@ if VX_TEST_REPO_ROOT="$repo_root" VX_TEST_MUTATIONS="$mutations" \
 fi
 [[ "$(sha256sum "$VESTA/data/users/alice/user.conf")" == "$change_user_before" ]] \
     || fail 'Harbor transition failure did not restore exact user.conf content'
-grep -Fq 'rollback' "$mutations" \
+[[ "$(<"$VX_TEST_SHELL_STATE")" == /bin/bash ]] \
+    || fail 'Harbor transition failure did not restore the login shell'
+[[ "$(<"$VX_TEST_GROUP_STATE")" == yes ]] \
+    || fail 'Harbor transition failure did not restore Compose group membership'
+[[ "$(<"$VX_TEST_DENY_STATE")" == no ]] \
+    || fail 'Harbor transition failure did not restore the deny marker state'
+grep -Fq 'recover' "$mutations" \
     || fail 'Harbor transition failure did not restore the previous quota'
 [[ "$(sed -n '1p' "$mutations")" == provider-lock ]] \
     || fail 'package transition did not take the provider lock first'
