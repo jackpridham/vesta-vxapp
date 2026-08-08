@@ -37,6 +37,16 @@ VX_HARBOR_HEALTH_CHECK=/bin/false
 [[ -d "$VESTA/data/harbor/release" ]] || fail 'release/data retention root removed'
 
 VX_HARBOR_HEALTH_CHECK=/bin/true
+for fail_phase in prerequisite release generation compose migration health socket ingress; do
+    _vx_harbor_install_phase() { [[ "$1" != "$fail_phase" ]]; }
+    printf 'prior-unit\n' >"$VX_HARBOR_SYSTEMD_TARGET"
+    printf 'prior-ingress\n' >"$VX_HARBOR_NGINX_TARGET"
+    ! vx_harbor_install || fail "$fail_phase failure was accepted"
+    [[ "$(cat "$VX_HARBOR_SYSTEMD_TARGET")" == prior-unit ]] || fail "$fail_phase unit rollback failed"
+    [[ "$(cat "$VX_HARBOR_NGINX_TARGET")" == prior-ingress ]] || fail "$fail_phase ingress rollback failed"
+    [[ "$(jq -r .MODE "$VESTA/data/harbor/provider.json")" == disabled ]] || fail "$fail_phase provider rollback failed"
+done
+_vx_harbor_install_phase() { :; }
 vx_harbor_install || fail 'valid transactional install failed'
 [[ "$(jq -r .MODE "$VESTA/data/harbor/provider.json")" == managed ]] || fail 'provider not managed after commit'
 grep -q '^name: vesta-harbor$' "$VESTA/data/harbor/release/current/compose.yaml" || fail 'fixed project missing'

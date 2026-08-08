@@ -10,6 +10,8 @@ _vx_harbor_install_requirements() {
     [[ "$available" =~ ^[0-9]+$ ]] && (( available >= ${VX_HARBOR_MIN_FREE_KB:-10485760} ))
 }
 
+_vx_harbor_install_phase() { :; }
+
 _vx_harbor_install_compose_render() {
     local manifest="$1" destination="$2" name digest
     {
@@ -65,10 +67,13 @@ vx_harbor_install() {
     trap '_vx_harbor_install_rollback; vx_harbor_provider_lock_release 2>/dev/null || :; exit 1' HUP INT TERM
     _vx_harbor_install_apply() {
         _vx_harbor_install_requirements || return 1
+        _vx_harbor_install_phase prerequisite || return 1
         vx_harbor_release_stage "$stage" || return 1
+        _vx_harbor_install_phase release || return 1
         manifest="$(vx_harbor_release_manifest)"; compose="$stage/compose.yaml"; ingress="$stage/harbor-registry.conf"
         _vx_harbor_install_compose_render "$manifest" "$compose" || return 1
         vx_harbor_ingress_render "$ingress" || return 1
+        _vx_harbor_install_phase generation || return 1
         if [[ "$current_existed" == yes ]]; then /usr/bin/mv "$root/release/current" "$root/release/.prior-current" || return 1; fi
         /usr/bin/mv "$stage" "$root/release/current" || return 1
         candidate_activated=yes
@@ -78,10 +83,15 @@ vx_harbor_install() {
         "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" daemon-reload || return 1
         "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" enable vesta-harbor.service || return 1
         "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" start vesta-harbor.service || return 1
+        _vx_harbor_install_phase compose || return 1
         "${VX_HARBOR_MIGRATION_CHECK:-/bin/true}" || return 1
+        _vx_harbor_install_phase migration || return 1
         "${VX_HARBOR_HEALTH_CHECK:-/bin/true}" || return 1
+        _vx_harbor_install_phase health || return 1
         vx_harbor_socket_validate || return 1
+        _vx_harbor_install_phase socket || return 1
         vx_harbor_ingress_activate "$ingress" || return 1
+        _vx_harbor_install_phase ingress || return 1
     }
     if ! _vx_harbor_install_apply; then
         _vx_harbor_install_rollback
