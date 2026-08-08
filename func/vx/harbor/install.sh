@@ -64,16 +64,27 @@ text=re.sub(r'(?m)^    logging:\n      driver: "syslog"\n      options:\n(?:    
 proxy=re.search(r'(?ms)^(  proxy:\n.*?)(?=^  [a-z]|^networks:)', text)
 if not proxy: raise SystemExit(1)
 block=proxy.group(1)
-if re.search(r'(?m)^    (?:user|cap_drop|cap_add|security_opt):', block): raise SystemExit(1)
-block=block.replace('  proxy:\n', '''  proxy:
-    user: "0:0"
-    cap_drop:
+if re.search(r'(?m)^    (?:user|security_opt):', block): raise SystemExit(1)
+upstream_hardening='''    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - NET_BIND_SERVICE
+'''
+if block.count(upstream_hardening) != 1: raise SystemExit(1)
+managed_hardening='''    cap_drop:
       - ALL
     cap_add:
       - SETGID
       - SETUID
     security_opt:
       - no-new-privileges:true
+'''
+block=block.replace(upstream_hardening, managed_hardening, 1)
+block=block.replace('  proxy:\n', '''  proxy:
+    user: "0:0"
 ''', 1)
 block=block.replace('    volumes:\n', '    volumes:\n      - /run/vesta-harbor:/run/vesta-harbor\n', 1)
 text='name: vesta-harbor\n'+text[:proxy.start(1)]+block+text[proxy.end(1):]

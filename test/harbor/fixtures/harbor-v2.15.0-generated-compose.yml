@@ -72,6 +72,14 @@ services:
   proxy:
     image: goharbor/nginx-photon:v2.15.0
     container_name: nginx
+    restart: always
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - NET_BIND_SERVICE
     volumes:
       - ./common/config/nginx:/etc/nginx:ro
     ports:
