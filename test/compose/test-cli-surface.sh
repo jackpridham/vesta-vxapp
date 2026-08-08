@@ -11,6 +11,7 @@ fail() {
 commands=(
     v-docker
     v-run-user-docker-command
+    v-pull-docker-project-image
     v-add-docker-project
     v-validate-docker-project
     v-deploy-docker-project
@@ -128,6 +129,12 @@ grep -Fq '# options: USER IMAGE [FORMAT]' \
 grep -Fq 'vx_compose_image_update_candidate' \
     "$repo_root/bin/v-list-docker-image-update-candidate" \
     || fail "image update command is not a thin helper adapter"
+grep -Fq '# options: ACTOR USER PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 EXPECTED_CURRENT_REVISION IMAGE' \
+    "$repo_root/bin/v-pull-docker-project-image" \
+    || fail 'tenant image pull options are incorrect'
+grep -Fq 'vx_compose_image_pull_for_preview' \
+    "$repo_root/bin/v-pull-docker-project-image" \
+    || fail 'tenant image pull command is not a thin immutable helper adapter'
 grep -Fq '# options: ACTOR USER IMAGE_REFERENCE IMAGE_ID OS ARCHITECTURE PROFILE PROFILE_VERSION EXPIRES' \
     "$repo_root/bin/v-approve-docker-image" \
     || fail 'local image approval options are incorrect'

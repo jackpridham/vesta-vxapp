@@ -82,7 +82,12 @@ cat >/usr/local/vesta/bin/v-run-docker-project-action <<'EOF'
 #!/usr/bin/env bash
 printf 'action %s\n' "$*" >>/tmp/vx-shell-root-test/docker.log
 EOF
-chmod 0755 /usr/local/vesta/bin/v-list-docker-projects /usr/local/vesta/bin/v-list-docker-project-health /usr/local/vesta/bin/v-run-docker-project-action
+cat >/usr/local/vesta/bin/v-pull-docker-project-image <<'EOF'
+#!/usr/bin/env bash
+printf 'image-pull %s\n' "$*" >>/tmp/vx-shell-root-test/docker.log
+printf '{}\n'
+EOF
+chmod 0755 /usr/local/vesta/bin/v-list-docker-projects /usr/local/vesta/bin/v-list-docker-project-health /usr/local/vesta/bin/v-run-docker-project-action /usr/local/vesta/bin/v-pull-docker-project-image
 /usr/local/vesta/bin/v-install-docker-shell-access
 visudo -cf /etc/sudoers.d/vesta-compose-users >/dev/null
 
@@ -95,6 +100,21 @@ deny_clean() {
 as_alice /usr/local/bin/v-docker projects json >/dev/null
 as_alice /usr/local/bin/v-docker health app json >/dev/null
 as_alice /usr/local/bin/v-docker start app >/dev/null
+digest="$(printf 'a%.0s' {1..64})"
+preview_id="$(printf 'b%.0s' {1..32})"
+source_sha="$(printf 'c%.0s' {1..64})"
+candidate_sha="$(printf 'd%.0s' {1..64})"
+as_alice /usr/local/bin/v-docker image-pull \
+    app "$preview_id" "$source_sha" "$candidate_sha" 1 \
+    "registry.example/app@sha256:$digest" >/dev/null
+grep -Fxq "image-pull vx-shell-alice vx-shell-alice app $preview_id $source_sha $candidate_sha 1 registry.example/app@sha256:$digest" \
+    "$docker_log" || fail 'tenant immutable image pull dispatch is incorrect'
+deny_clean /usr/local/bin/v-docker image-pull \
+    app "$preview_id" "$source_sha" "$candidate_sha" 1 registry.example/app:latest
+deny_clean /usr/local/bin/v-docker image-pull app "$preview_id" \
+    "$source_sha" "$candidate_sha" 1 "registry.example/app@sha256:$digest" extra
+deny_clean /usr/local/bin/v-docker image-pull vx-shell-bob app "$preview_id" \
+    "$source_sha" "$candidate_sha" 1 "registry.example/app@sha256:$digest"
 deny_clean /usr/local/bin/v-docker health admin json
 deny_clean /usr/local/bin/v-docker health ../vx-shell-bob/app json
 deny_clean sudo -n /usr/bin/docker ps

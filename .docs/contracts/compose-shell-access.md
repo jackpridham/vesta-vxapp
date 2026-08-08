@@ -77,6 +77,7 @@ routes	PROJECT [json|plain]
 backups	PROJECT [json|plain]
 secrets	PROJECT [json|plain]
 registries	[json|plain]
+image-pull	PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION IMAGE@sha256:DIGEST
 drift	PROJECT [json|plain]
 probe	PROJECT SERVICE [json|plain]
 start	PROJECT
@@ -114,13 +115,21 @@ a broker-created protected snapshot and are never command-line arguments.
 Route and alert operations are limited to the owner's Vesta-owned model.
 Project removal is explicit and retained-data only.
 
+`image-pull` is not a free-standing pull. The broker derives the owner, fixes
+the profile to `standard`, and forwards the exact protected preview tuple plus
+one immutable repository digest. The adapter verifies the unexpired
+owner/project preview, current expected revision, and exactly one occurrence
+of that image in protected `canonical.json` before registry inspection or
+pull. It accepts no tag, URL, owner, actor, profile, platform, credential, or
+Docker option argument.
+
 There is no tenant purge form. Managed binds, named volumes, backups, routes,
 and other retained data follow the Compose storage and backup contracts.
 
 ## Administrator-only exclusions
 
-Tenants cannot select `admin-approved`, `slave-vxapp`, or any other privileged
-profile. They cannot supply a different actor or owner, impersonate another
+Tenants cannot select `admin-approved` or any other privileged profile. They
+cannot supply a different actor or owner, impersonate another
 user, access another user's project, or call the underlying `v-*` command
 adapters directly. The following remain administrator-only:
 
@@ -128,7 +137,9 @@ adapters directly. The following remain administrator-only:
   and `v-delete-docker-project-profile`;
 - role, capability, delegated-actor, ingress-consumer mutation, and audit
   administration;
-- image pull/load/approval/trust and migration operations;
+- arbitrary image pull, image load, local-image approval, trust-policy, and
+  migration operations; tenant pull is limited to the exact preview-bound
+  immutable form above;
 - installation, group reconciliation, sudo-policy changes, and filesystem
   administration; and
 - any raw Docker, raw Compose, Docker socket, host-path, namespace,
@@ -169,6 +180,16 @@ secrets, tenant paths, Docker environment, and raw adapter stderr never appear
 in argv, process metadata, environment, stdout, JSON, HTML, logs, audit, or
 unencrypted backup output. Reads expose only the contract's bounded redacted
 forms.
+
+Tenant image pull uses the owner's protected registry configuration. Lock
+order is owner access, project, global tenant pull, then owner registry. Before
+Docker mutation it admits exactly one Linux/approved-architecture manifest and
+a positive bounded config-plus-layer size. Successful pull records protected,
+owner-scoped `registry-pull` provenance bound to the preview tuple; Docker
+`RepoDigests` alone is never authority. Manifest output is limited to 1 MiB,
+the layer count is limited to 128, foreign descriptors are rejected, Docker
+calls have fixed timeouts with raw output suppressed, and post-pull local size
+must remain within the configured image limit.
 
 The broker performs no raw Docker/Compose/`exec`/socket/group operation for a
 tenant. It uses fixed root-owned Vesta command paths and bounded redacted

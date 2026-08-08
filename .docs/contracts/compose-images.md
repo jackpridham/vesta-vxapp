@@ -7,12 +7,59 @@ may be retained as operator intent, but the accepted revision records the
 resolved repository digest and local image ID. Builds on the managed host are
 rejected.
 
-## Public pull
+## Administrator pull
 
 `v-pull-docker-image` accepts owner and image reference, uses the owner's
 protected Docker config, pulls explicitly, verifies the resulting reference,
 architecture, and image ID, and records a redacted audit event. Policy may
-restrict registries and image patterns by profile.
+restrict registries and image patterns by profile. This command does not
+create tenant `registry-pull` provenance.
+
+## Preview-bound tenant pull
+
+The only tenant pull form is:
+
+```text
+v-docker image-pull PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 \
+  REVISION IMAGE@sha256:DIGEST
+```
+
+The owner is kernel/sudo-derived and profile authority is fixed to `standard`.
+No owner, actor, profile, tag, URL, platform, credential, or Docker option is
+accepted. Under the project lock, the dedicated adapter verifies the exact
+unexpired protected preview, current expected revision, and that the image
+occurs exactly once in its `canonical.json`.
+
+Lock order is owner access, project, global tenant pull, then owner registry.
+Using only the owner's protected Docker configuration, the adapter inspects
+the manifest before pull. A single manifest must be Linux on the approved
+architecture; an index must contain exactly one such child, which is inspected
+separately. Manifest output is limited to 1 MiB, inspection and pull have fixed
+root-controlled timeouts, and raw Docker output is discarded. Config and layer
+sizes must be non-negative integers with a positive overflow-safe total no
+greater than `VX_COMPOSE_IMAGE_MAX_BYTES`; at most 128 layers are accepted.
+Every descriptor requires a SHA-256 digest. Foreign URLs and foreign or
+nondistributable media types are rejected. Malformed, ambiguous,
+wrong-platform, zero-sized, and oversized manifests fail before Docker image
+mutation.
+
+Post-pull inspection must report the exact requested repository digest, an
+exact SHA-256 image ID, Linux, the approved architecture, and a positive local
+Docker size no greater than `VX_COMPOSE_IMAGE_MAX_BYTES`. Protected owner
+metadata identifies delivery as `registry-pull` and binds the image, platform
+manifest, admitted and local sizes, project, preview ID, source/candidate
+digests, and expected revision. The record is a bounded, single-link,
+root-owned mode-0600 authorization file with an exact schema and durable
+replacement. New evidence is first durable but non-authoritative `pending`
+state. The owner registry lock remains held across backup, pull, pending write,
+audit, activation, and restoration. Audit records started and a durable
+`succeeded` event before the record is atomically activated; the audit file and
+its directory are synced before activation. If activation does not complete,
+the prior authority is restored and a later `failed` event records the terminal
+outcome. A crash can leave only rejected pending evidence, never unaudited
+active authority. Tenant output is a small redacted result, not the
+authorization record. Docker `RepoDigests` alone is runtime evidence, not pull
+provenance.
 
 ## Private registries
 
@@ -81,6 +128,17 @@ and are not implied.
 
 Schema-1 workload bundles consume this authority as defined by
 [Compose workload bundles](compose-workload-bundles.md).
+
+For `standard` resolution, authority is either matching secure
+`registry-pull` provenance for an immutable submitted reference or a matching
+unexpired administrator approval for the current image identity and installed
+standard/profile policy versions. A tag or locally built image does not become
+registry-delivered merely because Docker 29 reports a `RepoDigests` entry.
+Exact accepted-revision compatibility is available only while refreshing the
+identical protected service/reference/image-ID/digest/platform tuple from a
+valid schema-2 revision or the exact five-field legacy authority. It is never
+passed to add/change candidate resolution, never synthesizes pull provenance,
+and historical evidence bytes are never rewritten by this rule.
 
 ## Updates and rollback
 

@@ -243,34 +243,23 @@ Use this supply chain instead:
 1. Build and test the image on a developer builder or CI runner.
 2. Push it to an approved public or private registry.
 3. Resolve the pushed image to an immutable repository digest.
-4. Have the administrator/trusted-delivery process pull, verify, and approve
-   the exact image identity for this owner and installed policy/profile
-   version where required.
-5. Put the immutable reference in Compose, for example
+4. Put the immutable reference in Compose, for example
    `registry.example.com/team/app@sha256:<64-hex-digest>`.
+5. Stage a protected `standard` preview, pull that exact image through the
+   preview-bound tenant command, review, and apply the unchanged preview.
 
 A tag such as `latest` may identify build intent, but it is not deployment
 authority. Accepted revisions and rollback evidence bind exact image identity.
-Image pull, archive load, local-image approval, trust-policy administration,
-and migration remain operator-only operations.
+An ordinary tenant cannot issue a free-standing pull. After preview it may
+request only the immutable image that occurs exactly once in that protected
+candidate, using all server-returned preview fields. Vesta inspects and bounds
+the Linux/approved-architecture manifest before pulling with the owner's
+protected registry configuration, then records owner-scoped `registry-pull`
+provenance. Docker `RepoDigests` by itself is not delivery authority.
 
-For an image pulled by immutable registry digest, the operator uses the
-owner-scoped pull and trust interfaces:
-
-```bash
-sudo /usr/local/vesta/bin/v-pull-docker-image \
-  appuser \
-  registry.example.com/team/app@sha256:DIGEST
-sudo /usr/local/vesta/bin/v-verify-docker-image-trust \
-  appuser \
-  registry.example.com/team/app@sha256:DIGEST \
-  standard json
-```
-
-The trust result, not a successful pull by itself, decides whether policy
-accepts the image. If delivery is an offline local archive instead, the
-operator stages a root-owned mode-0600 archive and matching checksum in the
-approved protected staging directory, then uses:
+Archive load, local-image approval, mutable tags, trust-policy administration,
+and migration remain operator-only. For offline local delivery, the operator
+stages a root-owned mode-0600 archive and matching checksum, then uses:
 
 ```text
 v-load-docker-image USER ARCHIVE CHECKSUM
@@ -406,6 +395,10 @@ preview_id="$(jq -er '.PREVIEW_ID' <<<"$preview_json")"
 source_sha="$(jq -er '.SOURCE_SHA256' <<<"$preview_json")"
 candidate_sha="$(jq -er '.CANDIDATE_SHA256' <<<"$preview_json")"
 revision="$(jq -er '.EXPECTED_CURRENT_REVISION' <<<"$preview_json")"
+image='registry.example.com/team/app@sha256:<64-lowercase-hex-digest>'
+
+ssh appuser@vesta.example.com \
+  "/usr/local/bin/v-docker image-pull app $preview_id $source_sha $candidate_sha $revision $image"
 
 ssh appuser@vesta.example.com \
   "/usr/local/bin/v-docker apply app $preview_id $source_sha $candidate_sha $revision"
@@ -429,6 +422,14 @@ deployment wins the race, policy changes, entitlement changes, or the preview
 expires, apply fails closed; run preview again rather than editing any digest
 or revision.
 
+Run `image-pull` for each newly delivered immutable image before apply. Each
+requested image must occur exactly once in the protected candidate. The server
+revalidates preview owner, project, profile, expiry, both digests, and expected
+revision under the project lock, so this is not a general pull interface. An
+already delivered image needs no new pull. A candidate that repeats the same
+new image in multiple services requires an operator delivery path or a revised
+definition; the tenant command fails closed rather than widening authority.
+
 Apply holds the project lock through definition installation, runtime
 convergence, health and route checks, and rollback. A failed candidate is
 rolled back to the prior healthy definition/runtime where possible. Persistent
@@ -448,6 +449,7 @@ set -Eeuo pipefail
 : "${VESTA_OWNER:?set expected Vesta/Unix owner}"
 : "${VESTA_PROJECT:?set project}"
 : "${VESTA_MODE:?set add or change}"
+: "${VESTA_IMAGE:?set exact IMAGE@sha256:DIGEST from Compose}"
 VESTA_APPLY="${VESTA_APPLY:-no}"
 VESTA_APPROVED_PREVIEW="${VESTA_APPROVED_PREVIEW:-}"
 compose_file="${1:-compose.yaml}"
@@ -455,6 +457,7 @@ compose_file="${1:-compose.yaml}"
 [[ "$VESTA_OWNER" =~ ^[a-z][a-z0-9_-]{0,31}$ ]]
 [[ "$VESTA_PROJECT" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]
 [[ "$VESTA_MODE" == add || "$VESTA_MODE" == change ]]
+[[ "$VESTA_IMAGE" =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,181}@sha256:[a-f0-9]{64}$ ]]
 [[ "$VESTA_APPLY" == yes || "$VESTA_APPLY" == no ]]
 
 if [[ -n "$VESTA_APPROVED_PREVIEW" ]]; then
@@ -507,6 +510,9 @@ candidate_sha="$(jq -er '.CANDIDATE_SHA256' <<<"$preview_json")"
 revision="$(jq -er '.EXPECTED_CURRENT_REVISION' <<<"$preview_json")"
 
 ssh -- "$VESTA_SSH_TARGET" \
+  "/usr/local/bin/v-docker image-pull $VESTA_PROJECT $preview_id $source_sha $candidate_sha $revision $VESTA_IMAGE"
+
+ssh -- "$VESTA_SSH_TARGET" \
   "/usr/local/bin/v-docker apply $VESTA_PROJECT $preview_id $source_sha $candidate_sha $revision"
 
 ssh -- "$VESTA_SSH_TARGET" \
@@ -523,7 +529,9 @@ the wrong tenant. The preview job should redirect stdout to a protected
 mode-0600 artifact. A later approval job sets `VESTA_APPLY=yes` and
 `VESTA_APPROVED_PREVIEW` to that reviewed artifact. The apply job validates and
 uses those exact server-issued bytes; it does not create a replacement preview.
-It must run before the 15-minute expiry.
+It pulls only the exact immutable image named by `VESTA_IMAGE`, then applies
+the same tuple before the 15-minute expiry. For multiple distinct new images,
+repeat the preview-bound `image-pull` call for each one before apply.
 
 ## 7. SCP, rsync, and managed bind data
 
@@ -779,6 +787,7 @@ v-docker routes PROJECT [json|plain]
 v-docker backups PROJECT [json|plain]
 v-docker secrets PROJECT [json|plain]
 v-docker registries [json|plain]
+v-docker image-pull PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION IMAGE@sha256:DIGEST
 v-docker drift PROJECT [json|plain]
 v-docker probe PROJECT PROBE [json|plain]
 v-docker start PROJECT
@@ -838,9 +847,13 @@ ID, two digests, and expected revision.
 
 ### Private image cannot be deployed
 
-Confirm the tenant registry metadata, then ask the operator to verify the
-owner-scoped image pull/trust/approval evidence. A successful registry login
-does not waive image policy.
+Confirm tenant registry metadata and that Compose uses the exact immutable
+digest. Create a fresh preview, then pass its exact ID, source digest,
+candidate digest, revision, and image to `v-docker image-pull` before apply.
+Tags, images absent from the preview, duplicate occurrences, stale/expired
+previews, unapproved platforms, and oversized manifests fail closed. A
+successful registry login or Docker `RepoDigests` entry does not waive image
+policy. Local archives and mutable tags still require operator approval.
 
 ### Container is healthy but the domain does not work
 
@@ -876,9 +889,9 @@ The supported pipeline is therefore:
 ```text
 developer/CI build and test
         -> push immutable image digest
-        -> operator/trusted-delivery image verification
         -> SSH stdin Compose preview
         -> human or policy review of immutable preview evidence
+        -> preview-bound tenant image pull with exact tuple
         -> SSH apply with exact ID/digests/revision
         -> locked deploy, health, route convergence, or rollback
         -> health/drift/alerts/backup evidence

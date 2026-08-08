@@ -61,6 +61,31 @@ platform, profile version, policy version, and trust decision. Trust adapters
 run from fixed root-owned paths with an empty environment, immutable inputs,
 and bounded redacted output.
 
+An ordinary owner may pull only an immutable registry digest already bound to
+one unexpired protected `standard` preview:
+
+```text
+v-docker image-pull PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 \
+  REVISION IMAGE@sha256:DIGEST
+```
+
+The adapter verifies the preview and exact image occurrence under the project
+lock, performs bounded manifest admission before pull, and records secure
+owner `registry-pull` provenance. Standard resolution requires that provenance
+or a current administrator local-image approval; Docker `RepoDigests` alone is
+not authority. Tags, archives, builds, privileged profiles, image deletion,
+and raw Docker remain outside the tenant surface.
+
+Tenant pull limits manifest output to 1 MiB and 128 layers, rejects foreign
+descriptors, enforces fixed Docker timeouts with raw output suppressed, and
+checks both declared manifest bytes and post-pull local size. Pull authority
+uses an exact bounded root-owned record and durable audit events. A failed
+activation restores prior authority and appends a terminal failure after the
+prepared success event. The owner registry lock covers backup through audit and
+activation or restoration.
+Accepted-revision compatibility can refresh only an identical protected tuple;
+it is never candidate or pull authority.
+
 Registry credentials and secret values never appear in argv, metadata,
 environment, logs, UI, audit, or unencrypted backups. Managed secrets are
 root-owned mode-0600 files and public reads expose metadata only.
@@ -111,9 +136,14 @@ The broker derives identity from the kernel and sudo, requires owner equality
 and the `standard` profile, and accepts Compose and secret material only
 through bounded stdin. It grants no Docker-group or socket access, raw Docker
 surface, caller-selected owner/actor arguments, or direct tenant sudo access
-to existing `v-*` commands. `admin-approved`, `slave-vxapp`, administrator,
-and cross-owner operations remain excluded. Preview/apply stays immutable and
-digest/revision bound; all output remains bounded and redacted.
+to existing `v-*` commands. Privileged-profile, administrator, and cross-owner
+operations remain excluded. Preview/apply stays immutable and digest/revision
+bound; all output remains bounded and redacted.
+
+Image delivery is preview, then preview-bound pull, then apply. Pull reuses the
+exact server-issued tuple and follows owner-access, project,
+global-tenant-pull, owner-registry lock order. It cannot populate a general
+registry cache or pull an image absent from the protected candidate.
 
 Install, inspect, or repair derived access with these exact administrator
 commands:

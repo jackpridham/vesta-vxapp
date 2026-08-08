@@ -16,6 +16,9 @@
   and is the only definition passed to apply and persistent project storage.
 - Standard-project confirmation supplies and verifies `PREVIEW_ID`, `SOURCE_SHA256`,
   `CANDIDATE_SHA256`, and `EXPECTED_CURRENT_REVISION`.
+- A missing image may be pulled only after preview, using that same exact tuple
+  and one immutable image occurring exactly once in protected
+  `canonical.json`. Pull does not consume or replace the preview.
 - Missing, expired, linked, replaced, incorrectly owned/mode, digest-mismatched,
   or stale previews fail before desired state or Docker changes.
 - The same project lock is held across expected-revision verification,
@@ -30,11 +33,10 @@
   environment, or unredacted Docker errors.
 - Persistent application data is never represented as definition rollback.
 - The implementation has passed disposable-staging and production acceptance.
-  Production project `slave/slave-vxapp` is Vesta-managed at revision 4 as of
-  2026-07-31. This contract does not authorize a production mutation:
-  production remains read-only without separate explicit authorization naming
-  the target, release, and workload scope. No firewall mutation or Docker
-  prune is permitted.
+  This contract does not authorize a production mutation: production remains
+  read-only without separate explicit authorization naming the target,
+  release, and workload scope. No firewall mutation or Docker prune is
+  permitted.
 
 ## Stable interfaces
 
@@ -42,6 +44,8 @@
 v-plan-docker-project-source USER PROJECT SOURCE PROFILE MODE
 v-list-docker-project-definition USER PROJECT FORMAT
 v-stage-docker-project-preview ACTOR OWNER PROJECT SOURCE PROFILE MODE
+v-pull-docker-project-image ACTOR USER PROJECT PREVIEW_ID SOURCE_SHA256 \
+    CANDIDATE_SHA256 EXPECTED_CURRENT_REVISION IMAGE@sha256:DIGEST
 v-apply-docker-project-preview ACTOR OWNER PROJECT PREVIEW_ID \
     SOURCE_SHA256 CANDIDATE_SHA256 EXPECTED_CURRENT_REVISION
 ```
@@ -49,6 +53,18 @@ v-apply-docker-project-preview ACTOR OWNER PROJECT PREVIEW_ID \
 `MODE` is exactly `add` or `change`. Preview IDs are 32 lowercase hex
 characters. Digests are 64 lowercase hex characters. Expected revision is `0`
 for add and a positive integer for change.
+
+Tenant clients reach the pull adapter only through:
+
+```text
+v-docker image-pull PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 \
+  REVISION IMAGE@sha256:DIGEST
+```
+
+Pull repeats preview ownership, profile, expiry, digest, exact-image, and
+revision checks under the project lock before entering global-tenant-pull and
+owner-registry locks. Apply subsequently uses the same unchanged preview
+tuple.
 
 Successful stage output is JSON:
 

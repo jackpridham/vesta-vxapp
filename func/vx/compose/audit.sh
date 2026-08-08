@@ -38,7 +38,9 @@ vx_compose_audit_append() {
         return 1
     }
     if ! printf '%s\n' "$event" >>"$path" \
-        || ! chmod "$mode" "$path"; then
+        || ! chmod "$mode" "$path" \
+        || ! vx_compose_fsync_path "$path" \
+        || ! vx_compose_fsync_path "$(dirname -- "$path")"; then
         flock -u "$lock_fd" || :
         exec {lock_fd}>&-
         return 1

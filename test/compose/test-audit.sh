@@ -150,4 +150,18 @@ jq -e '.ACTOR == "root" and .OWNER == "alice" and .ACTION == "start"' \
     "$public_root/audit.log" >/dev/null \
     || fail "ordinary public command accepted injected audit actor"
 
+fsync_original="$(declare -f vx_compose_fsync_path)"
+fsync_calls=0
+vx_compose_fsync_path() {
+    fsync_calls=$((fsync_calls + 1))
+    (( fsync_calls == 1 ))
+}
+if vx_compose_audit_append \
+    "$test_root/durability/audit.log" 0600 '{"RESULT":"succeeded"}'; then
+    fail "audit append ignored a directory durability failure"
+fi
+eval "$fsync_original"
+(( fsync_calls == 2 )) \
+    || fail "audit append did not sync both the log and its directory"
+
 echo "Compose audit tests passed."

@@ -111,6 +111,22 @@ case "$operation" in
         case "$operation" in projects) command=v-list-docker-projects;; quota) command=v-list-docker-compose-quota;; registries) command=v-list-docker-registries;; esac
         run_vesta_user_command "$command" "$actor" "$format"
         ;;
+    image-pull)
+        require_count 6 6 "$@" || exit 1
+        valid_project "$1" \
+            && [[ "$2" =~ ^[a-f0-9]{32}$ \
+                && "$3" =~ ^[a-f0-9]{64}$ \
+                && "$4" =~ ^[a-f0-9]{64}$ ]] \
+            && valid_revision "$5" \
+            && vx_compose_image_reference_is_immutable "$6" || exit 1
+        project="$1"
+        target_root="$(vx_compose_project_root "$actor" "$project")"
+        if [[ "$5" != 0 || -e "$target_root" || -L "$target_root" ]]; then
+            require_standard "$project" || exit 1
+        fi
+        run_vesta_user_command v-pull-docker-project-image \
+            "$actor" "$actor" "$project" "$2" "$3" "$4" "$5" "$6"
+        ;;
     show|definition|validate|health|alerts|routes|backups|secrets)
         require_count 1 2 "$@" || exit 1; valid_project "$1" || exit 1; require_standard "$1" || exit 1
         format=${2-json}; valid_format "$format" || exit 1

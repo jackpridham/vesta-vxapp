@@ -112,7 +112,7 @@ for command in \
     v-restore-docker-project v-preview-docker-project-rollback \
     v-apply-docker-project-rollback v-preview-docker-project-reconcile \
     v-reconcile-docker-project v-add-docker-project-route v-delete-docker-project-route \
-    v-acknowledge-docker-project-alert; do
+    v-acknowledge-docker-project-alert v-pull-docker-project-image; do
     cp "$fixture/fake-command" "/usr/local/vesta/bin/$command"
 done
 
@@ -146,6 +146,7 @@ expect_deny() {
 
 digest_a=$(printf 'a%.0s' {1..64})
 digest_b=$(printf 'b%.0s' {1..64})
+image_reference="registry.example/app@sha256:$digest_a"
 preview_id=$(printf 'c%.0s' {1..32})
 name_63="n$(printf 'x%.0s' {1..62})"
 name_64="n$(printf 'x%.0s' {1..63})"
@@ -165,6 +166,8 @@ expect_allow 'v-list-docker-project-routes <alice> <app> <plain>' routes app pla
 expect_allow 'v-list-docker-project-backups <alice> <app> <json>' backups app
 expect_allow 'v-list-docker-secrets <alice> <app> <plain>' secrets app plain
 expect_allow 'v-list-docker-registries <alice> <json>' registries
+expect_allow "v-pull-docker-project-image <alice> <alice> <app> <$preview_id> <$digest_a> <$digest_b> <1> <$image_reference>" \
+    image-pull app "$preview_id" "$digest_a" "$digest_b" 1 "$image_reference"
 expect_allow 'v-list-docker-project-drift <alice> <alice> <app> <plain>' drift app plain
 expect_allow "v-run-docker-project-probe <alice> <alice> <app> <$name_63> <json>" probe app "$name_63"
 expect_allow 'v-run-docker-project-action <alice> <alice> <app> <start>' start app
@@ -332,6 +335,18 @@ wait "$project_two" || fail 'second project worker failed'
 for denied in 'unknown' '--help' 'start --owner' 'start alice' 'start app extra' \
     'show app yaml' 'probe app bad/name json' 'logs app web 2001' 'start app;touch' \
     'start bob' 'start admin'; do
+    read -r -a denied_args <<<"$denied"
+    expect_deny "${denied_args[@]}"
+done
+for denied in \
+    "image-pull app $preview_id $digest_a $digest_b 1 registry.example/app:latest" \
+    "image-pull app $preview_id $digest_a $digest_b 1 registry.example/app@sha256:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" \
+    "image-pull app $preview_id $digest_a $digest_b 1 registry.example/app@sha256:abc" \
+    "image-pull app $preview_id $digest_a $digest_b 1 $image_reference extra" \
+    "image-pull --project $preview_id $digest_a $digest_b 1 $image_reference" \
+    "image-pull alice app $preview_id $digest_a $digest_b 1 $image_reference" \
+    "image-pull app $preview_id $digest_a $digest_b 1 https://registry.example/app@sha256:$digest_a" \
+    "image-pull app $preview_id $digest_a $digest_b 1 user:password@registry.example/app@sha256:$digest_a"; do
     read -r -a denied_args <<<"$denied"
     expect_deny "${denied_args[@]}"
 done

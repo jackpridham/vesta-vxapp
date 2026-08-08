@@ -4,13 +4,42 @@ VX_COMPOSE_IMAGE_MAX_BYTES="${VX_COMPOSE_IMAGE_MAX_BYTES:-${VX_DOCKER_IMAGE_MAX_
 VX_COMPOSE_ALLOWED_ARCHITECTURE="${VX_COMPOSE_ALLOWED_ARCHITECTURE:-${VX_DOCKER_ALLOWED_ARCHITECTURE:-amd64}}"
 VX_COMPOSE_IMAGE_EVIDENCE_SCHEMA_VERSION='2'
 VX_COMPOSE_IMAGE_EVIDENCE_MAX_BYTES='1048576'
+VX_COMPOSE_IMAGE_MANIFEST_MAX_BYTES='1048576'
+VX_COMPOSE_IMAGE_MAX_LAYERS='128'
+VX_COMPOSE_IMAGE_MANIFEST_TIMEOUT_SECONDS='30'
+VX_COMPOSE_IMAGE_PULL_TIMEOUT_SECONDS='300'
 [[ "$VX_COMPOSE_IMAGE_MAX_BYTES" =~ ^[1-9][0-9]*$ ]] \
     || VX_COMPOSE_IMAGE_MAX_BYTES='5368709120'
 [[ "$VX_COMPOSE_ALLOWED_ARCHITECTURE" =~ ^(amd64|arm64)$ ]] \
     || VX_COMPOSE_ALLOWED_ARCHITECTURE='amd64'
 
+vx_compose_image_immutable_repository_is_valid() {
+    local repository="$1" first path host port segment
+
+    [[ -n "$repository" && ${#repository} -le 182
+        && "$repository" =~ ^[A-Za-z0-9][A-Za-z0-9._/:-]*$
+        && "$repository" != */ && "$repository" != *//*
+        && "$repository" != *..* ]] || return 1
+    path="$repository"
+    if [[ "$repository" == *:* ]]; then
+        [[ "$repository" == */* ]] || return 1
+        first="${repository%%/*}"
+        [[ "$first" == *:* && "$first" != *:*:* ]] || return 1
+        host="${first%:*}"
+        port="${first##*:}"
+        [[ "$host" =~ ^[A-Za-z0-9][A-Za-z0-9.-]*$
+            && "$port" =~ ^[0-9]{1,5}$
+            && $((10#$port)) -ge 1 && $((10#$port)) -le 65535 ]] || return 1
+        path="${repository#*/}"
+    fi
+    while IFS= read -r segment; do
+        [[ "$segment" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] \
+            || return 1
+    done < <(tr / '\n' <<<"$path")
+}
+
 vx_compose_image_reference_is_valid() {
-    local reference="$1"
+    local reference="$1" repository digest
 
     [[ "$reference" =~ ^[A-Za-z0-9][A-Za-z0-9._/@:-]{0,254}$
         && "$reference" != *://*
@@ -18,9 +47,18 @@ vx_compose_image_reference_is_valid() {
         && "$reference" != *@*@*
         && ! "$reference" =~ ^[^/]*:[^/]*@ ]] || return 1
     if [[ "$reference" == *@* ]]; then
-        [[ "$reference" \
-            =~ ^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}@sha256:[a-f0-9]{64}$ ]]
+        repository="${reference%@*}"
+        digest="${reference##*@}"
+        vx_compose_image_immutable_repository_is_valid "$repository" \
+            && [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
     fi
+}
+
+vx_compose_image_reference_is_immutable() {
+    local reference="$1"
+
+    vx_compose_image_reference_is_valid "$reference" \
+        && [[ "$reference" == *@sha256:* ]]
 }
 
 vx_compose_image_repository_for_reference() {
@@ -48,8 +86,10 @@ vx_compose_image_immutable_reference() {
         || return 1
     jq -er --arg repository "$repository" '
         [(.RepoDigests // [])[]
-         | select(startswith($repository + "@"))
-         | select(test("^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}@sha256:[a-f0-9]{64}$"))]
+         | select(type == "string" and length <= 255)
+         | select(startswith($repository + "@sha256:"))
+         | select((split("@") | length) == 2)
+         | select(split("@")[1] | test("^sha256:[a-f0-9]{64}$"))]
         | unique | sort
         | if length <= 1 then first // ""
           else error("ambiguous repository digest identity") end
@@ -107,13 +147,17 @@ vx_compose_image_manifest_platform_digest() {
         "$owner" manifest inspect --verbose "$reference")" \
         || return 1
     jq -r --arg architecture "$VX_COMPOSE_ALLOWED_ARCHITECTURE" '
+        def platform:
+            (.Platform // .platform // .Descriptor.platform
+             // .Descriptor.Platform // {});
         if type == "array" then
-            [.[] | select(.Platform.os == "linux"
-                          and .Platform.architecture == $architecture)
+            [.[] | select((platform.os // "") == "linux"
+                          and (platform.architecture // "") == $architecture)
                  | .Descriptor.digest]
             | unique
             | if length == 1 then .[0] else "" end
         elif (.Descriptor.digest? | type) == "string" then .Descriptor.digest
+        elif (.Digest? | type) == "string" then .Digest
         elif (.digest? | type) == "string" then .digest
         else "" end
     ' <<<"$manifest"
@@ -123,16 +167,281 @@ vx_compose_image_metadata_root() {
     printf '%s/data/users/%s/docker-images\n' "$VESTA" "$1"
 }
 
+vx_compose_image_owner_docker_bounded() {
+    local owner="$1" timeout_seconds="$2"
+    local root docker_bin
+    shift 2
+
+    [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || return 1
+    vx_compose_registry_prepare "$owner" || return 1
+    root="$(vx_compose_registry_root "$owner")"
+    docker_bin="$(vx_compose_docker_bin)" || return 1
+    timeout --signal=TERM --kill-after=10s "${timeout_seconds}s" \
+        env -i PATH="$VX_COMPOSE_SAFE_PATH" HOME="$root/home" \
+        DOCKER_CONFIG="$root" "$docker_bin" "$@"
+}
+
+vx_compose_tenant_image_pull_lock_acquire() {
+    local root lock expected_uid expected_gid
+
+    root="$VESTA/data/vx/compose"
+    lock="$root/.tenant-image-pull.lock"
+    expected_uid="$(vx_compose_authority_uid)" || return 1
+    expected_gid="$(vx_compose_authority_gid)" || return 1
+    [[ ! -e "$root" || (-d "$root" && ! -L "$root") ]] || return 1
+    install -d -m 0700 "$root" || return 1
+    [[ "$(stat -c '%u:%g:%a:%F' "$root" 2>/dev/null)" \
+        == "$expected_uid:$expected_gid:700:directory" ]] || return 1
+    if [[ ! -e "$lock" ]]; then
+        ( umask 077; set -C; : >"$lock" ) 2>/dev/null || [[ -e "$lock" ]]
+    fi
+    [[ -f "$lock" && ! -L "$lock"
+        && "$(stat -c '%u:%g:%a' "$lock" 2>/dev/null)" \
+            == "$expected_uid:$expected_gid:600" ]] || return 1
+    exec {VX_COMPOSE_TENANT_IMAGE_PULL_LOCK_FD}>"$lock" || return 1
+    flock -x "$VX_COMPOSE_TENANT_IMAGE_PULL_LOCK_FD" || {
+        exec {VX_COMPOSE_TENANT_IMAGE_PULL_LOCK_FD}>&-
+        unset VX_COMPOSE_TENANT_IMAGE_PULL_LOCK_FD
+        return 1
+    }
+}
+
+vx_compose_tenant_image_pull_lock_release() {
+    [[ -n "${VX_COMPOSE_TENANT_IMAGE_PULL_LOCK_FD:-}" ]] || return 0
+    flock -u "$VX_COMPOSE_TENANT_IMAGE_PULL_LOCK_FD" || true
+    exec {VX_COMPOSE_TENANT_IMAGE_PULL_LOCK_FD}>&-
+    unset VX_COMPOSE_TENANT_IMAGE_PULL_LOCK_FD
+}
+
+vx_compose_image_manifest_parse() {
+    local manifest_file="$1" expected_digest="$2" allow_index="$3"
+
+    python3 - "$manifest_file" "$expected_digest" \
+        "$VX_COMPOSE_ALLOWED_ARCHITECTURE" "$VX_COMPOSE_IMAGE_MAX_BYTES" \
+        "$allow_index" "$VX_COMPOSE_IMAGE_MAX_LAYERS" <<'PY'
+import json
+import re
+import sys
+
+path, expected, architecture, maximum, allow_index, maximum_layers = sys.argv[1:]
+digest_re = re.compile(r"^sha256:[a-f0-9]{64}$")
+maximum = int(maximum)
+maximum_layers = int(maximum_layers)
+
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate manifest key")
+        result[key] = value
+    return result
+
+def reject_constant(_value):
+    raise ValueError("non-standard manifest number")
+
+with open(path, "rb") as source:
+    document = json.load(
+        source,
+        object_pairs_hook=unique_object,
+        parse_constant=reject_constant,
+    )
+
+def platform(entry):
+    value = entry.get("Platform", entry.get("platform"))
+    if value is None:
+        descriptor = entry.get("Descriptor", {})
+        if not isinstance(descriptor, dict):
+            return None, None
+        value = descriptor.get("platform", descriptor.get("Platform", {}))
+    if not isinstance(value, dict):
+        return None, None
+    return value.get("os"), value.get("architecture")
+
+def descriptor_digest(entry):
+    descriptor = entry.get("Descriptor", {})
+    return descriptor.get(
+        "digest", entry.get("Digest", entry.get("digest", ""))
+    )
+
+def descriptor_has_foreign_source(entry):
+    descriptor = entry.get("Descriptor", {})
+    urls = descriptor.get("urls", entry.get("urls"))
+    if urls not in (None, []):
+        return True
+    media_type = descriptor.get(
+        "mediaType", entry.get("mediaType", entry.get("MediaType", ""))
+    )
+    if not isinstance(media_type, str):
+        return True
+    lowered = media_type.lower()
+    return "foreign" in lowered or "nondistributable" in lowered
+
+entries = None
+if isinstance(document, list):
+    entries = document
+elif isinstance(document, dict) and isinstance(document.get("manifests"), list):
+    entries = document["manifests"]
+
+if entries is not None:
+    if allow_index != "yes":
+        raise ValueError("nested manifest index")
+    for entry in entries:
+        if not isinstance(entry, dict):
+            raise ValueError("manifest index descriptor is invalid")
+        entry_digest = descriptor_digest(entry)
+        if (not isinstance(entry_digest, str)
+                or not digest_re.fullmatch(entry_digest)):
+            raise ValueError("manifest index descriptor digest is invalid")
+        if descriptor_has_foreign_source(entry):
+            raise ValueError("foreign index descriptors are not accepted")
+    candidates = [
+        entry for entry in entries
+        if platform(entry) == ("linux", architecture)
+    ]
+    if len(candidates) != 1:
+        raise ValueError("manifest platform selection is ambiguous")
+    digest = descriptor_digest(candidates[0])
+    print(json.dumps({"KIND": "child", "DIGEST": digest}, sort_keys=True))
+    raise SystemExit(0)
+
+if not isinstance(document, dict):
+    raise ValueError("manifest is not an object")
+if descriptor_has_foreign_source(document):
+    raise ValueError("foreign manifest descriptors are not accepted")
+if platform(document) != ("linux", architecture):
+    raise ValueError("manifest platform is not approved")
+digest = descriptor_digest(document)
+if not isinstance(digest, str) or digest != expected or not digest_re.fullmatch(digest):
+    raise ValueError("manifest digest does not match the requested identity")
+body = document.get("SchemaV2Manifest", document.get("OCIManifest", document))
+if not isinstance(body, dict):
+    raise ValueError("manifest body is invalid")
+config = body.get("config")
+layers = body.get("layers")
+if not isinstance(config, dict) or not isinstance(layers, list):
+    raise ValueError("manifest config or layers are missing")
+if len(layers) > maximum_layers:
+    raise ValueError("manifest has too many layers")
+descriptors = [config] + layers
+for descriptor in descriptors:
+    descriptor_digest_value = (
+        descriptor.get("digest") if isinstance(descriptor, dict) else None
+    )
+    if (not isinstance(descriptor_digest_value, str)
+            or not digest_re.fullmatch(descriptor_digest_value)):
+        raise ValueError("manifest descriptor digest is invalid")
+    urls = descriptor.get("urls")
+    if urls not in (None, []):
+        raise ValueError("foreign layer URLs are not accepted")
+    media_type = descriptor.get("mediaType", "")
+    if not isinstance(media_type, str):
+        raise ValueError("manifest media type is invalid")
+    if "foreign" in media_type.lower() or "nondistributable" in media_type.lower():
+        raise ValueError("foreign layers are not accepted")
+sizes = [config.get("size")] + [
+    layer.get("size") if isinstance(layer, dict) else None for layer in layers
+]
+if any(isinstance(size, bool) or not isinstance(size, int) or size < 0 for size in sizes):
+    raise ValueError("manifest size is malformed")
+total = 0
+for size in sizes:
+    if size > maximum - total:
+        raise ValueError("manifest exceeds the image size limit")
+    total += size
+if total <= 0:
+    raise ValueError("manifest image size must be positive")
+print(json.dumps({
+    "ARCHITECTURE": architecture,
+    "KIND": "manifest",
+    "MANIFEST_SIZE_BYTES": total,
+    "OS": "linux",
+    "PLATFORM_MANIFEST_DIGEST": digest,
+}, sort_keys=True))
+PY
+}
+
+vx_compose_image_manifest_inspect_bounded() {
+    local owner="$1" reference="$2" manifest_file root size limit
+
+    root="$(vx_compose_registry_root "$owner")"
+    limit="$VX_COMPOSE_IMAGE_MANIFEST_MAX_BYTES"
+    manifest_file="$(mktemp "$root/.manifest.XXXXXX")" || return 1
+    chmod 0600 "$manifest_file" || {
+        rm -f -- "$manifest_file"
+        return 1
+    }
+    if ! (set -o pipefail; \
+        vx_compose_image_owner_docker_bounded "$owner" \
+            "$VX_COMPOSE_IMAGE_MANIFEST_TIMEOUT_SECONDS" \
+            manifest inspect --verbose "$reference" 2>/dev/null \
+            | head -c "$((limit + 1))" >"$manifest_file"); then
+        rm -f -- "$manifest_file"
+        return 1
+    fi
+    size="$(stat -c '%s' "$manifest_file" 2>/dev/null)" || {
+        rm -f -- "$manifest_file"
+        return 1
+    }
+    [[ "$size" -gt 0 && "$size" -le "$limit" ]] || {
+        rm -f -- "$manifest_file"
+        return 1
+    }
+    printf '%s\n' "$manifest_file"
+}
+
+vx_compose_image_manifest_admission() {
+    local owner="$1" reference="$2" requested_digest repository
+    local manifest_file selection kind child_digest child_reference
+
+    vx_compose_image_reference_is_immutable "$reference" || return 1
+    requested_digest="${reference##*@}"
+    manifest_file="$(vx_compose_image_manifest_inspect_bounded \
+        "$owner" "$reference")" || return 1
+    selection="$(vx_compose_image_manifest_parse \
+        "$manifest_file" "$requested_digest" yes 2>/dev/null)" || {
+        rm -f -- "$manifest_file"
+        return 1
+    }
+    rm -f -- "$manifest_file"
+    kind="$(jq -er '.KIND' <<<"$selection")" || return 1
+    if [[ "$kind" == manifest ]]; then
+        printf '%s\n' "$selection"
+        return
+    fi
+    [[ "$kind" == child ]] || return 1
+    child_digest="$(jq -er '.DIGEST' <<<"$selection")" || return 1
+    repository="${reference%@*}"
+    child_reference="$repository@$child_digest"
+    manifest_file="$(vx_compose_image_manifest_inspect_bounded \
+        "$owner" "$child_reference")" || return 1
+    selection="$(vx_compose_image_manifest_parse \
+        "$manifest_file" "$child_digest" no 2>/dev/null)" || {
+        rm -f -- "$manifest_file"
+        return 1
+    }
+    rm -f -- "$manifest_file"
+    [[ "$(jq -er '.KIND' <<<"$selection")" == manifest ]] || return 1
+    printf '%s\n' "$selection"
+}
+
 vx_compose_image_inspect() {
     local owner="$1"
     local reference="$2"
     local raw normalized
 
-    raw="$(vx_compose_owner_docker "$owner" image inspect "$reference")" \
+    raw="$(set -o pipefail; \
+        vx_compose_image_owner_docker_bounded "$owner" \
+            "$VX_COMPOSE_IMAGE_MANIFEST_TIMEOUT_SECONDS" \
+            image inspect "$reference" 2>/dev/null \
+            | head -c "$((VX_COMPOSE_IMAGE_EVIDENCE_MAX_BYTES + 1))")" \
         || {
             vx_compose_error 'Docker image inspection failed'
             return 1
         }
+    [[ "${#raw}" -le "$VX_COMPOSE_IMAGE_EVIDENCE_MAX_BYTES" ]] || {
+        vx_compose_error 'Docker image inspection exceeded the output limit'
+        return 1
+    }
     normalized="$(jq -c 'if type == "array" then .[0] else . end' <<<"$raw")" \
         || {
             vx_compose_error 'Docker image inspection returned invalid JSON'
@@ -160,10 +469,21 @@ vx_compose_image_record() {
     local owner="$1"
     local reference="$2"
     local inspection="$3"
-    local root key metadata temp_file labels
+    local delivery="${4:-recorded}" platform_digest="${5:-}"
+    local manifest_size="${6:-0}" provenance="${7-}" local_size="${8:-0}"
+    local root key metadata temp_file labels expected_uid expected_gid
 
     root="$(vx_compose_image_metadata_root "$owner")"
-    install -d -m 0700 "$root"
+    [[ -n "$provenance" ]] || provenance='{}'
+    [[ "$delivery" =~ ^(recorded|administrator-pull|local-load|registry-pull)$ \
+        && "$manifest_size" =~ ^[0-9]+$ \
+        && "$local_size" =~ ^[0-9]+$ ]] || return 1
+    [[ ! -e "$root" || (-d "$root" && ! -L "$root") ]] || return 1
+    install -d -m 0700 "$root" || return 1
+    expected_uid="$(vx_compose_authority_uid)" || return 1
+    expected_gid="$(vx_compose_authority_gid)" || return 1
+    [[ "$(stat -c '%u:%g:%a:%F' "$root" 2>/dev/null)" \
+        == "$expected_uid:$expected_gid:700:directory" ]] || return 1
     key="$(printf '%s' "$reference" | sha256sum | awk '{print $1}')"
     metadata="$root/$key.json"
     temp_file="$(mktemp "$root/.image.XXXXXX")"
@@ -171,30 +491,64 @@ vx_compose_image_record() {
         rm -f -- "$temp_file"
         return 1
     }
-    jq -n -S \
+    if ! jq -n -S \
         --arg owner "$owner" \
         --arg reference "$reference" \
         --arg inspected "$(vx_compose_now)" \
+        --arg delivery "$delivery" \
+        --arg platform_digest "$platform_digest" \
+        --argjson manifest_size "$manifest_size" \
+        --argjson local_size "$local_size" \
+        --argjson provenance "$provenance" \
         --argjson image "$inspection" \
         --argjson labels "$labels" \
-        '{
+        'def immutable_reference_valid:
+            type == "string" and length <= 255
+            and test("^(?:[A-Za-z0-9][A-Za-z0-9.-]*:[0-9]{1,5}/)?[A-Za-z0-9][A-Za-z0-9._-]{0,127}(?:/[A-Za-z0-9][A-Za-z0-9._-]{0,127})*@sha256:[a-f0-9]{64}$")
+            and ((split("@")[0] | split("/")[0]) as $first
+                | if ($first | contains(":")) then
+                    ($first | split(":")[1] | tonumber) as $port
+                    | $port >= 1 and $port <= 65535
+                  else true end);
+        {
             OWNER: $owner,
             REFERENCE: $reference,
+            DELIVERY: $delivery,
             IMAGE_ID: $image.Id,
-            REPO_TAGS: ($image.RepoTags // []),
-            REPO_DIGESTS: ($image.RepoDigests // []),
+            REPO_TAGS: (($image.RepoTags // [])
+                | map(select(type == "string" and length <= 255))
+                | unique | sort | .[0:128]),
+            REPO_DIGESTS: (($image.RepoDigests // [])
+                | map(select(type == "string" and length <= 255))
+                | unique | sort | .[0:128]),
             IMMUTABLE_REFERENCES: (
                 ($image.RepoDigests // [])
-                | map(select(test("^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}@sha256:[a-f0-9]{64}$")))
+                | map(select(immutable_reference_valid))
                 | unique | sort
             ),
             OCI_LABELS: $labels,
             OS: $image.Os,
             ARCHITECTURE: $image.Architecture,
+            PLATFORM_MANIFEST_DIGEST: $platform_digest,
+            MANIFEST_SIZE_BYTES: $manifest_size,
+            LOCAL_SIZE_BYTES: $local_size,
+            PROVENANCE: $provenance,
             INSPECTED: $inspected
-        }' >"$temp_file"
-    chmod 0600 "$temp_file"
-    mv -f -- "$temp_file" "$metadata"
+        }' >"$temp_file"; then
+        rm -f -- "$temp_file"
+        return 1
+    fi
+    vx_compose_control_file_protect "$temp_file" 600 || {
+        rm -f -- "$temp_file"
+        return 1
+    }
+    vx_compose_fsync_path "$temp_file" || {
+        rm -f -- "$temp_file"
+        return 1
+    }
+    mv -f -- "$temp_file" "$metadata" \
+        && vx_compose_fsync_path "$metadata" \
+        && vx_compose_fsync_path "$root" || return 1
     cat "$metadata"
 }
 
@@ -238,7 +592,8 @@ vx_compose_image_pull() {
             vx_compose_error 'pulled Docker image has no repository digest'
             return 1
         }
-    metadata="$(vx_compose_image_record "$owner" "$reference" "$inspection")" \
+    metadata="$(vx_compose_image_record \
+        "$owner" "$reference" "$inspection" administrator-pull)" \
         || {
             vx_compose_registry_lock_release
             return 1
@@ -249,6 +604,343 @@ vx_compose_image_pull() {
     }
     vx_compose_registry_lock_release
     printf '%s\n' "$metadata"
+}
+
+vx_compose_image_pull_immutable() {
+    local owner="$1" reference="$2" provenance="$3"
+    local admission inspection metadata platform_digest manifest_size
+    local image_id local_size complete_provenance response
+    local registry_lock_owned=no
+
+    vx_compose_require_owner "$owner" || return 1
+    vx_compose_image_reference_is_immutable "$reference" || {
+        vx_compose_error 'tenant image pull requires an immutable repository digest'
+        return 1
+    }
+    jq -e \
+        --arg owner "$owner" \
+        --arg reference "$reference" '
+        type == "object"
+        and keys == ["CANDIDATE_SHA256","EXPECTED_CURRENT_REVISION","OWNER",
+                     "PREVIEW_ID","PROJECT","REFERENCE","SOURCE_SHA256","TYPE"]
+        and .TYPE == "registry-pull"
+        and .OWNER == $owner
+        and .REFERENCE == $reference
+        and (.PROJECT | type == "string"
+            and test("^[a-z0-9][a-z0-9-]{0,62}$"))
+        and (.PREVIEW_ID | type == "string" and test("^[a-f0-9]{32}$"))
+        and (.SOURCE_SHA256 | type == "string" and test("^[a-f0-9]{64}$"))
+        and (.CANDIDATE_SHA256 | type == "string" and test("^[a-f0-9]{64}$"))
+        and (.EXPECTED_CURRENT_REVISION | type == "number"
+            and floor == . and . >= 0)
+    ' <<<"$provenance" >/dev/null || return 1
+    if [[ -z "${VX_COMPOSE_REGISTRY_LOCK_FD:-}" ]]; then
+        vx_compose_registry_lock_acquire "$owner" || return 1
+        registry_lock_owned=yes
+    fi
+    admission="$(vx_compose_image_manifest_admission \
+        "$owner" "$reference")" || {
+        [[ "$registry_lock_owned" != yes ]] \
+            || vx_compose_registry_lock_release
+        vx_compose_error 'Docker image manifest admission failed'
+        return 1
+    }
+    if ! vx_compose_image_owner_docker_bounded "$owner" \
+        "$VX_COMPOSE_IMAGE_PULL_TIMEOUT_SECONDS" \
+        image pull "$reference" >/dev/null 2>/dev/null; then
+        [[ "$registry_lock_owned" != yes ]] \
+            || vx_compose_registry_lock_release
+        vx_compose_error 'Docker image pull failed'
+        return 1
+    fi
+    inspection="$(vx_compose_image_inspect "$owner" "$reference")" || {
+        [[ "$registry_lock_owned" != yes ]] \
+            || vx_compose_registry_lock_release
+        return 1
+    }
+    image_id="$(jq -er '.Id | select(test("^sha256:[a-f0-9]{64}$"))' \
+        <<<"$inspection")" || {
+        [[ "$registry_lock_owned" != yes ]] \
+            || vx_compose_registry_lock_release
+        vx_compose_error 'pulled Docker image ID is invalid'
+        return 1
+    }
+    local_size="$(jq -er --argjson maximum "$VX_COMPOSE_IMAGE_MAX_BYTES" '
+        .Size | select(type == "number" and floor == . and . > 0 and . <= $maximum)
+    ' <<<"$inspection")" || {
+        [[ "$registry_lock_owned" != yes ]] \
+            || vx_compose_registry_lock_release
+        vx_compose_error 'pulled Docker image local size is invalid'
+        return 1
+    }
+    jq -e --arg reference "$reference" \
+        '(.RepoDigests // []) | index($reference) != null' \
+        <<<"$inspection" >/dev/null || {
+        [[ "$registry_lock_owned" != yes ]] \
+            || vx_compose_registry_lock_release
+        vx_compose_error 'pulled Docker image digest does not match the request'
+        return 1
+    }
+    platform_digest="$(jq -er '.PLATFORM_MANIFEST_DIGEST' \
+        <<<"$admission")" || {
+        [[ "$registry_lock_owned" != yes ]] \
+            || vx_compose_registry_lock_release
+        return 1
+    }
+    manifest_size="$(jq -er '.MANIFEST_SIZE_BYTES' <<<"$admission")" || {
+        [[ "$registry_lock_owned" != yes ]] \
+            || vx_compose_registry_lock_release
+        return 1
+    }
+    complete_provenance="$(jq -c \
+        --arg image_id "$image_id" \
+        --arg architecture "$VX_COMPOSE_ALLOWED_ARCHITECTURE" \
+        --arg platform_digest "$platform_digest" \
+        --argjson manifest_size "$manifest_size" \
+        --argjson local_size "$local_size" \
+        --arg recorded "$(vx_compose_now)" \
+        '. + {
+            IMAGE_ID:$image_id,
+            OS:"linux",
+            ARCHITECTURE:$architecture,
+            STATE:"pending",
+            PLATFORM_MANIFEST_DIGEST:$platform_digest,
+            MANIFEST_SIZE_BYTES:$manifest_size,
+            LOCAL_SIZE_BYTES:$local_size,
+            RECORDED:$recorded
+        }' <<<"$provenance")" || {
+        [[ "$registry_lock_owned" != yes ]] \
+            || vx_compose_registry_lock_release
+        return 1
+    }
+    response="$(jq -n -cS \
+        --arg owner "$owner" --arg reference "$reference" \
+        --arg image_id "$image_id" --arg platform_digest "$platform_digest" \
+        --arg architecture "$VX_COMPOSE_ALLOWED_ARCHITECTURE" \
+        --argjson manifest_size "$manifest_size" \
+        --argjson local_size "$local_size" \
+        '{SCHEMA:1,RESULT:"succeeded",OWNER:$owner,REFERENCE:$reference,
+          IMAGE_ID:$image_id,OS:"linux",ARCHITECTURE:$architecture,
+          PLATFORM_MANIFEST_DIGEST:$platform_digest,
+          MANIFEST_SIZE_BYTES:$manifest_size,LOCAL_SIZE_BYTES:$local_size}')" \
+        || {
+            [[ "$registry_lock_owned" != yes ]] \
+                || vx_compose_registry_lock_release
+            return 1
+        }
+    metadata="$(vx_compose_image_record "$owner" "$reference" \
+        "$inspection" registry-pull "$platform_digest" "$manifest_size" \
+        "$complete_provenance" "$local_size")" || {
+        [[ "$registry_lock_owned" != yes ]] \
+            || vx_compose_registry_lock_release
+        return 1
+    }
+    [[ "$registry_lock_owned" != yes ]] || vx_compose_registry_lock_release
+    printf '%s\n' "$response"
+}
+
+vx_compose_image_pull_audit() {
+    local owner="$1" project="$2" reference="$3" result="$4"
+    local reference_sha
+
+    [[ "$result" == started || "$result" == succeeded || "$result" == failed ]] \
+        || return 1
+    reference_sha="$(printf '%s' "$reference" | sha256sum | awk '{print $1}')"
+    vx_compose_owner_audit "$owner" image-pull "$result" \
+        "project=$project reference_sha256=$reference_sha"
+}
+
+vx_compose_image_registry_pull_activate() {
+    local owner="$1" reference="$2" root key metadata temp_file
+
+    root="$(vx_compose_image_metadata_root "$owner")"
+    key="$(printf '%s' "$reference" | sha256sum | awk '{print $1}')"
+    metadata="$root/$key.json"
+    vx_compose_control_file_is_secure "$metadata" 600 \
+        && [[ "$(stat -c '%h' "$metadata" 2>/dev/null)" == 1 \
+            && "$(stat -c '%s' "$metadata" 2>/dev/null)" -le \
+                "$VX_COMPOSE_IMAGE_EVIDENCE_MAX_BYTES" ]] || return 1
+    jq -e --arg owner "$owner" --arg reference "$reference" '
+        .DELIVERY == "registry-pull"
+        and .OWNER == $owner
+        and .REFERENCE == $reference
+        and .PROVENANCE.OWNER == $owner
+        and .PROVENANCE.REFERENCE == $reference
+        and .PROVENANCE.STATE == "pending"
+    ' "$metadata" >/dev/null || return 1
+    temp_file="$(mktemp "$root/.activate.XXXXXX")" || return 1
+    jq -S '.PROVENANCE.STATE = "active"' "$metadata" >"$temp_file" \
+        && vx_compose_control_file_protect "$temp_file" 600 \
+        && vx_compose_fsync_path "$temp_file" \
+        && mv -f -- "$temp_file" "$metadata" \
+        && vx_compose_fsync_path "$metadata" \
+        && vx_compose_fsync_path "$root" || {
+            rm -f -- "$temp_file"
+            return 1
+        }
+}
+
+vx_compose_image_pull_for_preview() {
+    local actor="$1" owner="$2" project="$3" preview_id="$4" source_sha="$5"
+    local candidate_sha="$6" expected_revision="$7" reference="$8"
+    local verified metadata mode root current count provenance result status=1
+    local image_root image_key authority backup had_authority=no
+
+    [[ "$actor" == "$owner" ]] || return 1
+    vx_compose_require_owner "$owner" || return 1
+    vx_compose_require_project_key "$project" || return 1
+    vx_compose_image_reference_is_immutable "$reference" || return 1
+    vx_compose_lock_acquire "$owner" "$project" || return 1
+    verified="$(vx_compose_preview_verify "$actor" "$owner" "$project" \
+        "$preview_id" "$source_sha" "$candidate_sha" \
+        "$expected_revision")" || {
+        vx_compose_lock_release
+        vx_compose_error 'immutable image pull preview evidence is invalid'
+        return 1
+    }
+    metadata="$verified/preview.conf"
+    mode="$(vx_compose_meta_get "$metadata" MODE)" || mode=
+    root="$(vx_compose_project_root "$owner" "$project")"
+    if [[ "$mode" == add ]]; then
+        [[ "$expected_revision" == 0 && ! -e "$root" && ! -L "$root" ]] \
+            || mode=
+    elif [[ "$mode" == change ]] \
+        && vx_compose_require_project "$owner" "$project"; then
+        current="$(vx_compose_meta_get "$root/project.conf" REVISION)" \
+            || current=
+        [[ "$current" == "$expected_revision"
+            && "$(vx_compose_meta_get "$root/project.conf" PROFILE)" \
+                == standard ]] || mode=
+    else
+        mode=
+    fi
+    [[ -n "$mode" ]] || {
+        vx_compose_lock_release
+        vx_compose_error 'immutable image pull preview revision is stale'
+        return 1
+    }
+    count="$(jq -er --arg reference "$reference" '
+        [.services[]?.image | select(. == $reference)] | length
+    ' "$verified/canonical.json")" || {
+        vx_compose_lock_release
+        return 1
+    }
+    [[ "$count" == 1 ]] || {
+        vx_compose_lock_release
+        vx_compose_error \
+            'immutable image must occur exactly once in the protected preview'
+        return 1
+    }
+    provenance="$(jq -n -c \
+        --arg owner "$owner" --arg project "$project" \
+        --arg preview_id "$preview_id" --arg source_sha "$source_sha" \
+        --arg candidate_sha "$candidate_sha" \
+        --argjson revision "$expected_revision" \
+        --arg reference "$reference" '{
+            TYPE:"registry-pull",OWNER:$owner,PROJECT:$project,
+            PREVIEW_ID:$preview_id,SOURCE_SHA256:$source_sha,
+            CANDIDATE_SHA256:$candidate_sha,
+            EXPECTED_CURRENT_REVISION:$revision,REFERENCE:$reference
+        }')" || {
+        vx_compose_lock_release
+        return 1
+    }
+    if ! vx_compose_tenant_image_pull_lock_acquire; then
+        vx_compose_lock_release
+        return 1
+    fi
+    if ! vx_compose_registry_lock_acquire "$owner"; then
+        vx_compose_tenant_image_pull_lock_release
+        vx_compose_lock_release
+        return 1
+    fi
+    image_root="$(vx_compose_image_metadata_root "$owner")"
+    [[ ! -e "$image_root" || (-d "$image_root" && ! -L "$image_root") ]] \
+        && install -d -m 0700 "$image_root" \
+        && [[ "$(stat -c '%u:%g:%a:%F' "$image_root" 2>/dev/null)" \
+            == "$(vx_compose_authority_uid):$(vx_compose_authority_gid):700:directory" ]] \
+        || {
+            vx_compose_registry_lock_release
+            vx_compose_tenant_image_pull_lock_release
+            vx_compose_lock_release
+            return 1
+        }
+    image_key="$(printf '%s' "$reference" | sha256sum | awk '{print $1}')"
+    authority="$image_root/$image_key.json"
+    backup="$(mktemp "$image_root/.pull-authority.XXXXXX")" || {
+        vx_compose_registry_lock_release
+        vx_compose_tenant_image_pull_lock_release
+        vx_compose_lock_release
+        return 1
+    }
+    if [[ -e "$authority" ]]; then
+        vx_compose_control_file_is_secure "$authority" 600 \
+            && [[ "$(stat -c '%h' "$authority" 2>/dev/null)" == 1 \
+                && "$(stat -c '%s' "$authority" 2>/dev/null)" =~ ^[0-9]+$ \
+                && "$(stat -c '%s' "$authority")" \
+                    -le "$VX_COMPOSE_IMAGE_EVIDENCE_MAX_BYTES" ]] \
+            && cp -- "$authority" "$backup" \
+            && vx_compose_control_file_protect "$backup" 600 \
+            || {
+                rm -f -- "$backup"
+                vx_compose_registry_lock_release
+                vx_compose_tenant_image_pull_lock_release
+                vx_compose_lock_release
+                return 1
+            }
+        had_authority=yes
+    fi
+    if ! vx_compose_image_pull_audit "$owner" "$project" "$reference" started; then
+        rm -f -- "$backup"
+        vx_compose_registry_lock_release
+        vx_compose_tenant_image_pull_lock_release
+        vx_compose_lock_release
+        return 1
+    fi
+    if result="$(vx_compose_image_pull_immutable \
+        "$owner" "$reference" "$provenance")"; then
+        if vx_compose_image_pull_audit \
+            "$owner" "$project" "$reference" succeeded \
+            && vx_compose_image_registry_pull_activate \
+                "$owner" "$reference"; then
+            status=0
+        elif [[ "$had_authority" == yes ]]; then
+            if mv -f -- "$backup" "$authority" \
+                && vx_compose_fsync_path "$authority" \
+                && vx_compose_fsync_path "$image_root"; then
+                :
+            else
+                rm -f -- "$authority"
+                vx_compose_fsync_path "$image_root" || :
+            fi
+        else
+            rm -f -- "$authority"
+            vx_compose_fsync_path "$image_root" || :
+        fi
+    else
+        if [[ "$had_authority" == yes ]]; then
+            if mv -f -- "$backup" "$authority" \
+                && vx_compose_fsync_path "$authority" \
+                && vx_compose_fsync_path "$image_root"; then
+                :
+            else
+                rm -f -- "$authority"
+                vx_compose_fsync_path "$image_root" || :
+            fi
+        else
+            rm -f -- "$authority"
+            vx_compose_fsync_path "$image_root" || :
+        fi
+    fi
+    (( status == 0 )) \
+        || vx_compose_image_pull_audit \
+            "$owner" "$project" "$reference" failed || :
+    rm -f -- "$backup"
+    vx_compose_registry_lock_release
+    vx_compose_tenant_image_pull_lock_release
+    vx_compose_lock_release
+    (( status == 0 )) || return 1
+    printf '%s\n' "$result"
 }
 
 vx_compose_image_archive_validate() {
@@ -349,7 +1041,8 @@ vx_compose_image_load() {
             return 1
         fi
     fi
-    metadata="$(vx_compose_image_record "$owner" "$reference" "$inspection")" \
+    metadata="$(vx_compose_image_record \
+        "$owner" "$reference" "$inspection" local-load)" \
         || {
             vx_compose_registry_lock_release
             return 1
@@ -367,13 +1060,94 @@ vx_compose_image_identity_is_recorded() {
     local owner="$1"
     local reference="$2"
     local image_id="$3"
-    local key metadata
+    local key metadata root expected_uid expected_gid
 
     key="$(printf '%s' "$reference" | sha256sum | awk '{print $1}')"
-    metadata="$(vx_compose_image_metadata_root "$owner")/$key.json"
-    [[ -f "$metadata" ]] || return 1
-    jq -e --arg image_id "$image_id" '.IMAGE_ID == $image_id' \
+    root="$(vx_compose_image_metadata_root "$owner")"
+    metadata="$root/$key.json"
+    expected_uid="$(vx_compose_authority_uid)" || return 1
+    expected_gid="$(vx_compose_authority_gid)" || return 1
+    [[ -d "$root" && ! -L "$root"
+        && "$(stat -c '%u:%g:%a' "$root" 2>/dev/null)" \
+            == "$expected_uid:$expected_gid:700"
+        && -f "$metadata" && ! -L "$metadata"
+        && "$(stat -c '%u:%g:%a' "$metadata" 2>/dev/null)" \
+            == "$expected_uid:$expected_gid:600" ]] || return 1
+    jq -e --arg owner "$owner" --arg reference "$reference" \
+        --arg image_id "$image_id" '
+        .OWNER == $owner and .REFERENCE == $reference and .IMAGE_ID == $image_id
+    ' \
         "$metadata" >/dev/null
+}
+
+vx_compose_image_registry_pull_is_recorded() {
+    local owner="$1" reference="$2" image_id="$3" image_os="$4"
+    local architecture="$5" key metadata
+
+    vx_compose_image_reference_is_immutable "$reference" || return 1
+    key="$(printf '%s' "$reference" | sha256sum | awk '{print $1}')"
+    metadata="$(vx_compose_image_metadata_root "$owner")/$key.json"
+    vx_compose_image_identity_is_recorded \
+        "$owner" "$reference" "$image_id" || return 1
+    [[ "$(stat -c '%h' "$metadata" 2>/dev/null)" == 1 \
+        && "$(stat -c '%s' "$metadata" 2>/dev/null)" =~ ^[0-9]+$ \
+        && "$(stat -c '%s' "$metadata")" -le "$VX_COMPOSE_IMAGE_EVIDENCE_MAX_BYTES" ]] \
+        || return 1
+    jq -e \
+        --arg owner "$owner" --arg reference "$reference" \
+        --arg image_id "$image_id" --arg image_os "$image_os" \
+        --arg architecture "$architecture" \
+        --argjson maximum "$VX_COMPOSE_IMAGE_MAX_BYTES" '
+        keys == ["ARCHITECTURE","DELIVERY","IMAGE_ID","IMMUTABLE_REFERENCES",
+                 "INSPECTED","LOCAL_SIZE_BYTES","MANIFEST_SIZE_BYTES",
+                 "OCI_LABELS","OS","OWNER","PLATFORM_MANIFEST_DIGEST",
+                 "PROVENANCE","REFERENCE","REPO_DIGESTS","REPO_TAGS"]
+        and .DELIVERY == "registry-pull"
+        and .OWNER == $owner
+        and .REFERENCE == $reference
+        and .IMAGE_ID == $image_id
+        and .OS == $image_os
+        and .ARCHITECTURE == $architecture
+        and (.IMMUTABLE_REFERENCES | index($reference) != null)
+        and (.PLATFORM_MANIFEST_DIGEST
+            | type == "string" and test("^sha256:[a-f0-9]{64}$"))
+        and (.MANIFEST_SIZE_BYTES | type == "number" and floor == .
+            and . > 0 and . <= $maximum)
+        and (.LOCAL_SIZE_BYTES | type == "number" and floor == .
+            and . > 0 and . <= $maximum)
+        and (.REPO_TAGS | type == "array" and length <= 128
+            and all(.[]; type == "string" and length <= 255))
+        and (.REPO_DIGESTS | type == "array" and length <= 128
+            and all(.[]; type == "string" and length <= 255))
+        and (.PROVENANCE | type == "object")
+        and (.PROVENANCE | keys
+            == ["ARCHITECTURE","CANDIDATE_SHA256","EXPECTED_CURRENT_REVISION",
+                "IMAGE_ID","LOCAL_SIZE_BYTES","MANIFEST_SIZE_BYTES","OS",
+                "OWNER","PLATFORM_MANIFEST_DIGEST","PREVIEW_ID","PROJECT",
+                "RECORDED","REFERENCE","SOURCE_SHA256","STATE","TYPE"])
+        and .PROVENANCE.TYPE == "registry-pull"
+        and .PROVENANCE.OWNER == $owner
+        and .PROVENANCE.REFERENCE == $reference
+        and .PROVENANCE.IMAGE_ID == $image_id
+        and .PROVENANCE.OS == $image_os
+        and .PROVENANCE.ARCHITECTURE == $architecture
+        and .PROVENANCE.STATE == "active"
+        and .PROVENANCE.PLATFORM_MANIFEST_DIGEST == .PLATFORM_MANIFEST_DIGEST
+        and .PROVENANCE.MANIFEST_SIZE_BYTES == .MANIFEST_SIZE_BYTES
+        and .PROVENANCE.LOCAL_SIZE_BYTES == .LOCAL_SIZE_BYTES
+        and (.PROVENANCE.PROJECT | type == "string"
+            and test("^[a-z0-9][a-z0-9-]{0,62}$"))
+        and (.PROVENANCE.PREVIEW_ID | type == "string"
+            and test("^[a-f0-9]{32}$"))
+        and (.PROVENANCE.SOURCE_SHA256 | type == "string"
+            and test("^[a-f0-9]{64}$"))
+        and (.PROVENANCE.CANDIDATE_SHA256 | type == "string"
+            and test("^[a-f0-9]{64}$"))
+        and (.PROVENANCE.EXPECTED_CURRENT_REVISION | type == "number"
+            and floor == . and . >= 0)
+        and (.PROVENANCE.RECORDED | type == "string"
+            and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))
+    ' "$metadata" >/dev/null
 }
 
 vx_compose_json_has_unique_object_keys() {
@@ -446,6 +1220,14 @@ vx_compose_image_evidence_legacy_validate() {
     [[ -f "$evidence" && ! -L "$evidence" ]] || return 1
     vx_compose_json_has_unique_object_keys "$evidence" || return 1
     jq -e '
+        def immutable_reference_valid:
+            type == "string" and length <= 255
+            and test("^(?:[A-Za-z0-9][A-Za-z0-9.-]*:[0-9]{1,5}/)?[A-Za-z0-9][A-Za-z0-9._-]{0,127}(?:/[A-Za-z0-9][A-Za-z0-9._-]{0,127})*@sha256:[a-f0-9]{64}$")
+            and ((split("@")[0] | split("/")[0]) as $first
+                | if ($first | contains(":")) then
+                    ($first | split(":")[1] | tonumber) as $port
+                    | $port >= 1 and $port <= 65535
+                  else true end);
         type == "object" and length > 0
         and all(to_entries[];
             (.key | type == "string" and length > 0 and length <= 128
@@ -460,12 +1242,10 @@ vx_compose_image_evidence_legacy_validate() {
                 | type == "string" and test("^sha256:[a-f0-9]{64}$"))
             and (.value.REPO_DIGESTS | type == "array"
                 and length == (unique | length)
-                and all(.[]; type == "string"
-                    and test("^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}@sha256:[a-f0-9]{64}$")))
+                and all(.[]; immutable_reference_valid))
             and if (.value.REFERENCE | contains("@")) then
                 .value.REFERENCE as $reference
-                | ($reference
-                    | test("^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}@sha256:[a-f0-9]{64}$"))
+                | ($reference | immutable_reference_valid)
                 and ([.value.REPO_DIGESTS[]
                     | select(. == $reference)] | length) == 1
             else true end
@@ -547,6 +1327,14 @@ vx_compose_image_evidence_current_validate() {
             | if ($parts | length) > 1
               then (($parts[0:-1] + [$leaf]) | join("/"))
               else $leaf end;
+        def immutable_reference_valid:
+            type == "string" and length <= 255
+            and test("^(?:[A-Za-z0-9][A-Za-z0-9.-]*:[0-9]{1,5}/)?[A-Za-z0-9][A-Za-z0-9._-]{0,127}(?:/[A-Za-z0-9][A-Za-z0-9._-]{0,127})*@sha256:[a-f0-9]{64}$")
+            and ((split("@")[0] | split("/")[0]) as $first
+                | if ($first | contains(":")) then
+                    ($first | split(":")[1] | tonumber) as $port
+                    | $port >= 1 and $port <= 65535
+                  else true end);
         type == "object" and length > 0
         and all(to_entries[];
             (.key | type == "string" and length > 0 and length <= 128
@@ -563,16 +1351,14 @@ vx_compose_image_evidence_current_validate() {
                 | type == "string" and test("^sha256:[a-f0-9]{64}$"))
             and (.value.REPO_DIGESTS | type == "array"
                 and . == (unique | sort)
-                and all(.[]; type == "string"
-                    and test("^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}@sha256:[a-f0-9]{64}$")))
+                and all(.[]; immutable_reference_valid))
             and (.value.IMMUTABLE_REFERENCE | type == "string"
-                and (. == "" or test("^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}@sha256:[a-f0-9]{64}$")))
+                and (. == "" or immutable_reference_valid))
             and (.value.REGISTRY_DIGEST | type == "string"
                 and (. == "" or test("^sha256:[a-f0-9]{64}$")))
             and if (.value.REFERENCE | contains("@")) then
                 .value.REFERENCE as $reference
-                | ($reference
-                    | test("^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}@sha256:[a-f0-9]{64}$"))
+                | ($reference | immutable_reference_valid)
                 and $reference == .value.IMMUTABLE_REFERENCE
                 and .value.REGISTRY_DIGEST
                     == ($reference | split("@")[1])
@@ -862,13 +1648,49 @@ vx_compose_image_evidence_migration_authority_ensure() {
     fi
 }
 
+vx_compose_image_accepted_entry_matches() {
+    local evidence="$1" service="$2" reference="$3" inspection="$4"
+    local immutable_reference="$5" kind
+
+    vx_compose_image_evidence_file_is_secure "$evidence" 640 || return 1
+    kind="$(vx_compose_image_evidence_kind "$evidence")" || return 1
+    if [[ "$kind" == legacy-production-five-field ]]; then
+        jq -e --arg service "$service" --arg reference "$reference" \
+            --argjson image "$inspection" '
+            .[$service] as $accepted
+            | ($accepted | type == "object")
+            and $accepted.REFERENCE == $reference
+            and $accepted.IMAGE_ID == $image.Id
+            and $accepted.OS == $image.Os
+            and $accepted.ARCHITECTURE == $image.Architecture
+            and ($accepted.REPO_DIGESTS | unique | sort)
+                == (($image.RepoDigests // []) | unique | sort)
+        ' "$evidence" >/dev/null
+    else
+        jq -e --arg service "$service" --arg reference "$reference" \
+            --arg immutable "$immutable_reference" --argjson image "$inspection" '
+            .[$service] as $accepted
+            | ($accepted | type == "object")
+            and $accepted.REFERENCE == $reference
+            and $accepted.IMMUTABLE_REFERENCE == $immutable
+            and $accepted.IMAGE_ID == $image.Id
+            and $accepted.OS == $image.Os
+            and $accepted.ARCHITECTURE == $image.Architecture
+            and ($accepted.REPO_DIGESTS | unique | sort)
+                == (($image.RepoDigests // []) | unique | sort)
+        ' "$evidence" >/dev/null
+    fi
+}
+
 vx_compose_resolve_images_to_file() {
     local owner="$1"
     local canonical="$2"
     local profile="$3"
     local output_file="$4"
-    local service reference inspection image_id digests resolved='{}'
-    local temp_file immutable_reference digest labels trust
+    local accepted_evidence="${5-}"
+    local service reference inspection image_id image_os architecture digests
+    local resolved='{}' temp_file immutable_reference digest labels trust
+    local admitted profile_version
 
     [[ -f "$canonical" && ! -L "$canonical"
         && ! -e "$output_file" ]] || return 1
@@ -879,6 +1701,8 @@ vx_compose_resolve_images_to_file() {
             return 1
         }
         image_id="$(jq -r '.Id' <<<"$inspection")"
+        image_os="$(jq -r '.Os' <<<"$inspection")"
+        architecture="$(jq -r '.Architecture' <<<"$inspection")"
         digests="$(jq -r '(.RepoDigests // []) | length' <<<"$inspection")"
         immutable_reference="$(
             vx_compose_image_immutable_reference "$inspection" "$reference"
@@ -891,12 +1715,33 @@ vx_compose_resolve_images_to_file() {
             vx_compose_registry_lock_release
             return 1
         }
-        if (( digests == 0 )) \
-            && ! vx_compose_image_identity_is_recorded \
-                "$owner" "$reference" "$image_id"; then
+        admitted=no
+        if vx_compose_image_reference_is_immutable "$reference" \
+            && [[ "$immutable_reference" == "$reference" ]] \
+            && vx_compose_image_registry_pull_is_recorded \
+                "$owner" "$reference" "$image_id" \
+                "$image_os" "$architecture"; then
+            admitted=yes
+        else
+            profile_version="$(vx_compose_profile_version "$profile")" \
+                || profile_version=
+            if [[ -n "$profile_version" ]] \
+                && vx_compose_image_approval_require \
+                    "$owner" "$reference" "$image_id" "$image_os" \
+                    "$architecture" "$profile" "$profile_version" \
+                    >/dev/null 2>&1; then
+                admitted=yes
+            elif [[ -n "$accepted_evidence" ]] \
+                && vx_compose_image_accepted_entry_matches \
+                    "$accepted_evidence" "$service" "$reference" \
+                    "$inspection" "$immutable_reference"; then
+                admitted=yes
+            fi
+        fi
+        if [[ "$admitted" != yes ]]; then
             vx_compose_registry_lock_release
             vx_compose_error \
-                'Docker image identity is not approved for deployment'
+                'Docker image lacks registry-pull provenance, local approval, or exact accepted-revision authority'
             return 1
         fi
         trust="$(vx_compose_verify_image_trust \
@@ -974,7 +1819,7 @@ vx_compose_project_resolve_images() {
     local root canonical resolution_canonical metadata revision revision_name temp_file profile
     local revision_file revision_kind current_kind upgrade=no service_count
     local install_required=yes revision_sha='' current_sha='' expected_sha
-    local backup_file='' had_current=no failure_detail=''
+    local backup_file='' had_current=no failure_detail='' accepted_evidence=''
 
     vx_compose_require_project "$owner" "$project" || return 1
     root="$(vx_compose_project_root "$owner" "$project")"
@@ -991,12 +1836,15 @@ vx_compose_project_resolve_images() {
     printf -v revision_name '%06d' "$revision"
     revision_file="$root/revisions/$revision_name/images.json"
     resolution_canonical="$canonical"
-    if [[ -f "$root/workload.json" && ! -L "$root/workload.json"
-        && -e "$revision_file" ]]; then
+    if [[ -e "$revision_file" ]]; then
         vx_compose_image_evidence_file_is_secure "$revision_file" 640 \
             || return 1
         revision_kind="$(vx_compose_image_evidence_kind "$revision_file")" \
             || return 1
+        accepted_evidence="$revision_file"
+    fi
+    if [[ -f "$root/workload.json" && ! -L "$root/workload.json"
+        && -e "$revision_file" ]]; then
         if [[ "$revision_kind" == "$VX_COMPOSE_IMAGE_EVIDENCE_SCHEMA_VERSION" ]]; then
             resolution_canonical="$(mktemp "$root/.canonical.lookup.XXXXXX")" \
                 || return 1
@@ -1017,7 +1865,8 @@ vx_compose_project_resolve_images() {
     temp_file="$(mktemp "$root/.images.pending.XXXXXX")"
     rm -f -- "$temp_file"
     if ! vx_compose_resolve_images_to_file \
-        "$owner" "$resolution_canonical" "$profile" "$temp_file"; then
+        "$owner" "$resolution_canonical" "$profile" "$temp_file" \
+        "$accepted_evidence"; then
         [[ "$resolution_canonical" == "$canonical" ]] \
             || rm -f -- "$resolution_canonical"
         return 1

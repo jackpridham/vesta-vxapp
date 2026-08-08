@@ -26,7 +26,7 @@ jq -n '{
     Id:"sha256:1111111111111111111111111111111111111111111111111111111111111111",
     RepoTags:["registry.example.invalid/vesta/api:stable"],
     RepoDigests:["registry.example.invalid/vesta/api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
-    Architecture:"amd64",Os:"linux",
+    Architecture:"amd64",Os:"linux",Size:30,
     Config:{Labels:{
         "org.opencontainers.image.source":"https://example.invalid/source",
         "org.opencontainers.image.revision":"fixture-a",
@@ -38,7 +38,7 @@ jq -n '{
 jq -n '{
     Id:"sha256:2222222222222222222222222222222222222222222222222222222222222222",
     RepoTags:["vesta-worker:local"],RepoDigests:[],
-    Architecture:"amd64",Os:"linux",Config:{Labels:{}}
+    Architecture:"amd64",Os:"linux",Size:30,Config:{Labels:{}}
 }' >"$local_inspect"
 
 fake_docker="$test_root/fake-docker"
@@ -243,9 +243,11 @@ vx_compose_active_revision_verify alice evidence \
         >manifest.sha256
 )
 
-# Fresh candidate/new-revision evidence is always schema 2.
+# Accepted-revision refresh emits schema 2 but cannot authorize a new
+# add/change candidate; pass the exact protected active revision explicitly.
 vx_compose_resolve_images_to_file alice \
-    "$project_root/runtime/canonical.json" standard "$test_root/new-images.json"
+    "$project_root/runtime/canonical.json" standard "$test_root/new-images.json" \
+    "$revision_file"
 jq -e 'length == 2 and all(.[]; .SCHEMA == 2)' \
     "$test_root/new-images.json" >/dev/null \
     || fail "new evidence did not use schema 2"

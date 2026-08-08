@@ -1,0 +1,40 @@
+#!/bin/bash
+# info: pull one immutable Docker image bound to a protected owner preview
+# options: ACTOR USER PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 EXPECTED_CURRENT_REVISION IMAGE
+
+actor=${1-}
+user=${2-}
+compose_project=${3-}
+preview_id=${4-}
+source_sha=${5-}
+candidate_sha=${6-}
+expected_revision=${7-}
+image=${8-}
+
+# shellcheck source=func/main.sh
+source "$VESTA/func/main.sh"
+# shellcheck source=func/vx/compose/main.sh
+source "$VESTA/func/vx/compose/main.sh"
+
+check_args '8' "$#" \
+    'ACTOR USER PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 EXPECTED_CURRENT_REVISION IMAGE'
+[ "$#" -le 8 ] || check_result "$E_ARGS" 'too many arguments'
+is_format_valid 'user'
+is_object_valid 'user' 'USER' "$user"
+is_object_unsuspended 'user' 'USER' "$user"
+[[ "$actor" == "$user" ]] \
+    || check_result "$E_INVALID" 'Compose image pull actor must equal owner'
+vx_compose_actor_is_active "$actor" \
+    || check_result "$E_INVALID" 'Compose image pull actor is inactive'
+
+result="$(vx_compose_image_pull_for_preview \
+    "$actor" "$user" "$compose_project" "$preview_id" "$source_sha" \
+    "$candidate_sha" "$expected_revision" "$image")" \
+    || check_result "$E_INVALID" 'Immutable preview image pull failed'
+
+image_sha="$(printf '%s' "$image" | sha256sum | awk '{print $1}')"
+log_history "pulled protected-preview Docker image for $user/$compose_project"
+log_event "$OK" \
+    "actor=$actor user=$user project=$compose_project preview=$preview_id image_sha256=$image_sha"
+printf '%s\n' "$result"
+exit
