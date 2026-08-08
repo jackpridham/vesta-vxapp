@@ -21,7 +21,9 @@ _vx_harbor_install_secret() {
 }
 
 _vx_harbor_install_harbor_yml() {
-    local stage="$1" origin_json="$2" secrets="$stage/secrets" template="$stage/extracted/harbor/harbor.yml.tmpl"
+    local stage origin_json secrets template
+    stage="$1"; origin_json="$2"
+    secrets="$stage/secrets"; template="$stage/extracted/harbor/harbor.yml.tmpl"
     /usr/bin/mkdir -m 0700 "$secrets" || return 1
     _vx_harbor_install_secret "$secrets/admin" || return 1
     _vx_harbor_install_secret "$secrets/database" || return 1
@@ -36,7 +38,9 @@ text=re.sub(r'^harbor_admin_password:.*$', 'harbor_admin_password: '+admin, text
 text=re.sub(r'^(database:\n  password:).*$' , r'\1 '+db, text, count=1, flags=re.M)
 text=re.sub(r'^data_volume:.*$', 'data_volume: /var/lib/vesta-harbor', text, count=1, flags=re.M)
 text=re.sub(r'^# external_url:.*$', 'external_url: '+origin['ORIGIN'], text, count=1, flags=re.M)
-text=re.sub(r'^(  location:).*$' , r'\1 /var/lib/vesta-harbor/log', text, count=1, flags=re.M)
+text=re.sub(r'^(    location:).*$' , r'\1 /var/lib/vesta-harbor/log', text, count=1, flags=re.M)
+text,count=re.subn(r'(?ms)^# https related config\nhttps:\n.*?(?=^# # Harbor will set ipv4)', '', text, count=1)
+if count != 1 or re.search(r'(?m)^https:', text): raise SystemExit(1)
 metric='# metric:\n#   enabled: false\n#   port: 9090\n#   path: /metrics'
 if metric not in text: raise SystemExit(1)
 text=text.replace(metric, 'metric:\n  enabled: true\n  port: 9090\n  path: /metrics', 1)

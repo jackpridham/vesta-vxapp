@@ -36,6 +36,37 @@ VX_HARBOR_MIN_FREE_KB=0
 _vx_harbor_install_requirements() { return 0; }
 vx_harbor_origin_json() { printf '{"PORT":8083,"ORIGIN":"https://host.example:8083"}\n'; }
 vx_harbor_release_stage() { mkdir -p "$1/extracted"; printf '{}\n' >"$1/evidence.json"; chmod 0600 "$1/evidence.json"; }
+config_stage="$HARBOR_TEST_ROOT/config-stage"
+mkdir -p "$config_stage/extracted/harbor"
+printf '%s\n' \
+  'hostname: reg.mydomain.com' \
+  'http:' \
+  '  port: 80' \
+  '# https related config' \
+  'https:' \
+  '  port: 443' \
+  '  certificate: /your/certificate/path' \
+  '  private_key: /your/private/key/path' \
+  '  # strong_ssl_ciphers: false' \
+  '# # Harbor will set ipv4 enabled only by default if this block is not configured' \
+  '# external_url: https://reg.mydomain.com:8433' \
+  'harbor_admin_password: Harbor12345' \
+  'database:' \
+  '  password: root123' \
+  'data_volume: /data' \
+  'log:' \
+  '  local:' \
+  '    location: /var/log/harbor' \
+  '# metric:' \
+  '#   enabled: false' \
+  '#   port: 9090' \
+  '#   path: /metrics' >"$config_stage/extracted/harbor/harbor.yml.tmpl"
+_vx_harbor_install_harbor_yml "$config_stage" '{"HOSTNAME":"host.example","ORIGIN":"https://host.example:8083"}'
+! grep -q '^https:' "$config_stage/harbor.yml" || fail 'external proxy config retained Harbor TLS listener'
+grep -q '^external_url: https://host.example:8083$' "$config_stage/harbor.yml" \
+  || fail 'external proxy origin was not rendered'
+grep -q '^    location: /var/lib/vesta-harbor/log$' "$config_stage/harbor.yml" \
+  || fail 'managed Harbor log path was not rendered'
 saved_image="$HARBOR_TEST_ROOT/saved-image.tar"; saved_root="$HARBOR_TEST_ROOT/saved-image"
 mkdir -p "$saved_root"
 printf '[{"Config":"blobs/sha256/%064d","Layers":["layer"],"RepoTags":null}]\n' 0 >"$saved_root/manifest.json"
