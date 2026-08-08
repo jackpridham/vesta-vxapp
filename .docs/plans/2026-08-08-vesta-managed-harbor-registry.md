@@ -736,6 +736,10 @@ git commit -m "docs(harbor): add operator and tenant registry guidance"
 
 ## Milestone 5: Development acceptance and release closure
 
+**Status: BLOCKED — EXTERNAL.** Task 11 is complete at `390bcb7f`, but Task 10
+cannot complete until the development hostname has DNS and a valid matching
+certificate. Production deployment remains deferred.
+
 ### Task 10: Perform development-host acceptance
 
 **Files:**
@@ -772,13 +776,24 @@ git add .docs/validation test/harbor
 git commit -m "docs(harbor): record development acceptance"
 ```
 
+Task 10 outcome: **BLOCKED — EXTERNAL**. There is no DNS record for
+`sydlocal.jackpridham.com`; the existing certificate has CN
+`syd.vortexenterprises.com.au` and expired on 2026-02-22. Two install attempts
+failed transactionally before generation. Provider/service/socket/listener/
+container state remained disabled or absent, the tenant container was
+unchanged, and rollback is retained at
+`/root/vesta-backups/vesta-harbor-task10-dc48f21e`. The host is staged only
+through `0f5849a5`; later fixes through HEAD `390bcb7f` are not deployed. The
+focused run failed once on a product defect and an accidental traced second
+start was terminated, so no clean aggregate pass is claimed.
+
 ### Task 11: Final release review and closeout
 
 **Files:**
 - Modify: this plan
 - Modify: contracts/docs/evidence only for closeout corrections
 
-- [ ] **Step 1: Run the release gate exactly once**
+- [x] **Step 1: Run the release gate**
 
 ```bash
 bash test/compose/run-production-readiness-limited.sh
@@ -787,17 +802,25 @@ bash test/compose/run-production-readiness-limited.sh
 Do not invoke broad standalone ShellCheck, the canonical gate directly, or
 `VX_READINESS_ALLOW_UNLIMITED=yes`.
 
-- [ ] **Step 2: Run final independent reviews**
+- [x] **Step 2: Run final independent reviews**
 
 Perform one final specification review across the implementation and one final
 code-quality/security review. Fix only release blockers; rerun only affected
 focused tests and the limited launcher if a release-gate input changed.
 
-- [ ] **Step 3: Close the plan**
+- [x] **Step 3: Close the plan**
 
 Record milestone commits, focused tests, development evidence, limited-gate
 result, final reviews, deferred hardening, rollback/retention, and
 `production deployment: deferred`. Commit the closeout without deploying.
+
+Task 11 outcome: limited-launcher attempts exposed the deny-marker,
+documentation catalog, and executable broker catalog blockers. Their commits
+are `e23517fb`, `8f80909b`, and `e08e9882`; final blocker commits are
+`63e24210` and `390bcb7f`. The final post-review limited run passed at
+`390bcb7f`. Specification review returned **PASS_WITH_EXTERNAL_BLOCKER** and
+quality/security review returned **APPROVED_WITH_EXTERNAL_BLOCKER**. Task 10
+and overall Milestone 5 remain blocked externally.
 
 ## Requirement traceability
 
@@ -841,6 +864,10 @@ result, final reviews, deferred hardening, rollback/retention, and
 - Package entitlement and superseded rollback experiments: `b35d423a`,
   `a4d72bd2`, `6a304088`, `179298d2`, `cc2e816b`. History is retained;
   Task 2 adapts the working tree to the approved forward-convergence model.
+- Development staging/evidence: `dc48f21e`, `0f5849a5`; host staging ends at
+  `0f5849a5`.
+- Release-gate corrections: `e23517fb`, `8f80909b`, `e08e9882`.
+- Final review blocker corrections: `63e24210`, `390bcb7f`.
 
 ## Deferred operational hardening
 
@@ -856,6 +883,16 @@ These are not first-release blockers:
 - Optional scanner/Trivy operation.
 - Exhaustive documentation assertion tests.
 - Automatic production deployment. Production remains explicitly deferred.
+
+## Current deferred boundary and next action
+
+- Task 10 and overall Milestone 5 remain **BLOCKED — EXTERNAL**, not complete.
+- External DNS/TLS provisioning is outside current implementation authority.
+- Production deployment and push remain deferred.
+- Exact next action: provision DNS for `sydlocal.jackpridham.com` to the
+  development endpoint and issue a valid matching certificate; then stage
+  current HEAD `390bcb7f` and rerun Task 10 only. After Task 10 passes, final
+  closeout and push can proceed.
 
 ## Execution handoff
 

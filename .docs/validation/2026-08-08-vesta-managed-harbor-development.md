@@ -2,7 +2,7 @@
 
 ## Outcome
 
-**BLOCKED.** Development acceptance stopped before Harbor activation because
+**BLOCKED — EXTERNAL.** Development acceptance stopped before Harbor activation because
 the authorized host's existing Vesta TLS identity is not valid for its
 authoritative hostname. Production deployment is deferred. No production host
 was contacted.
@@ -17,6 +17,8 @@ was contacted.
 - Product fix after local acceptance: `dc48f21e`.
 - Exact staged commit after live adapter correction:
   `0f5849a5d2a8344a65c9756d541fdc4553d75b2a`.
+- Current reviewed repository HEAD: `390bcb7f`. The development host remains
+  staged only through `0f5849a5`; all later fixes are not deployed.
 - Runtime marker/version: `0f5849a5...` /
   `0.9.9-0-16+vxapp.0f5849a5`.
 - No connection to `syd.vortexenterprises.com.au` was made. No firewall, DNS,
@@ -51,6 +53,10 @@ Live invocation then exposed ten Harbor public adapters that did not initialize
 `VESTA` when called without an exported environment. Commit `0f5849a5` added
 the standard `/usr/local/vesta` default. The affected `test-status.sh`, Bash
 syntax, and whitespace checks passed.
+
+There is no clean aggregate claim: the required focused run failed once due to
+a defect, and the accidental traced second start was terminated. Only affected
+direct tests were run after the fix.
 
 ## Development preflight
 
@@ -114,6 +120,7 @@ Direct isolation showed `vx_harbor_origin_json` fails because:
 
 ```text
 authoritative hostname: sydlocal.jackpridham.com
+authoritative DNS: no DNS record for sydlocal.jackpridham.com
 Vesta certificate CN/SAN: syd.vortexenterprises.com.au
 certificate validity: 2025-11-24 through 2026-02-22
 acceptance date: 2026-08-08
@@ -135,6 +142,26 @@ After each failure:
 - no Harbor container or Harbor TCP listener existed; and
 - container `fa36ad4cc920` remained healthy with the same ID.
 
+Both attempts were transactional pre-generation failures. Final state remained
+provider disabled, with no Harbor service, socket, listener, or container. The
+tenant container was unchanged. Rollback remains at
+`/root/vesta-backups/vesta-harbor-task10-dc48f21e`, and the Debian `cosign`
+package remains installed.
+
+## Release gate and final reviews
+
+Limited-launcher attempts exposed, in order, the deny-marker lifecycle,
+documentation catalog, and executable broker catalog blockers. Corrections are
+`e23517fb`, `8f80909b`, and `e08e9882`. Later final blocker commits are
+`63e24210` and `390bcb7f`. The final post-review limited launcher passed at
+exact HEAD `390bcb7f`; this does not replace the failed focused aggregate or
+blocked host acceptance.
+
+- Final specification review: **PASS_WITH_EXTERNAL_BLOCKER**.
+- Final quality/security review: **APPROVED_WITH_EXTERNAL_BLOCKER**.
+- Task 11 gate and reviews: complete.
+- Task 10 and overall Milestone 5: **BLOCKED — EXTERNAL**.
+
 ## Acceptance not claimed
 
 Because activation could not safely pass the existing-TLS prerequisite, no
@@ -144,6 +171,11 @@ revocation/outage, encrypted backup validation, or managed disable plan was
 created. No disposable acceptance owner/project was created. These Task 10
 checks remain blocked rather than being simulated or weakened.
 
-Task 11 independent reviews, the limited production-readiness launcher, push,
-and production deployment were not performed. **Production deployment:
+Push and production deployment were not performed. **Production deployment:
 deferred.**
+
+## Exact next action
+
+Provision DNS for `sydlocal.jackpridham.com` to the development endpoint and
+issue a valid matching certificate. Then stage current HEAD `390bcb7f` and
+rerun Task 10 only. After it passes, final closeout and push can proceed.
