@@ -36,6 +36,16 @@ VX_HARBOR_MIN_FREE_KB=0
 _vx_harbor_install_requirements() { return 0; }
 vx_harbor_origin_json() { printf '{"PORT":8083,"ORIGIN":"https://host.example:8083"}\n'; }
 vx_harbor_release_stage() { mkdir -p "$1/extracted"; printf '{}\n' >"$1/evidence.json"; chmod 0600 "$1/evidence.json"; }
+saved_image="$HARBOR_TEST_ROOT/saved-image.tar"; saved_root="$HARBOR_TEST_ROOT/saved-image"
+mkdir -p "$saved_root"
+printf '[{"Config":"blobs/sha256/%064d","Layers":["layer"],"RepoTags":null}]\n' 0 >"$saved_root/manifest.json"
+tar -cf "$saved_image" -C "$saved_root" manifest.json
+_vx_harbor_docker_bounded() { cat "$saved_image"; }
+_vx_harbor_install_loaded_image_config_validate "sha256:$(printf '%064d' 1)" "sha256:$(printf '%064d' 0)" \
+  || fail 'containerd image identity did not validate its pinned saved config'
+! _vx_harbor_install_loaded_image_config_validate "sha256:$(printf '%064d' 1)" "sha256:$(printf '%064d' 2)" \
+  || fail 'mismatched saved image config was accepted'
+_vx_harbor_docker_bounded() { local seconds="$1"; shift; /usr/bin/timeout "$seconds" /usr/bin/docker "$@"; }
 _vx_harbor_install_generate() {
   local stage="$1" manifest="$2"
   mkdir -p "$stage/common/config/nginx" "$stage/secrets"

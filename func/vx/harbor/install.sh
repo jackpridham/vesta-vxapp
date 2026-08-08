@@ -73,6 +73,20 @@ PY
     vx_harbor_release_images_validate "$manifest" "$stage/docker-compose.yml"
 }
 
+_vx_harbor_install_loaded_image_config_validate() {
+    local image_id="$1" expected_config="$2" saved_manifest
+    [[ "$image_id" =~ ^sha256:[0-9a-f]{64}$ \
+        && "$expected_config" =~ ^sha256:[0-9a-f]{64}$ ]] || return 1
+    saved_manifest="$(_vx_harbor_docker_bounded 60 image save "$image_id" \
+        | /usr/bin/tar -xOf - manifest.json)" || return 1
+    /usr/bin/jq -e --arg config "blobs/sha256/${expected_config#sha256:}" '
+        type == "array" and length == 1
+        and .[0].Config == $config
+        and (.[] | keys == ["Config", "Layers", "RepoTags"])
+        and (.[0].Layers | type == "array" and length > 0)
+    ' <<<"$saved_manifest" >/dev/null 2>&1
+}
+
 _vx_harbor_install_generate() {
     local stage="$1" manifest="$2" origin prepare_id expected_config
     origin="$(vx_harbor_origin_json)" || return 1
@@ -80,7 +94,7 @@ _vx_harbor_install_generate() {
     _vx_harbor_docker load --input "$stage/extracted/harbor/harbor.v2.15.0.tar.gz" >/dev/null || return 1
     prepare_id="$(_vx_harbor_docker image inspect --format '{{.Id}}' goharbor/prepare:v2.15.0)" || return 1
     expected_config="$(/usr/bin/jq -r '.generator_image.offline_config_digest' "$VESTA/install/harbor/release-provenance.json")" || return 1
-    [[ "$prepare_id" == "$expected_config" ]] || return 1
+    _vx_harbor_install_loaded_image_config_validate "$prepare_id" "$expected_config" || return 1
     /usr/bin/mkdir -p "$stage/common/config" || return 1
     _vx_harbor_docker run --rm --network none --cap-drop ALL \
       --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETGID --cap-add SETUID \
