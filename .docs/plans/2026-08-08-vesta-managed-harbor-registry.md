@@ -158,7 +158,7 @@ Harbor usage observations remain measured state
 desired-state publication. Provider-unavailable reconciliation remains pending
 and does not change workload state.
 
-## Milestone 1: Disabled authority and entitlement
+## Milestone 1: Disabled authority and entitlement - COMPLETE
 
 ### Task 1: Consolidate contract, provider authority, status, and endpoint guards
 
@@ -184,7 +184,7 @@ Keep commits `f693e830`, `c0f2b7d7`, `48ed9d97`, `81a99287`,
 root-only, exact-schema, atomic, locked, and non-mutating while disabled.
 Origin validation supports shipped modern and legacy Vesta TLS configuration.
 
-- [ ] **Step 3: Add read-only status and endpoint guards**
+- [x] **Step 3: Add read-only status and endpoint guards**
 
 `v-list-harbor-registry` emits a fixed redacted schema containing mode,
 pinned/running version, derived origin, health summary, pending-operation
@@ -193,7 +193,7 @@ internal URLs, raw Harbor responses, filesystem paths, or environment data.
 Endpoint helpers accept only fixed root-owned Unix-socket API paths and exact
 public `/v2/` or `/service/token` ingress.
 
-- [ ] **Step 4: Run task-owned tests and commit**
+- [x] **Step 4: Run task-owned tests and commit**
 
 ```bash
 bash -n func/vx/harbor/*.sh bin/v-list-harbor-registry
@@ -222,7 +222,7 @@ Keep `b35d423a` and its package fields, shipped defaults, output/form
 coverage, measured-usage separation, and provider-before-owner lock order.
 Keep later commits in history; do not rewrite them.
 
-- [ ] **Step 2: Replace rollback machinery with pending operations**
+- [x] **Step 2: Replace rollback machinery with pending operations**
 
 Remove superseded HMAC token, preimage, atomic exchange, cross-writer CAS,
 trigger compensation, and cross-authority rollback code added by
@@ -231,7 +231,7 @@ trigger compensation, and cross-authority rollback code added by
 conflict blocking, bounded retry metadata, and
 `vx_harbor_package_transition_recover OWNER` as forward reconciliation.
 
-- [ ] **Step 3: Prove desired-state behavior**
+- [x] **Step 3: Prove desired-state behavior**
 
 Tests must show disabled mode converges without network; managed mode rejects a
 decrease below fresh usage; provider outage leaves desired Vesta state plus a
@@ -239,7 +239,7 @@ pending operation without changing workloads; retry uses the same operation
 ID; success converges Harbor quota and shell access; unresolved state blocks a
 second package change; measured usage remains independent.
 
-- [ ] **Step 4: Run task-owned tests and commit**
+- [x] **Step 4: Run task-owned tests and commit**
 
 ```bash
 bash -n func/vx/compose/package.sh func/vx/harbor/package.sh bin/v-add-user \
@@ -255,11 +255,34 @@ git commit -m "refactor(harbor): reconcile package quota forward"
 
 ### Milestone 1 acceptance
 
-- [ ] Run `bash test/harbor/run-focused.sh` once.
-- [ ] Perform one independent specification/security review covering Tasks 1–2.
-- [ ] Fix only milestone blockers and recheck those numbered blockers.
-- [ ] Record commits, tests, review result, deferred findings, and Milestone 2
+- [x] Run `bash test/harbor/run-focused.sh` once.
+- [x] Perform one independent specification/security review covering Tasks 1–2.
+- [x] Fix only milestone blockers and recheck those numbered blockers.
+- [x] Record commits, tests, review result, deferred findings, and Milestone 2
   as the next milestone.
+
+#### Milestone 1 record
+
+- Product behavior: Added redacted read-only status and fixed endpoint guards;
+  retained exact disabled provider authority and package fields; replaced
+  cross-authority rollback/CAS machinery with root-owned
+  `pending|converged|failed` forward reconciliation. Operation publication is
+  durable before desired-state rename, stale journal/live-state mismatches
+  cannot mutate Harbor, and the narrow quota setter uses only the protected
+  Unix socket.
+- Commits: `4dc2c92c`, `de99afc2`. Earlier implementation evidence remains
+  recorded under Preserved implementation evidence.
+- Focused tests: touched Bash/PHP syntax, Harbor state/status/package quota,
+  Compose package integration, PHP package form, and `git diff --check`
+  passed. `test/harbor/run-focused.sh` ran exactly once for the milestone and
+  passed all four suites.
+- Review: Initial review found four blockers: mutating status, uncoupled
+  journal publication, missing production quota setter, and numeric quota
+  schema. `de99afc2` fixed all four; the same reviewer rechecked only those
+  blockers and returned PASS.
+- Deferred: General Harbor API coverage remains Task 5. Startup/owner-wide
+  recovery integration remains Task 6.
+- Next: Milestone 2, verified installation and shared TLS ingress.
 
 ## Milestone 2: Verified installation and shared TLS ingress
 
