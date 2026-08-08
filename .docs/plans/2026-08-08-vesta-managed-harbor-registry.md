@@ -119,7 +119,7 @@ host-loopback Harbor TCP port would not enforce the no-raw-API requirement.
 
 ## Milestone 1: Disabled provider authority and package quota
 
-### Task 1: Lock contracts, schemas, and focused test harness
+### Task 1: Lock contracts, schemas, and focused test harness - COMPLETE
 
 **Files:**
 - Create: `.docs/contracts/harbor-provider.md`
@@ -131,7 +131,7 @@ host-loopback Harbor TCP port would not enforce the no-raw-API requirement.
 - Create: `test/harbor/test-state.sh`
 - Modify: `.docs/README.md`
 
-- [ ] **Step 1: Write the provider contract before implementation**
+- [x] **Step 1: Write the provider contract before implementation**
 
 Record the fixed command catalog, filesystem layout, state machine, lock order,
 JSON enums, endpoint derivation, no-side-channel rule, retention behavior, and
@@ -153,7 +153,7 @@ package, and owner reconciliation paths take the shared provider lock before
 the existing owner lock; ordinary Compose operations do not take a provider
 lock.
 
-- [ ] **Step 2: Add deterministic fixtures**
+- [x] **Step 2: Add deterministic fixtures**
 
 Make `fake-harbor-api.py` bind only a caller-selected loopback port, enforce
 HTTP Basic authentication, retain projects/quotas/robots/artifacts in a JSON
@@ -179,14 +179,14 @@ JSON returns `400`, and the fixture log records method/path/status only. Make
 the Docker and systemctl fixtures record bounded argv and model Compose
 configuration/service state without invoking the host daemon.
 
-- [ ] **Step 3: Add the focused runner**
+- [x] **Step 3: Add the focused runner**
 
 Implement `test/harbor/run-focused.sh` as an explicit ordered list that runs
 only `test/harbor/test-*.sh` plus Harbor PHP tests. It must use a fresh
 temporary Vesta root per test and must not call ShellCheck or the full Compose
 readiness suite.
 
-- [ ] **Step 4: Run the first failing test**
+- [x] **Step 4: Run the first failing test**
 
 Run:
 
@@ -197,12 +197,37 @@ bash test/harbor/test-state.sh
 Expected: fail because `func/vx/harbor/main.sh` and provider state helpers do
 not exist.
 
-- [ ] **Step 5: Commit the contract and harness**
+- [x] **Step 5: Commit the contract and harness**
 
 ```bash
 git add .docs/contracts/harbor-provider.md .docs/README.md test/harbor
 git commit -m "test(harbor): define provider authority harness"
 ```
+
+#### Closeout Report
+
+- Summary: Added the Harbor provider authority contract, deterministic
+  loopback API/Docker/systemctl fixtures, isolated focused runner, fixture
+  self-tests, and the intentional Task 2 red-state test. Review fixes added
+  method/size handling, serialized state transactions, strict fixture
+  identifiers, comprehensive lifecycle/persistence coverage, protected test
+  credentials, secret-log rejection, race-free readiness, and bounded body
+  reads outside the state lock.
+- Files changed: `.docs/README.md`,
+  `.docs/contracts/harbor-provider.md`, `test/harbor/lib.sh`,
+  `test/harbor/run-focused.sh`, `test/harbor/test-state.sh`,
+  `test/harbor/test-fixtures.sh`, and
+  `test/harbor/fixtures/{fake-harbor-api.py,fake-docker.sh,fake-systemctl.sh}`.
+- Tests: Bash syntax PASS; Python compilation PASS; fixture smoke and expanded
+  behavior suite PASS twice; `git diff --check` PASS;
+  `test/harbor/test-state.sh` and the focused runner reached the expected red
+  state because `func/vx/harbor/main.sh` is introduced by Task 2.
+- Commits: `776b8485`, `c86361cf`, `b0e8886b`, `56c78dc6`, `0229c27e`.
+- Spec review: PASS after unsupported-method and oversized-request fixes.
+- Code quality review: APPROVED with no Critical or Important findings.
+- Follow-up: The partial-body regression proves current behavior, but a future
+  harness cleanup may sharpen synchronization so the timing assertion detects
+  lock-order regressions without relying on a one-second upper bound.
 
 ### Task 2: Implement provider state, validation, locking, and audit
 
