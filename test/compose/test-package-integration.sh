@@ -553,6 +553,10 @@ vx_harbor_package_transition_install_desired() {
 }
 vx_harbor_package_transition_recover() {
     printf 'recover\n' >>"$VX_TEST_MUTATIONS"
+    if [[ "${VX_TEST_PROVIDER_FAILED:-no}" == yes ]]; then
+        printf 'failed\n' >"$VX_TEST_TRANSITION_STATE"
+        return 1
+    fi
     [[ "${VX_TEST_PROVIDER_OUTAGE:-no}" != yes ]] || return 1
     vx_compose_shell_access_transition_complete "$1"
     printf 'converged\n' >"$VX_TEST_TRANSITION_STATE"
@@ -655,6 +659,27 @@ grep -Fq 'Warning: package changed; Harbor reconciliation remains pending' \
     || fail 'package transition did not take the provider lock first'
 [[ "$(sed -n '2p' "$mutations")" == lock ]] \
     || fail 'package transition did not take the owner lock second'
+[[ "$(sed -n '3p' "$mutations")" == deny ]] \
+    || fail 'package transition did not deny shell access before publication'
+[[ "$(<"$VX_TEST_DENY_STATE")" == yes ]] \
+    || fail 'pending Harbor reconciliation cleared fail-closed shell denial'
+: >"$mutations"
+PATH="$VESTA/bin:$PATH" VX_TEST_REPO_ROOT="$repo_root" \
+    VX_TEST_MUTATIONS="$mutations" VX_TEST_PROVIDER_OUTAGE=yes \
+    "$repo_root/bin/v-change-user-package" alice registry yes \
+    >"$change_root/registry-retry-pending.out" 2>&1 \
+    || fail 'same desired pending package operation did not remain retryable'
+[[ "$(<"$VX_TEST_DENY_STATE")" == yes ]] \
+    || fail 'repeated pending reconciliation cleared fail-closed shell denial'
+: >"$mutations"
+PATH="$VESTA/bin:$PATH" VX_TEST_REPO_ROOT="$repo_root" \
+    VX_TEST_MUTATIONS="$mutations" VX_TEST_PROVIDER_FAILED=yes \
+    "$repo_root/bin/v-change-user-package" alice registry yes \
+    >"$change_root/registry-failed.out" 2>&1 \
+    || fail 'failed same-desired package operation rejected Vesta authority'
+[[ "$(<"$VX_TEST_TRANSITION_STATE")" == failed \
+    && "$(<"$VX_TEST_DENY_STATE")" == yes ]] \
+    || fail 'failed reconciliation did not retain fail-closed shell denial'
 : >"$mutations"
 PATH="$VESTA/bin:$PATH" VX_TEST_REPO_ROOT="$repo_root" VX_TEST_MUTATIONS="$mutations" \
     "$repo_root/bin/v-change-user-package" alice registry yes \

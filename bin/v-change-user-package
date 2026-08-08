@@ -248,6 +248,8 @@ check_result $? "Compose owner access lock failed"
 trap harbor_package_transition_cleanup EXIT
 vx_harbor_package_transition_check "$user" "$package" "$DOCKER_REGISTRY_MB"
 check_result $? 'Harbor registry quota transition rejected' "$E_LIMIT"
+vx_compose_shell_access_deny_establish "$user"
+check_result $? "Compose shell access deny marker failed"
 
 
 #----------------------------------------------------------#
