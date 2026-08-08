@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "version": "v2.15.0",
+  "architecture": "amd64",
+  "archive": {
+    "url": "https://github.com/goharbor/harbor/releases/download/v2.15.0/harbor-online-installer-v2.15.0.tgz",
+    "sha256": "5b8b2854c16497fbc20f0868991ed6f5a1c1d43b64fecf3652e5c7fca9c7481c",
+    "bundle_url": "https://github.com/goharbor/harbor/releases/download/v2.15.0/harbor-online-installer-v2.15.0.tgz.sigstore.json",
+    "bundle_sha256": "3880f75e96286d4fe8976b7d8dd1432bee532b2fb01edb7810d30abd1fedc550"
+  },
+  "cosign": {
+    "identity": "https://github.com/goharbor/harbor/.github/workflows/publish_release.yml@refs/tags/v2.15.0",
+    "issuer": "https://token.actions.githubusercontent.com"
+  },
+  "images": {
+    "goharbor/harbor-core": "sha256:32a13f6693a278261e9c9cb7eb606c5e2aa021308ae44fdc73225755048500a8",
+    "goharbor/harbor-db": "sha256:b54e48a70a7bc173a213f59d826d09bd5d3ad94ab00f2b3335751ff43edeb842",
+    "goharbor/harbor-exporter": "sha256:ad065e4e1a0ee900a0bb1a03d57028ed4b51dc04933f5c1cb5c4aee301a72ddb",
+    "goharbor/harbor-jobservice": "sha256:a22c7cccba4673b26ffb96f5c37971d85d879dd837bc82448e01c0170b68cf28",
+    "goharbor/harbor-log": "sha256:a05dbe615a7119095fa9e345324b921e9326a2b335bd3fc4af69a0f0c010aa0b",
+    "goharbor/harbor-portal": "sha256:541d5fa95bf77240d46a438f86245cdfd6afa6dd7fdd0cf4dd4c905af6a980b1",
+    "goharbor/harbor-registryctl": "sha256:463172f71d3a1e8d4f9e3b4e687a447f41fbc3126316d8c150dba04a903bbc47",
+    "goharbor/nginx-photon": "sha256:4fcfe831b1d99e3193a586e59ba4984ca2587a9b2998ccd433f8e9425beaabdc",
+    "goharbor/redis-photon": "sha256:5da5570c0a4c2adae897a30656f1f2f6377f84c11e789b1010732a96b938f34e",
+    "goharbor/registry-photon": "sha256:beb49fd16cf0906c04a2bf51a22f7210289e7cc2ae43a733e2a0364380aceae6"
+  }
+}

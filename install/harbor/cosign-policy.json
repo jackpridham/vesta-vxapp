@@ -1,0 +1,6 @@
+{
+  "schema": 1,
+  "certificateIdentity": "https://github.com/goharbor/harbor/.github/workflows/publish_release.yml@refs/tags/v2.15.0",
+  "certificateOidcIssuer": "https://token.actions.githubusercontent.com",
+  "offlineBundleRequired": true
+}
