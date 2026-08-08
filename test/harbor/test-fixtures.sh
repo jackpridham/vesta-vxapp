@@ -66,12 +66,42 @@ for method in HEAD PATCH OPTIONS BREW; do
     [[ ! -s "$body_file" ]] || fail "$method 404 leaked a response body"
 done
 
+for method in PATCH BREW; do
+    body_file="$HARBOR_TEST_ROOT/${method}.oversized.body"
+    status="$(head -c 1048577 /dev/zero | curl --silent --show-error \
+        --request "$method" \
+        --user "$username:$password" \
+        --data-binary @- \
+        --output "$body_file" \
+        --write-out '%{http_code}' \
+        "http://127.0.0.1:$port/api/v2.0/health")"
+    [[ "$status" == 413 ]] || fail "oversized $method returned $status instead of 413"
+    [[ "$(wc -c <"$body_file")" -le 128 ]] || fail "oversized $method response was unbounded"
+    grep -Fq 'PAYLOAD_TOO_LARGE' "$body_file" \
+        || fail "oversized $method response omitted the bounded error code"
+done
+
+malformed_body="$HARBOR_TEST_ROOT/malformed.body"
+status="$(curl --silent --show-error \
+    --request POST \
+    --user "$username:$password" \
+    --header 'Content-Type: application/json' \
+    --data-binary '{' \
+    --output "$malformed_body" \
+    --write-out '%{http_code}' \
+    "http://127.0.0.1:$port/api/v2.0/projects")"
+[[ "$status" == 400 ]] || fail "malformed allowed-method JSON returned $status instead of 400"
+grep -Fq 'BAD_REQUEST' "$malformed_body" || fail 'malformed JSON omitted the bounded error code'
+
 expected_log="$HARBOR_TEST_ROOT/expected.log"
 printf '%s\n' \
     'HEAD /api/v2.0/health 404' \
     'PATCH /api/v2.0/health 404' \
     'OPTIONS /api/v2.0/health 404' \
-    'BREW /api/v2.0/health 404' >"$expected_log"
+    'BREW /api/v2.0/health 404' \
+    'PATCH /api/v2.0/health 413' \
+    'BREW /api/v2.0/health 413' \
+    'POST /api/v2.0/projects 400' >"$expected_log"
 cmp -s "$expected_log" "$log_file" || fail 'unsupported-method log is not method/path/status only'
 if grep -Fq "$password" "$log_file"; then
     fail 'fixture log contains Basic-auth credential material'

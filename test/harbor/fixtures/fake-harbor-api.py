@@ -79,15 +79,24 @@ class HarborHandler(BaseHTTPRequestHandler):
         ).decode()
         return self.headers.get("Authorization") == f"Basic {expected}"
 
-    def read_json(self):
+    def bounded_content_length(self):
         raw_length = self.headers.get("Content-Length", "0")
         try:
             length = int(raw_length)
         except ValueError:
             self.finish_status(400, {"errors": [{"code": "BAD_REQUEST"}]})
             return None
+        if length < 0:
+            self.finish_status(400, {"errors": [{"code": "BAD_REQUEST"}]})
+            return None
         if length > MAX_BODY:
             self.finish_status(413, {"errors": [{"code": "PAYLOAD_TOO_LARGE"}]})
+            return None
+        return length
+
+    def read_json(self):
+        length = self.bounded_content_length()
+        if length is None:
             return None
         body = self.rfile.read(length)
         try:
@@ -120,6 +129,8 @@ class HarborHandler(BaseHTTPRequestHandler):
         self.dispatch()
 
     def unsupported_method(self):
+        if self.bounded_content_length() is None:
+            return
         self.finish_status(404)
 
     def do_HEAD(self):
@@ -138,16 +149,7 @@ class HarborHandler(BaseHTTPRequestHandler):
 
     def dispatch(self):
         path = unquote(urlsplit(self.path).path)
-        try:
-            declared_length = int(self.headers.get("Content-Length", "0"))
-        except ValueError:
-            self.finish_status(400, {"errors": [{"code": "BAD_REQUEST"}]})
-            return
-        if declared_length < 0:
-            self.finish_status(400, {"errors": [{"code": "BAD_REQUEST"}]})
-            return
-        if declared_length > MAX_BODY:
-            self.finish_status(413, {"errors": [{"code": "PAYLOAD_TOO_LARGE"}]})
+        if self.bounded_content_length() is None:
             return
         if not self.authenticated():
             headers = {"WWW-Authenticate": 'Basic realm="harbor"'}
