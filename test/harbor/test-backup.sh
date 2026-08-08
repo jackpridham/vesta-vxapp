@@ -11,7 +11,7 @@ write_authority "$root/operations/alice.json" "$(jq -cn --arg op "$operation" '{
 write_authority "$root/operations/provider-disable.json" "$(jq -cn --arg token "$operation" --arg op "$operation" '{SCHEMA:1,TOKEN:$token,CREATED_AT:1,EXPIRES_AT:301,MODE:"managed",OPERATIONS:[{FILE:"alice.json",OWNER:"alice",OPERATION_ID:$op,STATE:"failed",UPDATED_AT:2}],BLOCKERS:[{OWNER:"alice",OPERATION_ID:$op,STATE:"failed"}],AFFECTED_OWNERS:[{OWNER:"alice",NAMESPACE:"vx-alice",STATE:"publisher-ready"}],RETAINED_DATA:["provider database","OCI artifacts","owner mappings","encrypted backups"]}')"
 for kind in runtime publisher; do write_authority "$root/rotations/alice-$kind.json" "$(jq -cn --arg op "$operation" --arg kind "$kind" --arg now "$now" '{SCHEMA:1,OPERATION_ID:$op,OWNER:"alice",KIND:$kind,PHASE:"pending-revoke",NEW_ROBOT_ID:30,NEW_USERNAME:("alice-"+$kind),OLD_ROBOT_ID:10,UPDATED_AT:$now}')"; done
 write_authority "$root/tombstones/deleted.json" "$(jq -cn --arg op "$operation" --arg now "$now" '{SCHEMA:1,OPERATION_ID:$op,OWNER:"deleted",NAMESPACE:"vx-deleted",PUBLISHER_ROBOT_ID:40,RUNTIME_ROBOT_ID:41,PHASE:"publisher",UPDATED_AT:$now}')"
-generation="$(printf fixture | sha256sum | awk '{print $1}')"; write_authority "$root/observations/alice.json" "$(jq -cn --arg now "$now" --arg generation "$generation" '{SCHEMA:1,GENERATION:$generation,OBSERVED_AT:$now,USED_MB:7}')"; write_authority "$root/observations/provider.json" "$(jq -cn --arg now "$now" '{SCHEMA:1,HEALTH:"healthy",OBSERVED_AT:$now}')"; write_authority "$root/observations/provider-detail.json" "$(jq -cn --arg now "$now" '{SCHEMA:1,OBSERVED_AT:$now,HEALTH:"healthy",CERTIFICATE:{STATE:"valid",EXPIRES_AT:$now,HOSTNAME_VALID:true},STORAGE:{USED_BYTES:1,TOTAL_BYTES:2},OPERATIONS:{PENDING:0,FAILED:1},OWNERS:[]}')"
+generation="$(printf fixture | sha256sum | awk '{print $1}')"; write_authority "$root/observations/alice.json" "$(jq -cn --arg now "$now" --arg generation "$generation" '{SCHEMA:1,GENERATION:$generation,OBSERVED_AT:$now,USED_MB:7}')"; write_authority "$root/observations/provider.json" "$(jq -cn --arg now "$now" '{SCHEMA:1,HEALTH:"healthy",OBSERVED_AT:$now}')"; write_authority "$root/observations/provider-detail.json" "$(jq -cn --arg now "$now" '{SCHEMA:1,OBSERVED_AT:$now,HEALTH:"healthy",CERTIFICATE:{STATE:"valid",EXPIRES_AT:$now,HOSTNAME_VALID:true},STORAGE:{USED_BYTES:1,TOTAL_BYTES:2},OPERATIONS:{PENDING:0,FAILED:1},OWNERS:[{OWNER:"alice",QUOTA_MB:1024,STATE:"publisher-ready",USED_MB:7,CREDENTIAL_READY:true,PUBLISHER_READY:true}]}')"
 old_backup=harbor-20260808T000000Z-00000000; write_authority "$root/backups/$old_backup.json" "$(jq -cn --arg id "$old_backup" --arg now "$now" --arg sha "$(printf old | sha256sum | awk '{print $1}')" '{SCHEMA:1,BACKUP_ID:$id,CIPHERTEXT:($id+".tar.age"),SHA256:$sha,CREATED_AT:$now,VERSION:"v2.15.0"}')"
 release="$root/release/current"; mkdir -p "$release/common/config/nginx" "$release/common/config/portal"
 printf 'services: {}\n' >"$release/docker-compose.yml"; printf 'events {}\n' >"$release/common/config/nginx/nginx.conf"; printf 'server {}\n' >"$release/common/config/portal/nginx.conf"
@@ -52,6 +52,20 @@ elif kind=='provider-schema':
     path='authority/provider.json'; value=json.loads(payload[path]); value['SCHEMA']=9; payload[path]=(json.dumps(value)+'\n').encode(); item=next(x for x in manifest['FILES'] if x['PATH']==path); item.update(SHA256=hashlib.sha256(payload[path]).hexdigest(),SIZE=len(payload[path]))
 elif kind=='observation-schema':
     path='authority/observations/alice.json'; payload[path]=b'{"SCHEMA":1,"OBSERVED_AT":"bad"}\n'; item=next(x for x in manifest['FILES'] if x['PATH']==path); item.update(SHA256=hashlib.sha256(payload[path]).hexdigest(),SIZE=len(payload[path]))
+elif kind.startswith('provider-detail-'):
+    path='authority/observations/provider-detail.json'; value=json.loads(payload[path])
+    if kind=='provider-detail-cert-empty': value['CERTIFICATE']={}
+    elif kind=='provider-detail-owner-empty': value['OWNERS']=[{}]
+    elif kind=='provider-detail-cert-missing': value['CERTIFICATE'].pop('HOSTNAME_VALID')
+    elif kind=='provider-detail-cert-extra': value['CERTIFICATE']['UNKNOWN']=1
+    elif kind=='provider-detail-cert-enum': value['CERTIFICATE']['STATE']='unknown'
+    elif kind=='provider-detail-cert-type': value['CERTIFICATE']['HOSTNAME_VALID']='true'
+    elif kind=='provider-detail-cert-timestamp': value['CERTIFICATE']['EXPIRES_AT']='tomorrow'
+    elif kind=='provider-detail-cert-null': value['CERTIFICATE']['EXPIRES_AT']=None
+    elif kind=='provider-detail-owner-extra': value['OWNERS'][0]['UNKNOWN']=1
+    elif kind=='provider-detail-owner-type': value['OWNERS'][0]['USED_MB']='7'
+    elif kind=='provider-detail-owner-duplicate': value['OWNERS'].append(dict(value['OWNERS'][0]))
+    payload[path]=(json.dumps(value)+'\n').encode(); item=next(x for x in manifest['FILES'] if x['PATH']==path); item.update(SHA256=hashlib.sha256(payload[path]).hexdigest(),SIZE=len(payload[path]))
 elif kind=='backup-schema':
     path='authority/backups/harbor-20260808T000000Z-00000000.json'; payload[path]=b'{"SCHEMA":1}\n'; item=next(x for x in manifest['FILES'] if x['PATH']==path); item.update(SHA256=hashlib.sha256(payload[path]).hexdigest(),SIZE=len(payload[path]))
 elif kind in {'owner-schema','operation-schema','disable-schema','rotation-schema','tombstone-schema'}:
@@ -89,7 +103,7 @@ if kind=='mode-mismatch':
             archive.addfile(member,io.BytesIO(data))
 PY
 }
-for variant in unexpected missing duplicate link traversal manifest-duplicate mode-mismatch provider-schema owner-schema operation-schema disable-schema rotation-schema tombstone-schema observation-schema backup-schema; do
+for variant in unexpected missing duplicate link traversal manifest-duplicate mode-mismatch provider-schema owner-schema operation-schema disable-schema rotation-schema tombstone-schema observation-schema provider-detail-cert-empty provider-detail-owner-empty provider-detail-cert-missing provider-detail-cert-extra provider-detail-cert-enum provider-detail-cert-type provider-detail-cert-timestamp provider-detail-cert-null provider-detail-owner-extra provider-detail-owner-type provider-detail-owner-duplicate backup-schema; do
     make_variant "$variant"; rm -f "$layout/$id.tar.age"; age -R "$root/backup-recipient.txt" -o "$layout/$id.tar.age" "$outer"; sha="$(sha256sum "$layout/$id.tar.age"|awk '{print $1}')"; jq --arg sha "$sha" '.SHA256=$sha' "$root/backups/$id.json" >"$tmp"; vx_harbor_json_write_atomic "$root/backups/$id.json" "$tmp"
     set +e; vx_harbor_provider_lock_acquire exclusive; vx_harbor_restore_validate_locked "$id" >/dev/null 2>&1; code=$?; vx_harbor_provider_lock_release; set -e
     [[ "$code" != 0 ]] || fail "restore accepted adversarial $variant archive"

@@ -74,9 +74,25 @@ def validate(kind, value, identity):
         timestamp(value["OBSERVED_AT"])
     elif kind == "observation-detail":
         exact(value,("SCHEMA","OBSERVED_AT","HEALTH","CERTIFICATE","STORAGE","OPERATIONS","OWNERS"))
-        if value["HEALTH"] not in {"healthy","degraded","unavailable"} or not isinstance(value["CERTIFICATE"],dict) or set(value["STORAGE"])!={"USED_BYTES","TOTAL_BYTES"} or set(value["OPERATIONS"])!={"PENDING","FAILED"} or not isinstance(value["OWNERS"],list): fail()
+        if value["HEALTH"] not in {"healthy","degraded","unavailable"} or not isinstance(value["CERTIFICATE"],dict) or set(value["CERTIFICATE"])!={"STATE","EXPIRES_AT","HOSTNAME_VALID"} or set(value["STORAGE"])!={"USED_BYTES","TOTAL_BYTES"} or set(value["OPERATIONS"])!={"PENDING","FAILED"} or not isinstance(value["OWNERS"],list): fail()
         timestamp(value["OBSERVED_AT"])
+        certificate=value["CERTIFICATE"]
+        if certificate["STATE"] not in {"valid","expiring","expired","unavailable"} or not isinstance(certificate["HOSTNAME_VALID"],bool): fail()
+        if certificate["EXPIRES_AT"] is None:
+            if certificate["STATE"] != "unavailable": fail()
+        else:
+            timestamp(certificate["EXPIRES_AT"])
+            if certificate["STATE"] == "unavailable": fail()
         if not all(integer(value["STORAGE"][x]) for x in value["STORAGE"]) or not all(integer(value["OPERATIONS"][x]) for x in value["OPERATIONS"]): fail()
+        owner_names=[]
+        for item in value["OWNERS"]:
+            if not isinstance(item,dict) or set(item)!={"OWNER","QUOTA_MB","STATE","USED_MB","CREDENTIAL_READY","PUBLISHER_READY"}: fail()
+            if not isinstance(item["OWNER"],str) or not OWNER.fullmatch(item["OWNER"]): fail()
+            if item["QUOTA_MB"] != "unlimited" and not integer(item["QUOTA_MB"]): fail()
+            if item["STATE"] not in {"project-ready","runtime-ready","publisher-ready","publisher-disabled","retained","unavailable"} or not integer(item["USED_MB"]): fail()
+            if not isinstance(item["CREDENTIAL_READY"],bool) or not isinstance(item["PUBLISHER_READY"],bool): fail()
+            owner_names.append(item["OWNER"])
+        if owner_names != sorted(set(owner_names)): fail()
     elif kind == "disable-plan":
         exact(value,("SCHEMA","TOKEN","CREATED_AT","EXPIRES_AT","MODE","OPERATIONS","BLOCKERS","AFFECTED_OWNERS","RETAINED_DATA"))
         if not isinstance(value["TOKEN"],str) or not OPERATION.fullmatch(value["TOKEN"]) or value["MODE"]!="managed": fail()
