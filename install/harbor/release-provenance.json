@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "retrieved_at": "2026-08-08T07:30:42Z",
+  "release_api_url": "https://api.github.com/repos/goharbor/harbor/releases/tags/v2.15.0",
+  "release_page_url": "https://github.com/goharbor/harbor/releases/tag/v2.15.0",
+  "source_commit": "e2b5ce92728f86c4b02f6a9a667741c1e5b62678",
+  "published_at": "2026-03-20T04:36:02Z",
+  "archive": {
+    "name": "harbor-offline-installer-v2.15.0.tgz",
+    "url": "https://github.com/goharbor/harbor/releases/download/v2.15.0/harbor-offline-installer-v2.15.0.tgz",
+    "sha256": "c9ad1c8ea3ea2b657a29c86495afe3d7ea47dbb1cc6b4c0a4fbc5cb75d1e1ef8",
+    "size": 671556546,
+    "updated_at": "2026-03-20T04:39:35Z"
+  },
+  "bundle": {
+    "name": "harbor-offline-installer-v2.15.0.tgz.sigstore.json",
+    "url": "https://github.com/goharbor/harbor/releases/download/v2.15.0/harbor-offline-installer-v2.15.0.tgz.sigstore.json",
+    "sha256": "ffa1fdd160c3ee930ed28e7fd34520c4e511aab584edcbe9cec22cc7a676225e",
+    "size": 10032,
+    "media_type": "application/vnd.dev.sigstore.bundle.v0.3+json",
+    "certificate_identity": "https://github.com/goharbor/harbor/.github/workflows/publish_release.yml@refs/tags/v2.15.0",
+    "certificate_oidc_issuer": "https://token.actions.githubusercontent.com",
+    "verified_with": "cosign v3.1.3 verify-blob --offline --bundle",
+    "verification_result": "Verified OK",
+    "rekor_log_index": "1142370644",
+    "rekor_integrated_time": "1773981392"
+  },
+  "registry_manifest_source": "https://registry-1.docker.io/v2/goharbor/<image>/manifests/v2.15.0",
+  "generator_image": {
+    "name": "goharbor/prepare",
+    "digest": "sha256:ae027b38b3251a5b243e3d642cea6480bafe0f737156beab1ae5d06b1890cd7a",
+    "offline_config_digest": "sha256:029f75920a4b0b4a4f32f3ee5b30a99ae91d3bf30365c8f0bab98e74e6185abc"
+  },
+  "runtime_images": {
+    "goharbor/harbor-core": "sha256:32a13f6693a278261e9c9cb7eb606c5e2aa021308ae44fdc73225755048500a8",
+    "goharbor/harbor-db": "sha256:b54e48a70a7bc173a213f59d826d09bd5d3ad94ab00f2b3335751ff43edeb842",
+    "goharbor/harbor-exporter": "sha256:ad065e4e1a0ee900a0bb1a03d57028ed4b51dc04933f5c1cb5c4aee301a72ddb",
+    "goharbor/harbor-jobservice": "sha256:a22c7cccba4673b26ffb96f5c37971d85d879dd837bc82448e01c0170b68cf28",
+    "goharbor/harbor-log": "sha256:a05dbe615a7119095fa9e345324b921e9326a2b335bd3fc4af69a0f0c010aa0b",
+    "goharbor/harbor-portal": "sha256:541d5fa95bf77240d46a438f86245cdfd6afa6dd7fdd0cf4dd4c905af6a980b1",
+    "goharbor/harbor-registryctl": "sha256:463172f71d3a1e8d4f9e3b4e687a447f41fbc3126316d8c150dba04a903bbc47",
+    "goharbor/nginx-photon": "sha256:4fcfe831b1d99e3193a586e59ba4984ca2587a9b2998ccd433f8e9425beaabdc",
+    "goharbor/redis-photon": "sha256:5da5570c0a4c2adae897a30656f1f2f6377f84c11e789b1010732a96b938f34e",
+    "goharbor/registry-photon": "sha256:beb49fd16cf0906c04a2bf51a22f7210289e7cc2ae43a733e2a0364380aceae6"
+  }
+}

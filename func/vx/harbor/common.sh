@@ -194,6 +194,8 @@ vx_harbor_json_write_atomic() {
     fi
     if ! vx_harbor_secure_regular_file "$temporary" 0600 \
         || ! _vx_harbor_fsync "$temporary" \
+        || ! _vx_harbor_json_write_phase fsync \
+        || ! _vx_harbor_json_write_phase rename \
         || ! /usr/bin/mv -fT -- "$temporary" "$destination" \
         || ! _vx_harbor_fsync "$directory" \
         || ! vx_harbor_secure_regular_file "$destination" 0600; then
@@ -201,6 +203,8 @@ vx_harbor_json_write_atomic() {
         return 1
     fi
 }
+
+_vx_harbor_json_write_phase() { :; }
 
 vx_harbor_provider_prepare() {
     local root source directory

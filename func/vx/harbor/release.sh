@@ -13,7 +13,7 @@ vx_harbor_release_manifest_validate() {
       type == "object" and keys == ["architecture","archive","cosign","images","schema","version"]
       and .schema == 1 and .version == "v2.15.0" and .architecture == "amd64"
       and (.archive | keys == ["bundle_sha256","bundle_url","sha256","url"])
-      and (.archive.url == "https://github.com/goharbor/harbor/releases/download/v2.15.0/harbor-online-installer-v2.15.0.tgz")
+      and (.archive.url == "https://github.com/goharbor/harbor/releases/download/v2.15.0/harbor-offline-installer-v2.15.0.tgz")
       and (.archive.bundle_url == (.archive.url + ".sigstore.json"))
       and ([.archive.sha256,.archive.bundle_sha256] | all(test("^[0-9a-f]{64}$")))
       and (.cosign | keys == ["identity","issuer"])
@@ -25,14 +25,26 @@ vx_harbor_release_manifest_validate() {
         (.value | test("^sha256:[0-9a-f]{64}$"))))
     ' "$manifest" >/dev/null 2>&1 || return 1
     policy="$VESTA/install/harbor/cosign-policy.json"
-    [[ -f "$policy" && ! -L "$policy" ]] || return 1
+    local provenance="$VESTA/install/harbor/release-provenance.json"
+    [[ -f "$policy" && ! -L "$policy" && -f "$provenance" && ! -L "$provenance" ]] || return 1
     /usr/bin/jq -e --slurpfile manifest "$manifest" '
       type == "object"
       and keys == ["certificateIdentity","certificateOidcIssuer","offlineBundleRequired","schema"]
       and .schema == 1 and .offlineBundleRequired == true
       and .certificateIdentity == $manifest[0].cosign.identity
       and .certificateOidcIssuer == $manifest[0].cosign.issuer
-    ' "$policy" >/dev/null 2>&1
+    ' "$policy" >/dev/null 2>&1 || return 1
+    /usr/bin/jq -e --slurpfile manifest "$manifest" '
+      .schema == 1 and .source_commit == "e2b5ce92728f86c4b02f6a9a667741c1e5b62678"
+      and .archive.url == $manifest[0].archive.url
+      and .archive.sha256 == $manifest[0].archive.sha256
+      and .bundle.url == $manifest[0].archive.bundle_url
+      and .bundle.sha256 == $manifest[0].archive.bundle_sha256
+      and .bundle.certificate_identity == $manifest[0].cosign.identity
+      and .bundle.certificate_oidc_issuer == $manifest[0].cosign.issuer
+      and .runtime_images == $manifest[0].images
+      and (.retrieved_at | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+Z$"))
+    ' "$provenance" >/dev/null 2>&1
 }
 
 _vx_harbor_release_download() {
@@ -62,6 +74,25 @@ with tarfile.open(p, "r:gz") as archive:
 PY
 }
 
+vx_harbor_release_offline_payload_validate() {
+    local archive="$1" provenance="$VESTA/install/harbor/release-provenance.json"
+    /usr/bin/python3 - "$archive" "$provenance" <<'PY'
+import io,json,tarfile,sys
+outer=tarfile.open(sys.argv[1], "r:gz")
+members=outer.getmembers(); names={m.name for m in members if m.isfile()}
+required={"harbor/harbor.v2.15.0.tar.gz","harbor/prepare","harbor/harbor.yml.tmpl","harbor/install.sh","harbor/common.sh","harbor/LICENSE"}
+if names != required or any(m.issym() or m.islnk() or m.isdev() for m in members): raise SystemExit(1)
+payload=outer.extractfile("harbor/harbor.v2.15.0.tar.gz")
+inner=tarfile.open(fileobj=payload,mode="r:gz")
+manifest=json.load(inner.extractfile("manifest.json"))
+tags={entry["RepoTags"][0]:entry["Config"] for entry in manifest}
+expected={f"{name}:v2.15.0" for name in json.load(open(sys.argv[2]))["runtime_images"]}
+expected |= {"goharbor/prepare:v2.15.0","goharbor/trivy-adapter-photon:v2.15.0"}
+if set(tags) != expected: raise SystemExit(1)
+if tags["goharbor/prepare:v2.15.0"] != "blobs/sha256/029f75920a4b0b4a4f32f3ee5b30a99ae91d3bf30365c8f0bab98e74e6185abc": raise SystemExit(1)
+PY
+}
+
 vx_harbor_release_verify_archive() {
     local manifest="$1" archive="$2" bundle="$3" identity issuer
     vx_harbor_release_manifest_validate "$manifest" || return 1
@@ -73,6 +104,7 @@ vx_harbor_release_verify_archive() {
         --bundle "$bundle" --certificate-identity "$identity" \
         --certificate-oidc-issuer "$issuer" "$archive" >/dev/null 2>&1 || return 1
     _vx_harbor_release_archive_validate "$archive"
+    vx_harbor_release_offline_payload_validate "$archive"
 }
 
 vx_harbor_release_images_validate() {

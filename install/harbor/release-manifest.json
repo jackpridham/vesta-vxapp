@@ -3,10 +3,10 @@
   "version": "v2.15.0",
   "architecture": "amd64",
   "archive": {
-    "url": "https://github.com/goharbor/harbor/releases/download/v2.15.0/harbor-online-installer-v2.15.0.tgz",
-    "sha256": "5b8b2854c16497fbc20f0868991ed6f5a1c1d43b64fecf3652e5c7fca9c7481c",
-    "bundle_url": "https://github.com/goharbor/harbor/releases/download/v2.15.0/harbor-online-installer-v2.15.0.tgz.sigstore.json",
-    "bundle_sha256": "3880f75e96286d4fe8976b7d8dd1432bee532b2fb01edb7810d30abd1fedc550"
+    "url": "https://github.com/goharbor/harbor/releases/download/v2.15.0/harbor-offline-installer-v2.15.0.tgz",
+    "sha256": "c9ad1c8ea3ea2b657a29c86495afe3d7ea47dbb1cc6b4c0a4fbc5cb75d1e1ef8",
+    "bundle_url": "https://github.com/goharbor/harbor/releases/download/v2.15.0/harbor-offline-installer-v2.15.0.tgz.sigstore.json",
+    "bundle_sha256": "ffa1fdd160c3ee930ed28e7fd34520c4e511aab584edcbe9cec22cc7a676225e"
   },
   "cosign": {
     "identity": "https://github.com/goharbor/harbor/.github/workflows/publish_release.yml@refs/tags/v2.15.0",

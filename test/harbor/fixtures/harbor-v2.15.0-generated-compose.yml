@@ -1,0 +1,90 @@
+services:
+  log:
+    image: goharbor/harbor-log:v2.15.0
+    container_name: harbor-log
+    restart: always
+    volumes:
+      - /var/lib/vesta-harbor/log:/var/log/docker
+      - ./common/config/log:/etc/harbor/log:ro
+    ports:
+      - 127.0.0.1:1514:10514
+    networks: [harbor]
+  registry:
+    image: goharbor/registry-photon:v2.15.0
+    container_name: registry
+    restart: always
+    volumes:
+      - /var/lib/vesta-harbor/registry:/storage
+      - ./common/config/registry:/etc/registry:ro
+      - /var/lib/vesta-harbor/secret/registry/root.crt:/etc/registry/root.crt:ro
+    depends_on: [log]
+    networks: [harbor]
+  registryctl:
+    image: goharbor/harbor-registryctl:v2.15.0
+    container_name: registryctl
+    env_file: [./common/config/registryctl/env]
+    volumes:
+      - /var/lib/vesta-harbor/registry:/storage
+      - ./common/config/registryctl:/etc/registryctl:ro
+    depends_on: [log]
+    networks: [harbor]
+  postgresql:
+    image: goharbor/harbor-db:v2.15.0
+    container_name: harbor-db
+    env_file: [./common/config/db/env]
+    volumes:
+      - /var/lib/vesta-harbor/database:/var/lib/postgresql/data
+    depends_on: [log]
+    networks: [harbor]
+  core:
+    image: goharbor/harbor-core:v2.15.0
+    container_name: harbor-core
+    env_file: [./common/config/core/env]
+    volumes:
+      - /var/lib/vesta-harbor:/data
+      - ./common/config/core:/etc/core:ro
+      - /var/lib/vesta-harbor/secret/keys/secretkey:/etc/core/key:ro
+    depends_on: [registry, postgresql, redis]
+    networks: [harbor]
+  portal:
+    image: goharbor/harbor-portal:v2.15.0
+    container_name: harbor-portal
+    volumes:
+      - ./common/config/portal/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on: [log]
+    networks: [harbor]
+  jobservice:
+    image: goharbor/harbor-jobservice:v2.15.0
+    container_name: harbor-jobservice
+    env_file: [./common/config/jobservice/env]
+    volumes:
+      - /var/lib/vesta-harbor/job_logs:/var/log/jobs
+      - ./common/config/jobservice:/etc/jobservice:ro
+    depends_on: [core]
+    networks: [harbor]
+  redis:
+    image: goharbor/redis-photon:v2.15.0
+    container_name: redis
+    volumes:
+      - /var/lib/vesta-harbor/redis:/var/lib/redis
+    depends_on: [log]
+    networks: [harbor]
+  proxy:
+    image: goharbor/nginx-photon:v2.15.0
+    container_name: nginx
+    volumes:
+      - ./common/config/nginx:/etc/nginx:ro
+    ports:
+      - 80:8080
+      - 9090:9090
+    depends_on: [registry, core, portal, log]
+    networks: [harbor]
+  exporter:
+    image: goharbor/harbor-exporter:v2.15.0
+    container_name: harbor-exporter
+    env_file: [./common/config/exporter/env]
+    depends_on: [core, postgresql]
+    networks: [harbor]
+networks:
+  harbor:
+    external: false

@@ -7,8 +7,9 @@ Requires=docker.service
 Type=oneshot
 RemainAfterExit=yes
 Environment=PATH=/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/usr/bin/docker compose --project-name vesta-harbor --file /usr/local/vesta/data/harbor/release/current/compose.yaml up --detach --remove-orphans
-ExecStop=/usr/bin/docker compose --project-name vesta-harbor --file /usr/local/vesta/data/harbor/release/current/compose.yaml stop
+ExecStartPre=/usr/bin/install -o 0 -g 0 -m 0770 -d /run/vesta-harbor
+ExecStart=/usr/bin/docker compose --project-name vesta-harbor --file /usr/local/vesta/data/harbor/release/current/docker-compose.yml up --detach --remove-orphans
+ExecStop=/usr/bin/docker compose --project-name vesta-harbor --file /usr/local/vesta/data/harbor/release/current/docker-compose.yml stop
 TimeoutStartSec=600
 TimeoutStopSec=180
 

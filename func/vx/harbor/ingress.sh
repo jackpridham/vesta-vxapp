@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 
 vx_harbor_ingress_target() { printf '%s\n' "${VX_HARBOR_NGINX_TARGET:-$VESTA/nginx/conf/harbor-registry.conf}"; }
+vx_harbor_nginx_main() { printf '%s\n' "${VX_HARBOR_NGINX_MAIN:-$VESTA/nginx/conf/nginx.conf}"; }
 vx_harbor_systemd_target() { printf '%s\n' "${VX_HARBOR_SYSTEMD_TARGET:-/etc/systemd/system/vesta-harbor.service}"; }
 vx_harbor_socket_path() { printf '%s\n' "${VX_HARBOR_SOCKET_PATH:-/run/vesta-harbor/proxy.sock}"; }
 
 vx_harbor_ingress_render() {
-    local destination="$1" endpoint port template
+    local destination="$1" candidate_main="$2" activation_main="$3" endpoint port template main target
     endpoint="$(vx_harbor_origin_json)" || return 1
     port="$(/usr/bin/jq -er '.PORT' <<<"$endpoint")" || return 1
     template="$VESTA/install/harbor/harbor-registry.conf.tpl"
@@ -15,23 +16,56 @@ vx_harbor_ingress_render() {
 import pathlib,re,sys
 text=pathlib.Path(sys.argv[1]).read_text()
 locations=re.findall(r"location\s+([^\{]+)\{", text)
-if [x.strip() for x in locations] != ["^~ /v2/", "= /service/token"]:
+if [x.strip() for x in locations] != ["= /v2/", "^~ /v2/", "= /service/token"]:
     raise SystemExit(1)
 for forbidden in ("/api/", "metrics", "portal", "127.0.0.1", "docker.sock"):
     if forbidden in text.lower(): raise SystemExit(1)
 if "http://unix:/run/vesta-harbor/proxy.sock" not in text:
     raise SystemExit(1)
 PY
+    main="$(vx_harbor_nginx_main)"; target="$(vx_harbor_ingress_target)"
+    [[ -f "$main" && ! -L "$main" ]] || return 1
+    /usr/bin/python3 - "$main" "$candidate_main" "$activation_main" "$destination" "$target" "$VESTA/web" <<'PY'
+import pathlib,re,sys
+source,candidate,activation,staged_include,target_include,panel_root=map(pathlib.Path,sys.argv[1:])
+text=source.read_text(); blocks=[]
+for match in re.finditer(r'\bserver\s*\{', text):
+    depth=1; pos=match.end(); quote=None
+    while pos < len(text) and depth:
+        c=text[pos]
+        if quote:
+            if c==quote and text[pos-1] != '\\': quote=None
+        elif c in "'\"": quote=c
+        elif c=='#':
+            pos=text.find('\n',pos)
+            if pos < 0: break
+        elif c=='{': depth+=1
+        elif c=='}': depth-=1
+        pos+=1
+    if depth==0: blocks.append((match.start(),pos,text[match.start():pos]))
+needle=re.compile(r'\broot\s+'+re.escape(str(panel_root))+r'\s*;')
+matches=[b for b in blocks if needle.search(b[2])]
+if len(matches)!=1 or 'harbor-registry.conf' in text: raise SystemExit(1)
+start,end,block=matches[0]
+insert=end-1
+def build(path): return text[:insert]+'    include '+str(path)+';\n'+text[insert:]
+candidate.write_text(build(staged_include)); activation.write_text(build(target_include))
+PY
 }
 
 vx_harbor_ingress_activate() {
-    local staged="$1" target directory temporary
+    local staged="$1" candidate_main="$2" activation_main="$3" target main directory temporary main_temporary
     target="$(vx_harbor_ingress_target)" || return 1; directory="$(dirname "$target")"
-    [[ -d "$directory" && ! -L "$directory" && -f "$staged" && ! -L "$staged" ]] || return 1
+    main="$(vx_harbor_nginx_main)"
+    [[ -d "$directory" && ! -L "$directory" && -f "$staged" && ! -L "$staged" \
+        && -f "$candidate_main" && ! -L "$candidate_main" && -f "$activation_main" && ! -L "$activation_main" ]] || return 1
+    "${VX_HARBOR_NGINX:-/usr/sbin/nginx}" -t -c "$candidate_main" || return 1
     temporary="$(/usr/bin/mktemp "$directory/.harbor-registry.conf.XXXXXX")" || return 1
+    main_temporary="$(/usr/bin/mktemp "$directory/.nginx.conf.XXXXXX")" || { /usr/bin/rm -f "$temporary"; return 1; }
     /usr/bin/install -o "$(_vx_harbor_authority_uid)" -g "$(_vx_harbor_authority_gid)" -m 0600 "$staged" "$temporary" || return 1
-    "${VX_HARBOR_NGINX:-/usr/sbin/nginx}" -t || { /usr/bin/rm -f "$temporary"; return 1; }
+    /usr/bin/install -o "$(_vx_harbor_authority_uid)" -g "$(_vx_harbor_authority_gid)" -m 0600 "$activation_main" "$main_temporary" || return 1
     /usr/bin/mv -fT "$temporary" "$target" || return 1
+    /usr/bin/mv -fT "$main_temporary" "$main" || return 1
     "${VX_HARBOR_NGINX:-/usr/sbin/nginx}" -t || return 1
     "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" reload nginx.service
 }
