@@ -15,18 +15,59 @@ vx_harbor_owner_state_validate() {
 _vx_harbor_owner_desired() {
     local owner="$1" conf="$VESTA/data/users/$owner/user.conf"
     [[ -f "$conf" && ! -L "$conf" ]] || return 1
-    /usr/bin/awk -F"'" '/^(PACKAGE|SUSPENDED|DOCKER_PROJECTS|DOCKER_REGISTRY_MB)=/{v[$1]=$2;c[$1]++} END{for(k in c)if(c[k]!=1)exit 1;if(v["PACKAGE"]!~/^[A-Za-z0-9._-]+$/||v["SUSPENDED"]!~/^(yes|no)$/||v["DOCKER_PROJECTS"]!~/^(0|[1-9][0-9]*|unlimited)$/||v["DOCKER_REGISTRY_MB"]!~/^(0|[1-9][0-9]*|unlimited)$/)exit 1; print v["PACKAGE"]"\t"v["SUSPENDED"]"\t"v["DOCKER_PROJECTS"]"\t"v["DOCKER_REGISTRY_MB"]}' "$conf"
+    /usr/bin/awk -F"'" '/^(PACKAGE|SUSPENDED|DOCKER_PROJECTS|DOCKER_REGISTRY_MB)=/{key=$1;sub(/=$/,"",key);v[key]=$2;c[key]++} END{for(k in c)if(c[k]!=1)exit 1;if(v["PACKAGE"]!~/^[A-Za-z0-9._-]+$/||v["SUSPENDED"]!~/^(yes|no)$/||v["DOCKER_PROJECTS"]!~/^(0|[1-9][0-9]*|unlimited)$/||v["DOCKER_REGISTRY_MB"]!~/^(0|[1-9][0-9]*|unlimited)$/)exit 1; print v["PACKAGE"]"\t"v["SUSPENDED"]"\t"v["DOCKER_PROJECTS"]"\t"v["DOCKER_REGISTRY_MB"]}' "$conf"
 }
 
 vx_harbor_owner_is_eligible() { local d; d="$(_vx_harbor_owner_desired "$1")" || return 1; IFS=$'\t' read -r _ suspended projects quota <<<"$d"; [[ "$suspended" == no && "$projects" != 0 && "$quota" != 0 ]]; }
 
 _vx_harbor_owner_write() { local path="$1" json="$2" source; source="$(/usr/bin/mktemp "$(vx_harbor_root)/owners/.owner.XXXXXX")" || return 1; /usr/bin/printf '%s\n' "$json" >"$source" && vx_harbor_json_write_atomic "$path" "$source"; local r=$?; /usr/bin/rm -f "$source"; return "$r"; }
 
+vx_harbor_namespace_collision_check() {
+    local owner="$1" namespace="$2" file
+    for file in "$(vx_harbor_root)"/owners/*.json; do
+        [[ -f "$file" ]] || continue
+        vx_harbor_owner_state_validate "$file" || return 1
+        /usr/bin/jq -e --arg owner "$owner" --arg namespace "$namespace" '.OWNER!=$owner and .NAMESPACE==$namespace' "$file" >/dev/null && return 1
+    done
+}
+
+vx_harbor_tombstone_path() { [[ "$1" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ ]] && printf '%s/tombstones/%s.json\n' "$(vx_harbor_root)" "$1"; }
+vx_harbor_tombstone_validate() { vx_harbor_secure_regular_file "$1" 0600 && /usr/bin/jq -e 'type=="object" and keys==["NAMESPACE","OPERATION_ID","OWNER","PHASE","PUBLISHER_ROBOT_ID","RUNTIME_ROBOT_ID","SCHEMA","UPDATED_AT"] and .SCHEMA==1 and (.OPERATION_ID|test("^[a-f0-9]{32}$")) and (.PHASE|IN("publisher","runtime"))' "$1" >/dev/null 2>&1; }
+_vx_harbor_tombstone_write() { local owner="$1" json="$2" source path; path="$(vx_harbor_tombstone_path "$owner")"; source="$(/usr/bin/mktemp "$(vx_harbor_root)/tombstones/.tombstone.XXXXXX")" || return 1; printf '%s\n' "$json" >"$source" && vx_harbor_json_write_atomic "$path" "$source"; local r=$?; /usr/bin/rm -f "$source"; return "$r"; }
+
+vx_harbor_tombstone_reconcile_locked() {
+    local owner="$1" path phase publisher runtime json now
+    path="$(vx_harbor_tombstone_path "$owner")"; vx_harbor_tombstone_validate "$path" || return 1
+    phase="$(/usr/bin/jq -r .PHASE "$path")"; publisher="$(/usr/bin/jq -r .PUBLISHER_ROBOT_ID "$path")"; runtime="$(/usr/bin/jq -r .RUNTIME_ROBOT_ID "$path")"
+    if [[ "$phase" == publisher ]]; then
+        [[ "$publisher" == null ]] || vx_harbor_api_robot_disable "$publisher" >/dev/null || return 75
+        now="$(/usr/bin/date -u +%Y-%m-%dT%H:%M:%SZ)"; json="$(/usr/bin/jq --arg now "$now" '.PHASE="runtime"|.UPDATED_AT=$now' "$path")"; _vx_harbor_tombstone_write "$owner" "$json" || return 1
+    fi
+    [[ "$runtime" == null ]] || vx_harbor_api_robot_disable "$runtime" >/dev/null || return 75
+    /usr/bin/rm -f -- "$path"; _vx_harbor_fsync "$(vx_harbor_root)/tombstones"
+}
+
+vx_harbor_owner_delete_prepare() {
+    local owner="$1" owner_path tombstone operation now json result=0
+    owner_path="$(vx_harbor_owner_state_path "$owner")"; [[ -f "$owner_path" ]] || return 0
+    vx_harbor_provider_enabled || return 0; vx_harbor_owner_state_validate "$owner_path" || return 1
+    tombstone="$(vx_harbor_tombstone_path "$owner")"
+    if [[ ! -f "$tombstone" ]]; then
+        operation="$(/usr/bin/od -An -N16 -tx1 /dev/urandom | /usr/bin/tr -d ' \n')"; now="$(/usr/bin/date -u +%Y-%m-%dT%H:%M:%SZ)"
+        json="$(/usr/bin/jq -n --arg owner "$owner" --arg ns "$(/usr/bin/jq -r .NAMESPACE "$owner_path")" --arg op "$operation" --argjson publisher "$(/usr/bin/jq .PUBLISHER_ROBOT_ID "$owner_path")" --argjson runtime "$(/usr/bin/jq .RUNTIME_ROBOT_ID "$owner_path")" --arg now "$now" '{SCHEMA:1,OPERATION_ID:$op,OWNER:$owner,NAMESPACE:$ns,PUBLISHER_ROBOT_ID:$publisher,RUNTIME_ROBOT_ID:$runtime,PHASE:"publisher",UPDATED_AT:$now}')" || return 1
+        _vx_harbor_tombstone_write "$owner" "$json" || return 1
+    fi
+    vx_harbor_provider_lock_acquire shared || return 1; vx_compose_shell_access_lock_acquire "$owner" || { vx_harbor_provider_lock_release; return 1; }; vx_compose_registry_lock_acquire "$owner" || { vx_compose_shell_access_lock_release; vx_harbor_provider_lock_release; return 1; }
+    vx_harbor_tombstone_reconcile_locked "$owner" || result=$?
+    vx_compose_registry_lock_release; vx_compose_shell_access_lock_release; vx_harbor_provider_lock_release
+    [[ "$result" == 0 || "$result" == 75 ]]
+}
+
 vx_harbor_owner_reconcile_locked() {
-    local owner="$1" desired package suspended projects quota namespace path project project_id quota_id old_runtime generation runtime origin now state_json usage
+    local owner="$1" desired package suspended projects quota namespace path project project_id quota_id old_runtime generation runtime origin now state_json usage provider_observation_source rotation_path
     desired="$(_vx_harbor_owner_desired "$owner")" || return 1; IFS=$'\t' read -r package suspended projects quota <<<"$desired"
     vx_harbor_package_transition_recover "$owner" || [[ -e "$(vx_harbor_operation_path "$owner")" ]] || return 1
-    namespace="$(vx_harbor_owner_namespace "$owner")"; path="$(vx_harbor_owner_state_path "$owner")"
+    namespace="$(vx_harbor_owner_namespace "$owner")"; path="$(vx_harbor_owner_state_path "$owner")"; vx_harbor_namespace_collision_check "$owner" "$namespace" || return 1
     if ! vx_harbor_owner_is_eligible "$owner"; then
         [[ -f "$path" ]] || return 0
         vx_harbor_owner_state_validate "$path" || return 1
@@ -34,7 +75,13 @@ vx_harbor_owner_reconcile_locked() {
         vx_harbor_runtime_revoke "$owner" "$(/usr/bin/jq -r '.ORIGIN' "$(vx_harbor_root)/provider.json")" "$(/usr/bin/jq -r '.RUNTIME_ROBOT_ID' "$path")" || return 1
         now="$(/usr/bin/date -u +%Y-%m-%dT%H:%M:%SZ)"; state_json="$(/usr/bin/jq --arg now "$now" '.STATE="retained"|.RUNTIME_ROBOT_ID=null|.RUNTIME_USERNAME=null|.PUBLISHER_ROBOT_ID=null|.PUBLISHER_USERNAME=null|.PUBLISHER_ENABLED=false|.UPDATED_AT=$now' "$path")"; _vx_harbor_owner_write "$path" "$state_json"; return
     fi
-    vx_harbor_api_health >/dev/null || return 75
+    if vx_harbor_api_health >/dev/null; then
+        provider_observation_source="$(/usr/bin/mktemp "$(vx_harbor_root)/observations/.provider.XXXXXX")" || return 1
+        /usr/bin/jq -n --arg at "$(/usr/bin/date -u +%Y-%m-%dT%H:%M:%SZ)" '{HEALTH:"healthy",OBSERVED_AT:$at}' >"$provider_observation_source" && vx_harbor_json_write_atomic "$(vx_harbor_root)/observations/provider.json" "$provider_observation_source" || { /usr/bin/rm -f "$provider_observation_source"; return 1; }
+        /usr/bin/rm -f "$provider_observation_source"
+    else
+        return 75
+    fi
     project="$(vx_harbor_api_project_get "$namespace" 2>/dev/null || :)"
     if [[ -z "$project" ]]; then vx_harbor_api_project_create "$namespace" || return 75; project="$(vx_harbor_api_project_get "$namespace")" || return 75; fi
     /usr/bin/jq -e --arg n "$namespace" '.name==$n and .metadata.public=="false"' <<<"$project" >/dev/null || return 1
@@ -44,7 +91,10 @@ vx_harbor_owner_reconcile_locked() {
     vx_harbor_quota_observe "$owner" "$quota_id" || return 75
     old_runtime=null; [[ ! -f "$path" ]] || old_runtime="$(/usr/bin/jq -r '.RUNTIME_ROBOT_ID' "$path")"
     generation="$(/usr/bin/date -u +%s)"; origin="$(/usr/bin/jq -er '.ORIGIN|select(type=="string")' "$(vx_harbor_root)/provider.json")" || return 1
-    if [[ "$old_runtime" != null ]] && vx_harbor_api_robot_get "$old_runtime" >/dev/null; then
+    rotation_path="$(vx_harbor_rotation_path "$owner" runtime)"
+    if [[ -f "$rotation_path" ]] && vx_harbor_rotation_validate "$rotation_path" && [[ "$(/usr/bin/jq -r .PHASE "$rotation_path")" == pending-revoke ]]; then
+        IFS=$'\t' read -r runtime_id runtime_user < <(vx_harbor_runtime_rotate "$owner" "$namespace" "$origin" "$old_runtime" "$generation") || return 75
+    elif [[ "$old_runtime" != null ]] && vx_harbor_api_robot_get "$old_runtime" >/dev/null; then
         runtime_id="$old_runtime"; runtime_user="$(/usr/bin/jq -r '.RUNTIME_USERNAME' "$path")"
     else
         IFS=$'\t' read -r runtime_id runtime_user < <(vx_harbor_runtime_rotate "$owner" "$namespace" "$origin" "$old_runtime" "$generation") || return 75
@@ -55,6 +105,7 @@ vx_harbor_owner_reconcile_locked() {
         state_json="$(/usr/bin/jq --slurpfile old "$path" '.PUBLISHER_ROBOT_ID=$old[0].PUBLISHER_ROBOT_ID|.PUBLISHER_USERNAME=$old[0].PUBLISHER_USERNAME|.PUBLISHER_ENABLED=true|.STATE="publisher-ready"' <<<"$state_json")"
     fi
     _vx_harbor_owner_write "$path" "$state_json" || return 1
+    _vx_harbor_rotation_retry_revoke "$owner" publisher >/dev/null 2>&1 || [[ $? == 1 ]] || return 75
     vx_harbor_package_transition_recover "$owner" || return 1
 }
 
@@ -86,6 +137,6 @@ vx_harbor_owner_revoke() {
     [[ -z "${result:-}" ]]
 }
 
-vx_harbor_owners_reconcile() { local d owner result=0; for d in "$VESTA"/data/users/*; do [[ -d "$d" && ! -L "$d" ]] || continue; owner="${d##*/}"; [[ "$owner" == admin ]] && continue; vx_harbor_owner_reconcile "$owner" || result=1; done; return "$result"; }
+vx_harbor_owners_reconcile() { local d owner result=0 path; for d in "$VESTA"/data/users/*; do [[ -d "$d" && ! -L "$d" ]] || continue; owner="${d##*/}"; [[ "$owner" == admin ]] && continue; vx_harbor_owner_reconcile "$owner" || result=1; done; for path in "$(vx_harbor_root)"/tombstones/*.json; do [[ -f "$path" ]] || continue; owner="${path##*/}"; owner="${owner%.json}"; vx_harbor_provider_lock_acquire shared || { result=1; continue; }; vx_compose_shell_access_lock_acquire "$owner" || { vx_harbor_provider_lock_release; result=1; continue; }; vx_compose_registry_lock_acquire "$owner" || { vx_compose_shell_access_lock_release; vx_harbor_provider_lock_release; result=1; continue; }; vx_harbor_tombstone_reconcile_locked "$owner" || result=1; vx_compose_registry_lock_release; vx_compose_shell_access_lock_release; vx_harbor_provider_lock_release; done; return "$result"; }
 
 vx_harbor_owners_list_json() { local files=() f; for f in "$(vx_harbor_root)"/owners/*.json; do [[ -f "$f" ]] || continue; vx_harbor_owner_state_validate "$f" || return 1; files+=("$f"); done; ((${#files[@]})) && /usr/bin/jq -sc 'map({OWNER,NAMESPACE,STATE,QUOTA_MB,PUBLISHER_ENABLED,UPDATED_AT})|sort_by(.OWNER)' "${files[@]}" || printf '[]\n'; }

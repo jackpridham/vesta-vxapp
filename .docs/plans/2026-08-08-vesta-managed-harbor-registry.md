@@ -566,6 +566,29 @@ git commit -m "feat(harbor): add tenant registry lifecycle"
   review remain closeout concerns; no broad ShellCheck, readiness, deployment,
   host Docker, network, systemctl, nginx, or production action was run.
 
+#### Milestone 3 blocker correction
+
+- Secret-bearing API bodies now reach fixed curl only through an already-open
+  descriptor and stdin. Publisher rotation consumes stdin; caller paths are
+  rejected. Behavioral fixtures inspect process argv/environment and logs and
+  reject unconstrained, linked, malformed, oversized, and failed responses.
+- Package recovery validates the full owner mapping schema and converges its
+  mapped quota. Owner reconciliation rejects deterministic namespace
+  collisions.
+- Runtime and publisher rotation authenticate the new credential against the
+  fixed `/v2/` endpoint before switching protected authority. Durable
+  operation IDs preserve new/old robot mappings and pending old revocation;
+  retries reuse the new robot and revoke the old without secret disclosure.
+- User deletion durably publishes a publisher-then-runtime tombstone before
+  account removal. Provider outage leaves the tombstone pending; global/startup
+  reconciliation retries tombstones after the user is gone and retains owner
+  mapping and artifacts.
+- Registry discovery emits only the fixed schema and contract enums. Health is
+  derived from a fresh provider observation; owner observations independently
+  produce fresh, stale, or unavailable readiness.
+- Direct Task 5-7, package, status, and provider-state suites passed. The
+  aggregate focused runner was not invoked during blocker correction.
+
 ## Milestone 4: Operations and operator surfaces
 
 ### Task 8: Add health, encrypted backup validation, disable, and bounded operations

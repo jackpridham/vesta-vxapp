@@ -15,10 +15,24 @@ vx_harbor_socket_validate(){ [[ -S "$api_socket" && ! -L "$api_socket" ]]; }
 vx_harbor_api_health | jq -e '.status=="healthy"' >/dev/null
 vx_harbor_api_project_create vx-alice; project="$(vx_harbor_api_project_get vx-alice)"; [[ "$(jq -r .name <<<"$project")" == vx-alice ]]
 quota="$(jq -r .quota_id <<<"$project")"; vx_harbor_api_quota_set_bytes "$quota" 1048576; [[ "$(vx_harbor_api_quota_get "$quota"|jq -r .hard.storage)" == 1048576 ]]
-secret=0123456789abcdef0123456789abcdef; robot="$(printf %s "$secret" | vx_harbor_api_robot_create vx-alice vx-alice-runtime pull)"; vx_harbor_api_robot_disable "$(jq -r .id <<<"$robot")"
+secret=0123456789abcdef0123456789abcdef; robot="$(printf %s "$secret" | vx_harbor_api_robot_create vx-alice vx-alice-runtime pull)"; robot_id="$(jq -r .id <<<"$robot")"
+printf %s "$secret" | vx_harbor_api_credential_probe vx-alice-runtime
+! printf %s wrong-wrong-wrong-wrong | vx_harbor_api_credential_probe vx-alice-runtime
+vx_harbor_api_robot_disable "$robot_id"
 ! vx_harbor_local_api_guard "$api_socket" GET /api/v2.0/configurations
 ! vx_harbor_api_project_get '../admin'
-! env SECRET_MARKER=must-not-leak bash -c 'exit 0' >/dev/null 2>&1 || :
+printf '{}\n' >"$HARBOR_TEST_ROOT/caller-body.json"; chmod 0600 "$HARBOR_TEST_ROOT/caller-body.json"; ! _vx_harbor_api_call POST /api/v2.0/projects 201 empty "$HARBOR_TEST_ROOT/caller-body.json"
+printf '{}\n' >"$(vx_harbor_root)/secrets/body.json"; chmod 0600 "$(vx_harbor_root)/secrets/body.json"; ln "$(vx_harbor_root)/secrets/body.json" "$(vx_harbor_root)/secrets/body-hardlink.json"; ! _vx_harbor_api_call POST /api/v2.0/projects 201 empty "$(vx_harbor_root)/secrets/body.json"; unlink "$(vx_harbor_root)/secrets/body-hardlink.json"; unlink "$(vx_harbor_root)/secrets/body.json"
+jq '.fault={path:"/api/v2.0/health",mode:"malformed"}' "$state" >"$state.tmp"; mv "$state.tmp" "$state"; ! vx_harbor_api_health >/dev/null
+jq '.fault={path:"/api/v2.0/health",status:503}' "$state" >"$state.tmp"; mv "$state.tmp" "$state"; ! vx_harbor_api_health >/dev/null
+jq '.fault={path:"/api/v2.0/health",mode:"oversize"}' "$state" >"$state.tmp"; mv "$state.tmp" "$state"; ! vx_harbor_api_health >/dev/null
+jq '.fault={path:"/api/v2.0/robots",mode:"delay",seconds:1}' "$state" >"$state.tmp"; mv "$state.tmp" "$state"
+process_secret=process-secret-0123456789abcdef
+(printf %s "$process_secret" | vx_harbor_api_robot_create vx-alice vx-alice-process pull >/dev/null) & create_pid=$!
+sleep .1
+! tr '\0' '\n' </proc/$create_pid/environ 2>/dev/null | grep -F "$process_secret"
+! ps -eo args | grep -F "$process_secret" | grep -v grep
+wait "$create_pid"
 kill "$api_pid"; wait "$api_pid" || :; api_pid=
 ! vx_harbor_api_health >/dev/null 2>&1
 ! grep -q 'fixture-password\|0123456789abcdef' "$log"

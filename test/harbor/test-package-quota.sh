@@ -77,7 +77,7 @@ jq '.MODE="managed"' "$VESTA/data/harbor/provider.json" >"$HARBOR_TEST_ROOT/prov
 vx_harbor_json_write_atomic "$VESTA/data/harbor/provider.json" "$HARBOR_TEST_ROOT/provider.next"
 observed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 printf '{"USED_MB":15,"OBSERVED_AT":"%s","GENERATION":"g1"}\n' "$observed_at" >"$VESTA/data/harbor/observations/alice.json"
-printf '{"SCHEMA":1,"OWNER":"alice","QUOTA_ID":1}\n' >"$VESTA/data/harbor/owners/alice.json"
+printf '{"SCHEMA":1,"OWNER":"alice","NAMESPACE":"vx-alice","PROJECT_ID":1,"QUOTA_ID":1,"QUOTA_MB":50,"STATE":"runtime-ready","RUNTIME_ROBOT_ID":1,"RUNTIME_USERNAME":"vx-alice-runtime","PUBLISHER_ROBOT_ID":null,"PUBLISHER_USERNAME":null,"PUBLISHER_ENABLED":false,"LAST_ERROR":null,"UPDATED_AT":"%s"}\n' "$observed_at" >"$VESTA/data/harbor/owners/alice.json"
 printf 'silent\nshow-error\nuser = "integration:fixture-credential-canary"\n' >"$VESTA/data/harbor/secrets/integration.curl"
 chmod 0600 "$VESTA/data/harbor/observations/alice.json" "$VESTA/data/harbor/owners/alice.json" "$VESTA/data/harbor/secrets/integration.curl"
 state_file="$HARBOR_TEST_ROOT/api-state.json"

@@ -9,6 +9,7 @@ import re
 import socket
 import tempfile
 import threading
+import time
 import socketserver
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit
@@ -17,6 +18,9 @@ from urllib.parse import unquote, urlsplit
 class ThreadingUnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
     daemon_threads = True
     allow_reuse_address = True
+
+    def handle_error(self, request, client_address):
+        return
 
 MAX_BODY = 1024 * 1024
 BODY_READ_TIMEOUT = 0.5
@@ -33,6 +37,7 @@ def initial_state():
         "next_project_id": 1,
         "next_quota_id": 1,
         "next_robot_id": 1,
+        "fault": None,
     }
 
 
@@ -89,10 +94,13 @@ class HarborHandler(BaseHTTPRequestHandler):
             self.server.log_handle.flush()
 
     def authenticated(self):
-        expected = base64.b64encode(
-            f"{self.server.username}:{self.server.password}".encode()
-        ).decode()
-        return self.headers.get("Authorization") == f"Basic {expected}"
+        supplied = self.headers.get("Authorization")
+        credentials = [(self.server.username, self.server.password)]
+        state = self.server.store.read()
+        credentials.extend((robot.get("name"), robot.get("secret"))
+                           for robot in state["robots"] if not robot.get("disabled"))
+        return any(supplied == "Basic " + base64.b64encode(f"{user}:{password}".encode()).decode()
+                   for user, password in credentials if user and password)
 
     def bounded_content_length(self):
         raw_length = self.headers.get("Content-Length", "0")
@@ -206,6 +214,26 @@ class HarborHandler(BaseHTTPRequestHandler):
                 headers["Docker-Distribution-Api-Version"] = "registry/2.0"
             self.finish_status(401, {"errors": [{"code": "UNAUTHORIZED"}]}, headers)
             return
+
+        fault = self.server.store.read().get("fault")
+        if isinstance(fault, dict) and fault.get("path") == path:
+            status = fault.get("status", 200)
+            if fault.get("mode") == "delay":
+                time.sleep(float(fault.get("seconds", 1)))
+            elif fault.get("mode") == "malformed":
+                body = b"{malformed"
+            elif fault.get("mode") == "oversize":
+                body = b"x" * (MAX_BODY + 1)
+            elif fault.get("mode") != "delay":
+                self.finish_status(status, {"errors": [{"code": "INJECTED"}]})
+                return
+            if fault.get("mode") != "delay":
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
 
         method = self.command
         if path == "/api/v2.0/health" and method == "GET":

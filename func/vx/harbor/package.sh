@@ -202,10 +202,9 @@ vx_harbor_owner_quota_set() {
       '.GENERATION==$generation and .OBSERVED_AT==$observed_at' \
       <<<"$observation" >/dev/null || return 1
     owner_state="$(vx_harbor_owner_state_path "$owner")" || return 1
-    vx_harbor_secure_regular_file "$owner_state" 0600 || return 1
+    vx_harbor_owner_state_validate "$owner_state" || return 1
     quota_id="$(/usr/bin/jq -er --arg owner "$owner" '
-      select(type=="object" and keys==["OWNER","QUOTA_ID","SCHEMA"] and
-        .SCHEMA==1 and .OWNER==$owner) |
+      select(.SCHEMA==1 and .OWNER==$owner) |
       .QUOTA_ID | select(type=="number" and floor==. and .>=1)' \
       "$owner_state" 2>/dev/null)" || return 1
     if [[ "$quota" == unlimited ]]; then

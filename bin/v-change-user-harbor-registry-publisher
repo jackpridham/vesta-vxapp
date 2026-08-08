@@ -1,12 +1,12 @@
 #!/bin/bash
 # info: rotate one owner's managed Harbor publisher credential
-# options: USER SECRET_FILE
+# options: USER
 
-user=${1:-}; secret_file=${2:-}
+user=${1:-}
 source "$VESTA/func/main.sh"; source "$VESTA/func/vx/compose/main.sh"; source "$VESTA/func/vx/harbor/main.sh"; source "$VESTA/conf/vesta.conf"
-check_args '2' "$#" 'USER SECRET_FILE'; is_format_valid 'user'; is_object_valid 'user' 'USER' "$user"
+check_args '1' "$#" 'USER'; is_format_valid 'user'; is_object_valid 'user' 'USER' "$user"
 vx_harbor_provider_lock_acquire shared; check_result $? 'Harbor provider lock failed'; vx_compose_shell_access_lock_acquire "$user"; check_result $? 'Owner lock failed'; vx_compose_registry_lock_acquire "$user"; check_result $? 'Registry lock failed'
 trap 'vx_compose_registry_lock_release; vx_compose_shell_access_lock_release; vx_harbor_provider_lock_release' EXIT
 vx_harbor_owner_is_eligible "$user"; check_result $? 'Owner is not registry eligible'
-vx_harbor_publisher_change_locked "$user" "$secret_file"; check_result $? 'Publisher rotation failed'
+vx_harbor_publisher_change_locked "$user"; check_result $? 'Publisher rotation failed'
 printf 'publisher-ready\n'

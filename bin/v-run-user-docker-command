@@ -134,7 +134,7 @@ case "$operation" in
         ;;
     registry-publisher-change)
         require_count 0 0 "$@" || exit 1; snapshot registry-publisher 65536 || exit 1
-        run_vesta_user_command v-change-user-harbor-registry-publisher "$actor" "$snapshot_file"
+        run_vesta_user_command v-change-user-harbor-registry-publisher "$actor" <"$snapshot_file"
         ;;
     registry-publisher-disable)
         require_count 0 0 "$@" || exit 1

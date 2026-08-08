@@ -37,7 +37,8 @@ if [ "$user" = 'admin' ]; then
     exit
 fi
 
-vx_harbor_owner_revoke "$user" || echo 'Warning: Harbor revocation remains pending' >&2
+vx_harbor_owner_delete_prepare "$user"
+check_result $? 'Harbor delete tombstone publication failed'
 
 vx_compose_shell_access_lock_acquire "$user"
 check_result $? "Compose owner access lock failed"
