@@ -429,7 +429,7 @@ git commit -m "feat(harbor): install registry behind Vesta TLS"
   The correction commits resolved all four. The same reviewer rechecked only
   those blockers and direct regressions and returned PASS.
 
-## Milestone 3: Owner registry lifecycle
+## Milestone 3: Owner registry lifecycle - COMPLETE
 
 ### Task 5: Add the allowlisted Harbor API adapter
 
@@ -538,9 +538,9 @@ git commit -m "feat(harbor): add tenant registry lifecycle"
   stale Milestone 1 status assertion after the allowlist expansion; the
   corrected affected suite then passed directly and the runner was not
   rerun).
-- [ ] Perform one specification/security review of API isolation, ownership,
+- [x] Perform one specification/security review of API isolation, ownership,
   quota, credentials, publisher/discovery, revocation, and outage behavior.
-- [ ] Fix only milestone blockers and record the milestone result.
+- [x] Fix only milestone blockers and record the milestone result.
 
 #### Milestone 3 implementation record
 
@@ -552,19 +552,24 @@ git commit -m "feat(harbor): add tenant registry lifecycle"
   hooks. Harbor calls follow provider -> owner -> registry locking and never
   take a tenant project lock. Revocation retains artifacts and contains no
   Docker, route, nginx, or firewall mutation.
+- Commits: `345463c5`, `f186307d`, `41434623`.
 - Focused tests: touched Bash syntax, API, owner reconciliation, credentials,
   publisher, discovery, revocation, package quota, status, transactional
   install, and `git diff --check` passed. The exactly-once milestone runner
   was invoked once and stopped at the stale status assertion; after updating
   only that assertion, `test-status.sh` and all Task 5-7 suites passed
   directly. The milestone runner was deliberately not invoked a second time.
-- Review: Implementer self-review corrected secret-equivalent process argv,
-  preserved unrelated registry credentials, made robot responses redacted,
-  retained publisher state across convergence, and fixed unsuspend lock
-  ordering. Independent milestone specification/security review remains open.
-- Deferred: A clean aggregate focused-run result and independent milestone
-  review remain closeout concerns; no broad ShellCheck, readiness, deployment,
-  host Docker, network, systemctl, nginx, or production action was run.
+- Review: The independent review found six blockers covering secret transport,
+  owner-schema integration, rotation durability, deleted-user revocation,
+  discovery semantics, and invalid test evidence. `f186307d` fixed the
+  behavior and replaced static assertions with executable flows.
+  `41434623` moved rotation journals before authority switches and added a
+  deleted-owner Harbor tombstone lock. The same reviewer rechecked only the
+  numbered blockers/direct regressions and returned PASS.
+- Deferred: The once-only aggregate attempt has no clean terminal result; its
+  failure and the successful directly affected suites remain preserved for
+  final review. No broad ShellCheck, readiness, deployment, host Docker,
+  network, systemctl, nginx, or production action was run.
 
 #### Milestone 3 blocker correction
 
