@@ -6,6 +6,7 @@ Current documents:
 - [Repository overview](../README.md)
 - [Operator architecture and runbook](../docs/container-orchestration.md)
 - [Complete source-to-Vesta deployment runbook](../DOCKER_ORCHESTRATION_DEPLOYMENT.md)
+- [Vesta-managed Harbor registry specification](specs/2026-08-08-vesta-managed-harbor-registry.md)
 - [Compose project user guide](user-guides/docker-compose-projects.md)
 - [Native web-domain reverse-proxy guide](user-guides/native-web-domain-proxy.md)
 - [Native web-domain proxy validation](validation/2026-08-06-native-web-proxy-release.md)
@@ -22,6 +23,7 @@ Current documents:
 - `validation/` contains dated environment or release-gate evidence; it is
   not standing deployment authorization.
 - `plans/` records implementation intent and completed progress.
+- `specs/` defines approved product behavior before implementation planning.
 - `audits/` contains review inputs and findings from the named date and
   commit range.
 - `user-guides/` contains current operator and user guidance.
