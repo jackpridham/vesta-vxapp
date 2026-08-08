@@ -613,7 +613,7 @@ git commit -m "feat(harbor): add tenant registry lifecycle"
   touched Bash syntax and `git diff --check` are required for this correction;
   the aggregate runner remains prohibited.
 
-## Milestone 4: Operations and operator surfaces
+## Milestone 4: Operations and operator surfaces - COMPLETE
 
 ### Task 8: Add health, encrypted backup validation, disable, and bounded operations
 
@@ -625,13 +625,13 @@ git commit -m "feat(harbor): add tenant registry lifecycle"
 - Create: `bin/v-disable-harbor-registry`
 - Create: `test/harbor/{test-health.sh,test-backup.sh,test-disable.sh}`
 
-- [ ] **Step 1: Implement bounded health and observations**
+- [x] **Step 1: Implement bounded health and observations**
 
 Observe provider health, certificate state, volume usage, owner usage/quota,
 pending operations, and credential readiness. Observations are bounded,
 redacted, timestamped, and do not become authority.
 
-- [ ] **Step 2: Implement encrypted backup and validate-only restore**
+- [x] **Step 2: Implement encrypted backup and validate-only restore**
 
 Quiesce consistently under the exclusive provider lock, create a manifest,
 encrypt before leaving protected staging, exclude curl credentials, robot
@@ -640,14 +640,14 @@ secrets, and plaintext keys, and verify ciphertext plus manifest. Restore
 digests, version, ownership, and capacity, then removes plaintext. Apply is
 deferred for first release and documented as an operator recovery procedure.
 
-- [ ] **Step 3: Implement disable planning and execution**
+- [x] **Step 3: Implement disable planning and execution**
 
 Plan emits blockers, retained data, affected owners, and a short-lived
 confirmation token. Disable revokes credentials, removes public ingress, stops
 the provider, and marks mode disabled without deleting data or mutating tenant
 workloads/routes/firewall.
 
-- [ ] **Step 4: Validate and commit**
+- [x] **Step 4: Validate and commit**
 
 ```bash
 bash -n func/vx/harbor/{health,backup,disable}.sh \
@@ -670,21 +670,21 @@ git commit -m "feat(harbor): add bounded registry operations"
 - Create: `test/test_harbor_panel.php`
 - Create: `test/harbor/test-doc-contract.sh`
 
-- [ ] **Step 1: Add minimal panel status**
+- [x] **Step 1: Add minimal panel status**
 
 Admin sees mode, health, certificate, storage, backup age, and pending/failed
 operation counts. Tenant sees registry origin, namespace, quota/usage, runtime
 readiness, and publisher rotate/disable actions. Never render secrets, raw API
 responses, internal paths, or Harbor administration.
 
-- [ ] **Step 2: Document the complete tenant pipeline**
+- [x] **Step 2: Document the complete tenant pipeline**
 
 Document package entitlement, SSH identity, local build, publisher credential,
 digest push, `registry-info`, immutable preview/pull/apply, health acceptance,
 revocation, outage behavior, and why no SCP/rsync/archive/raw Docker path is
 needed. Keep private-repository caveats in their owning repositories.
 
-- [ ] **Step 3: Validate and commit**
+- [x] **Step 3: Validate and commit**
 
 ```bash
 php -d short_open_tag=1 test/test_harbor_panel.php
@@ -695,11 +695,38 @@ git commit -m "docs(harbor): add operator and tenant registry guidance"
 
 ### Milestone 4 acceptance
 
-- [ ] Run `bash test/harbor/run-focused.sh` once.
-- [ ] Perform one specification/security review of operational state,
+- [x] Run `bash test/harbor/run-focused.sh` once.
+- [x] Perform one specification/security review of operational state,
   encrypted backup validation, disable behavior, panel secret boundaries, and
   documentation.
-- [ ] Fix only milestone blockers and record the milestone result.
+- [x] Fix only milestone blockers and record the milestone result.
+
+#### Milestone 4 record
+
+- Product behavior: Added redacted provider and owner observations covering API
+  health, certificate hostname/expiry, storage, quota/usage, operation backlog
+  and credential readiness. Added exclusive-lock, prior-running-state-aware age
+  backups with SHA-256 manifests and ciphertext-only Vesta backup persistence;
+  restore is validation-only and `apply` returns 78. Added token-bound retained-
+  data disable with publisher-before-runtime revocation and transactional nginx,
+  service and provider-state rollback. Added minimal admin/tenant panel status,
+  protected publisher actions, and the complete immutable tenant delivery and
+  operator recovery documentation.
+- Commits: `c29fec42`, `6598e87b`, `bc4c31c5`.
+- Focused tests: touched Bash and PHP syntax, status, health, discovery, package
+  quota, backup, disable, panel, documentation, and `git diff --check` passed.
+  `test/harbor/run-focused.sh` ran exactly once and all nineteen configured
+  shell/PHP suites passed. It was not rerun after review corrections; only the
+  directly affected suites passed again.
+- Review: The fresh specification/security review identified observation-schema
+  integration, two-phase modal routing, backup-age lookup, and disable ingress/
+  service rollback blockers. `bc4c31c5` corrected them; direct discovery,
+  package, health, backup, disable and panel regressions passed.
+- Deferred: Automated restore apply, automated provider update, richer metrics
+  and richer Harbor administration UI remain explicitly deferred. No broad
+  ShellCheck, readiness gate, deployment, host-service action, or production
+  mutation was performed.
+- Next: Milestone 5 development-host acceptance and release closure.
 
 ## Milestone 5: Development acceptance and release closure
 
