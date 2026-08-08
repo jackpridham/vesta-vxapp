@@ -108,4 +108,15 @@ vx_harbor_disable_locked() {
     printf 'disabled\n'
 }
 
-vx_harbor_disable() { local token="$1" result status; vx_harbor_provider_lock_acquire exclusive || return 1; result="$(vx_harbor_disable_locked "$token")"; status=$?; vx_harbor_provider_lock_release || return 1; ((status==0)) && printf '%s\n' "$result"; return "$status"; }
+vx_harbor_disable() {
+    local token="$1" result status
+    vx_harbor_provider_lock_acquire exclusive || return 1
+    result="$(vx_harbor_disable_locked "$token")"; status=$?
+    vx_harbor_provider_lock_release || return 1
+    if (( status == 0 )); then
+        printf '%s\n' "$result"
+    else
+        vx_harbor_audit system provider-disable failed rejected || return 1
+    fi
+    return "$status"
+}

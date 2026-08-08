@@ -674,7 +674,7 @@ git commit -m "feat(harbor): add bounded registry operations"
 
 Admin sees mode, health, certificate, storage, backup age, and pending/failed
 operation counts. Tenant sees registry origin, namespace, quota/usage, runtime
-readiness, and publisher rotate/disable actions. Never render secrets, raw API
+readiness, CLI-only publisher rotation guidance, and publisher disable. Never render secrets, raw API
 responses, internal paths, or Harbor administration.
 
 - [x] **Step 2: Document the complete tenant pipeline**
@@ -710,7 +710,7 @@ git commit -m "docs(harbor): add operator and tenant registry guidance"
   restore is validation-only and `apply` returns 78. Added token-bound retained-
   data disable with publisher-before-runtime revocation and transactional nginx,
   service and provider-state rollback. Added minimal admin/tenant panel status,
-  protected publisher actions, and the complete immutable tenant delivery and
+  protected publisher disable with CLI-only rotation guidance, and the complete immutable tenant delivery and
   operator recovery documentation.
 - Commits: `c29fec42`, `6598e87b`, `bc4c31c5`, `d6f88895`,
   `5a0572b3`, `d17e54bd`.

@@ -126,7 +126,8 @@ vx_harbor_runtime_rotate() {
         return 1
     fi
     _vx_harbor_rotation_checkpoint runtime journal-published || return 76
-    _vx_harbor_rotation_recover "$owner" runtime "$origin"
+    _vx_harbor_rotation_recover "$owner" runtime "$origin" || return
+    vx_harbor_audit "$owner" runtime-rotation succeeded converged
 }
 
 vx_harbor_runtime_revoke() {
@@ -140,4 +141,5 @@ vx_harbor_runtime_revoke() {
         if [[ "$file" == config.json ]]; then /usr/bin/jq --arg h "$host" 'del(.auths[$h])' "$root/$file" >"$temporary"; else /usr/bin/jq --arg h "$host" 'del(.[$h])' "$root/$file" >"$temporary"; fi
         /usr/bin/chown 0:0 "$temporary" && /usr/bin/chmod 0600 "$temporary" && /usr/bin/mv -fT "$temporary" "$root/$file" || return 1
     done
+    vx_harbor_audit "$owner" runtime-revocation succeeded retained
 }

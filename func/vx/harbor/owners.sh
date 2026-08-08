@@ -95,7 +95,7 @@ vx_harbor_owner_delete_prepare() {
 }
 
 vx_harbor_owner_reconcile_locked() {
-    local owner="$1" desired package suspended projects quota namespace path project project_id quota_id old_runtime generation runtime origin now state_json usage provider_observation_source rotation_path
+    local owner="$1" desired package suspended projects quota namespace path project project_id quota_id old_runtime generation runtime origin now state_json usage provider_observation_source rotation_path installation
     desired="$(_vx_harbor_owner_desired "$owner")" || return 1; IFS=$'\t' read -r package suspended projects quota <<<"$desired"
     vx_harbor_package_transition_recover "$owner" || [[ -e "$(vx_harbor_operation_path "$owner")" ]] || return 1
     namespace="$(vx_harbor_owner_namespace "$owner")"; path="$(vx_harbor_owner_state_path "$owner")"; vx_harbor_namespace_collision_check "$owner" "$namespace" || return 1
@@ -113,12 +113,16 @@ vx_harbor_owner_reconcile_locked() {
     else
         return 75
     fi
+    installation="$(/usr/bin/jq -er '.INSTALLATION_ID // "vesta-harbor" | select(type=="string")' "$(vx_harbor_root)/provider.json")" || return 1
     project="$(vx_harbor_api_project_get "$namespace" 2>/dev/null || :)"
-    if [[ -z "$project" ]]; then vx_harbor_api_project_create "$namespace" || return 75; project="$(vx_harbor_api_project_get "$namespace")" || return 75; fi
-    /usr/bin/jq -e --arg n "$namespace" '.name==$n and .metadata.public=="false"' <<<"$project" >/dev/null || return 1
+    if [[ -z "$project" ]]; then vx_harbor_api_project_create "$namespace" "$owner" "$installation" || return 75; project="$(vx_harbor_api_project_get "$namespace")" || return 75; fi
+    /usr/bin/jq -e --arg n "$namespace" --arg owner "$owner" --arg installation "$installation" \
+      '.name==$n and .metadata=={public:"false",vesta_managed:"true",vesta_installation:$installation,vesta_owner:$owner}' \
+      <<<"$project" >/dev/null || return 1
     project_id="$(/usr/bin/jq -er '.project_id' <<<"$project")"; quota_id="$(/usr/bin/jq -er '.quota_id' <<<"$project")"
     [[ ! -f "$path" ]] || { vx_harbor_owner_state_validate "$path" || return 1; /usr/bin/jq -e --arg o "$owner" --arg n "$namespace" --argjson p "$project_id" --argjson q "$quota_id" '.OWNER==$o and .NAMESPACE==$n and .PROJECT_ID==$p and .QUOTA_ID==$q' "$path" >/dev/null || return 1; }
     vx_harbor_api_quota_set_bytes "$quota_id" "$(vx_harbor_quota_bytes "$quota")" >/dev/null || return 75
+    vx_harbor_audit "$owner" quota-reconcile succeeded applied || return 1
     vx_harbor_quota_observe "$owner" "$quota_id" || return 75
     old_runtime=null; [[ ! -f "$path" ]] || old_runtime="$(/usr/bin/jq -r '.RUNTIME_ROBOT_ID' "$path")"
     generation="$(/usr/bin/date -u +%s)"; origin="$(/usr/bin/jq -er '.ORIGIN|select(type=="string")' "$(vx_harbor_root)/provider.json")" || return 1
@@ -145,6 +149,11 @@ vx_harbor_owner_reconcile() {
     [[ "$owner" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ ]] || return 1; vx_harbor_provider_prepare || return 1; vx_harbor_provider_enabled || return 0
     vx_harbor_provider_lock_acquire shared || return 1; vx_compose_shell_access_lock_acquire "$owner" || { vx_harbor_provider_lock_release; return 1; }; vx_compose_registry_lock_acquire "$owner" || { vx_compose_shell_access_lock_release; vx_harbor_provider_lock_release; return 1; }
     vx_harbor_owner_reconcile_locked "$owner"; result=$?
+    if (( result == 0 )); then
+        vx_harbor_audit "$owner" owner-reconcile succeeded converged || result=1
+    else
+        vx_harbor_audit "$owner" owner-reconcile failed pending || result=1
+    fi
     vx_compose_registry_lock_release; vx_compose_shell_access_lock_release; vx_harbor_provider_lock_release
     return "$result"
 }

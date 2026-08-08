@@ -66,6 +66,20 @@ _vx_harbor_authority_gid() { id -g; }
 _vx_harbor_require_root() { return 0; }
 _vx_harbor_secure_file_set() { chmod "$2" "$1"; }
 
+# Hostname/port commands call this before their first mutation.
+rm -f "$VESTA/data/harbor/provider.json"
+vx_harbor_origin_change_guard || fail 'uninstalled Harbor blocked origin change'
+vx_harbor_provider_prepare
+vx_harbor_origin_change_guard || fail 'disabled Harbor blocked origin change'
+provider_source="$(mktemp "$VESTA/data/harbor/.provider.XXXXXX")"
+jq '.MODE="managed"' "$VESTA/data/harbor/provider.json" >"$provider_source"
+vx_harbor_json_write_atomic "$VESTA/data/harbor/provider.json" "$provider_source"
+rm -f "$provider_source"
+! vx_harbor_origin_change_guard || fail 'managed Harbor allowed origin mutation'
+jq '.MODE="disabled"' "$VESTA/data/harbor/provider.json" >"$VESTA/data/harbor/provider.next"
+vx_harbor_json_write_atomic "$VESTA/data/harbor/provider.json" "$VESTA/data/harbor/provider.next"
+rm -f "$VESTA/data/harbor/provider.next"
+
 assert_mode() {
     [[ "$(stat -c '%a' "$1")" == "$2" ]] || fail "unexpected mode for $1"
 }

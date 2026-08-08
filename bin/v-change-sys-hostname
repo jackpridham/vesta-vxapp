@@ -14,6 +14,7 @@ domain=$1
 
 # Includes
 source $VESTA/func/main.sh
+source $VESTA/func/vx/harbor/main.sh
 source $VESTA/conf/vesta.conf
 
 
@@ -23,6 +24,8 @@ source $VESTA/conf/vesta.conf
 
 check_args '1' "$#" 'HOSTNAME'
 is_format_valid 'domain'
+vx_harbor_origin_change_guard
+check_result $? "Managed Harbor origin change is blocked" $E_FORBIDEN
 
 
 #----------------------------------------------------------#

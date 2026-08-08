@@ -23,6 +23,7 @@ fi
 
 # Includes
 source $VESTA/func/main.sh
+source $VESTA/func/vx/harbor/main.sh
 
 #----------------------------------------------------------#
 #                    Verifications                         #
@@ -35,6 +36,8 @@ fi
 
 check_args '1' "$#" 'PORT'
 is_int_format_valid "$port" 'port number'
+vx_harbor_origin_change_guard
+check_result $? "Managed Harbor origin change is blocked" $E_FORBIDEN
 
 #----------------------------------------------------------#
 #                       Action                             #

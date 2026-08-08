@@ -48,7 +48,14 @@ matches=[b for b in blocks if needle.search(b[2])]
 if len(matches)!=1 or 'harbor-registry.conf' in text: raise SystemExit(1)
 start,end,block=matches[0]
 insert=end-1
-def build(path): return text[:insert]+'    include '+str(path)+';\n'+text[insert:]
+global_directives=(
+    '    limit_conn_zone $binary_remote_addr zone=vesta_harbor_registry:10m;\n'
+    "    log_format vesta_harbor_registry '$remote_addr - $request_method $uri $status $body_bytes_sent';\n"
+)
+def build(path):
+    with_global=text[:start]+global_directives+text[start:]
+    adjusted_insert=insert+len(global_directives)
+    return with_global[:adjusted_insert]+'    include '+str(path)+';\n'+with_global[adjusted_insert:]
 candidate.write_text(build(staged_include)); activation.write_text(build(target_include))
 PY
 }

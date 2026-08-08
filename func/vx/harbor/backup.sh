@@ -196,7 +196,19 @@ vx_harbor_backup_locked() {
     printf '%s\n' "$backup_id"
 }
 
-vx_harbor_backup() { local result status; vx_harbor_provider_lock_acquire exclusive || return 1; result="$(vx_harbor_backup_locked)"; status=$?; vx_harbor_provider_lock_release || return 1; ((status==0)) && printf '%s\n' "$result"; return "$status"; }
+vx_harbor_backup() {
+    local result status
+    vx_harbor_provider_lock_acquire exclusive || return 1
+    result="$(vx_harbor_backup_locked)"; status=$?
+    vx_harbor_provider_lock_release || return 1
+    if (( status == 0 )); then
+        vx_harbor_audit system provider-backup succeeded encrypted || return 1
+        printf '%s\n' "$result"
+    else
+        vx_harbor_audit system provider-backup failed rejected || return 1
+    fi
+    return "$status"
+}
 
 _vx_harbor_restore_archive_validate() {
     /usr/bin/python3 - "$1" "$2" "$3" <<'PY'
@@ -284,4 +296,17 @@ vx_harbor_restore_validate_locked() {
     printf 'validated\n'
 }
 
-vx_harbor_restore() { local id="$1" mode="$2" result status; [[ "$mode" == validate ]] || return "$VX_HARBOR_RESTORE_APPLY_DEFERRED"; vx_harbor_provider_lock_acquire exclusive || return 1; result="$(vx_harbor_restore_validate_locked "$id")"; status=$?; vx_harbor_provider_lock_release || return 1; ((status==0)) && printf '%s\n' "$result"; return "$status"; }
+vx_harbor_restore() {
+    local id="$1" mode="$2" result status
+    [[ "$mode" == validate ]] || return "$VX_HARBOR_RESTORE_APPLY_DEFERRED"
+    vx_harbor_provider_lock_acquire exclusive || return 1
+    result="$(vx_harbor_restore_validate_locked "$id")"; status=$?
+    vx_harbor_provider_lock_release || return 1
+    if (( status == 0 )); then
+        vx_harbor_audit system restore-validation succeeded validated || return 1
+        printf '%s\n' "$result"
+    else
+        vx_harbor_audit system restore-validation failed rejected || return 1
+    fi
+    return "$status"
+}

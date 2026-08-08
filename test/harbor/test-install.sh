@@ -35,6 +35,20 @@ _vx_harbor_install_generate() {
 vx_harbor_socket_validate() { return 0; }
 _vx_harbor_install_migration_check() { return 0; }
 _vx_harbor_install_health_check() { return 0; }
+_vx_harbor_install_bootstrap_call() {
+  local stage="$1" method="$2" path="$3" body="$4" output="$5"
+  if [[ "$method:$path" == POST:/api/v2.0/robots ]]; then
+    jq -e '.level=="system" and .name=="vesta-integration" and ([.permissions[].access[].resource]|sort)==(["project","project","project","quota","quota","robot","robot","robot","robot","system-volumes"]|sort)' <<<"$body" >/dev/null || return 1
+    printf '{"id":71,"name":"vesta-integration"}\n' >"$output"
+  else
+    jq -e '.self_registration==false and .project_creation_restriction=="adminonly"' <<<"$body" >/dev/null || return 1
+    printf '{}\n' >"$output"
+  fi
+}
+_vx_harbor_install_integration_probe() {
+  grep -q '^user = "vesta-integration:' "$1" || return 1
+  printf '{"status":"healthy"}\n' >"$2"
+}
 vx_harbor_ingress_activate() { install -m 0600 "$1" "$(vx_harbor_ingress_target)"; install -m 0600 "$3" "$(vx_harbor_nginx_main)"; }
 
 printf 'prior-unit\n' >"$VX_HARBOR_SYSTEMD_TARGET"
@@ -54,7 +68,7 @@ _vx_harbor_install_phase() { [[ "$1" != health ]]; }
 [[ "$(sha256sum "$VESTA/nginx/conf/nginx.conf"|awk '{print $1}')" == "$prior_main" ]] || fail 'main nginx rollback failed'
 [[ "$(cat "$VESTA/data/harbor/release/current/marker")" == prior-current && "$(cat "$VESTA/data/harbor/release/previous/marker")" == prior-previous ]] || fail 'release evidence rollback failed'
 
-for fail_phase in prerequisite release generation compose migration health socket ingress provider_render release_rotation provider_write final_cleanup; do
+for fail_phase in prerequisite release generation compose migration health socket integration ingress provider_render release_rotation provider_write final_cleanup; do
     _vx_harbor_install_phase() { [[ "$1" != "$fail_phase" ]]; }
     printf 'prior-unit\n' >"$VX_HARBOR_SYSTEMD_TARGET"
     printf 'prior-ingress\n' >"$VX_HARBOR_NGINX_TARGET"
@@ -77,6 +91,10 @@ _vx_harbor_json_write_phase() { :; }
 _vx_harbor_install_phase() { :; }
 vx_harbor_install || fail 'valid transactional install failed'
 [[ "$(jq -r .MODE "$VESTA/data/harbor/provider.json")" == managed ]] || fail 'provider not managed after commit'
+credential="$VESTA/data/harbor/secrets/integration.curl"
+[[ "$(stat -c %a "$credential")" == 600 && "$(stat -c %h "$credential")" == 1 ]] || fail 'integration credential is not root-style 0600 single-link authority'
+grep -q '^user = "vesta-integration:' "$credential" || fail 'routine integration identity missing'
+! grep -q 'admin:' "$credential" || fail 'bootstrap identity remained routine authority'
 compose="$VESTA/data/harbor/release/current/docker-compose.yml"
 grep -q '^name: vesta-harbor$' "$compose" || fail 'fixed project missing'
 vx_harbor_release_images_validate "$VESTA/install/harbor/release-manifest.json" "$compose" || fail 'installed compose trust failed'
@@ -87,4 +105,6 @@ grep -q '/run/vesta-harbor:/run/vesta-harbor' "$compose" || fail 'socket creatio
 grep -q 'depends_on:' "$compose" || fail 'canonical dependency graph missing'
 grep -q 'env_file:' "$compose" || fail 'canonical generated component configuration missing'
 grep -q '^start vesta-harbor.service$' "$SYSTEMCTL_LOG" || fail 'service was not started'
+grep -q 'systemd-run .*--no-block.*v-sync-harbor-registry-owners' "$VX_HARBOR_SYSTEMD_TARGET" || fail 'post-start reconciliation is not nonblocking'
+! grep -q '^ExecStartPost=/usr/local/vesta/bin/v-sync-harbor-registry-owners$' "$VX_HARBOR_SYSTEMD_TARGET" || fail 'synchronous owner reconciliation deadlock restored'
 printf 'PASS: Harbor transactional install\n'

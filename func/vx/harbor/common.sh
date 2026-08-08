@@ -174,6 +174,13 @@ vx_harbor_provider_state_validate() {
     ' "$path" >/dev/null 2>&1
 }
 
+vx_harbor_origin_change_guard() {
+    local provider="$(vx_harbor_root)/provider.json"
+    [[ ! -e "$provider" && ! -L "$provider" ]] && return 0
+    vx_harbor_provider_state_validate "$provider" || return 1
+    [[ "$(/usr/bin/jq -r '.MODE' "$provider")" == disabled ]]
+}
+
 _vx_harbor_provider_prepare_after_preflight() {
     :
 }

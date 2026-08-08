@@ -5,7 +5,8 @@ vx_harbor_publisher_change_locked() {
     path="$(vx_harbor_owner_state_path "$owner")"; vx_harbor_owner_state_validate "$path" || return 1
     _vx_harbor_rotation_recover "$owner" publisher >/dev/null && return 0
     retry_status=$?; [[ "$retry_status" == 1 ]] || return "$retry_status"
-    IFS= read -r -N 257 secret <&0 || [[ ${#secret} -gt 0 ]]; [[ ${#secret} -ge 16 && ${#secret} -le 256 && "$secret" != *$'\n'* ]] || return 1
+    IFS= read -r -N 129 secret <&0 || [[ ${#secret} -gt 0 ]]
+    [[ "$secret" =~ ^[A-Za-z0-9_-]{43,128}$ ]] || return 1
     namespace="$(/usr/bin/jq -r '.NAMESPACE' "$path")"; old="$(/usr/bin/jq -r '.PUBLISHER_ROBOT_ID' "$path")"; generation="$(/usr/bin/date -u +%s)"; username="$namespace-publisher-$generation"
     response="$(printf %s "$secret" | vx_harbor_api_robot_create "$namespace" "$username" push-pull)" || return 75; id="$(/usr/bin/jq -er '.id' <<<"$response")" || return 1
     printf %s "$secret" | vx_harbor_api_credential_probe "$username" || { vx_harbor_api_robot_delete "$id" >/dev/null 2>&1 || :; return 75; }
@@ -16,10 +17,11 @@ vx_harbor_publisher_change_locked() {
         return 1
     fi
     _vx_harbor_rotation_checkpoint publisher journal-published || return 76
-    _vx_harbor_rotation_recover "$owner" publisher >/dev/null
+    _vx_harbor_rotation_recover "$owner" publisher >/dev/null || return
+    vx_harbor_audit "$owner" publisher-rotation succeeded converged
 }
 
-vx_harbor_publisher_revoke_locked() { local owner="$1" path="$2" id now json; vx_harbor_owner_state_validate "$path" || return 1; id="$(/usr/bin/jq -r '.PUBLISHER_ROBOT_ID' "$path")"; [[ "$id" == null ]] || vx_harbor_api_robot_disable "$id" >/dev/null || return 75; now="$(/usr/bin/date -u +%Y-%m-%dT%H:%M:%SZ)"; json="$(/usr/bin/jq --arg now "$now" '.PUBLISHER_ROBOT_ID=null|.PUBLISHER_USERNAME=null|.PUBLISHER_ENABLED=false|.STATE=(if .RUNTIME_ROBOT_ID==null then "retained" else "publisher-disabled" end)|.UPDATED_AT=$now' "$path")"; _vx_harbor_owner_write "$path" "$json"; }
+vx_harbor_publisher_revoke_locked() { local owner="$1" path="$2" id now json; vx_harbor_owner_state_validate "$path" || return 1; id="$(/usr/bin/jq -r '.PUBLISHER_ROBOT_ID' "$path")"; [[ "$id" == null ]] || vx_harbor_api_robot_disable "$id" >/dev/null || return 75; now="$(/usr/bin/date -u +%Y-%m-%dT%H:%M:%SZ)"; json="$(/usr/bin/jq --arg now "$now" '.PUBLISHER_ROBOT_ID=null|.PUBLISHER_USERNAME=null|.PUBLISHER_ENABLED=false|.STATE=(if .RUNTIME_ROBOT_ID==null then "retained" else "publisher-disabled" end)|.UPDATED_AT=$now' "$path")"; _vx_harbor_owner_write "$path" "$json" || return 1; vx_harbor_audit "$owner" publisher-revocation succeeded retained; }
 
 vx_harbor_registry_info_json() {
     local owner="$1" project="$2" path provider observation provider_observation origin internal_state state health freshness quota used observed now observed_epoch provider_at provider_epoch provider_health publisher

@@ -34,22 +34,6 @@ function vx_harbor_tenant_panel_status($owner, $project)
     return array_intersect_key($status, array_flip($allowed));
 }
 
-function vx_harbor_publisher_rotate_from_panel($owner, $secret)
-{
-    if (!preg_match('/^[a-z0-9][a-z0-9_-]{0,31}$/', $owner)
-        || strlen($secret) < 16 || strlen($secret) > 256 || preg_match('/[\r\n\x00-\x1f\x7f]/', $secret)) {
-        return false;
-    }
-    $command = VESTA_CMD.'v-change-user-harbor-registry-publisher '.escapeshellarg($owner);
-    $pipes = array();
-    $process = proc_open($command, array(0 => array('pipe', 'r'), 1 => array('pipe', 'w'), 2 => array('pipe', 'w')), $pipes, null, array());
-    if (!is_resource($process)) return false;
-    fwrite($pipes[0], $secret); fclose($pipes[0]);
-    stream_get_contents($pipes[1], 4096); fclose($pipes[1]);
-    stream_get_contents($pipes[2], 4096); fclose($pipes[2]);
-    return proc_close($process) === 0;
-}
-
 define('VX_COMPOSE_PACKAGE_MAX_VALUE', '2147483647');
 
 function vx_compose_package_fields()

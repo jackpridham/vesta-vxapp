@@ -207,9 +207,9 @@ expect_allow 'v-list-docker-secrets <alice> <app> <plain>' secrets app plain
 expect_allow 'v-list-docker-registries <alice> <json>' registries
 expect_allow_output 'v-list-user-harbor-registry <alice> <app> <plain>' \
     '{"MANAGED":true,"STATE":"ready"}' registry-info app plain
-publisher_secret='fixture-publisher-secret-canary'
+publisher_secret='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq'
 expect_allow_stdin_output \
-    'v-change-user-harbor-registry-publisher <alice> stdin-bytes=31' \
+    'v-change-user-harbor-registry-publisher <alice> stdin-bytes=43' \
     "$publisher_secret" 'publisher credential updated' registry-publisher-change
 expect_allow_output 'v-disable-user-harbor-registry-publisher <alice>' \
     'publisher credential disabled' registry-publisher-disable

@@ -114,6 +114,13 @@ vx_compose_registry_add() {
         }
     vx_compose_registry_prepare "$owner" || return 1
     vx_compose_registry_lock_acquire "$owner" || return 1
+    if jq -e --arg registry "$registry" \
+        '.[$registry].MANAGED_BY == "harbor"' \
+        "$(vx_compose_registry_root "$owner")/registries.json" >/dev/null; then
+        vx_compose_registry_lock_release
+        vx_compose_error 'managed Harbor registry metadata is immutable'
+        return 1
+    fi
     if ! vx_compose_owner_docker "$owner" login "$registry" \
         --username "$username" --password-stdin <"$password_file" >/dev/null; then
         vx_compose_registry_lock_release
@@ -150,6 +157,12 @@ vx_compose_registry_delete() {
     vx_compose_registry_lock_acquire "$owner" || return 1
     root="$(vx_compose_registry_root "$owner")"
     metadata="$root/registries.json"
+    if jq -e --arg registry "$registry" \
+        '.[$registry].MANAGED_BY == "harbor"' "$metadata" >/dev/null; then
+        vx_compose_registry_lock_release
+        vx_compose_error 'managed Harbor registry metadata is immutable'
+        return 1
+    fi
     vx_compose_owner_docker "$owner" logout "$registry" >/dev/null 2>&1 \
         || {
             vx_compose_registry_lock_release

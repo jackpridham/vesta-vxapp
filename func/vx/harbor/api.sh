@@ -6,6 +6,12 @@ VX_HARBOR_API_MAX_OUTPUT=1048576
 _vx_harbor_api_socket() { vx_harbor_local_socket_path; }
 _vx_harbor_api_curl() { printf '%s\n' /usr/bin/curl; }
 
+_vx_harbor_api_failure() {
+    local reason="$1" status="${2:-1}"
+    vx_harbor_audit system typed-api failed "$reason" || return 1
+    return "$status"
+}
+
 _vx_harbor_api_credentials_validate() {
     local path="$1"
     vx_harbor_secure_regular_file "$path" 0600 || return 1
@@ -49,22 +55,22 @@ _vx_harbor_api_call() {
           --config "$credential" --unix-socket "$socket" --request "$method" \
           --header 'Content-Type: application/json' --data-binary @- --connect-timeout 3 \
           --max-time 10 --max-filesize "$VX_HARBOR_API_MAX_OUTPUT" --output "$temporary" \
-          --write-out '%{http_code}' "http://localhost$path" <&$VX_HARBOR_API_BODY_FD 2>/dev/null)" || { exec {VX_HARBOR_API_BODY_FD}<&-; /usr/bin/rm -f "$temporary"; return 75; }
+          --write-out '%{http_code}' "http://localhost$path" <&$VX_HARBOR_API_BODY_FD 2>/dev/null)" || { exec {VX_HARBOR_API_BODY_FD}<&-; /usr/bin/rm -f "$temporary"; _vx_harbor_api_failure transport 75; return; }
         exec {VX_HARBOR_API_BODY_FD}<&-
         unset VX_HARBOR_API_BODY_FD
     else
         status="$(/usr/bin/env -i PATH=/usr/bin:/bin "$curl_bin" --config "$credential" \
           --unix-socket "$socket" --request "$method" --connect-timeout 3 --max-time 10 \
           --max-filesize "$VX_HARBOR_API_MAX_OUTPUT" --output "$temporary" \
-          --write-out '%{http_code}' "http://localhost$path" 2>/dev/null)" || { /usr/bin/rm -f "$temporary"; return 75; }
+          --write-out '%{http_code}' "http://localhost$path" 2>/dev/null)" || { /usr/bin/rm -f "$temporary"; _vx_harbor_api_failure transport 75; return; }
     fi
     size="$(/usr/bin/stat -c %s "$temporary" 2>/dev/null)" || { /usr/bin/rm -f "$temporary"; return 1; }
     (( size <= VX_HARBOR_API_MAX_OUTPUT )) || { /usr/bin/rm -f "$temporary"; return 1; }
-    [[ ",$expected," == *",$status,"* ]] || { /usr/bin/rm -f "$temporary"; return 1; }
+    [[ ",$expected," == *",$status,"* ]] || { /usr/bin/rm -f "$temporary"; _vx_harbor_api_failure unexpected-status 1; return; }
     if [[ "$schema" == empty ]]; then
         (( size == 0 )) || /usr/bin/jq -e 'type=="object" or type=="array"' "$temporary" >/dev/null 2>&1 || { /usr/bin/rm -f "$temporary"; return 1; }
     else
-        /usr/bin/jq -e "$schema" "$temporary" >/dev/null 2>&1 || { /usr/bin/rm -f "$temporary"; return 1; }
+        /usr/bin/jq -e "$schema" "$temporary" >/dev/null 2>&1 || { /usr/bin/rm -f "$temporary"; _vx_harbor_api_failure invalid-response 1; return; }
         /usr/bin/jq -cS . "$temporary"
     fi
     /usr/bin/rm -f "$temporary"
@@ -83,7 +89,16 @@ _vx_harbor_api_json_call() {
 vx_harbor_api_health() { _vx_harbor_api_call GET /api/v2.0/health 200 '.status=="healthy"'; }
 vx_harbor_api_projects() { _vx_harbor_api_call GET /api/v2.0/projects 200 'type=="array"'; }
 vx_harbor_api_project_get() { [[ "$1" =~ ^[a-z0-9][a-z0-9-]{0,127}$ ]] && _vx_harbor_api_call GET "/api/v2.0/projects/$1" 200 'type=="object" and (.project_id|type=="number")'; }
-vx_harbor_api_project_create() { [[ "$1" =~ ^[a-z0-9][a-z0-9-]{0,127}$ ]] || return 1; _vx_harbor_api_json_call POST /api/v2.0/projects 201 empty "$(/usr/bin/jq -cn --arg n "$1" '{project_name:$n,metadata:{public:"false"}}')"; }
+vx_harbor_api_project_create() {
+    local namespace="$1" owner="$2" installation="$3"
+    [[ "$namespace" =~ ^[a-z0-9][a-z0-9-]{0,127}$ \
+        && "$owner" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ \
+        && "$installation" =~ ^[a-z0-9][a-z0-9-]{0,63}$ ]] || return 1
+    _vx_harbor_api_json_call POST /api/v2.0/projects 201 empty \
+        "$(/usr/bin/jq -cn --arg n "$namespace" --arg owner "$owner" \
+          --arg installation "$installation" \
+          '{project_name:$n,metadata:{public:"false",vesta_managed:"true",vesta_installation:$installation,vesta_owner:$owner}}')"
+}
 vx_harbor_api_project_private() { [[ "$1" =~ ^[a-z0-9][a-z0-9-]{0,127}$ ]] || return 1; _vx_harbor_api_json_call PUT "/api/v2.0/projects/$1" 200 empty '{"metadata":{"public":"false"}}'; }
 vx_harbor_api_quota_get() { [[ "$1" =~ ^[1-9][0-9]*$ ]] && _vx_harbor_api_call GET "/api/v2.0/quotas/$1" 200 'type=="object" and (.id|type=="number")'; }
 vx_harbor_api_quota_set_bytes() { [[ "$1" =~ ^[1-9][0-9]*$ && "$2" =~ ^-1$|^[0-9]+$ ]] || return 1; _vx_harbor_api_json_call PUT "/api/v2.0/quotas/$1" 200 empty "$(/usr/bin/jq -cn --argjson b "$2" '{hard:{storage:$b}}')"; }

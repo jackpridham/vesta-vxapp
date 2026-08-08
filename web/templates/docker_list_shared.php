@@ -257,11 +257,10 @@
           <span class="docker-overview-card__label"><?=__('Managed registry')?></span>
           <strong class="docker-overview-card__value"><?=htmlspecialchars(($harbor_tenant_status['REGISTRY'] ?? '').'/'.($harbor_tenant_status['NAMESPACE'] ?? ''), ENT_QUOTES)?></strong>
           <p class="docker-overview-card__meta"><?=htmlspecialchars(__('Quota/usage').': '.($harbor_tenant_status['USED_MB'] ?? 0).'/'.($harbor_tenant_status['QUOTA_MB'] ?? 0).' MB · '.__('Runtime').': '.($harbor_tenant_status['STATE'] ?? 'unavailable').' · '.($harbor_tenant_status['FRESHNESS'] ?? 'unavailable'), ENT_QUOTES)?></p>
-          <button type="button" class="button" onclick="more_button_click(900)" data-harbor-publisher-rotate><?=__('Rotate publisher')?></button>
+          <p class="docker-overview-card__meta" data-harbor-publisher-cli><?=__('Create or rotate the publisher credential through v-docker registry-publisher-change using bounded stdin.')?></p>
           <button type="button" class="button" onclick="more_button_click(901)" data-harbor-publisher-disable><?=__('Disable publisher')?></button>
         </article>
         <script>
-          dataset_values[900] = {url:'/ajax/docker/router.php',harbor_publisher:'1',publisher_action:'rotate'};
           dataset_values[901] = {url:'/ajax/docker/router.php',harbor_publisher:'1',publisher_action:'disable'};
         </script>
         <?php } ?>

@@ -104,6 +104,60 @@ _vx_harbor_install_health_check() {
     /usr/bin/jq -e '.status == "healthy" and (.components | type == "array")' <<<"$response" >/dev/null 2>&1
 }
 
+_vx_harbor_install_bootstrap_call() {
+    local stage="$1" method="$2" path="$3" body="${4-}" output="$5"
+    local config status admin socket
+    admin="$stage/secrets/admin"; socket="$(vx_harbor_socket_path)"
+    vx_harbor_secure_regular_file "$admin" 0600 || return 1
+    config="$stage/secrets/bootstrap.curl"
+    { printf '%s\n' silent show-error; printf 'user = "admin:'; /usr/bin/tr -d '\n' <"$admin"; printf '"\n'; } >"$config" || return 1
+    _vx_harbor_secure_file_set "$config" 0600 || return 1
+    if [[ -n "$body" ]]; then
+        status="$(/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/curl --config "$config" \
+          --unix-socket "$socket" --request "$method" --header 'Content-Type: application/json' \
+          --data-binary @- --connect-timeout 3 --max-time 10 --max-filesize 1048576 \
+          --output "$output" --write-out '%{http_code}' "http://localhost$path" \
+          <<<"$body" 2>/dev/null)" || return 1
+    else
+        status="$(/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/curl --config "$config" \
+          --unix-socket "$socket" --request "$method" --connect-timeout 3 --max-time 10 \
+          --max-filesize 1048576 --output "$output" --write-out '%{http_code}' \
+          "http://localhost$path" 2>/dev/null)" || return 1
+    fi
+    [[ "$status" == 200 || "$status" == 201 ]]
+}
+
+_vx_harbor_install_integration_probe() {
+    local credential="$1" output="$2" status
+    status="$(/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/curl --config "$credential" \
+      --unix-socket "$(vx_harbor_socket_path)" --request GET --connect-timeout 3 --max-time 10 \
+      --max-filesize 4096 --output "$output" --write-out '%{http_code}' \
+      http://localhost/api/v2.0/health 2>/dev/null)" || return 1
+    [[ "$status" == 200 ]] && /usr/bin/jq -e '.status=="healthy"' "$output" >/dev/null
+}
+
+_vx_harbor_install_integration_configure() {
+    local stage="$1" root response config_body secret username robot_body candidate probe status
+    root="$(vx_harbor_root)"; response="$stage/integration-response.json"
+    config_body='{"self_registration":false,"project_creation_restriction":"adminonly"}'
+    _vx_harbor_install_bootstrap_call "$stage" PUT /api/v2.0/configurations "$config_body" "$response" || return 1
+    secret="$(/usr/bin/od -An -N36 -tx1 /dev/urandom | /usr/bin/tr -d ' \n')" || return 1
+    username=vesta-integration
+    robot_body="$(/usr/bin/jq -cn --arg name "$username" --arg secret "$secret" \
+      '{name:$name,secret:$secret,level:"system",permissions:[{kind:"system",namespace:"/",access:[{resource:"project",action:"create"},{resource:"project",action:"list"},{resource:"project",action:"update"},{resource:"quota",action:"read"},{resource:"quota",action:"update"},{resource:"robot",action:"create"},{resource:"robot",action:"read"},{resource:"robot",action:"update"},{resource:"robot",action:"delete"},{resource:"system-volumes",action:"read"}]}]}')" || return 1
+    _vx_harbor_install_bootstrap_call "$stage" POST /api/v2.0/robots "$robot_body" "$response" || return 1
+    /usr/bin/jq -e --arg name "$username" '.id as $id | ($id|type)=="number" and $id>0 and .name==$name' "$response" >/dev/null || return 1
+    candidate="$root/secrets/.integration.curl.candidate"
+    { printf '%s\n' silent show-error; printf 'user = "%s:%s"\n' "$username" "$secret"; } >"$candidate" || return 1
+    unset secret robot_body
+    _vx_harbor_secure_file_set "$candidate" 0600 || return 1
+    _vx_harbor_api_credentials_validate "$candidate" || return 1
+    probe="$stage/integration-probe.json"
+    _vx_harbor_install_integration_probe "$candidate" "$probe" || return 1
+    /usr/bin/mv -fT "$candidate" "$root/secrets/integration.curl" || return 1
+    vx_harbor_secure_regular_file "$root/secrets/integration.curl" 0600
+}
+
 _vx_harbor_install_restore_file() {
     local target="$1" backup="$2" existed="$3"
     if [[ "$existed" == yes ]]; then /usr/bin/cp -a -- "$backup" "$target"; else /usr/bin/rm -f -- "$target"; fi
@@ -111,7 +165,7 @@ _vx_harbor_install_restore_file() {
 
 vx_harbor_install() {
     local root stage manifest compose ingress unit_target ingress_target nginx_main rollback provider_next candidate_main activation_main
-    local unit_existed=no ingress_existed=no current_existed=no previous_existed=no previous_rotated=no candidate_activated=no service_active=no service_enabled=no committed=no
+    local unit_existed=no ingress_existed=no integration_existed=no current_existed=no previous_existed=no previous_rotated=no candidate_activated=no service_active=no service_enabled=no committed=no
     root="$(vx_harbor_root)" || return 1
     vx_harbor_provider_prepare || return 1
     vx_harbor_provider_lock_acquire exclusive || return 1
@@ -133,6 +187,11 @@ vx_harbor_install() {
     fi
     /usr/bin/cp -a "$nginx_main" "$rollback/nginx-main" || { /usr/bin/rm -rf "$stage" "$rollback"; vx_harbor_provider_lock_release; return 1; }
     /usr/bin/cp -a "$root/provider.json" "$rollback/provider.json" || { /usr/bin/rm -rf "$stage" "$rollback"; vx_harbor_provider_lock_release; return 1; }
+    if [[ -e "$root/secrets/integration.curl" ]]; then
+        vx_harbor_secure_regular_file "$root/secrets/integration.curl" 0600 || return 1
+        /usr/bin/cp -a "$root/secrets/integration.curl" "$rollback/integration.curl" || return 1
+        integration_existed=yes
+    fi
     [[ -d "$root/release/current" ]] && current_existed=yes
     [[ -d "$root/release/previous" ]] && previous_existed=yes
     "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" is-active vesta-harbor.service >/dev/null 2>&1 && service_active=yes || :
@@ -144,6 +203,8 @@ vx_harbor_install() {
         _vx_harbor_install_restore_file "$ingress_target" "$rollback/ingress" "$ingress_existed" || :
         /usr/bin/cp -a -- "$rollback/nginx-main" "$nginx_main" || :
         /usr/bin/cp -a -- "$rollback/provider.json" "$root/provider.json" || :
+        _vx_harbor_install_restore_file "$root/secrets/integration.curl" "$rollback/integration.curl" "$integration_existed" || :
+        /usr/bin/rm -f -- "$root/secrets/.integration.curl.candidate"
         if [[ "$candidate_activated" == yes ]]; then
             /usr/bin/rm -rf -- "$root/release/current"
             if [[ "$current_existed" == yes ]]; then
@@ -190,6 +251,8 @@ vx_harbor_install() {
         _vx_harbor_install_phase socket || return 1
         _vx_harbor_install_health_check || return 1
         _vx_harbor_install_phase health || return 1
+        _vx_harbor_install_integration_configure "$stage" || return 1
+        _vx_harbor_install_phase integration || return 1
         vx_harbor_ingress_activate "$ingress" "$candidate_main" "$activation_main" || return 1
         _vx_harbor_install_phase ingress || return 1
         /usr/bin/jq --arg origin "$(vx_harbor_origin_json | /usr/bin/jq -r '.ORIGIN')" \
@@ -210,10 +273,12 @@ vx_harbor_install() {
         trap - HUP INT TERM
         /usr/bin/rm -rf -- "$rollback"
         vx_harbor_provider_lock_release
+        vx_harbor_audit system provider-install failed transaction-rolled-back || return 1
         return 1
     fi
     committed=yes
     trap - HUP INT TERM
     /usr/bin/rm -rf -- "$rollback"
     vx_harbor_provider_lock_release
+    vx_harbor_audit system provider-install succeeded managed || return 1
 }

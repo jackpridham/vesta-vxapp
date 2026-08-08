@@ -13,7 +13,7 @@ for _ in {1..50}; do [[ -S "$api_socket" ]] && break; sleep .02; done; chmod 060
 _vx_harbor_api_socket(){ printf '%s\n' "$api_socket"; }; vx_harbor_local_socket_path(){ printf '%s\n' "$api_socket"; }; vx_harbor_socket_path(){ printf '%s\n' "$api_socket"; }
 vx_harbor_socket_validate(){ [[ -S "$api_socket" && ! -L "$api_socket" ]]; }
 vx_harbor_api_health | jq -e '.status=="healthy"' >/dev/null
-vx_harbor_api_project_create vx-alice; project="$(vx_harbor_api_project_get vx-alice)"; [[ "$(jq -r .name <<<"$project")" == vx-alice ]]
+vx_harbor_api_project_create vx-alice alice vesta-harbor; project="$(vx_harbor_api_project_get vx-alice)"; [[ "$(jq -r .name <<<"$project")" == vx-alice ]]
 quota="$(jq -r .quota_id <<<"$project")"; vx_harbor_api_quota_set_bytes "$quota" 1048576; [[ "$(vx_harbor_api_quota_get "$quota"|jq -r .hard.storage)" == 1048576 ]]
 secret=0123456789abcdef0123456789abcdef; robot="$(printf %s "$secret" | vx_harbor_api_robot_create vx-alice vx-alice-runtime pull)"; robot_id="$(jq -r .id <<<"$robot")"
 printf %s "$secret" | vx_harbor_api_credential_probe vx-alice-runtime

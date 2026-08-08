@@ -430,7 +430,6 @@ v-list-harbor-registry [json|plain]
 v-list-harbor-registry-owners [json|plain]
 v-sync-harbor-registry-owner USER
 v-sync-harbor-registry-owners
-v-update-harbor-registry
 v-backup-harbor-registry
 v-restore-harbor-registry BACKUP_ID validate|apply
 v-plan-disable-harbor-registry [json|plain]
