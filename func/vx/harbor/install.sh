@@ -317,7 +317,7 @@ _vx_harbor_install_integration_configure() {
     secret="$(/usr/bin/od -An -N36 -tx1 /dev/urandom | /usr/bin/tr -d ' \n')" || return 1
     username=vesta-integration
     robot_body="$(/usr/bin/jq -cn --arg name "$username" --arg secret "$secret" --arg marker "vesta-managed:$installation" \
-      '{name:$name,description:$marker,secret:$secret,level:"system",permissions:[{kind:"system",namespace:"/",access:[{resource:"project",action:"create"},{resource:"project",action:"list"},{resource:"project",action:"update"},{resource:"quota",action:"read"},{resource:"quota",action:"update"},{resource:"robot",action:"create"},{resource:"robot",action:"read"},{resource:"robot",action:"update"},{resource:"robot",action:"delete"},{resource:"system-volumes",action:"read"}]}]}')" || return 1
+      '{name:$name,description:$marker,secret:$secret,duration:-1,level:"system",permissions:[{kind:"system",namespace:"/",access:[{resource:"project",action:"create"},{resource:"project",action:"list"},{resource:"project",action:"update"},{resource:"quota",action:"read"},{resource:"quota",action:"update"},{resource:"robot",action:"create"},{resource:"robot",action:"read"},{resource:"robot",action:"update"},{resource:"robot",action:"delete"},{resource:"system-volumes",action:"read"}]}]}')" || return 1
     _vx_harbor_install_bootstrap_retry "$stage" POST /api/v2.0/robots "$robot_body" "$response" || return 75
     robot_id="$(/usr/bin/jq -er '.id|select(type=="number" and .>0)' "$response")" || return 1
     journal="$(/usr/bin/jq -c --argjson id "$robot_id" '.PHASE="candidate-created"|.CANDIDATE_ROBOT_ID=$id' <<<"$journal")"; _vx_harbor_install_journal_write "$journal" || return 1

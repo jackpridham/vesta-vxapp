@@ -128,7 +128,7 @@ status="$(api_call GET /api/v2.0/quotas/1 "$response")"
 assert_json "$response" 'value["hard"]["storage"] == 1048576'
 
 status="$(api_call POST /api/v2.0/robots "$response" \
-    --header 'Content-Type: application/json' --data-binary '{"name":"publisher","disabled":false}')"
+    --header 'Content-Type: application/json' --data-binary '{"name":"publisher","disabled":false,"duration":-1}')"
 [[ "$status" == 201 ]] || fail 'robot create failed'
 assert_json "$response" 'value["id"] == 1'
 status="$(api_call GET /api/v2.0/robots/1 "$response")"

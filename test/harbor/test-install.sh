@@ -113,7 +113,7 @@ _vx_harbor_install_bootstrap_call() {
     PUT:/api/v2.0/configurations) printf '%s\n' "$body" >"$bootstrap_config"; printf '{}\n' >"$output" ;;
     GET:/api/v2.0/robots) cp "$bootstrap_robots" "$output" ;;
     POST:/api/v2.0/robots)
-      jq -e '.level=="system" and .description=="vesta-managed:vesta-harbor" and ([.permissions[].access[].resource]|sort)==(["project","project","project","quota","quota","robot","robot","robot","robot","system-volumes"]|sort)' <<<"$body" >/dev/null || return 1
+      jq -e '.duration==-1 and .level=="system" and .description=="vesta-managed:vesta-harbor" and ([.permissions[].access[].resource]|sort)==(["project","project","project","quota","quota","robot","robot","robot","robot","system-volumes"]|sort)' <<<"$body" >/dev/null || return 1
       jq -c '.+{id:71,disabled:false}|del(.secret)' <<<"$body" >"$output"; jq -s '.[0]+[.[1]]' "$bootstrap_robots" "$output" >"$bootstrap_robots.next"; mv "$bootstrap_robots.next" "$bootstrap_robots" ;;
     GET:/api/v2.0/robots/71) jq -c '.[]|select(.id==71)' "$bootstrap_robots" >"$output"; [[ -s "$output" ]] ;;
     PUT:/api/v2.0/robots/71) jq 'map(if .id==71 then .+{disabled:true} else . end)' "$bootstrap_robots" >"$bootstrap_robots.next"; mv "$bootstrap_robots.next" "$bootstrap_robots"; printf '{}\n' >"$output" ;;

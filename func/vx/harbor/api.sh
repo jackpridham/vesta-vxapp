@@ -112,7 +112,7 @@ vx_harbor_api_robot_create() {
     [[ ${#secret} -ge 16 && ${#secret} -le 256 && "$secret" != *$'\n'* ]] || { /usr/bin/rm -f "$input"; return 1; }
     printf %s "$secret" >"$input"; unset secret
     body="$(/usr/bin/mktemp "$(vx_harbor_root)/secrets/.robot-body.XXXXXX")" || { /usr/bin/rm -f "$input"; return 1; }
-    /usr/bin/jq -cn --arg p "$project" --arg n "$name" --rawfile s "$input" --arg a "$access" '{name:$n,secret:$s,level:"system",permissions:[{kind:"project",namespace:$p,access:(if $a=="pull" then [{resource:"repository",action:"pull"}] else [{resource:"repository",action:"pull"},{resource:"repository",action:"push"}] end)}]}' >"$body" || { /usr/bin/rm -f "$input" "$body"; return 1; }
+    /usr/bin/jq -cn --arg p "$project" --arg n "$name" --rawfile s "$input" --arg a "$access" '{name:$n,secret:$s,duration:-1,level:"system",permissions:[{kind:"project",namespace:$p,access:(if $a=="pull" then [{resource:"repository",action:"pull"}] else [{resource:"repository",action:"pull"},{resource:"repository",action:"push"}] end)}]}' >"$body" || { /usr/bin/rm -f "$input" "$body"; return 1; }
     _vx_harbor_secure_file_set "$body" 0600 || { /usr/bin/rm -f "$input" "$body"; return 1; }
     /usr/bin/rm -f "$input"
     response="$(_vx_harbor_api_call POST /api/v2.0/robots 201 'type=="object" and (.id|type=="number")' "$body")"; result=$?

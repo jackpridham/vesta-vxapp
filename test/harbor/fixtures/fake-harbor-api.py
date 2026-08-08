@@ -345,6 +345,9 @@ class HarborHandler(BaseHTTPRequestHandler):
             body = self.read_json()
             if body is None:
                 return
+            if body.get("duration") != -1:
+                self.finish_status(400, {"errors": [{"code": "BAD_REQUEST"}]})
+                return
             robot_id = state["next_robot_id"]
             state["next_robot_id"] += 1
             robot = dict(body)
