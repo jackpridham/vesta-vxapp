@@ -31,7 +31,6 @@ def validate(kind, value, identity):
         if value["STATE"] not in {"pending","converged","failed"} or not integer(value["ATTEMPTS"],0,3): fail()
         nullable_text(value["LAST_ERROR"])
         if not integer(value["CREATED_AT"]) or not integer(value["UPDATED_AT"],value["CREATED_AT"]): fail()
-        if value["STATE"] == "pending" and value["LAST_ERROR"] is not None: fail()
     elif kind == "rotation":
         exact(value,("SCHEMA","OPERATION_ID","OWNER","KIND","PHASE","NEW_ROBOT_ID","NEW_USERNAME","OLD_ROBOT_ID","UPDATED_AT"))
         owner, journal_kind = identity.split(":",1)
