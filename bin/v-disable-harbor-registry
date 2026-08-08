@@ -1,0 +1,8 @@
+#!/bin/bash
+# info: disable managed Harbor using a current plan token
+# options: CONFIRMATION_TOKEN
+
+token=${1:-}
+source "$VESTA/func/main.sh"; source "$VESTA/func/vx/harbor/main.sh"; source "$VESTA/conf/vesta.conf"
+check_args '1' "$#" 'CONFIRMATION_TOKEN'; [[ "$token" =~ ^[a-f0-9]{32}$ ]]; check_result $? 'Invalid confirmation token'
+vx_harbor_disable "$token"; check_result $? 'Harbor disable failed'

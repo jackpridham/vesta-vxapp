@@ -1,0 +1,9 @@
+#!/bin/bash
+# info: plan managed Harbor disable and issue a short-lived token
+# options: [FORMAT]
+
+format=${1:-plain}
+source "$VESTA/func/main.sh"; source "$VESTA/func/vx/harbor/main.sh"; source "$VESTA/conf/vesta.conf"
+check_args '0' "$#" '[FORMAT]'; [[ "$format" == json || "$format" == plain ]]; check_result $? 'Invalid format'
+plan="$(vx_harbor_disable_plan)"; check_result $? 'Harbor disable plan failed'
+if [[ "$format" == json ]]; then /usr/bin/jq -cS . <<<"$plan"; else /usr/bin/jq -r '[.TOKEN,(.EXPIRES_AT|tostring),(.BLOCKERS|length|tostring),(.AFFECTED_OWNERS|length|tostring),(.RETAINED_DATA|join(", "))]|@tsv' <<<"$plan"; fi

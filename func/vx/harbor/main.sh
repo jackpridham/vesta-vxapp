@@ -35,5 +35,11 @@ source "$_vx_harbor_dir/release.sh"
 source "$_vx_harbor_dir/ingress.sh"
 # shellcheck source=func/vx/harbor/install.sh
 source "$_vx_harbor_dir/install.sh"
+# shellcheck source=func/vx/harbor/health.sh
+source "$_vx_harbor_dir/health.sh"
+# shellcheck source=func/vx/harbor/backup.sh
+source "$_vx_harbor_dir/backup.sh"
+# shellcheck source=func/vx/harbor/disable.sh
+source "$_vx_harbor_dir/disable.sh"
 
 unset _vx_harbor_dir

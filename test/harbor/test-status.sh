@@ -35,7 +35,7 @@ jq -e '.MODE=="disabled" and .PINNED_VERSION=="v2.15.0" and
 vx_harbor_provider_prepare
 vx_harbor_origin_json() { printf '{"ORIGIN":"https://panel.example.com:8083"}\n'; }
 status="$(vx_harbor_status_json)"
-[[ "$(jq -r 'keys|join(",")' <<<"$status")" == 'BACKUP_AGE_SECONDS,CERTIFICATE_STATE,FAILED_OPERATIONS,HEALTH,MODE,ORIGIN,PENDING_OPERATIONS,PINNED_VERSION,RUNNING_VERSION' ]] || fail 'status schema changed'
+[[ "$(jq -r 'keys|join(",")' <<<"$status")" == 'BACKUP_AGE_SECONDS,CERTIFICATE_STATE,FAILED_OPERATIONS,HEALTH,MODE,ORIGIN,PENDING_OPERATIONS,PINNED_VERSION,RUNNING_VERSION,STORAGE_TOTAL_BYTES,STORAGE_USED_BYTES' ]] || fail 'status schema changed'
 jq -e '.MODE=="disabled" and .PINNED_VERSION=="v2.15.0" and .RUNNING_VERSION==null and .ORIGIN=="https://panel.example.com:8083" and .HEALTH=="disabled" and .PENDING_OPERATIONS==0 and .FAILED_OPERATIONS==0 and .BACKUP_AGE_SECONDS==null and .CERTIFICATE_STATE=="valid"' <<<"$status" >/dev/null || fail 'disabled status incorrect'
 if grep -Eqi 'password|secret|/run/|/usr/|api/v2|environment' <<<"$status"; then fail 'status leaked protected detail'; fi
 vx_harbor_local_api_guard /run/vesta-harbor/proxy.sock GET /api/v2.0/health || fail 'fixed local API rejected'

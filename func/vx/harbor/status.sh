@@ -24,7 +24,7 @@ vx_harbor_public_endpoint_guard() {
 }
 
 vx_harbor_status_json() {
-    local root provider origin mode pinned running health pending failed backup_age certificate_state now backup_time
+    local root provider origin mode pinned running health pending failed backup_age certificate_state now backup_time observation storage_used=0 storage_total=0
     root="$(vx_harbor_root)" || return 1
     provider="$root/provider.json"
     if [[ ! -e "$provider" && ! -L "$provider" ]]; then
@@ -44,6 +44,13 @@ vx_harbor_status_json() {
     certificate_state=unavailable
     [[ -n "$origin" ]] && certificate_state=valid
     origin="$(/usr/bin/jq -r '.ORIGIN // empty' <<<"${origin:-null}" 2>/dev/null || :)"
+    observation="$root/observations/provider.json"
+    if [[ -f "$observation" ]] && vx_harbor_secure_regular_file "$observation" 0600 && /usr/bin/jq -e '.SCHEMA==1' "$observation" >/dev/null 2>&1; then
+        health="$(/usr/bin/jq -r '.HEALTH' "$observation")"
+        certificate_state="$(/usr/bin/jq -r '.CERTIFICATE.STATE' "$observation")"
+        storage_used="$(/usr/bin/jq -r '.STORAGE.USED_BYTES // 0' "$observation")"
+        storage_total="$(/usr/bin/jq -r '.STORAGE.TOTAL_BYTES // 0' "$observation")"
+    fi
     pending=0
     failed=0
     if /usr/bin/find "$root/operations" -maxdepth 1 -type f -name '*.json' -print -quit 2>/dev/null | /usr/bin/grep -q .; then
@@ -59,9 +66,11 @@ vx_harbor_status_json() {
     /usr/bin/jq -n --arg mode "$mode" --arg pinned "$pinned" \
       --arg running "$running" --arg origin "$origin" --arg health "$health" \
       --argjson pending "$pending" --argjson failed "$failed" \
-      --argjson backup_age "$backup_age" --arg certificate "$certificate_state" '
+      --argjson backup_age "$backup_age" --arg certificate "$certificate_state" \
+      --argjson storage_used "$storage_used" --argjson storage_total "$storage_total" '
       {MODE:$mode,PINNED_VERSION:$pinned,RUNNING_VERSION:(if $running=="" then null else $running end),
        ORIGIN:(if $origin=="" then null else $origin end),HEALTH:$health,
        PENDING_OPERATIONS:$pending,FAILED_OPERATIONS:$failed,
-       BACKUP_AGE_SECONDS:$backup_age,CERTIFICATE_STATE:$certificate}'
+       BACKUP_AGE_SECONDS:$backup_age,CERTIFICATE_STATE:$certificate,
+       STORAGE_USED_BYTES:$storage_used,STORAGE_TOTAL_BYTES:$storage_total}'
 }

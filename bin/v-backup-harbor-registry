@@ -1,0 +1,10 @@
+#!/bin/bash
+# info: create an encrypted Harbor provider backup
+# options:
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/harbor/main.sh"
+source "$VESTA/conf/vesta.conf"
+check_args '0' "$#" ''
+backup_id="$(vx_harbor_backup)"; check_result $? 'Harbor registry backup failed'
+printf '%s\n' "$backup_id"
