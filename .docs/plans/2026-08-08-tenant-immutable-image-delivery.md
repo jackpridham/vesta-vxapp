@@ -4,7 +4,7 @@
 
 **Goal:** Let an eligible Vesta tenant build in CI, push an immutable registry digest, pull that exact bounded image through `v-docker`, and preview/apply its own `standard` project without raw Docker or a human Debian step.
 
-**Architecture:** Add one owner-derived `image-pull` broker operation backed by a dedicated immutable-only Vesta adapter. The adapter verifies the registry manifest and bounded Linux/approved-architecture image size before Docker mutation, pulls with the owner's protected registry configuration, and records owner-scoped image evidence. Standard-project resolution accepts registry images only when the submitted reference is itself immutable and the owner-scoped pull record matches; tag/local-image references continue to require expiring administrator approval. Slave builds remain off-host, the new Slave workload uses generic `standard` v2, and legacy production remains untouched until a separately authorized migration window.
+**Architecture:** Add one owner-derived, preview-bound `image-pull` broker operation backed by a dedicated immutable-only Vesta adapter. The adapter verifies the exact protected preview evidence and revision, requires the image in that preview, verifies the registry manifest and bounded Linux/approved-architecture image size before Docker mutation, pulls with the owner's protected registry configuration, and records root-controlled registry-pull provenance. Standard-project resolution accepts registry images only when the submitted reference is itself immutable and matching pull provenance exists; tag/local-image references continue to require expiring administrator approval. Slave builds remain off-host, the new Slave workload uses generic `standard` v2, and exact accepted-revision compatibility preserves legacy production without authorizing new candidates until a separately authorized migration window.
 
 **Tech Stack:** Bash, Docker CLI manifest/image APIs, jq, Vesta state, SSH, Compose, Python workload builder, shell namespace fixtures.
 
@@ -30,10 +30,10 @@
 Add this exact catalog form:
 
 ```text
-image-pull IMAGE@sha256:DIGEST
+image-pull PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION IMAGE@sha256:DIGEST
 ```
 
-State that the broker derives the owner, fixes profile authority to `standard`, accepts no tag, URL, owner, actor, platform, Docker option, or credential argument, and uses only the owner's protected registry configuration.
+State that the broker derives the owner, fixes profile authority to `standard`, requires exact unexpired add/change preview evidence and revision, verifies that the image occurs in that preview, accepts no tag, URL, owner, actor, platform, Docker option, or credential argument, and uses only the owner's protected registry configuration.
 
 - [ ] **Step 2: Separate pull, approval, and deployment language**
 
@@ -48,7 +48,7 @@ slave-vxapp/admin-approved -> administrator-only; never accepted by v-docker
 
 - [ ] **Step 3: Define image admission limits**
 
-Require manifest inspection before pull, one unambiguous Linux/approved-architecture manifest, a positive aggregate config/layer byte count no greater than `VX_COMPOSE_IMAGE_MAX_BYTES`, exact post-pull digest/platform verification, owner-scoped evidence, and redacted audit output.
+Require manifest inspection before pull, one unambiguous Linux/approved-architecture manifest, a bounded layer count, a positive aggregate config/layer byte count no greater than `VX_COMPOSE_IMAGE_MAX_BYTES`, a fixed pull timeout, exact post-pull digest/platform/size verification, root-controlled owner-scoped registry-pull provenance, and started/terminal redacted audit output.
 
 ### Task 2: Write failing focused tests
 
@@ -57,17 +57,18 @@ Require manifest inspection before pull, one unambiguous Linux/approved-architec
 - Modify: `test/compose/test-images.sh`
 - Modify: `test/compose/test-cli-surface.sh`
 - Modify: `test/compose/test-shell-access-root-integration.sh`
+- Create: `test/compose/test-tenant-image-pull.sh`
 
 - [ ] **Step 1: Add exact broker dispatch coverage**
 
-Add an executable fake `v-pull-user-docker-image` and require:
+Add an executable fake `v-pull-docker-project-image` and require:
 
 ```text
-v-docker image-pull registry.example/app@sha256:<64 lowercase hex>
-  -> v-pull-user-docker-image alice registry.example/app@sha256:<digest>
+v-docker image-pull app PREVIEW SOURCE CANDIDATE REVISION registry.example/app@sha256:<64 lowercase hex>
+  -> v-pull-docker-project-image alice alice app PREVIEW SOURCE CANDIDATE REVISION registry.example/app@sha256:<digest>
 ```
 
-Reject tags, uppercase/malformed digests, extra arguments, option injection, embedded credentials, URLs, and owner arguments before the fake adapter runs.
+Reject tags, uppercase/malformed digests, extra arguments, option injection, embedded credentials, URLs, malformed preview evidence, and owner arguments before the fake adapter runs.
 
 - [ ] **Step 2: Add immutable pull helper tests**
 
@@ -75,10 +76,11 @@ Extend the fake Docker implementation with single-platform and index manifest fi
 
 ```text
 - rejects tags before Docker image pull;
+- rejects images absent from the exact verified preview and stale/expired/replaced preview evidence;
 - rejects missing, ambiguous, wrong-platform, zero-size, malformed, and oversized manifests;
 - performs manifest inspection before image pull;
 - verifies the post-pull immutable reference, image ID, OS, and architecture;
-- writes only owner-scoped redacted metadata and audit evidence.
+- writes only secure registry-pull provenance and bounded redacted audit evidence.
 ```
 
 - [ ] **Step 3: Add standard resolver regression tests**
@@ -90,7 +92,7 @@ Prove that a standard candidate:
 - rejects an unrecorded exact digest;
 - rejects a tag carrying a Docker-generated RepoDigests entry without local approval;
 - accepts that tag only with matching unexpired administrator approval;
-- preserves the existing privileged/legacy compatibility branch.
+- permits accepted-revision refresh only for an identical exact legacy or schema-2 tuple, without authorizing a new candidate or synthesizing pull provenance.
 ```
 
 - [ ] **Step 4: Run failing tests**
@@ -108,9 +110,11 @@ Expected: failures identify the missing immutable adapter, broker operation, and
 ### Task 3: Implement immutable image delivery
 
 **Files:**
-- Create: `bin/v-pull-user-docker-image`
+- Create: `bin/v-pull-docker-project-image`
 - Modify: `bin/v-run-user-docker-command`
 - Modify: `func/vx/compose/images.sh`
+- Modify: `func/vx/compose/deployment.sh`
+- Modify: `func/vx/compose/registry.sh`
 
 - [ ] **Step 1: Add immutable reference validation**
 
@@ -131,11 +135,11 @@ Implement a helper that calls owner-scoped `docker manifest inspect` using the p
 
 - [ ] **Step 3: Add immutable owner pull**
 
-Implement `vx_compose_image_pull_immutable OWNER REFERENCE` to validate the owner/reference, acquire the owner registry lock, run bounded manifest admission, pull exactly the digest, inspect it, require the matching repository digest and approved platform, record the existing redacted owner metadata, audit `image-pull`, and release the lock on every path.
+Implement a preview-bound immutable pull that validates owner/project/evidence/reference, acquires locks in the order owner access -> project -> global tenant pull -> owner registry, verifies the protected preview and exact image occurrence, runs bounded manifest admission, pulls exactly the digest with raw output suppressed, inspects it, requires the matching repository digest and approved platform/size, atomically records root-owned `0600` registry-pull provenance, audits started and terminal outcomes, and releases every lock on every path.
 
 - [ ] **Step 4: Add the thin Vesta adapter**
 
-Create `v-pull-user-docker-image USER IMAGE` using the normal Vesta command header and validation flow. It calls only `vx_compose_image_pull_immutable`, logs the owner-scoped success, and emits the existing redacted image metadata JSON.
+Create `v-pull-docker-project-image ACTOR USER PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION IMAGE` using the normal Vesta command header and validation flow. Require `ACTOR == USER`, `standard`, exact preview authority and revision, and emit only bounded redacted image evidence JSON.
 
 - [ ] **Step 5: Add broker dispatch**
 
@@ -143,9 +147,9 @@ Add:
 
 ```bash
 image-pull)
-    require_count 1 1 "$@" || exit 1
-    vx_compose_image_reference_is_immutable "$1" || exit 1
-    run_vesta_user_command v-pull-user-docker-image "$actor" "$1"
+    require_count 6 6 "$@" || exit 1
+    # Validate project, preview/digests/revision, immutable reference, and standard authority.
+    run_vesta_user_command v-pull-docker-project-image "$actor" "$actor" "$@"
     ;;
 ```
 
@@ -161,14 +165,15 @@ OR
 matching current local-image approval for owner/reference/id/platform/standard-version
 ```
 
-Do not treat a non-empty Docker `RepoDigests` array by itself as proof of registry delivery. Keep the recorded production legacy evidence compatibility branch scoped exactly to non-standard privileged profiles.
+Do not treat a non-empty Docker `RepoDigests` array by itself as proof of registry delivery. A registry digest requires matching secure pull provenance; otherwise require local-image approval. Permit accepted-revision compatibility only for the identical owner/project/service/reference/image-ID/digest/platform tuple, with the existing exact five-field legacy validator and migration authority; never use it for add/change candidates or create provenance from it.
 
 - [ ] **Step 7: Run focused tests and syntax validation**
 
 Run:
 
 ```bash
-bash -n bin/v-pull-user-docker-image bin/v-run-user-docker-command func/vx/compose/images.sh
+bash -n bin/v-pull-docker-project-image bin/v-run-user-docker-command func/vx/compose/images.sh
+bash test/compose/test-tenant-image-pull.sh
 bash test/compose/test-images.sh
 bash test/compose/test-image-approval.sh
 bash test/compose/test-shell-access.sh
@@ -182,7 +187,7 @@ Expected: all pass. Do not run broad ShellCheck or the unrestricted production g
 - [ ] **Step 8: Commit the Vesta milestone**
 
 ```bash
-git add bin/v-pull-user-docker-image bin/v-run-user-docker-command \
+git add bin/v-pull-docker-project-image bin/v-run-user-docker-command \
   func/vx/compose/images.sh test/compose .docs/contracts \
   docs/container-orchestration.md DOCKER_ORCHESTRATION_DEPLOYMENT.md
 git commit -m "feat(compose): allow bounded tenant image pulls"
@@ -230,7 +235,7 @@ v-docker health slave-vxapp json
 v-docker drift slave-vxapp json
 ```
 
-Require raw `docker info` and direct `sudo v-*` denial. If an approved registry is available, pull a fresh immutable digest through `v-docker image-pull` and preview/apply it; otherwise retain the focused immutable-pull tests and document registry provisioning as the only external prerequisite.
+Require raw `docker info` and direct `sudo v-*` denial. If an approved registry is available, create the exact preview, pull its fresh immutable digest through the preview-bound `v-docker image-pull`, and apply the same evidence; otherwise retain the focused immutable-pull tests and document registry provisioning as the only external prerequisite.
 
 ### Task 6: Synchronize Slave-owned deployment knowledge
 
@@ -249,7 +254,7 @@ Make the normal release lane:
 
 ```text
 build/test off-host -> push immutable registry digest ->
-ssh slave v-docker image-pull -> preview -> reviewed apply -> health/drift
+ssh slave preview -> preview-bound image-pull -> reviewed apply -> health/drift
 ```
 
 Keep archive load/approval/workload import documented only as one-time migration, offline recovery, or operator fallback.
