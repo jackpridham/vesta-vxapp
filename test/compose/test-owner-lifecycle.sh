@@ -78,6 +78,14 @@ export VX_COMPOSE_DOCKER_BIN="$fake_docker"
 # shellcheck source=func/vx/compose/main.sh
 source "$repo_root/func/vx/compose/main.sh"
 
+recorded_inspection="$(vx_compose_image_inspect alice alpine:3.20)"
+vx_compose_image_record alice alpine:3.20 "$recorded_inspection" \
+    local-load >/dev/null
+image_approval_expires="$(date -u -d '+1 hour' +'%Y-%m-%dT%H:%M:%SZ')"
+vx_compose_image_approval_add admin alice alpine:3.20 \
+    sha256:feedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedfacefeedface \
+    linux amd64 standard 2 "$image_approval_expires" >/dev/null
+
 vx_compose_shell_groups() { printf '%s\n' 'alice vesta-compose-users'; }
 vx_compose_shell_group_state alice || fail 'group-state helper missed present membership'
 vx_compose_shell_groups() { printf '%s\n' 'alice users'; }
