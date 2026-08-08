@@ -2,16 +2,30 @@
 
 VX_HARBOR_DISABLE_TOKEN_TTL=300
 
+_vx_harbor_disable_operations_json() {
+    local root file value result='[]'
+    root="$(vx_harbor_root)"
+    for file in "$root"/operations/*.json; do
+        [[ -f "$file" ]] || continue
+        [[ "${file##*/}" == provider-disable.json ]] && continue
+        vx_harbor_package_operation_validate "$file" || return 1
+        value="$(/usr/bin/jq -c --arg file "${file##*/}" '{FILE:$file,OWNER,OPERATION_ID,STATE,UPDATED_AT}' "$file")" || return 1
+        result="$(/usr/bin/jq -c --argjson value "$value" '. + [$value] | sort_by(.FILE)' <<<"$result")" || return 1
+    done
+    printf '%s\n' "$result"
+}
+
 vx_harbor_disable_plan_locked() {
-    local root now expires owners blockers token plan source
+    local root now expires owners operations blockers token plan source
     [[ "${VX_HARBOR_PROVIDER_LOCK_MODE:-}" == exclusive ]] || return 1
     root="$(vx_harbor_root)"; vx_harbor_provider_enabled || return 1
     now="$(/usr/bin/date -u +%s)"; expires=$((now + VX_HARBOR_DISABLE_TOKEN_TTL))
-    owners='[]'; blockers='[]'
+    owners='[]'
     if /usr/bin/find "$root/owners" -maxdepth 1 -type f -name '*.json' -print -quit | /usr/bin/grep -q .; then owners="$(/usr/bin/jq -s '[.[]|{OWNER,NAMESPACE,STATE}]|sort_by(.OWNER)' "$root"/owners/*.json)" || return 1; fi
-    if /usr/bin/find "$root/operations" -maxdepth 1 -type f -name '*.json' ! -name 'provider-disable.json' -print -quit | /usr/bin/grep -q .; then blockers="$(/usr/bin/find "$root/operations" -maxdepth 1 -type f -name '*.json' ! -name 'provider-disable.json' -print0 | /usr/bin/sort -z | /usr/bin/xargs -0 /usr/bin/jq -s '[.[]|select(.STATE=="pending" or .STATE=="failed")|{OWNER,STATE}]')" || return 1; fi
+    operations="$(_vx_harbor_disable_operations_json)" || return 1
+    blockers="$(/usr/bin/jq '[.[]|select(.STATE=="pending" or .STATE=="failed")|{OWNER,OPERATION_ID,STATE}]' <<<"$operations")" || return 1
     token="$(/usr/bin/od -An -N16 -tx1 /dev/urandom | /usr/bin/tr -d ' \n')"
-    plan="$(/usr/bin/jq -cn --arg token "$token" --argjson created "$now" --argjson expires "$expires" --argjson owners "$owners" --argjson blockers "$blockers" '{SCHEMA:1,TOKEN:$token,CREATED_AT:$created,EXPIRES_AT:$expires,MODE:"managed",BLOCKERS:$blockers,AFFECTED_OWNERS:$owners,RETAINED_DATA:["provider database","OCI artifacts","owner mappings","encrypted backups"]}')"
+    plan="$(/usr/bin/jq -cn --arg token "$token" --argjson created "$now" --argjson expires "$expires" --argjson owners "$owners" --argjson operations "$operations" --argjson blockers "$blockers" '{SCHEMA:1,TOKEN:$token,CREATED_AT:$created,EXPIRES_AT:$expires,MODE:"managed",OPERATIONS:$operations,BLOCKERS:$blockers,AFFECTED_OWNERS:$owners,RETAINED_DATA:["provider database","OCI artifacts","owner mappings","encrypted backups"]}')"
     source="$(/usr/bin/mktemp "$root/operations/.disable-plan.XXXXXX")" || return 1
     printf '%s\n' "$plan" >"$source" && vx_harbor_json_write_atomic "$root/operations/provider-disable.json" "$source" || { /usr/bin/rm -f "$source"; return 1; }
     /usr/bin/rm -f "$source"; /usr/bin/jq -cS . "$root/operations/provider-disable.json"
@@ -54,15 +68,19 @@ _vx_harbor_disable_restore() {
 }
 
 vx_harbor_disable_locked() {
-    local token="$1" root plan now owners owner_file publisher runtime provider_source ingress main backup_ingress backup_main was_active=no ingress_existed=no
+    local token="$1" root plan now owners operations blockers owner_file publisher runtime provider_source ingress main backup_ingress backup_main was_active=no ingress_existed=no
     [[ "${VX_HARBOR_PROVIDER_LOCK_MODE:-}" == exclusive && "$token" =~ ^[a-f0-9]{32}$ ]] || return 1
     root="$(vx_harbor_root)"; plan="$root/operations/provider-disable.json"; vx_harbor_secure_regular_file "$plan" 0600 || return 1
     now="$(/usr/bin/date -u +%s)"
-    /usr/bin/jq -e --arg token "$token" --argjson now "$now" '.SCHEMA==1 and .TOKEN==$token and .MODE=="managed" and .EXPIRES_AT >= $now and (.BLOCKERS|length)==0' "$plan" >/dev/null || return 1
+    /usr/bin/jq -e --arg token "$token" --argjson now "$now" 'keys==["AFFECTED_OWNERS","BLOCKERS","CREATED_AT","EXPIRES_AT","MODE","OPERATIONS","RETAINED_DATA","SCHEMA","TOKEN"] and .SCHEMA==1 and .TOKEN==$token and .MODE=="managed" and .EXPIRES_AT >= $now and (.BLOCKERS|length)==0' "$plan" >/dev/null || return 1
     vx_harbor_provider_enabled || return 1
     # Revalidate owner set immediately before external mutation.
     owners='[]'; if /usr/bin/find "$root/owners" -maxdepth 1 -type f -name '*.json' -print -quit | /usr/bin/grep -q .; then owners="$(/usr/bin/jq -s '[.[]|{OWNER,NAMESPACE,STATE}]|sort_by(.OWNER)' "$root"/owners/*.json)" || return 1; fi
-    /usr/bin/jq -e --argjson owners "$owners" '.AFFECTED_OWNERS==$owners' "$plan" >/dev/null || return 1
+    operations="$(_vx_harbor_disable_operations_json)" || return 1
+    blockers="$(/usr/bin/jq '[.[]|select(.STATE=="pending" or .STATE=="failed")|{OWNER,OPERATION_ID,STATE}]' <<<"$operations")" || return 1
+    /usr/bin/jq -e --argjson owners "$owners" --argjson operations "$operations" --argjson blockers "$blockers" '.AFFECTED_OWNERS==$owners and .OPERATIONS==$operations and .BLOCKERS==$blockers and ($blockers|length)==0' "$plan" >/dev/null || return 1
+    now="$(/usr/bin/date -u +%s)"; vx_harbor_provider_enabled || return 1
+    /usr/bin/jq -e --arg token "$token" --argjson now "$now" '.TOKEN==$token and .EXPIRES_AT >= $now and .MODE=="managed"' "$plan" >/dev/null || return 1
     for owner_file in "$root"/owners/*.json; do
         [[ -f "$owner_file" ]] || continue; vx_harbor_owner_state_validate "$owner_file" || return 1
         publisher="$(/usr/bin/jq -r '.PUBLISHER_ROBOT_ID // empty' "$owner_file")"
