@@ -18,7 +18,7 @@ _vx_harbor_backup_stage() {
         /usr/bin/cp -a --no-dereference "$root/$file" "$stage/authority/" || return 1
     done
     for file in owners observations operations rotations tombstones; do
-        [[ -e "$root/$file" ]] && /usr/bin/cp -a --no-dereference "$root/$file" "$stage/authority/" || :
+        if [[ -e "$root/$file" ]]; then /usr/bin/cp -a --no-dereference "$root/$file" "$stage/authority/" || return 1; fi
     done
     [[ -d "$data" && ! -L "$data" ]] || return 1
     /usr/bin/cp -a --no-dereference "$data/." "$stage/data/" || return 1

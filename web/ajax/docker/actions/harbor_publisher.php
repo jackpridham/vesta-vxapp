@@ -4,7 +4,9 @@ include($_SERVER['DOCUMENT_ROOT']."/ajax/include_authentication_check.php");
 include_once($_SERVER['DOCUMENT_ROOT']."/inc/form-elements.php");
 include_once($_SERVER['DOCUMENT_ROOT']."/inc/vx_compose_package.php");
 
-$action = isset($_POST['dataset']['publisher_action']) && !is_array($_POST['dataset']['publisher_action']) ? (string) $_POST['dataset']['publisher_action'] : '';
+$action = isset($_POST['dataset']['publisher_action']) && !is_array($_POST['dataset']['publisher_action'])
+    ? (string) $_POST['dataset']['publisher_action']
+    : (isset($_POST['publisher_action']) && !is_array($_POST['publisher_action']) ? (string) $_POST['publisher_action'] : '');
 if ($myvesta_logged_user === 'admin' || ($action !== 'rotate' && $action !== 'disable')) {
     echo __('Publisher action is unavailable.'); exit;
 }
@@ -16,7 +18,6 @@ if (!isset($_POST['Yes']) && !isset($_POST['No'])) {
     echo myvesta_close_form(); exit;
 }
 if (isset($_POST['No'])) { myvesta_hide_floating_div(); exit; }
-if (isset($_POST['publisher_action']) && !is_array($_POST['publisher_action'])) $action = (string) $_POST['publisher_action'];
 if ($action === 'rotate') {
     $secret = isset($_POST['publisher_secret']) && !is_array($_POST['publisher_secret']) ? (string) $_POST['publisher_secret'] : '';
     echo vx_harbor_publisher_rotate_from_panel($myvesta_logged_user, $secret) ? __('Publisher credential rotated.') : __('Publisher rotation failed.');

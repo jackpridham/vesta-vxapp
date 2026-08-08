@@ -44,7 +44,7 @@ vx_harbor_status_json() {
     certificate_state=unavailable
     [[ -n "$origin" ]] && certificate_state=valid
     origin="$(/usr/bin/jq -r '.ORIGIN // empty' <<<"${origin:-null}" 2>/dev/null || :)"
-    observation="$root/observations/provider.json"
+    observation="$root/observations/provider-detail.json"
     if [[ -f "$observation" ]] && vx_harbor_secure_regular_file "$observation" 0600 && /usr/bin/jq -e '.SCHEMA==1' "$observation" >/dev/null 2>&1; then
         health="$(/usr/bin/jq -r '.HEALTH' "$observation")"
         certificate_state="$(/usr/bin/jq -r '.CERTIFICATE.STATE' "$observation")"
@@ -59,7 +59,7 @@ vx_harbor_status_json() {
     fi
     backup_age=null
     if [[ -f "$provider" && -n "$(/usr/bin/jq -r '.LAST_BACKUP_ID // empty' "$provider")" ]]; then
-        backup_time="$(/usr/bin/stat -c %Y "$root/backups/$(/usr/bin/jq -r '.LAST_BACKUP_ID' "$provider")" 2>/dev/null || :)"
+        backup_time="$(/usr/bin/stat -c %Y "$root/backups/$(/usr/bin/jq -r '.LAST_BACKUP_ID' "$provider").json" 2>/dev/null || :)"
         now="$(/usr/bin/date -u +%s)"
         [[ "$backup_time" =~ ^[0-9]+$ && "$backup_time" -le "$now" ]] && backup_age=$((now - backup_time))
     fi

@@ -19,10 +19,42 @@ vx_harbor_disable_plan_locked() {
 
 vx_harbor_disable_plan() { local result status; vx_harbor_provider_lock_acquire exclusive || return 1; result="$(vx_harbor_disable_plan_locked)"; status=$?; vx_harbor_provider_lock_release || return 1; ((status==0)) && printf '%s\n' "$result"; return "$status"; }
 
-_vx_harbor_disable_ingress_remove() { local target; target="$(vx_harbor_ingress_target)"; /usr/bin/rm -f -- "$target"; "${VX_HARBOR_NGINX:-/usr/sbin/nginx}" -t && "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" reload nginx.service; }
+_vx_harbor_disable_ingress_remove() {
+    local target main candidate
+    target="$(vx_harbor_ingress_target)"; main="$(vx_harbor_nginx_main)"
+    [[ -f "$main" && ! -L "$main" ]] || return 1
+    candidate="$(/usr/bin/mktemp "$(dirname "$main")/.harbor-disable.XXXXXX")" || return 1
+    /usr/bin/python3 - "$main" "$candidate" "$target" <<'PY' || { /usr/bin/rm -f "$candidate"; return 1; }
+import pathlib, sys
+src, dst, target = map(pathlib.Path, sys.argv[1:])
+needle = 'include '+str(target)+';'
+lines = src.read_text().splitlines(keepends=True)
+matches = [i for i, line in enumerate(lines) if line.strip() == needle]
+if len(matches) != 1: raise SystemExit(1)
+del lines[matches[0]]
+dst.write_text(''.join(lines))
+PY
+    "${VX_HARBOR_NGINX:-/usr/sbin/nginx}" -t -c "$candidate" || { /usr/bin/rm -f "$candidate"; return 1; }
+    /usr/bin/install -o "$(_vx_harbor_authority_uid)" -g "$(_vx_harbor_authority_gid)" -m 0600 "$candidate" "$main" || { /usr/bin/rm -f "$candidate"; return 1; }
+    /usr/bin/rm -f -- "$candidate" || return 1
+    /usr/bin/rm -f -- "$target" || return 1
+    "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" reload nginx.service
+}
+
+_vx_harbor_disable_restore() {
+    local ingress="$1" main="$2" backup_ingress="$3" backup_main="$4" ingress_existed="$5" was_active="$6"
+    /usr/bin/install -o "$(_vx_harbor_authority_uid)" -g "$(_vx_harbor_authority_gid)" -m 0600 "$backup_main" "$main" || return 1
+    if [[ "$ingress_existed" == yes ]]; then
+        /usr/bin/install -o "$(_vx_harbor_authority_uid)" -g "$(_vx_harbor_authority_gid)" -m 0600 "$backup_ingress" "$ingress" || return 1
+    else
+        /usr/bin/rm -f -- "$ingress" || return 1
+    fi
+    [[ "$was_active" == no ]] || _vx_harbor_service_start || return 1
+    "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" reload nginx.service
+}
 
 vx_harbor_disable_locked() {
-    local token="$1" root plan now owners owner_file publisher runtime provider_source ingress backup_ingress was_active=no phase=credentials
+    local token="$1" root plan now owners owner_file publisher runtime provider_source ingress main backup_ingress backup_main was_active=no ingress_existed=no
     [[ "${VX_HARBOR_PROVIDER_LOCK_MODE:-}" == exclusive && "$token" =~ ^[a-f0-9]{32}$ ]] || return 1
     root="$(vx_harbor_root)"; plan="$root/operations/provider-disable.json"; vx_harbor_secure_regular_file "$plan" 0600 || return 1
     now="$(/usr/bin/date -u +%s)"
@@ -41,20 +73,19 @@ vx_harbor_disable_locked() {
         runtime="$(/usr/bin/jq -r '.RUNTIME_ROBOT_ID // empty' "$owner_file")"
         [[ -z "$runtime" ]] || vx_harbor_api_robot_disable "$runtime" >/dev/null || return 75
     done
-    ingress="$(vx_harbor_ingress_target)"; backup_ingress="$(/usr/bin/mktemp "$root/.disable-ingress.XXXXXX")" || return 1
-    if [[ -f "$ingress" && ! -L "$ingress" ]]; then /usr/bin/cp -p "$ingress" "$backup_ingress" || return 1; else : >"$backup_ingress"; fi
+    ingress="$(vx_harbor_ingress_target)"; main="$(vx_harbor_nginx_main)"; backup_ingress="$(/usr/bin/mktemp "$root/.disable-ingress.XXXXXX")" || return 1; backup_main="$(/usr/bin/mktemp "$root/.disable-main.XXXXXX")" || { /usr/bin/rm -f "$backup_ingress"; return 1; }
+    if [[ -f "$ingress" && ! -L "$ingress" ]]; then ingress_existed=yes; /usr/bin/cp -p "$ingress" "$backup_ingress" || return 1; else : >"$backup_ingress"; fi
+    [[ -f "$main" && ! -L "$main" ]] && /usr/bin/cp -p "$main" "$backup_main" || { /usr/bin/rm -f "$backup_ingress" "$backup_main"; return 1; }
     _vx_harbor_service_is_active && was_active=yes || :
-    if ! _vx_harbor_disable_ingress_remove; then /usr/bin/rm -f "$backup_ingress"; return 1; fi
-    phase=service
-    if [[ "$was_active" == yes ]] && ! _vx_harbor_service_stop; then /usr/bin/install -o 0 -g 0 -m 0600 "$backup_ingress" "$ingress"; "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" reload nginx.service || :; /usr/bin/rm -f "$backup_ingress"; return 1; fi
-    provider_source="$(/usr/bin/mktemp "$root/.provider-disable.XXXXXX")" || return 1
+    if ! _vx_harbor_disable_ingress_remove; then _vx_harbor_disable_restore "$ingress" "$main" "$backup_ingress" "$backup_main" "$ingress_existed" no || :; /usr/bin/rm -f "$backup_ingress" "$backup_main"; return 1; fi
+    if [[ "$was_active" == yes ]] && ! _vx_harbor_service_stop; then _vx_harbor_disable_restore "$ingress" "$main" "$backup_ingress" "$backup_main" "$ingress_existed" no || :; /usr/bin/rm -f "$backup_ingress" "$backup_main"; return 1; fi
+    provider_source="$(/usr/bin/mktemp "$root/.provider-disable.XXXXXX")" || { _vx_harbor_disable_restore "$ingress" "$main" "$backup_ingress" "$backup_main" "$ingress_existed" "$was_active" || :; /usr/bin/rm -f "$backup_ingress" "$backup_main"; return 1; }
     /usr/bin/jq '.MODE="disabled"|.RUNNING_VERSION=null|.LAST_HEALTH_AT=null' "$root/provider.json" >"$provider_source"
     if ! vx_harbor_json_write_atomic "$root/provider.json" "$provider_source"; then
-        [[ "$was_active" == yes ]] && _vx_harbor_service_start || :
-        /usr/bin/install -o 0 -g 0 -m 0600 "$backup_ingress" "$ingress"; "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" reload nginx.service || :
-        /usr/bin/rm -f "$provider_source" "$backup_ingress"; return 1
+        _vx_harbor_disable_restore "$ingress" "$main" "$backup_ingress" "$backup_main" "$ingress_existed" "$was_active" || :
+        /usr/bin/rm -f "$provider_source" "$backup_ingress" "$backup_main"; return 1
     fi
-    /usr/bin/rm -f "$provider_source" "$backup_ingress" "$plan"; _vx_harbor_fsync "$root/operations"
+    /usr/bin/rm -f "$provider_source" "$backup_ingress" "$backup_main" "$plan"; _vx_harbor_fsync "$root/operations"
     vx_harbor_audit system provider-disable success retained || return 1
     printf 'disabled\n'
 }

@@ -52,7 +52,7 @@ if (!empty($_POST['docker_logs'])
     }
 }
 
-if (!empty($_POST['dataset']['harbor_publisher'])) {
+if (!empty($_POST['dataset']['harbor_publisher']) || !empty($_POST['harbor_publisher'])) {
     include($_SERVER['DOCUMENT_ROOT']."/ajax/docker/actions/harbor_publisher.php");
     exit;
 }

@@ -43,7 +43,7 @@ vx_harbor_health_observe_locked() {
         owner_json="$(/usr/bin/jq -c --argjson used "$(((used_bytes + 1048575) / 1048576))" --argjson runtime "$runtime_ready" --argjson publisher "$publisher_ready" '{OWNER,QUOTA_MB,STATE,USED_MB:$used,CREDENTIAL_READY:$runtime,PUBLISHER_READY:$publisher}' "$owner_file")"
         owners="$(/usr/bin/jq -c --argjson item "$owner_json" '.+[$item]' <<<"$owners")"
         owner_source="$(/usr/bin/mktemp "$root/observations/.owner.XXXXXX")" || return 1
-        /usr/bin/jq -n --arg at "$now" --argjson value "$owner_json" '{SCHEMA:1,OBSERVED_AT:$at}+$value' >"$owner_source" \
+        /usr/bin/jq -n --arg at "$now" --arg generation "$(/usr/bin/sha256sum <<<"$owner:$quota_id:$used_bytes:$now" | /usr/bin/awk '{print $1}')" --argjson used "$(((used_bytes + 1048575) / 1048576))" '{GENERATION:$generation,OBSERVED_AT:$at,USED_MB:$used}' >"$owner_source" \
           && vx_harbor_json_write_atomic "$root/observations/$owner.json" "$owner_source" || { /usr/bin/rm -f "$owner_source"; return 1; }
         /usr/bin/rm -f "$owner_source"
     done
@@ -51,9 +51,13 @@ vx_harbor_health_observe_locked() {
     /usr/bin/jq -n --arg at "$now" --arg health "$provider_health" --argjson cert "$cert" --argjson volume "$volume" --argjson owners "$owners" --argjson pending "$pending" --argjson failed "$failed" \
       '{SCHEMA:1,OBSERVED_AT:$at,HEALTH:$health,CERTIFICATE:$cert,STORAGE:{USED_BYTES:($volume.storage.used // 0),TOTAL_BYTES:($volume.storage.total // 0)},OPERATIONS:{PENDING:$pending,FAILED:$failed},OWNERS:$owners}' >"$source" || { /usr/bin/rm -f "$source"; return 1; }
     (( $(/usr/bin/stat -c %s "$source") <= VX_HARBOR_OBSERVATION_MAX_BYTES )) || { /usr/bin/rm -f "$source"; return 1; }
-    vx_harbor_json_write_atomic "$root/observations/provider.json" "$source" || { /usr/bin/rm -f "$source"; return 1; }
+    vx_harbor_json_write_atomic "$root/observations/provider-detail.json" "$source" || { /usr/bin/rm -f "$source"; return 1; }
     /usr/bin/rm -f "$source"
-    /usr/bin/jq -cS . "$root/observations/provider.json"
+    source="$(/usr/bin/mktemp "$root/observations/.provider.XXXXXX")" || return 1
+    /usr/bin/jq -n --arg at "$now" --arg health "$provider_health" '{HEALTH:$health,OBSERVED_AT:$at}' >"$source" \
+      && vx_harbor_json_write_atomic "$root/observations/provider.json" "$source" || { /usr/bin/rm -f "$source"; return 1; }
+    /usr/bin/rm -f "$source"
+    /usr/bin/jq -cS . "$root/observations/provider-detail.json"
 }
 
 vx_harbor_health_observe() {
