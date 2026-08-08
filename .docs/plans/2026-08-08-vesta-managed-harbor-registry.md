@@ -736,9 +736,13 @@ git commit -m "docs(harbor): add operator and tenant registry guidance"
 
 ## Milestone 5: Development acceptance and release closure
 
-**Status: BLOCKED — EXTERNAL.** Task 11 is complete at `390bcb7f`, but Task 10
-cannot complete until the development hostname has DNS and a valid matching
-certificate. Production deployment remains deferred.
+**Status: BLOCKED — PRODUCT.** Task 11 is complete at `390bcb7f`. Task 10
+staged exact HEAD `6c7119b8` to `dev.jackpridham.com` at
+`192.168.200.100`, passed the clean local aggregate, and reached authenticated
+Harbor bootstrap. Harbor v2.15.0 cannot satisfy the approved caller-selected
+publisher-secret contract through the least-privilege integration robot.
+Workstation DNS also resolves the development name to a different address.
+Production deployment remains deferred.
 
 ### Task 10: Perform development-host acceptance
 
@@ -746,7 +750,7 @@ certificate. Production deployment remains deferred.
 - Create: `.docs/validation/2026-08-08-vesta-managed-harbor-development.md`
 - Modify: focused fixtures only when acceptance exposes a product defect
 
-- [ ] **Step 1: Pass local milestone acceptance**
+- [x] **Step 1: Pass local milestone acceptance**
 
 ```bash
 bash test/harbor/run-focused.sh
@@ -756,36 +760,43 @@ Expected: one clean focused run; no broad ShellCheck or full readiness.
 
 - [ ] **Step 2: Stage and validate development**
 
-Stage through `gizmo@192.168.100.16` to
-`debian@192.168.100.100`. Verify pinned release, no host Harbor TCP listener,
-Unix-socket permissions, exact Vesta TLS routes, no portal/API exposure,
-eligible owner reconciliation, quota, separate credentials, immutable
-push/pull/deploy, revocation, outage isolation, encrypted backup validation,
-disable plan, and rollback retention.
+Stage directly to `debian@dev.jackpridham.com`, pinned to the authorized
+development address `192.168.200.100`. Verify pinned release, no host Harbor
+TCP listener, Unix-socket permissions, exact Vesta TLS routes, no portal/API
+exposure, eligible owner reconciliation, quota, separate credentials,
+immutable push/pull/deploy, revocation, outage isolation, encrypted backup
+validation, disable plan, and rollback retention. Staging, release generation,
+isolated startup, socket, health, and authenticated bootstrap were exercised;
+the remaining checks are blocked at integration credential establishment.
 
-- [ ] **Step 3: Record exact evidence**
+- [x] **Step 3: Record exact evidence**
 
 Record commit, host, commands, redacted outputs, image digests, operation IDs,
 listener/socket evidence, owner/quota evidence, workload revision/health/drift,
 backup validation, rollback location, and explicit production deferral.
 
-- [ ] **Step 4: Commit acceptance**
+- [x] **Step 4: Commit acceptance**
 
 ```bash
 git add .docs/validation test/harbor
 git commit -m "docs(harbor): record development acceptance"
 ```
 
-Task 10 outcome: **BLOCKED — EXTERNAL**. There is no DNS record for
-`sydlocal.jackpridham.com`; the existing certificate has CN
-`syd.vortexenterprises.com.au` and expired on 2026-02-22. Two install attempts
-failed transactionally before generation. Provider/service/socket/listener/
-container state remained disabled or absent, the tenant container was
-unchanged, and rollback is retained at
-`/root/vesta-backups/vesta-harbor-task10-dc48f21e`. The host is staged only
-through `0f5849a5`; later fixes through HEAD `390bcb7f` are not deployed. The
-focused run failed once on a product defect and an accidental traced second
-start was terminated, so no clean aggregate pass is claimed.
+Task 10 outcome: **BLOCKED — PRODUCT**. One clean
+`bash test/harbor/run-focused.sh` passed. Exact HEAD `6c7119b8` was staged as a
+57-file runtime payload and all installed hashes passed. The installer reached
+health and authenticated bootstrap. Harbor v2.15.0 rejects the shipped
+integration permissions, always replaces a requested robot creation secret,
+and returns 403 when either a valid least-privilege integration robot or the
+child robot attempts secret refresh. This conflicts with the approved
+caller-generated publisher secret and no-routine-bootstrap-admin requirements.
+Disposable probes were removed. The provider is disabled, its service is
+inactive/disabled, no Harbor host listener/socket is present, and
+`slave-vxapp` remains the same healthy container. Final root-owned rollback is
+`/root/vesta-backups/vesta-harbor-task10-6c7119b8-20260808T125339Z`.
+Workstation DNS currently resolves `dev.jackpridham.com` to `159.196.107.151`,
+not `192.168.200.100`; pinned hostname TLS probes verified the valid
+development certificate without contacting that other address.
 
 ### Task 11: Final release review and closeout
 
@@ -819,8 +830,10 @@ documentation catalog, and executable broker catalog blockers. Their commits
 are `e23517fb`, `8f80909b`, and `e08e9882`; final blocker commits are
 `63e24210` and `390bcb7f`. The final post-review limited run passed at
 `390bcb7f`. Specification review returned **PASS_WITH_EXTERNAL_BLOCKER** and
-quality/security review returned **APPROVED_WITH_EXTERNAL_BLOCKER**. Task 10
-and overall Milestone 5 remain blocked externally.
+quality/security review returned **APPROVED_WITH_EXTERNAL_BLOCKER** for the
+then-known DNS/TLS condition. The fresh Task 10 evidence supersedes that
+condition with the product blocker above; Task 10 and Milestone 5 remain
+blocked.
 
 ## Requirement traceability
 
@@ -864,8 +877,11 @@ and overall Milestone 5 remain blocked externally.
 - Package entitlement and superseded rollback experiments: `b35d423a`,
   `a4d72bd2`, `6a304088`, `179298d2`, `cc2e816b`. History is retained;
   Task 2 adapts the working tree to the approved forward-convergence model.
-- Development staging/evidence: `dc48f21e`, `0f5849a5`; host staging ends at
-  `0f5849a5`.
+- Earlier development staging/evidence: `dc48f21e`, `0f5849a5`.
+- Fresh development corrections and staging: `f7ce90a6`, `5d48a72e`,
+  `632e0e48`, `ba9b154f`, `c0ebb951`, `27acfc15`, `e211c792`, `7389311c`,
+  `d2948876`, `4d5fd098`, `d351b590`, `6c7119b8`; host staging ends at
+  `6c7119b8`.
 - Release-gate corrections: `e23517fb`, `8f80909b`, `e08e9882`.
 - Final review blocker corrections: `63e24210`, `390bcb7f`.
 
@@ -886,13 +902,19 @@ These are not first-release blockers:
 
 ## Current deferred boundary and next action
 
-- Task 10 and overall Milestone 5 remain **BLOCKED — EXTERNAL**, not complete.
-- External DNS/TLS provisioning is outside current implementation authority.
+- Task 10 and overall Milestone 5 remain **BLOCKED — PRODUCT**, not complete.
+- Harbor v2.15.0 cannot implement caller-selected publisher secrets through
+  the approved least-privilege integration identity; changing the publisher
+  secret contract or routine administrator boundary requires explicit product
+  review.
+- Development DNS also needs to map `dev.jackpridham.com` to
+  `192.168.200.100` for unpinned clients. The current certificate hostname and
+  validity are correct, but it is self-signed.
 - Production deployment and push remain deferred.
-- Exact next action: provision DNS for `sydlocal.jackpridham.com` to the
-  development endpoint and issue a valid matching certificate; then stage
-  current HEAD `390bcb7f` and rerun Task 10 only. After Task 10 passes, final
-  closeout and push can proceed.
+- Exact next action: approve and implement a Harbor-supported publisher-secret
+  design, correct development DNS, stage the exact successor HEAD with a new
+  rollback, and rerun only the incomplete Task 10 host checks. After Task 10
+  passes, final closeout and push can proceed.
 
 ## Execution handoff
 

@@ -2,180 +2,230 @@
 
 ## Outcome
 
-**BLOCKED — EXTERNAL.** Development acceptance stopped before Harbor activation because
-the authorized host's existing Vesta TLS identity is not valid for its
-authoritative hostname. Production deployment is deferred. No production host
-was contacted.
+**BLOCKED — PRODUCT.** Current HEAD was staged and the Vesta-managed Harbor
+installer reached authenticated bootstrap, but Harbor v2.15.0 cannot satisfy
+the approved publisher-secret and least-privilege integration contract. The
+provider was returned to a stable disabled/inactive state. Production
+deployment is deferred and no production host was contacted.
+
+Development DNS is also not ready for unpinned clients: the workstation's
+resolver returns `159.196.107.151` for `dev.jackpridham.com`, not the authorized
+development address `192.168.200.100`. All SSH and hostname-bearing TLS probes
+in this acceptance were pinned to `192.168.200.100`; the raw IP was never used
+as the TLS identity.
 
 ## Release identity and authorization boundary
 
-- Authorized path: `gizmo@192.168.100.16` to
-  `debian@192.168.100.100` only.
-- Development host identity: `sydlocal.jackpridham.com`, Debian 13 kernel
-  `6.12.57+deb13-amd64`.
-- Initial candidate: `004fdcf7`.
-- Product fix after local acceptance: `dc48f21e`.
-- Exact staged commit after live adapter correction:
-  `0f5849a5d2a8344a65c9756d541fdc4553d75b2a`.
-- Current reviewed repository HEAD: `390bcb7f`. The development host remains
-  staged only through `0f5849a5`; all later fixes are not deployed.
-- Runtime marker/version: `0f5849a5...` /
-  `0.9.9-0-16+vxapp.0f5849a5`.
-- No connection to `syd.vortexenterprises.com.au` was made. No firewall, DNS,
-  NAT, public route, tenant route, or production change was attempted.
+- Repository start point: `8f1b6b9d`.
+- Exact final staged commit:
+  `6c7119b86eb3324e87fe43203bc6a69b41280314`.
+- Installed runtime version: `0.9.9-0-16+vxapp.6c7119b8`.
+- Final runtime archive SHA-256:
+  `fd6073a78cf965474f072216cdce8eefca13b41b6d7dfc3d233ddaf4e9629766`.
+- Runtime payload: 57 repository files; all 57 installed hashes passed.
+- SSH target: `debian@dev.jackpridham.com`, pinned to
+  `192.168.200.100` with the configured `~/.ssh/id_ed25519`.
+- Host-reported FQDN: `dev.jackpridham.com`; host address:
+  `192.168.200.100/24`; SSH peer target: `192.168.200.100:22`.
+- No firewall, DNS, route, tenant package, tenant desired-state, or unrelated
+  package change was made. No Docker prune was run.
+- `syd.vortexenterprises.com.au` was not contacted or mutated. Production
+  deployment and push remain deferred.
 
 ## Local Milestone 5 run
 
-The required command was invoked once:
+The requested clean aggregate was run once after two focused fixture
+corrections:
 
 ```text
 bash test/harbor/run-focused.sh
-exit=1
-Harbor fixture tests passed.
-Harbor provider state tests passed.
+exit=0
+PASS: Harbor fixture tests
+PASS: Harbor provider state
 PASS: Harbor redacted status and endpoint guards
+PASS: Harbor package/quota integration
+PASS: Harbor release verification
+PASS: Harbor transactional install
+PASS: Harbor exact ingress boundary
+PASS: Harbor host boundary
+PASS: protected Harbor API adapter
+PASS: owner reconciliation
+PASS: runtime credential lifecycle
+PASS: publisher credential lifecycle
+PASS: tenant discovery
+PASS: revocation and outage isolation
+PASS: bounded Harbor health observations
+PASS: encrypted Harbor backup and validate-only restore
+PASS: Harbor disable plan
+PASS: Harbor documentation contract
+PASS: Harbor panel integration
 ```
 
-The next declared suite, `test-package-quota.sh`, rejected recovery of a
-correctly persisted `pending/provider-unavailable` operation because the exact
-authority schema incorrectly required every pending operation to have a null
-diagnostic. Commit `dc48f21e` removed that contradictory rule. The affected
-suite then passed, along with Bash syntax, Python compilation, and
-`git diff --check`.
+Earlier defect-discovery starts of the aggregate failed before this clean run;
+they are not represented as passes. The aggregate was not run again after the
+clean result. No broad standalone ShellCheck, canonical/full readiness gate,
+limited launcher, or unlimited launcher was run in this acceptance.
 
-During diagnosis the aggregate was mistakenly started a second time under
-`bash -x`. It repeated the first three suites and entered the same failing
-package-quota suite before being terminated; it did not proceed beyond that
-suite. The aggregate was not run again after the fix. This deviation is
-retained explicitly and prevents claiming the requested clean once-run result.
+Focused corrections before the clean run were `f7ce90a6` and `5d48a72e`.
+Live acceptance then exposed and focused-tested these install corrections:
 
-Live invocation then exposed ten Harbor public adapters that did not initialize
-`VESTA` when called without an exported environment. Commit `0f5849a5` added
-the standard `/usr/local/vesta` default. The affected `test-status.sh`, Bash
-syntax, and whitespace checks passed.
+```text
+632e0e48 validate containerd-loaded generator identity
+ba9b154f remove failed preactivation staging
+c0ebb951 generate external proxy configuration
+27acfc15 converge isolated provider activation
+e211c792 preserve generator capability contract
+7389311c create registry socket with panel access
+d2948876 supervise protected registry socket
+4d5fd098 roll back fresh provider data
+d351b590 normalize resumable bootstrap state
+6c7119b8 set nonexpiring robot duration
+```
 
-There is no clean aggregate claim: the required focused run failed once due to
-a defect, and the accidental traced second start was terminated. Only affected
-direct tests were run after the fix.
+Only affected Bash syntax, focused Harbor tests, Python fixture checks, and
+`git diff --check` were used after live defect discovery.
 
-## Development preflight
+## Development baseline and TLS
 
-Preflight captured the following redacted facts before Harbor installation:
-
-- `/usr/local/vesta`: `root:root`, mode `0755`; prior marker `276eb9f6...`.
-- Root filesystem: 153 GiB total, 109 GiB free.
-- Docker `26.1.5+dfsg1`; Compose `2.26.1-4`.
-- Vesta, nginx, Docker, and Apache were active.
-- Harbor service, provider root, data root, ingress include, unit, and Unix
-  socket were absent.
-- Existing panel listener: `0.0.0.0:8083`; no Harbor host TCP listener.
-- Existing managed workload: container `fa36ad4cc920`,
-  `vx-asteriskvx-pbx-asterisk-1`, healthy. Its ID and running state remained
-  unchanged through staging and both failed install attempts.
-- Existing owners were inventoried. No existing project was selected for
-  acceptance and `slave/slave-vxapp` was not mutated.
-- Debian's signed repository supplied the missing prerequisite
-  `cosign 2.5.0-2+b4`. Package installation reported that no containers needed
-  restart. It refreshed host services but did not restart the tenant container.
+- The authoritative Vesta hostname and interface are
+  `dev.jackpridham.com` and `192.168.200.100/24`.
+- The host resolver maps `dev.jackpridham.com` to `192.168.200.100`, while the
+  acceptance workstation's resolver maps it to `159.196.107.151`.
+- The panel listener is `0.0.0.0:8083` and returns HTTP `302` when probed as
+  `https://dev.jackpridham.com:8083` with the connection pinned to
+  `192.168.200.100`.
+- Panel certificate subject and issuer CN are both
+  `dev.jackpridham.com`. Validity is 2025-11-29 09:21:20 UTC through
+  2026-11-29 09:21:20 UTC. SHA-256 fingerprint is
+  `18:2E:30:BF:6D:19:76:93:5F:6D:32:43:37:8E:B2:C5:3A:52:0E:2F:EA:5F:8B:A1:A3:3D:1B:F0:44:A9:3B:5F`.
+- The certificate is self-signed (`curl` verification result 18), so the
+  hostname and validity checks pass but public CA trust is not claimed.
+- Exact Debian `cosign 2.5.0-2+b4` was installed as the
+  release-verification prerequisite. No unrelated package was installed.
 
 ## Transactional staging and rollback
 
-The exact `dc48f21e` runtime payload archive had SHA-256
-`fa35d7bf5c2be1acf3d16190bdbaef79e98632fd6b9c4541552d03a0404eacdf`.
-Transfer and remote hashes matched. An initial staging attempt stopped before
-backup or installation because its harness applied Bash syntax checking to a
-legacy PHP `v-*` command. Only the exact empty attempt directories were
-removed. The corrected transaction:
+Each successor was staged under `/run/lock/vesta-vxapp-release.lock`. The
+final transaction captured prior bytes, absent paths, created directories,
+version, active containers, listeners, release metadata, archive hash, and
+restoration instructions before installing only the 57-file runtime payload.
+Installed hashes and syntax passed; unrelated files were not deleted.
 
-- held `/run/lock/vesta-vxapp-release.lock`;
-- captured every overwritten file and every absent path;
-- captured runtime markers, listeners, and managed-container inventory;
-- checked staged Bash and PHP syntax;
-- installed root-owned repository bytes without deleting unrelated files;
-- verified each installed file byte-for-byte; and
-- installed only the required Debian `cosign` package.
-
-The adapter-only successor archive SHA-256 was
-`0b129775060f5c907b3a00e720fda2fa08f69e7513e8f323cf3c129a6d3da1b8`.
-It was hash-verified and installed under the same release lock. The retained
-root-owned mode-0700 rollback is:
+The final retained root-owned mode-0700 rollback is:
 
 ```text
-/root/vesta-backups/vesta-harbor-task10-dc48f21e
+/root/vesta-backups/vesta-harbor-task10-6c7119b8-20260808T125339Z
 ```
 
-It contains prior files, an absent-path list, original runtime markers,
-listener/container baselines, and restoration instructions. Harbor's provider
-data retention policy remains separate.
+It contains 75 evidence files (467472 bytes), including `RESTORE.txt`, and
+records the exact staged commit and archive hash. Earlier successor rollbacks
+from `5d48a72e` through `d351b590` are also retained. The historical path
+`/root/vesta-backups/vesta-harbor-task10-dc48f21e` does not exist on this new
+development host; it was neither contacted nor deleted.
 
-## Install attempts and exact blocker
+The root filesystem had 6530224 KiB free at closeout. Because the pinned
+offline Harbor release and retained rollback/data reduced free space below
+the original conservative preflight threshold, later resumable attempts used
+an explicit 6000000 KiB minimum. No global image/container cleanup was used.
 
-Attempt 1 used `v-install-harbor-registry`. It failed transactionally and
-restored the prior service, ingress, and provider state. Attempt 2 added only a
-redacted phase callback. It passed `prerequisite` and `release`, proving the
-official Harbor v2.15.0 archive digest and offline signature bundle were
-accepted, then failed before the `generation` phase.
+## Install transaction and product blocker
 
-Direct isolation showed `vx_harbor_origin_json` fails because:
+The final installer log reached the following redacted phases:
 
 ```text
-authoritative hostname: sydlocal.jackpridham.com
-authoritative DNS: no DNS record for sydlocal.jackpridham.com
-Vesta certificate CN/SAN: syd.vortexenterprises.com.au
-certificate validity: 2025-11-24 through 2026-02-22
-acceptance date: 2026-08-08
+PHASE=prerequisite
+PHASE=release
+PHASE=generation
+PHASE=compose
+PHASE=migration
+PHASE=socket
+PHASE=health
+exit=75 before PHASE=integration
 ```
 
-The certificate is both expired and invalid for the development hostname.
-The install therefore fails closed before generating configuration or starting
-Harbor. Repair requires a correctly named, currently valid certificate (and
-potentially DNS/ACME authority), which cannot be safely created without the
-explicitly prohibited DNS/route/certificate expansion. Hostname or certificate
-validation was not weakened.
+The protected failure evidence is retained in the final rollback. Harbor's
+response was:
 
-After each failure:
+```text
+BAD_REQUEST: bad request permission: project:update
+```
 
-- provider state was exact disabled state with pinned version `v2.15.0`;
-- `/var/lib/vesta-harbor`, the systemd unit, ingress include, and Unix socket
-  were absent;
-- `vesta-harbor` was not found/inactive;
-- no Harbor container or Harbor TCP listener existed; and
-- container `fa36ad4cc920` remained healthy with the same ID.
+Harbor v2.15.0's authenticated `/api/v2.0/permissions` response proves that
+`project:update` is project-scoped and that neither system nor project robot
+permission catalogs offer `robot:update`. A disposable probe then established
+the deeper incompatibility without exposing credentials:
 
-Both attempts were transactional pre-generation failures. Final state remained
-provider disabled, with no Harbor service, socket, listener, or container. The
-tenant container was unchanged. Rollback remains at
-`/root/vesta-backups/vesta-harbor-task10-dc48f21e`, and the Debian `cosign`
-package remains installed.
+```text
+valid integration robot create:                 201
+delegated scoped child robot create:             201
+integration robot refresh of child secret:       403
+child robot refresh of its own secret:            403
+requested creation secret equals returned secret: false
+returned generated credential /v2/ probe:         200
+```
 
-## Release gate and final reviews
+Harbor also prefixes the returned login (`robot$...`) and always generates the
+creation secret. Consequently the approved behavior cannot be achieved on the
+pinned release: `v-docker registry-publisher-change` requires a
+caller-generated publisher secret, Vesta must not return or retain that
+publisher secret, and the bootstrap administrator must not be used for
+routine API calls. Using the retained bootstrap administrator to PATCH every
+publisher robot would violate the least-privilege contract; accepting a
+server-generated secret would leave the tenant without the submitted
+credential and violate the publisher lifecycle contract. The acceptance did
+not weaken either boundary.
 
-Limited-launcher attempts exposed, in order, the deny-marker lifecycle,
-documentation catalog, and executable broker catalog blockers. Corrections are
-`e23517fb`, `8f80909b`, and `e08e9882`. Later final blocker commits are
-`63e24210` and `390bcb7f`. The final post-review limited launcher passed at
-exact HEAD `390bcb7f`; this does not replace the failed focused aggregate or
-blocked host acceptance.
+All disposable probe robots and the disposable `vesta-probe-contract` Harbor
+project were deleted. Final authenticated inventory reported zero matching
+probe robots and zero matching probe projects. No Vesta owner, Compose
+project, or tenant container was created for these probes.
 
-- Final specification review: **PASS_WITH_EXTERNAL_BLOCKER**.
-- Final quality/security review: **APPROVED_WITH_EXTERNAL_BLOCKER**.
-- Task 11 gate and reviews: complete.
-- Task 10 and overall Milestone 5: **BLOCKED — EXTERNAL**.
+## Final development state and workload preservation
+
+The isolated candidate had ten healthy/internal Harbor containers and no
+published host port during diagnosis. At closeout only
+`vesta-harbor.service` was stopped and disabled. Harbor data, stopped
+containers, logs, staged runtime, rollback evidence, and the unit were
+retained; no prune or provider-data deletion was performed.
+
+```text
+provider MODE=disabled
+provider PINNED_VERSION=v2.15.0
+provider RUNNING_VERSION=null
+provider ORIGIN=null
+vesta-harbor.service=inactive,disabled
+/run/vesta-harbor/registry.sock=absent
+Harbor host TCP listener=absent
+panel listener=0.0.0.0:8083
+```
+
+The active tenant baseline was checked before staging, during each install
+monitor, after every failure/probe, and after final service shutdown. It is
+unchanged:
+
+```text
+fabfe8153757c9a08d95a89b357b254fd7911f79e8fc08e10afeb2fa03c63520
+/vx-slave-slave-vxapp-app-1 running healthy
+```
+
+`slave-vxapp` desired state, image, container, network, volumes, routes, and
+credentials were not mutated.
 
 ## Acceptance not claimed
 
-Because activation could not safely pass the existing-TLS prerequisite, no
-operation IDs, owner namespace/quota, runtime/publisher robots, secret-boundary
-push, immutable image digest, tenant preview/apply revision, health/drift,
-revocation/outage, encrypted backup validation, or managed disable plan was
-created. No disposable acceptance owner/project was created. These Task 10
-checks remain blocked rather than being simulated or weakened.
+Because the shipped adapter cannot establish its required routine identity,
+Task 10 does not claim managed provider activation, eligible-owner quota,
+distinct usable runtime/publisher credentials, immutable push/pull by digest,
+`v-docker` registry workflow, revocation, outage isolation, encrypted backup
+validation, provider health, or disable-plan acceptance. No workload was
+mutated to simulate those checks.
 
-Push and production deployment were not performed. **Production deployment:
-deferred.**
+## Required product decision
 
-## Exact next action
-
-Provision DNS for `sydlocal.jackpridham.com` to the development endpoint and
-issue a valid matching certificate. Then stage current HEAD `390bcb7f` and
-rerun Task 10 only. After it passes, final closeout and push can proceed.
+Before Task 10 can resume, the approved design must choose and implement a
+Harbor-supported credential contract, for example a pinned Harbor release
+that accepts caller-selected robot secrets under delegated authority, or an
+explicitly reviewed change to secret delivery/administrator use. Development
+DNS must also map `dev.jackpridham.com` to `192.168.200.100` for unpinned
+clients. Then stage the exact successor HEAD, create a new rollback, and rerun
+only the incomplete development-host acceptance. Production remains deferred.
