@@ -9,6 +9,15 @@ recovery.
 Every tenant SSH command is forced to the owner-equal `standard` profile.
 Privileged profiles and production workload changes are administrator-only.
 
+> **Managed Harbor is not operational today.** Development activation is
+> safely rolled back and **BLOCKED — PRODUCT** because Harbor v2.15.0 cannot
+> satisfy the approved least-privilege publisher-secret contract. Production
+> is deferred. Read the canonical
+> [tenant Harbor deployment guide](.docs/user-guides/vesta-managed-harbor.md),
+> [operator Harbor runbook](docs/container-orchestration.md#optional-vesta-managed-harbor-provider),
+> the [provider contract](.docs/contracts/harbor-provider.md), and the
+> [development acceptance evidence](.docs/validation/2026-08-08-vesta-managed-harbor-development.md).
+
 ## 1. The deployment model
 
 Vesta is the control plane. Docker is the runtime.
@@ -69,9 +78,10 @@ An eligible tenant must be all of the following:
 - within the package's service, CPU, memory, PID, storage, port, secret, and
   volume limits.
 
-#### Compose package fields
+#### Compose and registry package fields
 
-All nine Compose quota fields are part of the assigned Vesta package:
+All ten Docker orchestration quota fields are part of the assigned Vesta
+package:
 
 | Field | Meaning | Unit |
 | --- | --- | --- |
@@ -84,6 +94,7 @@ All nine Compose quota fields are part of the assigned Vesta package:
 | `DOCKER_PORTS` | Published port mappings | count |
 | `DOCKER_SECRETS` | Managed secret declarations | count |
 | `DOCKER_VOLUMES` | Managed named volumes | count |
+| `DOCKER_REGISTRY_MB` | Vesta-managed Harbor artifact quota | MiB |
 
 For each field, `0` disables that capability and `unlimited` has the normal
 Vesta unlimited meaning. Prefer explicit bounded limits. `DOCKER_PROJECTS`
@@ -91,13 +102,17 @@ must be greater than zero (or `unlimited`) for `v-docker` shell access. Other
 fields may remain zero only when the tenant's workloads do not consume that
 resource. Every service must still declare CPU, memory, and PID limits, so a
 usable package normally grants non-zero values for all three resource fields.
-Shipped default packages set the Compose fields to `0`; explicitly enable the
-required dimensions in a dedicated package before onboarding a tenant.
+`DOCKER_REGISTRY_MB=0` means no managed-Harbor publishing entitlement; it does
+not affect independently configured external registries. Shipped default
+packages set these fields to `0`; explicitly enable the required dimensions in
+a dedicated package before onboarding a tenant.
 
-The matching `U_DOCKER_*` fields are system-maintained usage counters. Do not
-put them in a package or edit them by hand. Validation sums usage across all
-of the owner's projects. Exceeding a limit rejects growth and start-like
-operations; it does not delete projects or retained data.
+The matching `U_DOCKER_*` fields, including `U_DOCKER_REGISTRY_MB`, are
+system-maintained usage counters. Do not put them in a package or edit them by
+hand. Compose validation sums workload usage across all of the owner's
+projects; Harbor supplies measured registry usage. Exceeding a limit rejects
+growth and start-like operations; it does not delete projects or retained
+data.
 
 An illustrative small package allocation is:
 
@@ -111,6 +126,7 @@ DOCKER_STORAGE_MB='20480'
 DOCKER_PORTS='8'
 DOCKER_SECRETS='16'
 DOCKER_VOLUMES='8'
+DOCKER_REGISTRY_MB='40960'
 ```
 
 These are examples, not production sizing recommendations. Size the package
@@ -121,9 +137,9 @@ expanded published port.
 #### Create, update, and assign the package
 
 The recommended operator flow is the Vesta administrator package UI: create a
-dedicated package (or edit an existing dedicated package), fill all nine
-Compose fields, and assign it to the tenant. Avoid changing a shared default
-package just to enable one workload.
+dedicated package (or edit an existing dedicated package), fill all ten
+Docker orchestration fields, and assign it to the tenant. Avoid changing a
+shared default package just to enable one workload.
 
 The equivalent command boundaries are:
 
@@ -135,9 +151,10 @@ v-change-user-package USER PACKAGE            # assign a package to one user
 ```
 
 `PKG_DIR/PACKAGE.pkg` must be a complete valid Vesta package, not only the
-nine-line fragment above. Use `yes` replacement only after reviewing every
-non-Docker and Docker field. A Compose package reduction is refused when any
-new limit would fall below current Compose usage. The `FORCE=yes` form of
+fragment above. Use `yes` replacement only after reviewing every non-Docker
+and Docker field. A package reduction is refused when any new limit would fall
+below current usage. A managed-registry quota reduction below recently
+observed Harbor usage also fails closed. The `FORCE=yes` form of
 `v-change-user-package` does not bypass Compose quota coverage, delete data, or
 make an over-limit workload healthy.
 
@@ -197,7 +214,7 @@ For each quota row:
 
 After a package edit, a difference between `PACKAGE_VALUE` and
 `EFFECTIVE_VALUE` normally means the package has not yet been propagated with
-`v-update-user-package`, or the user has not been reassigned. Confirm all nine
+`v-update-user-package`, or the user has not been reassigned. Confirm all
 effective limits before granting SSH access or attempting the first preview.
 
 ### 2.3 Configure SSH safely
@@ -275,32 +292,30 @@ invent any of these values or approve a mutable tag as identity.
 
 ### Private registry login
 
-### Vesta-managed registry tenant pipeline
+#### Vesta-managed registry tenant pipeline
 
-When the package grants Docker projects and registry quota, connect with the
-account's ordinary SSH identity. Build and test locally; Vesta exposes no build
-daemon or raw Docker. Obtain the publisher credential through the protected
-operator channel and keep it in the local credential store, never argv,
-environment files, Compose, logs, panel fields, or archives.
+The canonical
+[Vesta-managed Harbor tenant guide](.docs/user-guides/vesta-managed-harbor.md)
+covers eligibility, protected publisher rotation, local build, versioned push,
+digest resolution, immutable Compose preview/pull/apply, health, readiness,
+drift, rollback, revocation, and failure handling. The normative operator
+boundary is the
+[Harbor provider contract](.docs/contracts/harbor-provider.md).
 
-Run `v-docker registry-info PROJECT json` to discover the Vesta TLS origin,
-namespace, repository, quota/usage and readiness. Authenticate the local OCI
-client with publisher credentials on stdin, push, and resolve the immutable
-digest. Deployment input is the exact repository plus
-`@sha256:<64-lowercase-hex>`, never a tag. Use immutable preview, owner-scoped
-pull, preview inspection and server-issued-token apply. Acceptance requires a
-converged revision and fresh service/route health; publication alone never
-deploys.
+That workflow is future-facing: development activation is currently safely
+rolled back and **BLOCKED — PRODUCT**, and production is deferred. Once the
+provider is accepted and operational, use `v-docker registry-info PROJECT
+json` to discover the existing Vesta TLS origin and exact repository. Rotate a
+43–128-character URL-safe publisher secret with
+`v-docker registry-publisher-change` on bounded stdin, and revoke it with
+`v-docker registry-publisher-disable`. Never place it in argv, environment,
+Compose, logs, HTML, metadata, Git, or an archive.
 
-Rotate with `v-docker registry-publisher-change` and a 16–256 byte credential
-on bounded stdin; revoke with `v-docker registry-publisher-disable`.
-Revocation blocks pushes but retains artifacts and running workloads. During
-outage, publication, discovery freshness and pulls may fail or remain pending;
-workloads, routes, firewall and DNS do not change.
+No SCP, rsync, source/image archive, Harbor administrator, Debian sudo, Docker
+group/socket, or raw Docker path belongs to this pipeline. Application-specific
+build and acceptance details remain in the owning application repository.
 
-No SCP, rsync, source/image archive or raw Docker path belongs to this
-pipeline. Application-specific private-repository caveats remain in the
-owning application repository.
+#### Independently managed external registry
 
 The tenant may install an owner-scoped registry credential through bounded
 stdin. The registry is a hostname accepted by the tenant broker, such as
@@ -866,6 +881,9 @@ v-docker routes PROJECT [json|plain]
 v-docker backups PROJECT [json|plain]
 v-docker secrets PROJECT [json|plain]
 v-docker registries [json|plain]
+v-docker registry-info PROJECT [json|plain]
+v-docker registry-publisher-change < publisher-secret
+v-docker registry-publisher-disable
 v-docker image-pull PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION IMAGE@sha256:DIGEST
 v-docker drift PROJECT [json|plain]
 v-docker probe PROJECT PROBE [json|plain]
@@ -978,6 +996,8 @@ developer/CI build and test
 
 Further normative detail lives in
 [`docs/container-orchestration.md`](docs/container-orchestration.md),
+the [Vesta-managed Harbor tenant guide](.docs/user-guides/vesta-managed-harbor.md),
+the [Harbor provider contract](.docs/contracts/harbor-provider.md),
 [`compose-shell-access.md`](.docs/contracts/compose-shell-access.md),
 [`compose-self-service-deployment.md`](.docs/contracts/compose-self-service-deployment.md),
 [`compose-policy.md`](.docs/contracts/compose-policy.md), and

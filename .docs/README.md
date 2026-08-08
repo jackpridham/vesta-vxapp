@@ -6,8 +6,10 @@ Current documents:
 - [Repository overview](../README.md)
 - [Operator architecture and runbook](../docs/container-orchestration.md)
 - [Complete source-to-Vesta deployment runbook](../DOCKER_ORCHESTRATION_DEPLOYMENT.md)
+- [Vesta-managed Harbor tenant deployment guide](user-guides/vesta-managed-harbor.md)
 - [Vesta-managed Harbor registry specification](specs/2026-08-08-vesta-managed-harbor-registry.md)
 - [Vesta-managed Harbor provider contract](contracts/harbor-provider.md)
+- [Vesta-managed Harbor development acceptance](validation/2026-08-08-vesta-managed-harbor-development.md)
 - [Compose project user guide](user-guides/docker-compose-projects.md)
 - [Native web-domain reverse-proxy guide](user-guides/native-web-domain-proxy.md)
 - [Native web-domain proxy validation](validation/2026-08-06-native-web-proxy-release.md)
@@ -33,6 +35,13 @@ Earlier `docker-*` schema contracts and the direct-container guide are
 migration history and do not override current `compose-*` contracts.
 
 ## Readiness boundary
+
+Vesta-managed Harbor is not operational today. Development activation is
+safely rolled back and **BLOCKED — PRODUCT** because Harbor v2.15.0 cannot
+satisfy the approved least-privilege publisher-secret contract. The provider
+is disabled/inactive, no Harbor host listener or registry socket is present,
+and production is deferred. The tenant guide documents the canonical workflow
+only for use after the blocker is resolved and development acceptance passes.
 
 The Compose implementation supports owner-only `standard` self-service,
 immutable preview/apply, administrator-approved profiles, trusted image

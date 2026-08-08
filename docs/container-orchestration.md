@@ -13,6 +13,15 @@ multi-node scheduling, host networking, host firewall mutation, Docker socket
 mounts, privileged workloads, arbitrary host paths, host PID or IPC, devices,
 or global Docker cleanup.
 
+> **Managed Harbor status:** development activation is safely rolled back and
+> **BLOCKED — PRODUCT** because Harbor v2.15.0 cannot satisfy the approved
+> least-privilege publisher-secret contract. The provider is disabled/inactive,
+> no Harbor host listener or registry socket is present, and production is
+> deferred. See the canonical
+> [tenant Harbor deployment guide](../.docs/user-guides/vesta-managed-harbor.md),
+> [operator/provider contract](../.docs/contracts/harbor-provider.md), and
+> [development acceptance evidence](../.docs/validation/2026-08-08-vesta-managed-harbor-development.md).
+
 ## Authority and storage
 
 Desired state is stored at:
@@ -107,6 +116,13 @@ convergence or rollback.
 ## Backup and restore
 
 ### Optional Vesta-managed Harbor provider
+
+The normative operator boundary is the
+[Vesta-managed Harbor provider contract](../.docs/contracts/harbor-provider.md).
+The framework-neutral Docker-user workflow is the canonical
+[Vesta-managed Harbor tenant guide](../.docs/user-guides/vesta-managed-harbor.md).
+Its commands are future-facing and must not be used until the current product
+blocker is resolved and development acceptance passes.
 
 Eligible packages may use the managed registry at the existing Vesta TLS
 origin. Vesta remains authoritative for entitlement, owner namespace, quota,
@@ -285,7 +301,10 @@ complete shared helper graph. Do not replace it with per-adapter
 `shellcheck -x`; that re-expands the same graph for every adapter and makes the
 gate impractically slow on constrained hosts.
 
-The current shell-access release archive and exact commit were verified
-locally, but deployment was not applied because local release-readiness
-prerequisites were incomplete. No development-host acceptance is recorded and
-no production access occurred for that validation.
+The current Harbor development acceptance is recorded at repository commit
+`26b3764595a024b5b830a955b164f0ad95a25a2b`. It reached authenticated Harbor
+bootstrap, exposed the Harbor v2.15.0 robot-secret product incompatibility,
+and safely returned the provider to disabled/inactive state without changing
+the existing tenant workload. No production host was contacted or mutated;
+production deployment remains deferred. Exact evidence is in the
+[development validation record](../.docs/validation/2026-08-08-vesta-managed-harbor-development.md).
