@@ -294,19 +294,19 @@ git commit -m "refactor(harbor): reconcile package quota forward"
 - Create: `func/vx/harbor/release.sh`
 - Create: `test/harbor/test-release-verification.sh`
 
-- [ ] **Step 1: Add failing release trust fixtures**
+- [x] **Step 1: Add failing release trust fixtures**
 
 Cover exact version, archive digest, image digests, Cosign identity/issuer,
 offline bundle, unsupported architecture, tag-only image, signature mismatch,
 and tampered generated configuration.
 
-- [ ] **Step 2: Implement verification**
+- [x] **Step 2: Implement verification**
 
 Download only the manifest-declared HTTPS URL, verify archive SHA-256 and
 Cosign bundle before extraction, reject links/unsafe paths, pin every runtime
 image by digest, and store only non-secret verification evidence.
 
-- [ ] **Step 3: Validate and commit**
+- [x] **Step 3: Validate and commit**
 
 ```bash
 bash -n func/vx/harbor/release.sh test/harbor/test-release-verification.sh
@@ -324,14 +324,14 @@ git commit -m "feat(harbor): verify pinned Harbor release"
 - Create: `install/harbor/harbor-registry.conf.tpl`
 - Create: `test/harbor/{test-install.sh,test-ingress.sh,test-host-boundary.sh}`
 
-- [ ] **Step 1: Model installation and ingress failures**
+- [x] **Step 1: Model installation and ingress failures**
 
 Focused fixtures cover prerequisite, disk, release, config generation,
 Compose, migration, health, nginx validation/reload, socket ownership,
 certificate, and interrupted-install failures. Every failure must restore the
 prior provider/nginx/systemd state while retaining Harbor data by default.
 
-- [ ] **Step 2: Implement root-owned installation**
+- [x] **Step 2: Implement root-owned installation**
 
 Under the exclusive provider lock, stage verified configuration, secrets via
 protected files/stdin, systemd unit, and Compose project `vesta-harbor`.
@@ -339,14 +339,14 @@ Bind Harbor only to `/run/vesta-harbor/proxy.sock`; reject host TCP
 listeners, host-network mode, Docker socket mounts, unsafe paths, and
 unverified images.
 
-- [ ] **Step 3: Implement exact shared ingress**
+- [x] **Step 3: Implement exact shared ingress**
 
 Render only exact `/v2/` and `/service/token` proxy routes on the existing
 Vesta TLS server. Portal, `/api/`, metrics, and Unix socket remain
 root/admin-local. Validate nginx before atomic activation and reload; rollback
 all generated authority if validation or health fails.
 
-- [ ] **Step 4: Validate and commit**
+- [x] **Step 4: Validate and commit**
 
 ```bash
 bash -n func/vx/harbor/{install,ingress}.sh bin/v-install-harbor-registry
@@ -359,10 +359,41 @@ git commit -m "feat(harbor): install registry behind Vesta TLS"
 
 ### Milestone 2 acceptance
 
-- [ ] Run `bash test/harbor/run-focused.sh` once.
-- [ ] Perform one specification/security review of release trust, installation,
+- [x] Run `bash test/harbor/run-focused.sh` once.
+- [x] Perform one specification/security review of release trust, installation,
   rollback, Unix-socket isolation, and ingress.
-- [ ] Fix only milestone blockers and record the milestone result.
+- [x] Fix only milestone blockers and record the milestone result.
+
+#### Milestone 2 record
+
+- Product behavior: Pins Harbor v2.15.0 to the official HTTPS installer and
+  offline Sigstore bundle hashes, exact keyless workflow identity/issuer, and
+  ten runtime image digests. Verification rejects unsupported architecture,
+  altered policy/archive/bundle, links, unsafe archive members, tag-only or
+  changed generated images, host networking, Docker socket mounts, and host
+  TCP publication. Root installation holds the exclusive provider lock,
+  preflights capacity/tools, stages release authority, uses the fixed
+  `vesta-harbor` systemd/Compose identity, checks health/migration/socket state,
+  and activates only the two managed Vesta TLS route families. Rollback
+  restores prior unit, ingress, service activity/enablement, release, and
+  provider state while retaining `/var/lib/vesta-harbor` data.
+- Commits: `e9a04f31`, `73d5e8a3`, `141d30b7`.
+- Focused tests: touched Bash syntax, release verification, transactional
+  install, ingress, host-boundary, and `git diff --check` passed. The milestone
+  `test/harbor/run-focused.sh` command ran exactly once and all eight suites
+  passed.
+- Review: Milestone self-review found two transaction blockers: rollback could
+  remove the prior current release before candidate activation, and an EXIT
+  trap could outlive function-local rollback state. Both were fixed before the
+  boundary run. A post-boundary self-review added fixture injection across the
+  prerequisite, release, generation, Compose, migration, health, socket, and
+  ingress failure phases; the affected install suite passed without rerunning
+  the exactly-once milestone command.
+- Deferred: Real-host installation and interruption evidence remains Milestone
+  5 development acceptance. No production deployment, firewall, DNS, route,
+  or tenant workload mutation was performed.
+- Next: Milestone 3, owner isolation, quota, credentials, publisher lifecycle,
+  and discovery.
 
 ## Milestone 3: Owner registry lifecycle
 
