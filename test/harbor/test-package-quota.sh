@@ -199,15 +199,76 @@ EOF
 chmod +x "$exchange_hook"
 exchange_token="$(vx_harbor_package_transition_prepare \
     alice 25 next "$transition_stage" /bin/bash no no)"
-VX_HARBOR_TEST_BEFORE_EXCHANGE_HOOK="$exchange_hook" \
+if VX_HARBOR_TEST_BEFORE_EXCHANGE_HOOK="$exchange_hook" \
     vx_harbor_package_transition_user_conf_apply \
-        alice "$exchange_token" "$transition_stage" \
-    || fail 'exchange-window package apply failed'
+        alice "$exchange_token" "$transition_stage"; then
+    vx_harbor_package_transition_rollback alice "$exchange_token" \
+        || fail 'exchange-window transition rollback failed'
+else
+    vx_harbor_package_transition_recover alice \
+        || fail 'exchange-window transition did not fail recoverably'
+fi
 grep -Fq "U_DOCKER_REGISTRY_MB='66'" "$VESTA/data/users/alice/user.conf" \
     || fail 'atomic exchange lost a counter update in the former compare/replace window'
-vx_harbor_package_transition_rollback alice "$exchange_token" \
-    || fail 'exchange-window transition rollback failed'
 cp "$original_conf" "$VESTA/data/users/alice/user.conf"
+
+writer_b_hook="$HARBOR_TEST_ROOT/writer-b-hook"
+cat >"$writer_b_hook" <<'EOF'
+#!/usr/bin/env bash
+sed -i "s/^U_DOCKER_REGISTRY_MB='[^']*'/U_DOCKER_REGISTRY_MB='101'/" "$1"
+EOF
+chmod +x "$writer_b_hook"
+two_writer_token="$(vx_harbor_package_transition_prepare \
+    alice 25 next "$transition_stage" /bin/bash no no)"
+if VX_HARBOR_TEST_BEFORE_EXCHANGE_HOOK="$exchange_hook" \
+    VX_HARBOR_TEST_AFTER_EXCHANGE_HOOK="$writer_b_hook" \
+    vx_harbor_package_transition_user_conf_apply \
+        alice "$two_writer_token" "$transition_stage"; then
+    grep -Fq "PACKAGE='next'" "$VESTA/data/users/alice/user.conf" \
+        || fail 'two-writer exchange reported success without package authority'
+else
+    vx_harbor_package_transition_recover alice \
+        || fail 'two-writer exchange did not remain recoverable'
+    grep -Fq "PACKAGE='disabled-next'" "$VESTA/data/users/alice/user.conf" \
+        || fail 'two-writer recovery did not restore old package authority'
+fi
+grep -Fq "U_DOCKER_REGISTRY_MB='101'" "$VESTA/data/users/alice/user.conf" \
+    || fail 'exchange mismatch reversal deleted writer B counter state'
+cp "$original_conf" "$VESTA/data/users/alice/user.conf"
+
+same_package_stage="$HARBOR_TEST_ROOT/same-package.user.conf.next"
+cp "$transition_stage" "$same_package_stage"
+sed -i "s/^PACKAGE=.*/PACKAGE='disabled-next'/; s/^DOCKER_REGISTRY_MB=.*/DOCKER_REGISTRY_MB='30'/" \
+    "$same_package_stage"
+crash_hook="$HARBOR_TEST_ROOT/exchange-crash-hook"
+cat >"$crash_hook" <<'EOF'
+#!/usr/bin/env bash
+exit 75
+EOF
+chmod +x "$crash_hook"
+for exchange_boundary in before after; do
+    same_package_token="$(vx_harbor_package_transition_prepare \
+        alice 30 disabled-next "$same_package_stage" /bin/bash no no)"
+    if [[ "$exchange_boundary" == before ]]; then
+        if VX_HARBOR_TEST_BEFORE_EXCHANGE_HOOK="$crash_hook" \
+            vx_harbor_package_transition_user_conf_apply \
+                alice "$same_package_token" "$same_package_stage"; then
+            fail 'same-package before-exchange crash hook did not fire'
+        fi
+    else
+        if VX_HARBOR_TEST_AFTER_EXCHANGE_HOOK="$crash_hook" \
+            vx_harbor_package_transition_user_conf_apply \
+                alice "$same_package_token" "$same_package_stage"; then
+            fail 'same-package after-exchange crash hook did not fire'
+        fi
+    fi
+    vx_harbor_package_transition_recover alice \
+        || fail "same-package $exchange_boundary-exchange recovery was ambiguous"
+    grep -Fq "PACKAGE='disabled-next'" "$VESTA/data/users/alice/user.conf" \
+        || fail "same-package $exchange_boundary-exchange recovery changed package identity"
+    grep -Fq "DOCKER_REGISTRY_MB='20'" "$VESTA/data/users/alice/user.conf" \
+        || fail "same-package $exchange_boundary-exchange recovery selected new limits"
+done
 
 for swap_boundary in before-exchange after-exchange; do
     swap_token="$(vx_harbor_package_transition_prepare \

@@ -32,6 +32,7 @@ _vx_harbor_transition_paths() {
     VX_HARBOR_TRANSITION_SNAPSHOT="$root/$owner.user.conf.before"
     VX_HARBOR_TRANSITION_AFTER="$root/$owner.user.conf.after"
     VX_HARBOR_TRANSITION_SWAP="$root/$owner.user.conf.swap"
+    VX_HARBOR_TRANSITION_STALE="$root/$owner.user.conf.stale"
 }
 
 _vx_harbor_transition_key() {
@@ -175,7 +176,11 @@ _vx_harbor_transition_journal_validate() {
           "ACCESS_COMPLETED","APPLIED_DIGEST","CREATED_AT","DENY_MARKER_PRESENT","DISK_QUOTA_COMPENSATED","DISK_QUOTA_PENDING","EXPIRES_AT","GROUP_MEMBER",
           "MODE","NEW_DIGEST","NEW_QUOTA","OBSERVATION_GENERATION",
           "OBSERVED_AT","OLD_DIGEST","OLD_PACKAGE","OLD_QUOTA","OLD_SHELL","OPERATION_ID",
-          "OWNER","PACKAGE","SCHEMA","STATE","TRIGGER_COMPENSATED","TRIGGER_PENDING",
+          "OWNER","PACKAGE","SCHEMA","STATE","SWAP_BASIS_DEVICE","SWAP_BASIS_DIGEST","SWAP_BASIS_INODE",
+          "SWAP_CANDIDATE_DEVICE","SWAP_CANDIDATE_DIGEST","SWAP_CANDIDATE_INODE",
+          "SWAP_DISPLACED_DEVICE","SWAP_DISPLACED_DIGEST","SWAP_DISPLACED_INODE",
+          "SWAP_FRESH_DEVICE","SWAP_FRESH_DIGEST","SWAP_FRESH_INODE","SWAP_FRESH_LOCATION","SWAP_INTENT","SWAP_PHASE",
+          "TRIGGER_COMPENSATED","TRIGGER_PENDING",
           "USER_CONF_DEVICE","USER_CONF_INODE","USER_CONF_PATH"
         ]) and .SCHEMA == 1
         and (.STATE == "prepared" or .STATE == "quota-applied"
@@ -215,6 +220,20 @@ _vx_harbor_transition_journal_validate() {
         and (.TRIGGER_COMPENSATED | type == "boolean")
         and (if .TRIGGER_COMPENSATED then .TRIGGER_PENDING else true end)
         and (.OLD_PACKAGE | type == "string" and test("^[a-zA-Z0-9._-]+$"))
+        and (.SWAP_PHASE == "none" or .SWAP_PHASE == "candidate-ready"
+             or .SWAP_PHASE == "exchanged" or .SWAP_PHASE == "superseded")
+        and (.SWAP_INTENT == null or .SWAP_INTENT == "apply"
+             or .SWAP_INTENT == "rollback" or .SWAP_INTENT == "commit")
+        and ([.SWAP_BASIS_DEVICE,.SWAP_BASIS_INODE,
+              .SWAP_CANDIDATE_DEVICE,.SWAP_CANDIDATE_INODE,
+              .SWAP_DISPLACED_DEVICE,.SWAP_DISPLACED_INODE,
+              .SWAP_FRESH_DEVICE,.SWAP_FRESH_INODE] |
+             all(. == null or (type == "number" and floor == . and . >= 0)))
+        and ([.SWAP_BASIS_DIGEST,.SWAP_CANDIDATE_DIGEST,
+              .SWAP_DISPLACED_DIGEST,.SWAP_FRESH_DIGEST] |
+             all(. == null or (type == "string" and test("^[a-f0-9]{64}$"))))
+        and (.SWAP_FRESH_LOCATION == null or .SWAP_FRESH_LOCATION == "current"
+             or .SWAP_FRESH_LOCATION == "swap")
         and (.APPLIED_DIGEST == null or
              (.APPLIED_DIGEST | type == "string" and test("^[a-f0-9]{64}$")))
     ' "$path" >/dev/null 2>&1
@@ -326,18 +345,20 @@ _vx_harbor_transition_user_conf_restore() {
 }
 
 _vx_harbor_transition_user_conf_merge() {
-    local current="$1" authority="$2" swap="${3:-}" directory
+    local current="$1" authority="$2" swap="${3:-}" intent="${4:-apply}" directory
     directory="$(dirname -- "$current")" || return 1
     [[ -n "$swap" ]] || swap="$directory/.user.conf.harbor.swap"
-    /usr/bin/python3 - "$current" "$authority" "$directory" "$swap" <<'PY'
+    /usr/bin/python3 - "$current" "$authority" "$directory" "$swap" \
+        "$VX_HARBOR_TRANSITION_JOURNAL" "$intent" <<'PY'
 import ctypes
 import hashlib
+import json
 import os
 import re
 import stat
 import sys
 
-current_path, authority_path, directory, swap_path = sys.argv[1:]
+current_path, authority_path, directory, swap_path, journal_path, intent = sys.argv[1:]
 controlled = {
     "PACKAGE", "WEB_TEMPLATE", "BACKEND_TEMPLATE", "PROXY_TEMPLATE",
     "DNS_TEMPLATE", "WEB_DOMAINS", "WEB_ALIASES", "DNS_DOMAINS",
@@ -393,6 +414,30 @@ def fsync_directories():
         finally:
             os.close(directory_fd)
 
+def journal_update(**changes):
+    descriptor = os.open(journal_path, os.O_RDONLY | os.O_NOFOLLOW)
+    try:
+        journal = json.loads(os.read(descriptor, 1048576))
+    finally:
+        os.close(descriptor)
+    journal.update(changes)
+    journal_directory = os.path.dirname(journal_path)
+    temporary = os.path.join(journal_directory,
+                             ".journal.swap.%d" % os.getpid())
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        payload = (json.dumps(journal, separators=(",", ":"), sort_keys=True) + "\n").encode()
+        os.write(descriptor, payload)
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    os.replace(temporary, journal_path)
+    descriptor = os.open(journal_directory, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
 for _ in range(8):
     try:
         current_data, current_stat = read_regular(current_path)
@@ -431,12 +476,25 @@ for _ in range(8):
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
+    candidate_stat = os.stat(swap_path, follow_symlinks=False)
+    candidate_digest = hashlib.sha256(merged).hexdigest()
+    journal_update(
+        SWAP_PHASE="candidate-ready", SWAP_INTENT=intent,
+        SWAP_BASIS_DEVICE=current_stat.st_dev,
+        SWAP_BASIS_INODE=current_stat.st_ino,
+        SWAP_BASIS_DIGEST=hashlib.sha256(current_data).hexdigest(),
+        SWAP_CANDIDATE_DEVICE=candidate_stat.st_dev,
+        SWAP_CANDIDATE_INODE=candidate_stat.st_ino,
+        SWAP_CANDIDATE_DIGEST=candidate_digest,
+        SWAP_DISPLACED_DEVICE=None, SWAP_DISPLACED_INODE=None,
+        SWAP_DISPLACED_DIGEST=None, SWAP_FRESH_DEVICE=None,
+        SWAP_FRESH_INODE=None, SWAP_FRESH_DIGEST=None,
+        SWAP_FRESH_LOCATION=None)
 
     hook = os.environ.get("VX_HARBOR_TEST_BEFORE_EXCHANGE_HOOK")
     if hook and not globals().get("_hook_ran", False):
         globals()["_hook_ran"] = True
         if os.spawnv(os.P_WAIT, hook, [hook, current_path]) != 0:
-            os.unlink(swap_path)
             raise SystemExit(1)
 
     libc = ctypes.CDLL(None, use_errno=True)
@@ -445,25 +503,40 @@ for _ in range(8):
                           ctypes.c_int, ctypes.c_char_p, ctypes.c_uint]
     renameat2.restype = ctypes.c_int
     if renameat2(-100, os.fsencode(swap_path), -100, os.fsencode(current_path), 2) != 0:
-        os.unlink(swap_path)
         raise OSError(ctypes.get_errno(), "renameat2 exchange failed")
     fsync_directories()
     displaced_data, displaced_stat = read_regular(swap_path)
+    journal_update(
+        SWAP_PHASE="exchanged",
+        SWAP_DISPLACED_DEVICE=displaced_stat.st_dev,
+        SWAP_DISPLACED_INODE=displaced_stat.st_ino,
+        SWAP_DISPLACED_DIGEST=hashlib.sha256(displaced_data).hexdigest())
+    hook = os.environ.get("VX_HARBOR_TEST_AFTER_EXCHANGE_HOOK")
+    if hook and not globals().get("_after_hook_ran", False):
+        globals()["_after_hook_ran"] = True
+        if os.spawnv(os.P_WAIT, hook, [hook, current_path]) != 0:
+            raise SystemExit(1)
+    pathname_data, pathname_stat = read_regular(current_path)
+    candidate_identity = (candidate_stat.st_dev, candidate_stat.st_ino)
+    pathname_identity = (pathname_stat.st_dev, pathname_stat.st_ino)
+    if pathname_identity != candidate_identity \
+            or hashlib.sha256(pathname_data).hexdigest() != candidate_digest:
+        journal_update(
+            SWAP_PHASE="superseded", SWAP_FRESH_LOCATION="current",
+            SWAP_FRESH_DEVICE=pathname_stat.st_dev,
+            SWAP_FRESH_INODE=pathname_stat.st_ino,
+            SWAP_FRESH_DIGEST=hashlib.sha256(pathname_data).hexdigest())
+        raise SystemExit(1)
     identity = (current_stat.st_dev, current_stat.st_ino,
                 current_stat.st_size, current_stat.st_mtime_ns)
     displaced_identity = (displaced_stat.st_dev, displaced_stat.st_ino,
                           displaced_stat.st_size, displaced_stat.st_mtime_ns)
     if displaced_identity != identity or displaced_data != current_data:
-        if renameat2(-100, os.fsencode(swap_path), -100,
-                     os.fsencode(current_path), 2) != 0:
-            raise OSError(ctypes.get_errno(), "renameat2 restore failed")
-        fsync_directories()
-        os.unlink(swap_path)
-        fsync_directories()
-        continue
+        raise SystemExit(1)
+    journal_update(SWAP_PHASE="none", SWAP_INTENT=None)
     os.unlink(swap_path)
     fsync_directories()
-    print(hashlib.sha256(merged).hexdigest())
+    print(candidate_digest)
     raise SystemExit(0)
 raise SystemExit(1)
 PY
@@ -492,34 +565,176 @@ for directory in {os.path.dirname(left), os.path.dirname(right)}:
 PY
 }
 
-_vx_harbor_transition_swap_recover() {
-    local current="$1" target_package="$2" current_package swap_package directory
-    local current_authority swap_authority
-    [[ -e "$VX_HARBOR_TRANSITION_SWAP" \
-        || -L "$VX_HARBOR_TRANSITION_SWAP" ]] || return 0
-    [[ -f "$VX_HARBOR_TRANSITION_SWAP" \
-        && ! -L "$VX_HARBOR_TRANSITION_SWAP" ]] || return 1
-    current_authority="$(stat -c '%u:%g:%h:%a' "$current")" || return 1
-    swap_authority="$(stat -c '%u:%g:%h:%a' \
-        "$VX_HARBOR_TRANSITION_SWAP")" || return 1
-    [[ "$swap_authority" == "$current_authority" ]] || return 1
-    current_package="$(_vx_harbor_transition_snapshot_value PACKAGE "$current")" \
+_vx_harbor_transition_swap_state_set() {
+    local phase="$1" intent="$2" source
+    source="$(mktemp "$(vx_harbor_root)/transactions/.journal.XXXXXX")" \
         || return 1
-    swap_package="$(_vx_harbor_transition_snapshot_value PACKAGE \
-        "$VX_HARBOR_TRANSITION_SWAP")" || return 1
-    directory="$(dirname -- "$VX_HARBOR_TRANSITION_SWAP")" || return 1
-    if [[ "$current_package" == "$target_package" \
-        && "$swap_package" != "$target_package" ]]; then
-        _vx_harbor_transition_exchange \
-            "$VX_HARBOR_TRANSITION_SWAP" "$current" || return 1
-    elif [[ "$current_package" != "$target_package" \
-        && "$swap_package" == "$target_package" ]]; then
-        :
-    else
+    if ! jq --arg phase "$phase" --arg intent "$intent" \
+        '.SWAP_PHASE = $phase |
+         .SWAP_INTENT = (if $intent == "none" then null else $intent end)' \
+        "$VX_HARBOR_TRANSITION_JOURNAL" >"$source" \
+        || ! vx_harbor_json_write_atomic \
+            "$VX_HARBOR_TRANSITION_JOURNAL" "$source"; then
+        rm -f -- "$source"
         return 1
     fi
-    rm -f -- "$VX_HARBOR_TRANSITION_SWAP" || return 1
-    _vx_harbor_fsync "$directory"
+    rm -f -- "$source"
+}
+
+_vx_harbor_transition_identity() {
+    stat -c '%d:%i' "$1"
+}
+
+_vx_harbor_transition_swap_exchanged_set() {
+    local intent="$1" identity digest source
+    identity="$(_vx_harbor_transition_identity \
+        "$VX_HARBOR_TRANSITION_SWAP")" || return 1
+    digest="$(sha256sum "$VX_HARBOR_TRANSITION_SWAP" | awk '{print $1}')" \
+        || return 1
+    source="$(mktemp "$(vx_harbor_root)/transactions/.journal.XXXXXX")" \
+        || return 1
+    if ! jq --arg intent "$intent" --arg identity "$identity" \
+        --arg digest "$digest" '
+          ($identity | split(":")) as $parts |
+          .SWAP_PHASE = "exchanged" | .SWAP_INTENT = $intent |
+          .SWAP_DISPLACED_DEVICE = ($parts[0] | tonumber) |
+          .SWAP_DISPLACED_INODE = ($parts[1] | tonumber) |
+          .SWAP_DISPLACED_DIGEST = $digest' \
+        "$VX_HARBOR_TRANSITION_JOURNAL" >"$source" \
+        || ! vx_harbor_json_write_atomic \
+            "$VX_HARBOR_TRANSITION_JOURNAL" "$source"; then
+        rm -f -- "$source"
+        return 1
+    fi
+    rm -f -- "$source"
+}
+
+_vx_harbor_transition_swap_fresh_set() {
+    local location="$1" path="$2" identity digest source
+    identity="$(_vx_harbor_transition_identity "$path")" || return 1
+    digest="$(sha256sum "$path" | awk '{print $1}')" || return 1
+    source="$(mktemp "$(vx_harbor_root)/transactions/.journal.XXXXXX")" \
+        || return 1
+    if ! jq --arg location "$location" --arg identity "$identity" \
+        --arg digest "$digest" '
+          ($identity | split(":")) as $parts |
+          .SWAP_PHASE = "superseded" |
+          .SWAP_FRESH_LOCATION = $location |
+          .SWAP_FRESH_DEVICE = ($parts[0] | tonumber) |
+          .SWAP_FRESH_INODE = ($parts[1] | tonumber) |
+          .SWAP_FRESH_DIGEST = $digest' \
+        "$VX_HARBOR_TRANSITION_JOURNAL" >"$source" \
+        || ! vx_harbor_json_write_atomic \
+            "$VX_HARBOR_TRANSITION_JOURNAL" "$source"; then
+        rm -f -- "$source"
+        return 1
+    fi
+    rm -f -- "$source"
+}
+
+_vx_harbor_transition_swap_recover() {
+    local current="$1" phase intent candidate_identity
+    local current_identity swap_identity displaced_identity directory
+    local fresh_location fresh_identity expected_current_identity
+    phase="$(jq -er '.SWAP_PHASE' "$VX_HARBOR_TRANSITION_JOURNAL")" \
+        || return 1
+    intent="$(jq -r '.SWAP_INTENT // "none"' \
+        "$VX_HARBOR_TRANSITION_JOURNAL")" || return 1
+    candidate_identity="$(jq -r '
+        if .SWAP_CANDIDATE_DEVICE == null then ""
+        else ((.SWAP_CANDIDATE_DEVICE|tostring) + ":" +
+              (.SWAP_CANDIDATE_INODE|tostring)) end' \
+        "$VX_HARBOR_TRANSITION_JOURNAL")" || return 1
+    displaced_identity="$(jq -r '
+        if .SWAP_DISPLACED_DEVICE == null then ""
+        else ((.SWAP_DISPLACED_DEVICE|tostring) + ":" +
+              (.SWAP_DISPLACED_INODE|tostring)) end' \
+        "$VX_HARBOR_TRANSITION_JOURNAL")" || return 1
+    current_identity="$(_vx_harbor_transition_identity "$current")" || return 1
+    directory="$(dirname -- "$VX_HARBOR_TRANSITION_SWAP")" || return 1
+
+    if [[ "$phase" == none ]]; then
+        if [[ -e "$VX_HARBOR_TRANSITION_SWAP" \
+            || -L "$VX_HARBOR_TRANSITION_SWAP" ]]; then
+            _vx_harbor_transition_swap_secure "$VX_HARBOR_TRANSITION_SWAP" \
+                || return 1
+            rm -f -- "$VX_HARBOR_TRANSITION_SWAP" || return 1
+            _vx_harbor_fsync "$directory" || return 1
+        fi
+        return 0
+    fi
+    [[ -f "$VX_HARBOR_TRANSITION_SWAP" \
+        && ! -L "$VX_HARBOR_TRANSITION_SWAP" ]] || return 1
+    swap_identity="$(_vx_harbor_transition_identity \
+        "$VX_HARBOR_TRANSITION_SWAP")" || return 1
+
+    if [[ "$phase" == candidate-ready ]]; then
+        if [[ "$swap_identity" == "$candidate_identity" ]]; then
+            _vx_harbor_transition_swap_state_set none none || return 1
+            rm -f -- "$VX_HARBOR_TRANSITION_SWAP" || return 1
+            _vx_harbor_fsync "$directory"
+            return
+        fi
+        [[ "$current_identity" == "$candidate_identity" ]] || return 1
+        _vx_harbor_transition_swap_exchanged_set "$intent" || return 1
+        displaced_identity="$swap_identity"
+        phase=exchanged
+    fi
+
+    if [[ "$phase" == exchanged ]]; then
+        if [[ "$current_identity" == "$candidate_identity" ]]; then
+            [[ -n "$displaced_identity" \
+                && "$swap_identity" == "$displaced_identity" ]] || return 1
+            _vx_harbor_transition_exchange \
+                "$VX_HARBOR_TRANSITION_SWAP" "$current" || return 1
+            swap_identity="$(_vx_harbor_transition_identity \
+                "$VX_HARBOR_TRANSITION_SWAP")" || return 1
+            if [[ "$swap_identity" != "$candidate_identity" ]]; then
+                _vx_harbor_transition_swap_fresh_set swap \
+                    "$VX_HARBOR_TRANSITION_SWAP" || return 1
+                return 1
+            fi
+            _vx_harbor_transition_swap_state_set none none || return 1
+            rm -f -- "$VX_HARBOR_TRANSITION_SWAP" || return 1
+            _vx_harbor_fsync "$directory"
+            return
+        fi
+        _vx_harbor_transition_swap_fresh_set current "$current" || return 1
+        phase=superseded
+    fi
+
+    if [[ "$phase" == superseded ]]; then
+        fresh_location="$(jq -er '.SWAP_FRESH_LOCATION' \
+            "$VX_HARBOR_TRANSITION_JOURNAL")" || return 1
+        fresh_identity="$(jq -r '
+            ((.SWAP_FRESH_DEVICE|tostring) + ":" +
+             (.SWAP_FRESH_INODE|tostring))' \
+            "$VX_HARBOR_TRANSITION_JOURNAL")" || return 1
+        if [[ "$fresh_location" == swap ]]; then
+            [[ "$swap_identity" == "$fresh_identity" ]] || return 1
+            expected_current_identity="$current_identity"
+            _vx_harbor_transition_exchange \
+                "$VX_HARBOR_TRANSITION_SWAP" "$current" || return 1
+            current_identity="$(_vx_harbor_transition_identity "$current")" \
+                || return 1
+            swap_identity="$(_vx_harbor_transition_identity \
+                "$VX_HARBOR_TRANSITION_SWAP")" || return 1
+            [[ "$current_identity" == "$fresh_identity" ]] || return 1
+            if [[ "$swap_identity" != "$expected_current_identity" ]]; then
+                _vx_harbor_transition_swap_fresh_set swap \
+                    "$VX_HARBOR_TRANSITION_SWAP" || return 1
+                return 1
+            fi
+        else
+            [[ "$current_identity" == "$fresh_identity" ]] || return 1
+        fi
+        [[ ! -e "$VX_HARBOR_TRANSITION_STALE" \
+            && ! -L "$VX_HARBOR_TRANSITION_STALE" ]] || return 1
+        mv -T -- "$VX_HARBOR_TRANSITION_SWAP" "$VX_HARBOR_TRANSITION_STALE" \
+            || return 1
+        _vx_harbor_fsync "$directory" || return 1
+        _vx_harbor_transition_swap_state_set none none
+    fi
 }
 
 _vx_harbor_transition_swap_secure() {
@@ -560,7 +775,8 @@ _vx_harbor_transition_cleanup_files() {
     rm -f -- "$VX_HARBOR_TRANSITION_JOURNAL" || return 1
     _vx_harbor_fsync "$directory" || return 1
     rm -f -- "$VX_HARBOR_TRANSITION_SNAPSHOT" \
-        "$VX_HARBOR_TRANSITION_AFTER" "$VX_HARBOR_TRANSITION_SWAP" || return 1
+        "$VX_HARBOR_TRANSITION_AFTER" "$VX_HARBOR_TRANSITION_SWAP" \
+        "$VX_HARBOR_TRANSITION_STALE" || return 1
     _vx_harbor_fsync "$directory"
 }
 
@@ -568,15 +784,16 @@ vx_harbor_package_transition_recover() {
     local owner="$1" state mode old_quota generation observed_at operation_id
     local user_conf old_digest new_digest applied_digest current_digest current_device
     local old_shell group_member deny_present recorded_device
-    local old_package target_package
     _vx_harbor_transition_require_locks "$owner" || return 1
     _vx_harbor_transition_paths "$owner" || return 1
     if [[ ! -e "$VX_HARBOR_TRANSITION_JOURNAL" \
         && ! -L "$VX_HARBOR_TRANSITION_JOURNAL" ]]; then
         for orphan in "$VX_HARBOR_TRANSITION_SNAPSHOT" \
-            "$VX_HARBOR_TRANSITION_AFTER" "$VX_HARBOR_TRANSITION_SWAP"; do
+            "$VX_HARBOR_TRANSITION_AFTER" "$VX_HARBOR_TRANSITION_SWAP" \
+            "$VX_HARBOR_TRANSITION_STALE"; do
             if [[ -e "$orphan" || -L "$orphan" ]]; then
-                if [[ "$orphan" == "$VX_HARBOR_TRANSITION_SWAP" ]]; then
+                if [[ "$orphan" == "$VX_HARBOR_TRANSITION_SWAP" \
+                    || "$orphan" == "$VX_HARBOR_TRANSITION_STALE" ]]; then
                     _vx_harbor_transition_swap_secure "$orphan" || return 1
                 else
                     vx_harbor_secure_regular_file "$orphan" 0600 || return 1
@@ -608,22 +825,11 @@ vx_harbor_package_transition_recover() {
         "$VX_HARBOR_TRANSITION_JOURNAL")" || return 1
     current_device="$(stat -c '%d' "$user_conf")" || return 1
     [[ "$current_device" == "$recorded_device" ]] || return 1
-    old_package="$(jq -er '.OLD_PACKAGE' "$VX_HARBOR_TRANSITION_JOURNAL")" \
-        || return 1
-    if [[ "$state" == quota-applied ]]; then
-        target_package="$(jq -er '.PACKAGE' "$VX_HARBOR_TRANSITION_JOURNAL")" \
-            || return 1
-    elif [[ "$state" == committed || "$state" == access-completed ]]; then
-        target_package="$(jq -er '.PACKAGE' "$VX_HARBOR_TRANSITION_JOURNAL")" \
-            || return 1
-    else
-        target_package="$old_package"
-    fi
-    _vx_harbor_transition_swap_recover "$user_conf" "$target_package" || return 1
+    _vx_harbor_transition_swap_recover "$user_conf" || return 1
     if [[ "$state" == committed || "$state" == access-completed ]]; then
         _vx_harbor_transition_user_conf_merge \
             "$user_conf" "$VX_HARBOR_TRANSITION_AFTER" \
-            "$VX_HARBOR_TRANSITION_SWAP" >/dev/null || return 1
+            "$VX_HARBOR_TRANSITION_SWAP" commit >/dev/null || return 1
         _vx_harbor_transition_access_converge "$owner" || return 1
         _vx_harbor_transition_cleanup_files
         return
@@ -657,7 +863,7 @@ vx_harbor_package_transition_recover() {
         else
             _vx_harbor_transition_user_conf_merge \
                 "$user_conf" "$VX_HARBOR_TRANSITION_SNAPSHOT" \
-                "$VX_HARBOR_TRANSITION_SWAP" >/dev/null || return 1
+                "$VX_HARBOR_TRANSITION_SWAP" rollback >/dev/null || return 1
         fi
     fi
     _vx_harbor_transition_trigger_compensate "$owner" || return 1
@@ -802,6 +1008,12 @@ vx_harbor_package_transition_prepare() {
             APPLIED_DIGEST:null, ACCESS_COMPLETED:false,
             DISK_QUOTA_PENDING:false, DISK_QUOTA_COMPENSATED:false,
             TRIGGER_PENDING:false, TRIGGER_COMPENSATED:false,
+            SWAP_PHASE:"none", SWAP_INTENT:null,
+            SWAP_BASIS_DEVICE:null, SWAP_BASIS_INODE:null, SWAP_BASIS_DIGEST:null,
+            SWAP_CANDIDATE_DEVICE:null, SWAP_CANDIDATE_INODE:null, SWAP_CANDIDATE_DIGEST:null,
+            SWAP_DISPLACED_DEVICE:null, SWAP_DISPLACED_INODE:null, SWAP_DISPLACED_DIGEST:null,
+            SWAP_FRESH_DEVICE:null, SWAP_FRESH_INODE:null, SWAP_FRESH_DIGEST:null,
+            SWAP_FRESH_LOCATION:null,
             OWNER:$owner, PACKAGE:$package, USER_CONF_PATH:$path,
             OLD_PACKAGE:$old_package,
             USER_CONF_DEVICE:($identity_parts[0] | tonumber),
@@ -882,7 +1094,7 @@ vx_harbor_package_transition_user_conf_apply() {
         && -f "$staged_conf" && ! -L "$staged_conf" ]] || return 1
     digest="$(_vx_harbor_transition_user_conf_merge \
         "$VESTA/data/users/$owner/user.conf" "$staged_conf" \
-        "$VX_HARBOR_TRANSITION_SWAP")" || return 1
+        "$VX_HARBOR_TRANSITION_SWAP" apply)" || return 1
     source="$(mktemp "$(vx_harbor_root)/transactions/.journal.XXXXXX")" || return 1
     if ! jq --arg digest "$digest" \
         '.STATE = "user-conf-applied" | .APPLIED_DIGEST = $digest' \

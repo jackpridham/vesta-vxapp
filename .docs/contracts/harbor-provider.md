@@ -64,6 +64,14 @@ exchanged inode is the compare authority. A protected deterministic swap file
 is recovered on either side of that exchange and both affected directories are
 fsynced. Package fields absent from staged authority, including the independent
 `BACKEND_TEMPLATE`, retain their current user-state value.
+The journal records swap intent and explicit `candidate-ready`, `exchanged`, or
+`superseded` phases together with basis, candidate, displaced, and freshest
+device/inode/digest identities. Recovery never infers direction from package
+names. A mismatched exchange is not blindly reversed: a later pathname writer
+remains authoritative, while every displaced newer inode is retained until a
+conditional identity-verified exchange or coherent field merge completes. If
+bounded convergence cannot be established, recovery keeps the journal and all
+candidate authorities and fails closed.
 
 The package trigger and disk-quota update remain pre-commit and any failure
 rolls back Vesta and Harbor authority. Commit does not remove recovery state:
