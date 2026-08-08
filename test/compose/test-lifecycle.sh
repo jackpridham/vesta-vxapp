@@ -179,6 +179,14 @@ export LEAK_CANARY='must-not-reach-docker'
 # shellcheck source=func/vx/compose/main.sh
 source "$repo_root/func/vx/compose/main.sh"
 
+recorded_inspection="$(vx_compose_image_inspect alice example.test/web:v1)"
+vx_compose_image_record alice example.test/web:v1 "$recorded_inspection" \
+    local-load >/dev/null
+image_approval_expires="$(date -u -d '+1 hour' +'%Y-%m-%dT%H:%M:%SZ')"
+vx_compose_image_approval_add admin alice example.test/web:v1 \
+    sha256:fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe \
+    linux amd64 standard 2 "$image_approval_expires" >/dev/null
+
 candidate="$test_root/candidate"
 mkdir -p "$candidate"
 printf '%s\n' 'name: vx-alice-web' 'services:' '  web:' '    image: example.test/web:v1' \
@@ -299,8 +307,9 @@ printf '%s\n' 'sha256:cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd
 if vx_compose_start alice web 2>"$test_root/drift.error"; then
     fail "image identity drift was accepted for the same revision"
 fi
-grep -Fq 'Docker image identity drifted' "$test_root/drift.error" \
-    || fail "image drift returned the wrong diagnostic"
+grep -Fq 'Docker image lacks registry-pull provenance, local approval, or exact accepted-revision authority' \
+    "$test_root/drift.error" \
+    || fail "image drift returned the wrong authority diagnostic"
 printf '%s\n' 'sha256:fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe' >"$test_root/image-id"
 vx_compose_stop alice web
 # No current-revision containers means start must converge instead of falsely
