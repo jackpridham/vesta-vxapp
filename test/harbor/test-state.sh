@@ -134,6 +134,21 @@ fi
 assert_mode "$preflight_root/observations" 755
 vx_harbor_root() { printf '%s\n' "$VESTA/data/harbor"; }
 
+race_root="$VESTA/data/harbor-provider-race"
+mkdir -m 0700 "$race_root"
+vx_harbor_root() { printf '%s\n' "$race_root"; }
+_vx_harbor_provider_prepare_after_preflight() {
+    printf '{"SCHEMA":1,"MODE":"disabled"}\n' >"$race_root/provider.json"
+    _vx_harbor_secure_file_set "$race_root/provider.json" 0600
+}
+if vx_harbor_provider_prepare 2>/dev/null; then
+    fail 'provider appearing after preflight bypassed exact schema validation'
+fi
+vx_harbor_provider_state_validate "$race_root/provider.json" >/dev/null 2>&1 \
+    && fail 'race-injected malformed provider state unexpectedly validated'
+_vx_harbor_provider_prepare_after_preflight() { :; }
+vx_harbor_root() { printf '%s\n' "$VESTA/data/harbor"; }
+
 vx_harbor_provider_prepare
 root="$VESTA/data/harbor"
 [[ "$(vx_harbor_root)" == "$root" ]] || fail 'provider root is incorrect'

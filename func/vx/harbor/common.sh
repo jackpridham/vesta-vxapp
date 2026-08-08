@@ -170,6 +170,10 @@ vx_harbor_provider_state_validate() {
     ' "$path" >/dev/null 2>&1
 }
 
+_vx_harbor_provider_prepare_after_preflight() {
+    :
+}
+
 vx_harbor_json_write_atomic() {
     local destination="$1"
     local source="$2"
@@ -199,7 +203,7 @@ vx_harbor_json_write_atomic() {
 }
 
 vx_harbor_provider_prepare() {
-    local root source directory root_exists=no
+    local root source directory
     _vx_harbor_require_root || return 1
     root="$(vx_harbor_root)" || return 1
 
@@ -207,7 +211,6 @@ vx_harbor_provider_prepare() {
     # missing component. This keeps rejection paths entirely non-mutating.
     if [[ -e "$root" || -L "$root" ]]; then
         _vx_harbor_directory_prepare "$root" "$VESTA/data" || return 1
-        root_exists=yes
         for directory in owners observations secrets release backups locks; do
             if [[ -e "$root/$directory" || -L "$root/$directory" ]]; then
                 _vx_harbor_directory_prepare "$root/$directory" "$root" || return 1
@@ -224,9 +227,10 @@ vx_harbor_provider_prepare() {
         _vx_harbor_directory_prepare "$root/$directory" "$root" || return 1
         _vx_harbor_secure_directory "$root/$directory" || return 1
     done
+    _vx_harbor_provider_prepare_after_preflight || return 1
     if [[ -e "$root/provider.json" || -L "$root/provider.json" ]]; then
-        [[ "$root_exists" == yes ]] || return 1
-        return 0
+        vx_harbor_provider_state_validate "$root/provider.json"
+        return $?
     fi
 
     source="$(/usr/bin/mktemp "$root/.provider-source.XXXXXX")" || return 1
