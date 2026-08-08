@@ -395,6 +395,34 @@ git commit -m "feat(harbor): install registry behind Vesta TLS"
 - Next: Milestone 3, owner isolation, quota, credentials, publisher lifecycle,
   and discovery.
 
+#### Milestone 2 blocker correction
+
+- Commit `79cb21ae` replaces the synthetic image-only Compose output with the
+  verified official offline installer's canonical generator, validates its
+  embedded image inventory and generator image ID, and transforms generated
+  configuration to immutable runtime digests, durable provider storage, local
+  logging, and a container-created protected Unix socket without host ports,
+  host networking, privilege, or Docker socket access. Migration/database and
+  Harbor API health checks are bounded and real.
+- Vesta ingress is inserted into the one authoritative panel TLS server. A
+  full candidate nginx configuration references the staged include and is
+  validated before the managed include and patched main configuration are
+  atomically activated. Public paths are limited to exact `/v2/`, its OCI
+  subtree, and exact `/service/token`.
+- Provider publication, nginx main/include state, systemd state, current and
+  previous release evidence, and final cleanup now share the exclusive-lock
+  transaction. Failure injection covers provider render/write/fsync/rename,
+  release rotation, final cleanup, exact prior bytes/evidence, and no stranded
+  provider lock.
+- Repository-owned provenance records official GitHub release API metadata,
+  archive and bundle hashes, Sigstore identity/issuer/Rekor evidence, source
+  commit, generator identity, and registry manifest digests. The downloaded
+  offline archive matched the official SHA-256 and Cosign v3.1.3 returned
+  `Verified OK`; large verification artifacts were not committed.
+- Validation reran only touched Bash syntax, release, install, ingress, and
+  host-boundary tests plus `git diff --check`; all passed. The milestone
+  `run-focused.sh` suite was not rerun.
+
 ## Milestone 3: Owner registry lifecycle
 
 ### Task 5: Add the allowlisted Harbor API adapter
