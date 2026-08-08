@@ -308,6 +308,8 @@ check_result $? "User shell update failed"
 
 # Run template trigger
 if [ -x "$VESTA/data/packages/$package.sh" ]; then
+    vx_harbor_package_transition_trigger_pending "$user" "$transition_token"
+    check_result $? "Package trigger transition state failed"
     $VESTA/data/packages/$package.sh "$user" "$CONTACT" "$FNAME" "$LNAME"
     check_result $? "Package trigger failed"
 fi

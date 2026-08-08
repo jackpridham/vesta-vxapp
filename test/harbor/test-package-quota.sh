@@ -12,7 +12,7 @@ trap cleanup_vesta_root EXIT
 new_vesta_root
 install_harbor_helpers
 mkdir -p "$VESTA/data/users/alice"
-printf "U_DOCKER_REGISTRY_MB='7'\nDOCKER_STORAGE_MB='99'\nRKEY='journal-secret-canary'\n" \
+printf "PACKAGE='current'\nWEB_TEMPLATE='default'\nBACKEND_TEMPLATE='php-fpm'\nPROXY_TEMPLATE='default'\nU_DOCKER_REGISTRY_MB='7'\nDOCKER_STORAGE_MB='99'\nRKEY='journal-secret-canary'\n" \
     >"$VESTA/data/users/alice/user.conf"
 
 update_user_value() {
@@ -50,7 +50,8 @@ vx_harbor_provider_prepare
 vx_harbor_provider_lock_acquire shared
 disabled_stage="$HARBOR_TEST_ROOT/disabled.user.conf.next"
 cp "$VESTA/data/users/alice/user.conf" "$disabled_stage"
-printf "PACKAGE='disabled-next'\nDOCKER_REGISTRY_MB='20'\n" >>"$disabled_stage"
+sed -i "s/^PACKAGE=.*/PACKAGE='disabled-next'/" "$disabled_stage"
+printf "DOCKER_REGISTRY_MB='20'\n" >>"$disabled_stage"
 token="$(vx_harbor_package_transition_prepare \
     alice 20 disabled-next "$disabled_stage" /bin/bash no no)" \
     || fail 'disabled transition prepare failed'
@@ -91,6 +92,7 @@ transition_stage="$HARBOR_TEST_ROOT/user.conf.next"
 cp "$VESTA/data/users/alice/user.conf" "$transition_stage"
 sed -i "s/^PACKAGE=.*/PACKAGE='next'/; s/^DOCKER_REGISTRY_MB=.*/DOCKER_REGISTRY_MB='25'/" \
     "$transition_stage"
+sed -i '/^BACKEND_TEMPLATE=/d' "$transition_stage"
 
 vx_harbor_provider_lock_acquire shared
 if vx_harbor_package_transition_prepare \
@@ -106,6 +108,44 @@ vx_harbor_package_transition_rollback alice "$managed_token" \
     || fail 'managed transition rollback failed'
 grep -Fq 'alice:20:generation-1:' "$quota_log" \
     || fail 'managed transition rollback did not restore the prior quota'
+
+mkdir -p "$VESTA/data/packages"
+trigger_log="$HARBOR_TEST_ROOT/trigger.log"
+export trigger_log
+cat >"$VESTA/data/packages/disabled-next.sh" <<'EOF'
+#!/usr/bin/env bash
+printf 'old:%s\n' "$1" >>"$trigger_log"
+[[ "${VX_TEST_OLD_TRIGGER_FAIL:-no}" != yes ]]
+EOF
+chmod +x "$VESTA/data/packages/disabled-next.sh"
+compensation_token="$(vx_harbor_package_transition_prepare \
+    alice 25 next "$transition_stage" /bin/bash no no)"
+vx_harbor_package_transition_user_conf_apply \
+    alice "$compensation_token" "$transition_stage"
+vx_harbor_package_transition_trigger_pending alice "$compensation_token"
+printf 'new:alice\n' >>"$trigger_log"
+vx_harbor_package_transition_rollback alice "$compensation_token" \
+    || fail 'successful new trigger was not compensated during rollback'
+grep -Fxq 'old:alice' "$trigger_log" \
+    || fail 'rollback did not invoke the old package trigger'
+
+compensation_token="$(vx_harbor_package_transition_prepare \
+    alice 25 next "$transition_stage" /bin/bash no no)"
+vx_harbor_package_transition_user_conf_apply \
+    alice "$compensation_token" "$transition_stage"
+vx_harbor_package_transition_trigger_pending alice "$compensation_token"
+export VX_TEST_OLD_TRIGGER_FAIL=yes
+if vx_harbor_package_transition_rollback alice "$compensation_token"; then
+    fail 'failed old-package compensation incorrectly completed rollback'
+fi
+[[ -f "$VESTA/data/harbor/transactions/alice.json" ]] \
+    || fail 'failed trigger compensation discarded its recovery journal'
+[[ "$(jq -r '.TRIGGER_PENDING,.TRIGGER_COMPENSATED' \
+    "$VESTA/data/harbor/transactions/alice.json")" == $'true\nfalse' ]] \
+    || fail 'failed trigger compensation was not left retriable'
+unset VX_TEST_OLD_TRIGGER_FAIL
+vx_harbor_package_transition_recover alice \
+    || fail 'retriable old-package compensation did not recover'
 
 original_conf="$HARBOR_TEST_ROOT/user.conf.original"
 cp "$VESTA/data/users/alice/user.conf" "$original_conf"
@@ -139,6 +179,8 @@ concurrent_token="$(vx_harbor_package_transition_prepare \
 vx_harbor_package_transition_user_conf_apply \
     alice "$concurrent_token" "$transition_stage" \
     || fail 'field-aware package apply failed'
+grep -Fq "BACKEND_TEMPLATE='php-fpm'" "$VESTA/data/users/alice/user.conf" \
+    || fail 'package apply lost BACKEND_TEMPLATE absent from shipped package authority'
 sed -i "s/^U_DOCKER_REGISTRY_MB='[^']*'/U_DOCKER_REGISTRY_MB='77'/" \
     "$VESTA/data/users/alice/user.conf"
 vx_harbor_package_transition_rollback alice "$concurrent_token" \
@@ -148,6 +190,44 @@ grep -Fq "PACKAGE='disabled-next'" "$VESTA/data/users/alice/user.conf" \
 grep -Fq "U_DOCKER_REGISTRY_MB='77'" "$VESTA/data/users/alice/user.conf" \
     || fail 'post-apply rollback overwrote a concurrent usage update'
 cp "$original_conf" "$VESTA/data/users/alice/user.conf"
+
+exchange_hook="$HARBOR_TEST_ROOT/exchange-hook"
+cat >"$exchange_hook" <<'EOF'
+#!/usr/bin/env bash
+sed -i "s/^U_DOCKER_REGISTRY_MB='[^']*'/U_DOCKER_REGISTRY_MB='66'/" "$1"
+EOF
+chmod +x "$exchange_hook"
+exchange_token="$(vx_harbor_package_transition_prepare \
+    alice 25 next "$transition_stage" /bin/bash no no)"
+VX_HARBOR_TEST_BEFORE_EXCHANGE_HOOK="$exchange_hook" \
+    vx_harbor_package_transition_user_conf_apply \
+        alice "$exchange_token" "$transition_stage" \
+    || fail 'exchange-window package apply failed'
+grep -Fq "U_DOCKER_REGISTRY_MB='66'" "$VESTA/data/users/alice/user.conf" \
+    || fail 'atomic exchange lost a counter update in the former compare/replace window'
+vx_harbor_package_transition_rollback alice "$exchange_token" \
+    || fail 'exchange-window transition rollback failed'
+cp "$original_conf" "$VESTA/data/users/alice/user.conf"
+
+for swap_boundary in before-exchange after-exchange; do
+    swap_token="$(vx_harbor_package_transition_prepare \
+        alice 25 next "$transition_stage" /bin/bash no no)"
+    cp "$transition_stage" "$VESTA/data/harbor/transactions/alice.user.conf.swap"
+    chmod --reference="$VESTA/data/users/alice/user.conf" \
+        "$VESTA/data/harbor/transactions/alice.user.conf.swap"
+    if [[ "$swap_boundary" == after-exchange ]]; then
+        _vx_harbor_transition_exchange \
+            "$VESTA/data/harbor/transactions/alice.user.conf.swap" \
+            "$VESTA/data/users/alice/user.conf"
+    fi
+    vx_harbor_package_transition_recover alice \
+        || fail "$swap_boundary durable swap recovery failed"
+    [[ "$(sha256sum "$VESTA/data/users/alice/user.conf" | awk '{print $1}')" \
+        == "$original_digest" ]] \
+        || fail "$swap_boundary durable swap recovery selected the wrong inode"
+    [[ ! -e "$VESTA/data/harbor/transactions/alice.user.conf.swap" ]] \
+        || fail "$swap_boundary durable swap recovery left the swap authority"
+done
 
 recovery_token="$(vx_harbor_package_transition_prepare \
     alice 25 next "$transition_stage" /bin/bash no no)"
@@ -172,6 +252,13 @@ if vx_harbor_package_transition_prepare \
 fi
 [[ "$(jq -r '.STATE' "$VESTA/data/harbor/transactions/alice.json")" == prepared ]] \
     || fail 'pre-mutation crash did not leave a prepared recovery journal'
+invalid_journal="$HARBOR_TEST_ROOT/inconsistent-access.json"
+jq '.ACCESS_COMPLETED = true' \
+    "$VESTA/data/harbor/transactions/alice.json" >"$invalid_journal"
+chmod 0600 "$invalid_journal"
+if _vx_harbor_transition_journal_validate "$invalid_journal"; then
+    fail 'journal accepted ACCESS_COMPLETED inconsistent with STATE'
+fi
 [[ "$(stat -c '%u:%g:%a' "$VESTA/data/harbor/transactions/alice.json")" \
     == "$EUID:$(id -g):600" ]] \
     || fail 'transition journal authority or mode is invalid'

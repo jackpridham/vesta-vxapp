@@ -59,12 +59,23 @@ rollback state. Package-controlled fields use a compare/merge transaction:
 exact rollback applies when no other writer intervened, while a third digest
 preserves fresh counters and measured usage and restores only package fields.
 Recovery runs under provider-then-owner locks before another owner transition.
+Linux `renameat2(RENAME_EXCHANGE)` installs a merged candidate atomically; the
+exchanged inode is the compare authority. A protected deterministic swap file
+is recovered on either side of that exchange and both affected directories are
+fsynced. Package fields absent from staged authority, including the independent
+`BACKEND_TEMPLATE`, retain their current user-state value.
 
 The package trigger and disk-quota update remain pre-commit and any failure
 rolls back Vesta and Harbor authority. Commit does not remove recovery state:
 idempotent Compose shell-access convergence must complete before final cleanup.
 An initial post-commit convergence failure may return success only after
 durable recovery converges the committed package and emits an explicit warning.
+Before a new-package trigger runs, the journal records pending compensation.
+Rollback first restores old package authority, invokes the old package trigger
+with its prior user arguments, and reapplies the old disk quota. Failed
+compensation leaves the journal retriable and blocks later owner transitions.
+Package triggers therefore remain responsible for idempotent reconciliation
+when recovery repeats after interruption.
 
 ## Provider and owner states
 
