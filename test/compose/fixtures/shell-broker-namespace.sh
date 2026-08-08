@@ -86,6 +86,19 @@ for argument in "\$@"; do
         printf ' <%s>' "\$argument" >>'$fixture/docker.log'
     fi
 done
+case "\${0##*/}" in
+  v-list-user-harbor-registry)
+    printf '%s\n' '{"MANAGED":true,"STATE":"ready"}'
+    ;;
+  v-change-user-harbor-registry-publisher)
+    publisher_bytes="\$(wc -c)"
+    printf ' stdin-bytes=%s' "\$publisher_bytes" >>'$fixture/docker.log'
+    printf '%s\n' 'publisher credential updated'
+    ;;
+  v-disable-user-harbor-registry-publisher)
+    printf '%s\n' 'publisher credential disabled'
+    ;;
+esac
 if [[ -e '$fixture/hold-owner' ]]; then
     : >'$fixture/operation-entered'
     for _ in {1..200}; do
@@ -112,7 +125,9 @@ for command in \
     v-restore-docker-project v-preview-docker-project-rollback \
     v-apply-docker-project-rollback v-preview-docker-project-reconcile \
     v-reconcile-docker-project v-add-docker-project-route v-delete-docker-project-route \
-    v-acknowledge-docker-project-alert v-pull-docker-project-image; do
+    v-acknowledge-docker-project-alert v-pull-docker-project-image \
+    v-list-user-harbor-registry v-change-user-harbor-registry-publisher \
+    v-disable-user-harbor-registry-publisher; do
     cp "$fixture/fake-command" "/usr/local/vesta/bin/$command"
 done
 
@@ -137,6 +152,30 @@ expect_allow_stdin() {
         || fail "broker retained Compose stdin snapshot for: $*"
     ! compgen -G '/var/tmp/vesta-compose-shell.*' >/dev/null \
         || fail "broker retained protected stdin snapshot for: $*"
+}
+expect_allow_output() {
+    local expected_log="$1" expected_output="$2" output; shift 2
+    printf '%s\n' "$1" >>"$fixture/covered-operations"
+    : >"$fixture/docker.log"
+    output="$("${broker[@]}" "$@")" || fail "broker denied output operation: $*"
+    [[ "$output" == "$expected_output" ]] || fail "wrong bounded output for: $*"
+    grep -Fxq "$expected_log actor=alice" "$fixture/docker.log" \
+        || fail "wrong output dispatch for: $*"
+}
+expect_allow_stdin_output() {
+    local expected_log="$1" input="$2" expected_output="$3" output; shift 3
+    printf '%s\n' "$1" >>"$fixture/covered-operations"
+    : >"$fixture/docker.log"
+    output="$(printf '%s' "$input" | "${broker[@]}" "$@")" \
+        || fail "broker denied stdin output operation: $*"
+    [[ "$output" == "$expected_output" && "$output" != *"$input"* ]] \
+        || fail "publisher secret reached broker output: $*"
+    grep -Fxq "$expected_log actor=alice" "$fixture/docker.log" \
+        || fail "wrong stdin output dispatch for: $*"
+    ! grep -Fq "$input" "$fixture/docker.log" \
+        || fail "publisher secret reached fixture log: $*"
+    ! compgen -G '/var/tmp/vesta-compose-shell.*' >/dev/null \
+        || fail "broker retained publisher stdin snapshot for: $*"
 }
 expect_deny() {
     : >"$fixture/docker.log"
@@ -166,6 +205,18 @@ expect_allow 'v-list-docker-project-routes <alice> <app> <plain>' routes app pla
 expect_allow 'v-list-docker-project-backups <alice> <app> <json>' backups app
 expect_allow 'v-list-docker-secrets <alice> <app> <plain>' secrets app plain
 expect_allow 'v-list-docker-registries <alice> <json>' registries
+expect_allow_output 'v-list-user-harbor-registry <alice> <app> <plain>' \
+    '{"MANAGED":true,"STATE":"ready"}' registry-info app plain
+publisher_secret='fixture-publisher-secret-canary'
+expect_allow_stdin_output \
+    'v-change-user-harbor-registry-publisher <alice> stdin-bytes=31' \
+    "$publisher_secret" 'publisher credential updated' registry-publisher-change
+expect_allow_output 'v-disable-user-harbor-registry-publisher <alice>' \
+    'publisher credential disabled' registry-publisher-disable
+expect_deny registry-info app admin
+expect_deny registry-publisher-change admin
+expect_deny registry-publisher-disable admin
+expect_deny harbor-admin
 expect_allow "v-pull-docker-project-image <alice> <alice> <app> <$preview_id> <$digest_a> <$digest_b> <1> <$image_reference>" \
     image-pull app "$preview_id" "$digest_a" "$digest_b" 1 "$image_reference"
 expect_allow 'v-list-docker-project-drift <alice> <alice> <app> <plain>' drift app plain
