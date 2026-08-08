@@ -11,20 +11,34 @@ vx_harbor_audit() {
     [[ "$owner" == system || "$owner" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ ]] || return 1
     [[ "$operation" =~ ^[a-z][a-z0-9-]{0,63}$ ]] || return 1
     [[ "$result" =~ ^[a-z][a-z0-9-]{0,31}$ ]] || return 1
-    [[ ${#reason} -le 256 && "$reason" != *$'\n'* && "$reason" != *$'\r'* ]] || return 1
+    /usr/bin/printf '%s' "$reason" | /usr/bin/python3 -c '
+import sys
+value = sys.stdin.buffer.read(257)
+try:
+    value.decode("utf-8")
+except UnicodeDecodeError:
+    raise SystemExit(1)
+raise SystemExit(len(value) > 256 or any(byte < 32 or byte == 127 for byte in value))
+    ' || return 1
     root="$(vx_harbor_root)" || return 1
-    _vx_harbor_install_directory "$root" || return 1
-    _vx_harbor_install_directory "$root/locks" || return 1
-    _vx_harbor_secure_directory "$root" || return 1
-    _vx_harbor_secure_directory "$root/locks" || return 1
     path="$root/audit.log"
     lock_path="$root/locks/audit.lock"
-    if [[ -e "$path" || -L "$path" ]]; then
-        vx_harbor_secure_regular_file "$path" 0600 || return 1
+    if [[ -e "$root" || -L "$root" ]]; then
+        _vx_harbor_directory_prepare "$root" "$VESTA/data" || return 1
+        if [[ -e "$path" || -L "$path" ]]; then
+            vx_harbor_secure_regular_file "$path" 0600 || return 1
+        fi
+        if [[ -e "$root/locks" || -L "$root/locks" ]]; then
+            _vx_harbor_directory_prepare "$root/locks" "$root" || return 1
+            if [[ -e "$lock_path" || -L "$lock_path" ]]; then
+                vx_harbor_secure_regular_file "$lock_path" 0600 || return 1
+            fi
+        fi
     fi
-    if [[ -e "$lock_path" || -L "$lock_path" ]]; then
-        vx_harbor_secure_regular_file "$lock_path" 0600 || return 1
-    fi
+    _vx_harbor_directory_prepare "$root" "$VESTA/data" || return 1
+    _vx_harbor_directory_prepare "$root/locks" "$root" || return 1
+    _vx_harbor_secure_directory "$root" || return 1
+    _vx_harbor_secure_directory "$root/locks" || return 1
     exec {lock_fd}>>"$lock_path" || return 1
     _vx_harbor_secure_file_set "$lock_path" 0600 \
         || { exec {lock_fd}>&-; return 1; }

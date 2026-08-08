@@ -38,11 +38,14 @@ source "$VESTA/func/vx/harbor/main.sh"
 [[ "$(_vx_harbor_authority_gid)" == 0 ]] \
     || fail 'production provider authority GID is not root'
 if (( EUID != 0 )); then
+    preexisting_root_mode="$(stat -c '%u:%g:%a' "$VESTA/data/harbor")"
     non_root_source="$HARBOR_TEST_ROOT/non-root-source.json"
     printf '{}\n' >"$non_root_source"
     if vx_harbor_provider_prepare 2>/dev/null; then
         fail 'non-root provider preparation was accepted'
     fi
+    [[ "$(stat -c '%u:%g:%a' "$VESTA/data/harbor")" == "$preexisting_root_mode" ]] \
+        || fail 'rejected non-root authority was mutated'
     if vx_harbor_json_write_atomic "$VESTA/data/harbor/non-root.json" \
         "$non_root_source" 2>/dev/null; then
         fail 'non-root atomic provider mutation was accepted'
@@ -61,12 +64,75 @@ fi
 _vx_harbor_authority_uid() { printf '%s\n' "$EUID"; }
 _vx_harbor_authority_gid() { id -g; }
 _vx_harbor_require_root() { return 0; }
-_vx_harbor_install_directory() { install -d -m 0700 "$1"; }
 _vx_harbor_secure_file_set() { chmod "$2" "$1"; }
 
 assert_mode() {
     [[ "$(stat -c '%a' "$1")" == "$2" ]] || fail "unexpected mode for $1"
 }
+
+path_fixture="$HARBOR_TEST_ROOT/path-authority"
+mkdir -m 0700 "$path_fixture"
+_vx_harbor_directory_prepare "$path_fixture/created" "$path_fixture" "$path_fixture"
+assert_mode "$path_fixture/created" 700
+
+mkdir -m 0755 "$path_fixture/wrong-mode"
+if _vx_harbor_directory_prepare "$path_fixture/wrong-mode" "$path_fixture" \
+    "$path_fixture" 2>/dev/null; then
+    fail 'wrong-mode existing authority directory was accepted'
+fi
+assert_mode "$path_fixture/wrong-mode" 755
+
+mkdir -m 0755 "$path_fixture/symlink-target"
+ln -s "$path_fixture/symlink-target" "$path_fixture/symlink-leaf"
+if _vx_harbor_directory_prepare "$path_fixture/symlink-leaf" "$path_fixture" \
+    "$path_fixture" 2>/dev/null; then
+    fail 'symlinked authority leaf was accepted'
+fi
+assert_mode "$path_fixture/symlink-target" 755
+
+mkdir -m 0755 "$path_fixture/intermediate-target"
+ln -s "$path_fixture/intermediate-target" "$path_fixture/intermediate"
+if _vx_harbor_directory_prepare "$path_fixture/intermediate/leaf" \
+    "$path_fixture/intermediate" "$path_fixture" 2>/dev/null; then
+    fail 'symlinked authority intermediate was accepted'
+fi
+assert_mode "$path_fixture/intermediate-target" 755
+
+printf 'authority\n' >"$path_fixture/hardlink-target"
+ln "$path_fixture/hardlink-target" "$path_fixture/hardlink-leaf"
+if _vx_harbor_directory_prepare "$path_fixture/hardlink-leaf" "$path_fixture" \
+    "$path_fixture" 2>/dev/null; then
+    fail 'hard-linked non-directory authority leaf was accepted'
+fi
+[[ "$(<"$path_fixture/hardlink-target")" == authority ]] \
+    || fail 'rejected hard-linked target was mutated'
+
+if (( EUID != 0 )); then
+    mkdir -m 0755 "$path_fixture/wrong-owner"
+    _vx_harbor_authority_uid() { printf '0\n'; }
+    _vx_harbor_authority_gid() { printf '0\n'; }
+    if _vx_harbor_directory_prepare "$path_fixture/wrong-owner/leaf" \
+        "$path_fixture/wrong-owner" "$path_fixture" 2>/dev/null; then
+        fail 'wrong-owner existing authority component was accepted'
+    fi
+    assert_mode "$path_fixture/wrong-owner" 755
+    [[ ! -e "$path_fixture/wrong-owner/leaf" ]] \
+        || fail 'rejected wrong-owner component was mutated'
+    _vx_harbor_authority_uid() { printf '%s\n' "$EUID"; }
+    _vx_harbor_authority_gid() { id -g; }
+fi
+
+preflight_root="$VESTA/data/harbor-preflight"
+mkdir -m 0700 "$preflight_root"
+mkdir -m 0755 "$preflight_root/observations"
+vx_harbor_root() { printf '%s\n' "$preflight_root"; }
+if vx_harbor_provider_prepare 2>/dev/null; then
+    fail 'provider preparation accepted a later wrong-mode component'
+fi
+[[ ! -e "$preflight_root/owners" ]] \
+    || fail 'provider preparation mutated paths before authenticating all components'
+assert_mode "$preflight_root/observations" 755
+vx_harbor_root() { printf '%s\n' "$VESTA/data/harbor"; }
 
 vx_harbor_provider_prepare
 root="$VESTA/data/harbor"
@@ -96,6 +162,35 @@ jq -e -S 'keys == [
 if vx_harbor_provider_enabled; then
     fail 'disabled provider reported enabled'
 fi
+
+valid_provider_state="$HARBOR_TEST_ROOT/valid-provider.json"
+cp "$root/provider.json" "$valid_provider_state"
+assert_invalid_provider_state() {
+    local description="$1"
+    local content="$2"
+    printf '%s\n' "$content" >"$root/provider.json"
+    chmod 0600 "$root/provider.json"
+    if vx_harbor_provider_state_validate "$root/provider.json"; then
+        fail "$description passed exact provider-state validation"
+    fi
+    if vx_harbor_provider_mode >/dev/null 2>&1; then
+        fail "$description was loaded as provider mode"
+    fi
+    if vx_harbor_provider_prepare >/dev/null 2>&1; then
+        fail "$description was accepted during provider preparation"
+    fi
+    cp "$valid_provider_state" "$root/provider.json"
+    chmod 0600 "$root/provider.json"
+}
+assert_invalid_provider_state truncated '{"SCHEMA":1,"MODE":"disabled"}'
+assert_invalid_provider_state wrong-type "$(jq '.LAST_HEALTH_AT = 42' "$valid_provider_state")"
+assert_invalid_provider_state extra-key "$(jq '.EXTRA = true' "$valid_provider_state")"
+assert_invalid_provider_state wrong-mode "$(jq '.MODE = "enabled"' "$valid_provider_state")"
+assert_invalid_provider_state wrong-schema "$(jq '.SCHEMA = 2' "$valid_provider_state")"
+assert_invalid_provider_state wrong-pin "$(jq '.PINNED_VERSION = "v2.14.0"' "$valid_provider_state")"
+assert_invalid_provider_state malformed '{'
+vx_harbor_provider_state_validate "$root/provider.json" \
+    || fail 'restored exact provider state was rejected'
 
 state_digest="$(sha256sum "$root/provider.json")"
 vx_harbor_provider_prepare
@@ -163,8 +258,8 @@ openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
     -subj '/CN=panel.example.com' -addext 'subjectAltName=DNS:panel.example.com' \
     -keyout "$key" -out "$certificate" >/dev/null 2>&1
 write_nginx() {
-    printf 'server {\n    listen 8083 ssl;\n    ssl_certificate %s;\n}\n' "$certificate" \
-        >"$VESTA/nginx/conf/nginx.conf"
+    printf 'http {\n  server {\n    root /srv/unrelated;\n    listen 9443 ssl;\n    ssl_certificate %s;\n  }\n  server {\n    root %s/web;\n    listen 8083 ssl;\n    ssl_certificate %s;\n  }\n}\n' \
+        "$certificate" "$VESTA" "$certificate" >"$VESTA/nginx/conf/nginx.conf"
 }
 write_nginx
 _vx_harbor_authoritative_hostname() {
@@ -190,21 +285,54 @@ if vx_harbor_origin_json >/dev/null 2>&1; then
     fail 'certificate hostname mismatch was accepted'
 fi
 printf 'panel.example.com\n' >"$hostname_file"
-printf 'server {\n    listen 8083 ssl;\n    listen 8083 ssl;\n    ssl_certificate %s;\n}\n' \
-    "$certificate" >"$VESTA/nginx/conf/nginx.conf"
+printf 'server { root %s/web; listen 8083 ssl; listen 8083 ssl; ssl_certificate %s; }\n' \
+    "$VESTA" "$certificate" >"$VESTA/nginx/conf/nginx.conf"
 if vx_harbor_origin_json >/dev/null 2>&1; then
     fail 'duplicate same-port TLS listeners were accepted'
 fi
-printf 'server { listen 0 ssl; ssl_certificate %s; }\n' "$certificate" \
+printf 'server { root %s/web; listen 0 ssl; ssl_certificate %s; }\n' \
+    "$VESTA" "$certificate" \
     >"$VESTA/nginx/conf/nginx.conf"
 if vx_harbor_origin_json >/dev/null 2>&1; then
     fail 'port zero was accepted'
 fi
-printf 'server { listen 8083 ssl; listen 8443 ssl; ssl_certificate %s; }\n' "$certificate" \
+printf 'server { root %s/web; listen 8083 ssl; listen 8443 ssl; ssl_certificate %s; }\n' \
+    "$VESTA" "$certificate" \
     >"$VESTA/nginx/conf/nginx.conf"
 if vx_harbor_origin_json >/dev/null 2>&1; then
     fail 'multiple TLS ports were accepted'
 fi
+
+printf 'server { root %s/web; listen 8083 ssl; }\nserver { root /srv/other; listen 9443 ssl; ssl_certificate %s; }\n' \
+    "$VESTA" "$certificate" >"$VESTA/nginx/conf/nginx.conf"
+if vx_harbor_origin_json >/dev/null 2>&1; then
+    fail 'certificate from an unrelated server block was accepted'
+fi
+
+printf 'server { root %s/web; listen 8083 ssl; ssl_certificate %s; }\nserver { root %s/web; listen 8083 ssl; ssl_certificate %s; }\n' \
+    "$VESTA" "$certificate" "$VESTA" "$certificate" \
+    >"$VESTA/nginx/conf/nginx.conf"
+if vx_harbor_origin_json >/dev/null 2>&1; then
+    fail 'ambiguous panel server blocks were accepted'
+fi
+
+printf 'server { root %s/web; listen 8083 ssl; ssl_certificate %s; include conf.d/panel.conf; }\n' \
+    "$VESTA" "$certificate" >"$VESTA/nginx/conf/nginx.conf"
+if vx_harbor_origin_json >/dev/null 2>&1; then
+    fail 'nginx include ambiguity was accepted'
+fi
+
+printf 'server { root %s/web; listen $panel_port ssl; ssl_certificate %s; }\n' \
+    "$VESTA" "$certificate" >"$VESTA/nginx/conf/nginx.conf"
+if vx_harbor_origin_json >/dev/null 2>&1; then
+    fail 'variable TLS listener was accepted'
+fi
+
+printf 'http {\n  # unrelated listener must not become panel authority\n  server { root /srv/other; listen 9443 ssl; ssl_certificate %s; }\n  server {\n    root\n      %s/web; # panel marker\n    listen\n      8083\n      ssl; # numeric TLS authority\n    ssl_certificate\n      %s; # panel certificate\n  }\n}\n' \
+    "$certificate" "$VESTA" "$certificate" >"$VESTA/nginx/conf/nginx.conf"
+origin="$(vx_harbor_origin_json)" || fail 'multiline/commented panel config was rejected'
+jq -e '.PORT == 8083 and .HOSTNAME == "panel.example.com"' <<<"$origin" >/dev/null \
+    || fail 'multiline panel config derived the wrong endpoint'
 write_nginx
 
 vx_harbor_audit system provider-prepare succeeded disabled
@@ -216,16 +344,28 @@ jq -e '.OWNER == "system" and .OPERATION == "provider-prepare"
 if vx_harbor_audit system provider-prepare failed $'secret\nleak'; then
     fail 'multiline audit reason was accepted'
 fi
+if vx_harbor_audit system provider-prepare failed $'control\tcharacter'; then
+    fail 'ASCII control audit reason was accepted'
+fi
+if vx_harbor_audit system provider-prepare failed $'delete\177character'; then
+    fail 'ASCII DEL audit reason was accepted'
+fi
+reason_256_bytes="$(printf 'é%.0s' {1..128})"
+vx_harbor_audit system provider-prepare failed "$reason_256_bytes"
+reason_258_bytes="${reason_256_bytes}é"
+if vx_harbor_audit system provider-prepare failed "$reason_258_bytes"; then
+    fail 'audit reason over 256 UTF-8 bytes was accepted'
+fi
 
-# Disabled preparation and mode reads must remain pure state operations. Fixed
-# forbidden-command shims make an accidental external mutation fail the test.
-shim_dir="$HARBOR_TEST_ROOT/forbidden"
-mkdir -p "$shim_dir"
-for command in docker systemctl nginx curl apt apt-get yum dnf firewall-cmd \
-    iptables nft host dig nslookup; do
-    ln -s /bin/false "$shim_dir/$command"
-done
-PATH="$shim_dir:$PATH" vx_harbor_provider_prepare
-PATH="$shim_dir:$PATH" vx_harbor_provider_mode >/dev/null
+# Disabled helpers are statically bounded to local state and validation tools;
+# prohibited service/network/package commands must not appear in their source.
+if grep -En '(^|[[:space:]/])(docker|systemctl|nginx|curl|apt(-get)?|yum|dnf|firewall-cmd|iptables|nft|host|dig|nslookup)([[:space:]]|$)' \
+    "$HARBOR_REPO_ROOT/func/vx/harbor/common.sh" \
+    "$HARBOR_REPO_ROOT/func/vx/harbor/audit.sh" \
+    "$HARBOR_REPO_ROOT/func/vx/harbor/main.sh"; then
+    fail 'disabled provider helper contains a prohibited external command'
+fi
+vx_harbor_provider_prepare
+vx_harbor_provider_mode >/dev/null
 
 printf 'Harbor provider state tests passed.\n'
