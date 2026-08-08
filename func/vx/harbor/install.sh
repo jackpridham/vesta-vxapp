@@ -64,16 +64,29 @@ text=re.sub(r'(?m)^    logging:\n      driver: "syslog"\n      options:\n(?:    
 proxy=re.search(r'(?ms)^(  proxy:\n.*?)(?=^  [a-z]|^networks:)', text)
 if not proxy: raise SystemExit(1)
 block=proxy.group(1)
+if re.search(r'(?m)^    (?:user|cap_drop|cap_add|security_opt):', block): raise SystemExit(1)
+block=block.replace('  proxy:\n', '''  proxy:
+    user: "0:0"
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+''', 1)
 block=block.replace('    volumes:\n', '    volumes:\n      - /run/vesta-harbor:/run/vesta-harbor\n', 1)
 text='name: vesta-harbor\n'+text[:proxy.start(1)]+block+text[proxy.end(1):]
 compose_path.write_text(text)
 nginx=nginx_path.read_text()
+if re.search(r'(?m)^user\s+', nginx): raise SystemExit(1)
+nginx='user nginx;\n'+nginx
 nginx,count=re.subn(r'listen\s+8080\s*;', 'listen unix:/run/vesta-harbor/proxy.sock;', nginx, count=1)
 if count != 1: raise SystemExit(1)
 nginx_path.write_text(nginx)
 PY
     _vx_harbor_secure_file_set "$stage/docker-compose.yml" 0600 || return 1
-    _vx_harbor_secure_file_set "$stage/common/config/nginx/nginx.conf" 0600 || return 1
+    _vx_harbor_secure_file_set "$stage/common/config/nginx/nginx.conf" 0644 || return 1
     vx_harbor_release_images_validate "$manifest" "$stage/docker-compose.yml"
 }
 
@@ -107,19 +120,34 @@ _vx_harbor_install_generate() {
       --volume "$stage:/compose_location" \
       --volume "$stage/common/config:/config" \
       "$prepare_id" prepare --conf /input/harbor.yml >/dev/null || return 1
-    _vx_harbor_install_transform_generated "$stage" "$manifest"
+    _vx_harbor_install_transform_generated "$stage" "$manifest" || return 1
+    /usr/bin/chown 0:0 /var/lib/vesta-harbor \
+        && /usr/bin/chmod 0700 /var/lib/vesta-harbor
 }
 
 _vx_harbor_install_migration_check() {
-    local compose="$1"
-    _vx_harbor_docker_bounded 30 compose --project-name vesta-harbor --file "$compose" exec -T postgresql pg_isready -U postgres >/dev/null 2>&1
+    local compose="$1" attempt
+    for attempt in {1..30}; do
+        _vx_harbor_docker_bounded 5 compose --project-name vesta-harbor \
+            --file "$compose" exec -T postgresql pg_isready -U postgres \
+            >/dev/null 2>&1 && return 0
+        /usr/bin/sleep 1
+    done
+    return 1
 }
 
 _vx_harbor_install_health_check() {
-    local response
-    response="$(/usr/bin/timeout 30 /usr/bin/curl --fail --silent --show-error --max-time 20 \
-      --unix-socket "$(vx_harbor_socket_path)" http://localhost/api/v2.0/health)" || return 1
-    /usr/bin/jq -e '.status == "healthy" and (.components | type == "array")' <<<"$response" >/dev/null 2>&1
+    local response attempt
+    for attempt in {1..30}; do
+        response="$(/usr/bin/timeout 7 /usr/bin/curl --fail --silent \
+          --show-error --connect-timeout 2 --max-time 5 \
+          --unix-socket "$(vx_harbor_socket_path)" \
+          http://localhost/api/v2.0/health 2>/dev/null)" \
+          && /usr/bin/jq -e '.status == "healthy" and (.components | type == "array")' \
+            <<<"$response" >/dev/null 2>&1 && return 0
+        /usr/bin/sleep 1
+    done
+    return 1
 }
 
 _vx_harbor_install_bootstrap_call() {
@@ -275,6 +303,11 @@ vx_harbor_install() {
         [[ "$committed" == yes ]] && return 0
         _vx_harbor_install_external_cleanup "$stage" || return 75
         "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" stop vesta-harbor.service >/dev/null 2>&1 || :
+        if [[ "$candidate_activated" == yes && -f "$stage/docker-compose.yml" ]]; then
+            _vx_harbor_docker_bounded 120 compose --project-name vesta-harbor \
+                --file "$stage/docker-compose.yml" down --remove-orphans \
+                >/dev/null 2>&1 || :
+        fi
         _vx_harbor_install_restore_file "$unit_target" "$rollback/unit" "$unit_existed" || :
         _vx_harbor_install_restore_file "$ingress_target" "$rollback/ingress" "$ingress_existed" || :
         /usr/bin/cp -a -- "$rollback/nginx-main" "$nginx_main" || :

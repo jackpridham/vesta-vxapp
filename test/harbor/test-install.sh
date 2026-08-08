@@ -76,7 +76,7 @@ _vx_harbor_install_loaded_image_config_validate "sha256:$(printf '%064d' 1)" "sh
   || fail 'containerd image identity did not validate its pinned saved config'
 ! _vx_harbor_install_loaded_image_config_validate "sha256:$(printf '%064d' 1)" "sha256:$(printf '%064d' 2)" \
   || fail 'mismatched saved image config was accepted'
-_vx_harbor_docker_bounded() { local seconds="$1"; shift; /usr/bin/timeout "$seconds" /usr/bin/docker "$@"; }
+_vx_harbor_docker_bounded() { return 0; }
 _vx_harbor_install_generate() {
   local stage="$1" manifest="$2"
   mkdir -p "$stage/common/config/nginx" "$stage/secrets"
@@ -167,11 +167,18 @@ credential="$VESTA/data/harbor/secrets/integration.curl"
 grep -q '^user = "vesta-integration:' "$credential" || fail 'routine integration identity missing'
 ! grep -q 'admin:' "$credential" || fail 'bootstrap identity remained routine authority'
 compose="$VESTA/data/harbor/release/current/docker-compose.yml"
+[[ "$(stat -c %a "$VESTA/data/harbor/release/current/common/config/nginx/nginx.conf")" == 644 ]] \
+  || fail 'non-secret unprivileged proxy config is not readable'
+head -1 "$VESTA/data/harbor/release/current/common/config/nginx/nginx.conf" \
+  | grep -qx 'user nginx;' || fail 'proxy workers do not drop root authority'
 grep -q '^name: vesta-harbor$' "$compose" || fail 'fixed project missing'
 vx_harbor_release_images_validate "$VESTA/install/harbor/release-manifest.json" "$compose" || fail 'installed compose trust failed'
 [[ "$(grep -c '^  [a-z].*:$' "$compose")" -ge 10 ]] || fail 'canonical service graph missing'
 grep -q '/var/lib/vesta-harbor' "$compose" || fail 'durable provider storage missing'
 grep -q '/run/vesta-harbor:/run/vesta-harbor' "$compose" || fail 'socket creation mount missing'
+grep -A9 '^  proxy:' "$compose" | grep -q '^    user: "0:0"$' || fail 'proxy master cannot create protected socket'
+grep -A9 '^  proxy:' "$compose" | grep -q '^      - ALL$' || fail 'proxy capability drop missing'
+grep -A9 '^  proxy:' "$compose" | grep -q '^      - no-new-privileges:true$' || fail 'proxy privilege ceiling missing'
 ! grep -q '^    ports:' "$compose" || fail 'canonical host ports survived transform'
 grep -q 'depends_on:' "$compose" || fail 'canonical dependency graph missing'
 grep -q 'env_file:' "$compose" || fail 'canonical generated component configuration missing'
