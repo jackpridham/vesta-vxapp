@@ -220,7 +220,7 @@ or later refresh the secret.
 
 After bootstrap, the least-privilege integration robot is the only routine API
 identity. It is system-level with system scope `/` and wildcard project scope
-`*`. Its exact system-scope grants are project create/list, quota read/update,
+`*`. Its exact system-scope grants are project create/list, quota list/read/update,
 and system-volume read. Its exact wildcard project grants are project
 read/update, repository read/list/pull/push, and robot create/read/list/delete.
 Project wildcard scope grants no quota action. Those actions provision,

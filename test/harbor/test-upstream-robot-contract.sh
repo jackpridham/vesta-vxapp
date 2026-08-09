@@ -125,6 +125,7 @@ integration_body="$(jq -cn '{
       {kind:"system",namespace:"/",access:[
         {resource:"project",action:"create"},
         {resource:"project",action:"list"},
+        {resource:"quota",action:"list"},
         {resource:"quota",action:"read"},
         {resource:"quota",action:"update"},
         {resource:"system-volumes",action:"read"}
@@ -145,11 +146,11 @@ integration_body="$(jq -cn '{
     ]
   }')"
 # Harbor offers project quota:read, but Vesta deliberately requests quota
-# read/update only at system scope because the quota endpoint checks system RBAC.
+# list/read/update only at system scope because the quota endpoint checks system RBAC.
 jq -e '
     ([.permissions[] | select(.kind == "system" and .namespace == "/")
       | .access[] | select(.resource == "quota") | .action] | sort
-      == ["read", "update"])
+      == ["list", "read", "update"])
     and ([.permissions[] | select(.kind == "project" and .namespace == "*")
       | .access[] | select(.resource == "quota")] | length == 0)
 ' <<<"$integration_body" >/dev/null \
@@ -184,6 +185,7 @@ jq -e '
       {kind:"system",namespace:"/",access:[
         {resource:"project",action:"create"},
         {resource:"project",action:"list"},
+        {resource:"quota",action:"list"},
         {resource:"quota",action:"read"},
         {resource:"quota",action:"update"},
         {resource:"system-volumes",action:"read"}

@@ -67,6 +67,7 @@ integration_body='{
   "permissions":[
     {"kind":"system","namespace":"/","access":[
       {"resource":"project","action":"create"},
+      {"resource":"quota","action":"list"},
       {"resource":"quota","action":"read"},
       {"resource":"quota","action":"update"},
       {"resource":"system-volumes","action":"read"}
@@ -104,7 +105,7 @@ vx_harbor_api_project_create vx-alice
 project="$(vx_harbor_api_project_get vx-alice)"
 [[ "$(jq -r .name <<<"$project")" == vx-alice ]]
 project_id="$(jq -r .project_id <<<"$project")"
-quota="$(jq -r .quota_id <<<"$project")"
+quota="$(vx_harbor_api_project_quota_get "$project_id" | jq -r .id)"
 vx_harbor_api_quota_set_bytes "$quota" 1048576
 [[ "$(vx_harbor_api_quota_get "$quota" | jq -r .hard.storage)" == 1048576 ]]
 

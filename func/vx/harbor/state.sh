@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-VX_HARBOR_INTEGRATION_PERMISSION_VERSION=3
+VX_HARBOR_INTEGRATION_PERMISSION_VERSION=4
 
 _vx_harbor_install_journal_path() {
     printf '%s/operations/provider-install.json\n' "$(vx_harbor_root)"

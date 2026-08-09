@@ -94,7 +94,7 @@ do
     assert_contains "$spec" "$phrase"
 done
 for file in "$provider" "$spec"; do
-    assert_contains "$file" 'quota read/update'
+    assert_contains "$file" 'quota list/read/update'
     assert_contains "$file" 'project wildcard scope grants no quota action'
 done
 

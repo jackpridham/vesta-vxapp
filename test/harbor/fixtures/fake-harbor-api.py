@@ -575,7 +575,24 @@ class HarborHandler(BaseHTTPRequestHandler):
             else:
                 if not self.require("project", project["name"], "project", "read"):
                     return
-                self.finish_status(200, project)
+                self.finish_status(200, {key: value for key, value in project.items()
+                                         if key != "quota_id"})
+            return
+
+        if path == "/api/v2.0/quotas" and method == "GET":
+            if not self.require("system", "/", "quota", "list"):
+                return
+            query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+            if set(query) != {"reference", "reference_id", "page", "page_size"} \
+                    or query["reference"] != ["project"] \
+                    or query["page"] != ["1"] or query["page_size"] != ["2"] \
+                    or len(query["reference_id"]) != 1 \
+                    or not re.fullmatch(r"[1-9]\d*", query["reference_id"][0]):
+                self.finish_status(400, {"errors": [{"code": "BAD_REQUEST"}]})
+                return
+            project_id = int(query["reference_id"][0])
+            self.finish_status(200, [quota for quota in state["quotas"]
+                                     if quota.get("ref", {}).get("id") == project_id])
             return
 
         quota_match = re.fullmatch(r"/api/v2\.0/quotas/(\d+)", path)

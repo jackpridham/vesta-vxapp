@@ -216,7 +216,7 @@ vx_harbor_owner_quota_set() {
 }
 
 vx_harbor_package_transition_recover() {
-    local owner="$1" path state attempts package quota mode observation generation observed_at error desired
+    local owner="$1" path state attempts package quota mode observation generation observed_at error desired owner_state
     path="$(vx_harbor_operation_path "$owner")" || return 1
     [[ -e "$path" ]] || return 0
     vx_harbor_package_operation_validate "$path" || return 1
@@ -232,6 +232,13 @@ vx_harbor_package_transition_recover() {
     fi
     mode="$(vx_harbor_provider_mode)" || return 1
     if [[ "$mode" == managed ]]; then
+        owner_state="$(vx_harbor_owner_state_path "$owner")" || return 1
+        if [[ ! -e "$owner_state" && ! -L "$owner_state" ]]; then
+            # Initial owner provisioning creates the observation and mapping.
+            # Keep the desired operation pending without consuming outage retries.
+            return 1
+        fi
+        vx_harbor_owner_state_validate "$owner_state" || return 1
         if (( attempts >= VX_HARBOR_PACKAGE_MAX_ATTEMPTS )); then
             [[ "$state" == failed ]] || _vx_harbor_package_operation_update "$path" failed 'retry-limit' 0
             return 1

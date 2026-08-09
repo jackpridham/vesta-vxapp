@@ -12,6 +12,7 @@ vx_harbor_local_api_guard() {
     esac
     [[ "$method $path" =~ ^GET\ /api/v2\.0/robots\?q=Level%3Dproject%2CProjectID%3D[1-9][0-9]*\&page=([1-9]|10)\&page_size=100$ \
         || "$method $path" =~ ^GET\ /api/v2\.0/projects/[a-z0-9][a-z0-9-]{0,127}$ \
+        || "$method $path" =~ ^GET\ /api/v2\.0/quotas\?reference=project\&reference_id=[1-9][0-9]*\&page=1\&page_size=2$ \
         || "$method $path" =~ ^(GET|PUT)\ /api/v2\.0/quotas/[1-9][0-9]*$ \
         || "$method $path" =~ ^(GET|DELETE)\ /api/v2\.0/robots/[1-9][0-9]*$ \
         || "$method $path" =~ ^GET\ /api/v2\.0/projects/[a-z0-9][a-z0-9-]{0,127}/repositories$ \

@@ -333,7 +333,7 @@ _vx_harbor_install_bootstrap_system_robots() {
 
 _vx_harbor_install_bootstrap_robot_find() {
     local stage="$1" marker="$2" output robots matches count
-    [[ "$marker" =~ ^vesta-managed:integration:[a-z0-9][a-z0-9-]{0,63}:v(2|3):[a-f0-9]{32}$ ]] || return 1
+    [[ "$marker" =~ ^vesta-managed:integration:[a-z0-9][a-z0-9-]{0,63}:v(2|3|4):[a-f0-9]{32}$ ]] || return 1
     output="$stage/integration-robots.json"
     _vx_harbor_install_bootstrap_system_robots "$stage" "$output" || return
     robots="$(/usr/bin/jq -cS . "$output")" || return 1
@@ -371,6 +371,7 @@ _vx_harbor_install_integration_permissions() {
       {kind:"system",namespace:"/",access:[
         {resource:"project",action:"create"},
         {resource:"project",action:"list"},
+        {resource:"quota",action:"list"},
         {resource:"quota",action:"read"},
         {resource:"quota",action:"update"},
         {resource:"system-volumes",action:"read"}

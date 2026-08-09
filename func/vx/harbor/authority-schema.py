@@ -79,7 +79,7 @@ def validate(kind, value, identity):
             if user is not None and (not isinstance(user,str) or not USERNAME.fullmatch(user)): fail()
         if (value["PRIOR_ROBOT_ID"] is None) != (value["PRIOR_MARKER"] is None): fail()
         if value["PRIOR_MARKER"] is not None and (not isinstance(value["PRIOR_MARKER"],str) or not 1 <= len(value["PRIOR_MARKER"]) <= 160 or any(ord(char)<32 or ord(char)==127 for char in value["PRIOR_MARKER"])): fail()
-        if value["PERMISSION_VERSION"] not in {2,3}: fail()
+        if value["PERMISSION_VERSION"] not in {2,3,4}: fail()
         if value["CANDIDATE_BASENAME"] != "vesta-integration-"+operation[:16]: fail()
         marker=value["CANDIDATE_MARKER"]
         if not isinstance(marker,str) or not re.fullmatch(r"vesta-managed:integration:[a-z0-9][a-z0-9-]{0,63}:v"+str(value["PERMISSION_VERSION"])+":"+operation,marker): fail()

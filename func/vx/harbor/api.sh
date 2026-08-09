@@ -176,6 +176,15 @@ vx_harbor_api_project_create() {
     _vx_harbor_api_json_call POST /api/v2.0/projects 201 empty \
         "$(/usr/bin/jq -cn --arg n "$namespace" '{project_name:$n,metadata:{public:"false"}}')"
 }
+vx_harbor_api_project_quota_get() {
+    local project_id="$1" quotas
+    [[ "$project_id" =~ ^[1-9][0-9]*$ ]] || return 1
+    quotas="$(_vx_harbor_api_call GET "/api/v2.0/quotas?reference=project&reference_id=$project_id&page=1&page_size=2" 200 \
+      'type=="array" and length==1 and (.[0].id|type=="number")')" || return
+    /usr/bin/jq -ce --argjson project "$project_id" \
+      '.[0] | select((.id|type=="number" and floor==. and .>0) and
+                    (.ref|type=="object") and .ref.id==$project)' <<<"$quotas"
+}
 vx_harbor_api_quota_get() { [[ "$1" =~ ^[1-9][0-9]*$ ]] && _vx_harbor_api_call GET "/api/v2.0/quotas/$1" 200 'type=="object" and (.id|type=="number")'; }
 vx_harbor_api_quota_set_bytes() { [[ "$1" =~ ^[1-9][0-9]*$ && "$2" =~ ^-1$|^[0-9]+$ ]] || return 1; _vx_harbor_api_json_call PUT "/api/v2.0/quotas/$1" 200 empty "$(/usr/bin/jq -cn --argjson b "$2" '{hard:{storage:$b}}')"; }
 

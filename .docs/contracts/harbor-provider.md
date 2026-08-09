@@ -175,7 +175,7 @@ secret-redacted.
 
 Routine Vesta API calls use one protected system integration robot, never the
 bootstrap administrator. Its system scope is `/`; its project scope is the
-wildcard `*`. System scope `/` grants project create/list, quota read/update,
+wildcard `*`. System scope `/` grants project create/list, quota list/read/update,
 and system-volume read. Wildcard project scope grants project read/update,
 repository read/list/pull/push, and robot create/read/list/delete.
 Project wildcard scope grants no quota action. These are the exact actions

@@ -165,8 +165,15 @@ vx_harbor_owner_reconcile_locked() {
         project="$(vx_harbor_api_project_get "$namespace")" || return 75
         project_provenance=created
     fi
+    /usr/bin/jq -e --arg namespace "$namespace" '
+      type=="object" and .name==$namespace
+      and (.project_id|type=="number" and floor==. and .>0)
+      and (.metadata|type=="object") and .metadata.public=="false"
+    ' <<<"$project" >/dev/null || return 1
+    project_id="$(/usr/bin/jq -er '.project_id' <<<"$project")"
+    quota_id="$(vx_harbor_api_project_quota_get "$project_id" | /usr/bin/jq -er '.id')" || return 75
+    project="$(/usr/bin/jq -c --argjson quota_id "$quota_id" '.quota_id=$quota_id' <<<"$project")" || return 1
     _vx_harbor_owner_project_validate "$owner" "$namespace" "$path" "$project" "$project_provenance" || return 1
-    project_id="$(/usr/bin/jq -er '.project_id' <<<"$project")"; quota_id="$(/usr/bin/jq -er '.quota_id' <<<"$project")"
     vx_harbor_api_quota_set_bytes "$quota_id" "$(vx_harbor_quota_bytes "$quota")" >/dev/null || { vx_harbor_failure_audit "$owner" quota-reconcile quota 75; return; }
     vx_harbor_audit "$owner" quota-reconcile succeeded applied || return 1
     vx_harbor_quota_observe "$owner" "$quota_id" || return 75
