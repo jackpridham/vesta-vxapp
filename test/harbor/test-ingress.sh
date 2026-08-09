@@ -8,7 +8,7 @@ cp "$HARBOR_REPO_ROOT/install/harbor/harbor-registry.conf.tpl" "$VESTA/install/h
 source "$VESTA/func/vx/harbor/ingress.sh"
 _vx_harbor_authority_uid() { printf '%s\n' "$EUID"; }
 _vx_harbor_authority_gid() { id -g; }
-vx_harbor_origin_json() { printf '{"PORT":8083,"ORIGIN":"https://host.example:8083"}\n'; }
+vx_harbor_origin_json() { printf '{"HOSTNAME":"host.example","PORT":8083,"ORIGIN":"https://host.example:8083"}\n'; }
 printf 'events {}\nhttp { server { root /srv/other; listen 9443 ssl; ssl_certificate /other.pem; } server { root %s/web; server_name host.example; listen 8083 ssl; ssl_certificate /panel.pem; location / { return 200; } } }\n' "$VESTA" >"$VESTA/nginx/conf/nginx.conf"
 rendered="$HARBOR_TEST_ROOT/ingress.conf"; candidate="$HARBOR_TEST_ROOT/candidate.conf"; activation="$HARBOR_TEST_ROOT/activation.conf"
 vx_harbor_ingress_render "$rendered" "$candidate" "$activation" || fail 'ingress render failed'
@@ -26,6 +26,7 @@ grep -q 'ssl_certificate /panel.pem' "$candidate" || fail 'candidate lost author
 ! grep -Eiq '/api/|metrics|portal' "$rendered" || fail 'private route exposed'
 [[ "$(grep -c 'proxy_set_header Cookie "";' "$rendered")" == 3 ]] || fail 'cookies are not stripped on every public route'
 [[ "$(grep -c 'proxy_hide_header Set-Cookie;' "$rendered")" == 3 ]] || fail 'upstream cookies are not suppressed'
+[[ "$(grep -c 'proxy_set_header Host host.example:8083;' "$rendered")" == 3 ]] || fail 'authoritative registry origin was not forwarded'
 [[ "$(grep -c 'proxy_set_header X-Forwarded-For \$remote_addr;' "$rendered")" == 3 ]] || fail 'forwarded address chain is caller-controlled'
 grep -q 'limit_conn_zone \$binary_remote_addr zone=vesta_harbor_registry:10m;' "$candidate" || fail 'registry connection zone missing'
 grep -q 'log_format vesta_harbor_registry.*\$uri' "$candidate" || fail 'bounded secret-safe access format missing'

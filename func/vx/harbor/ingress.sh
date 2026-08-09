@@ -29,12 +29,16 @@ vx_harbor_panel_nginx_reload() {
 }
 
 vx_harbor_ingress_render() {
-    local destination="$1" candidate_main="$2" activation_main="$3" endpoint port template main target
+    local destination="$1" candidate_main="$2" activation_main="$3" endpoint port hostname template main target
     endpoint="$(vx_harbor_origin_json)" || return 1
     port="$(/usr/bin/jq -er '.PORT' <<<"$endpoint")" || return 1
+    hostname="$(/usr/bin/jq -er '.HOSTNAME' <<<"$endpoint")" || return 1
     template="$VESTA/install/harbor/harbor-registry.conf.tpl"
-    [[ "$port" =~ ^[1-9][0-9]{0,4}$ && -f "$template" && ! -L "$template" ]] || return 1
-    /usr/bin/sed "s/__VESTA_TLS_PORT__/$port/g" "$template" >"$destination" || return 1
+    [[ "$port" =~ ^[1-9][0-9]{0,4}$ \
+        && "$hostname" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+$ \
+        && -f "$template" && ! -L "$template" ]] || return 1
+    /usr/bin/sed -e "s/__VESTA_TLS_PORT__/$port/g" \
+        -e "s/__VESTA_FQDN__/$hostname/g" "$template" >"$destination" || return 1
     /usr/bin/python3 - "$destination" <<'PY'
 import pathlib,re,sys
 text=pathlib.Path(sys.argv[1]).read_text()

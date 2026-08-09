@@ -4,7 +4,7 @@ location = /v2/ {
     client_body_timeout 60s;
     limit_conn vesta_harbor_registry 20;
     access_log /var/log/vesta/harbor-registry-access.log vesta_harbor_registry buffer=32k flush=5s;
-    proxy_set_header Host $host;
+    proxy_set_header Host __VESTA_FQDN__:__VESTA_TLS_PORT__;
     proxy_set_header Cookie "";
     proxy_set_header X-Forwarded-Proto https;
     proxy_set_header X-Forwarded-Port __VESTA_TLS_PORT__;
@@ -23,7 +23,7 @@ location ^~ /v2/ {
     client_body_timeout 60s;
     limit_conn vesta_harbor_registry 20;
     access_log /var/log/vesta/harbor-registry-access.log vesta_harbor_registry buffer=32k flush=5s;
-    proxy_set_header Host $host;
+    proxy_set_header Host __VESTA_FQDN__:__VESTA_TLS_PORT__;
     proxy_set_header Cookie "";
     proxy_set_header X-Forwarded-Proto https;
     proxy_set_header X-Forwarded-Port __VESTA_TLS_PORT__;
@@ -42,7 +42,7 @@ location = /service/token {
     client_body_timeout 15s;
     limit_conn vesta_harbor_registry 20;
     access_log /var/log/vesta/harbor-registry-access.log vesta_harbor_registry buffer=32k flush=5s;
-    proxy_set_header Host $host;
+    proxy_set_header Host __VESTA_FQDN__:__VESTA_TLS_PORT__;
     proxy_set_header Cookie "";
     proxy_set_header X-Forwarded-Proto https;
     proxy_set_header X-Forwarded-Port __VESTA_TLS_PORT__;
