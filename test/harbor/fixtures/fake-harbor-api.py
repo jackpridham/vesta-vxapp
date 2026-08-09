@@ -42,6 +42,7 @@ PROJECT_ROBOT_CATALOG = {
     ("artifact", "read"),
     ("project", "read"),
     ("project", "update"),
+    ("quota", "read"),
     ("repository", "list"),
     ("repository", "pull"),
     ("repository", "push"),

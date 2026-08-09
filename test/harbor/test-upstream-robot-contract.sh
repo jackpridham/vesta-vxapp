@@ -105,7 +105,7 @@ jq -e '
          == ["create", "delete", "list", "read"])
     and ([.system[] | select(.resource == "quota") | .action] | sort
          == ["list", "read", "update"])
-    and ([.project[] | select(.resource == "quota")] | length == 0)
+    and ([.project[] | select(.resource == "quota") | .action] == ["read"])
 ' "$response" >/dev/null || fail 'robot RBAC catalog does not match pinned Harbor'
 
 status="$(json_request "$bootstrap_config" POST /api/v2.0/projects \
@@ -145,6 +145,16 @@ integration_body="$(jq -cn --arg secret "$integration_request_secret" '{
       ]}
     ]
   }')"
+# Harbor offers project quota:read, but Vesta deliberately requests quota
+# read/update only at system scope because the quota endpoint checks system RBAC.
+jq -e '
+    ([.permissions[] | select(.kind == "system" and .namespace == "/")
+      | .access[] | select(.resource == "quota") | .action] | sort
+      == ["read", "update"])
+    and ([.permissions[] | select(.kind == "project" and .namespace == "*")
+      | .access[] | select(.resource == "quota")] | length == 0)
+' <<<"$integration_body" >/dev/null \
+    || fail 'integration quota grants do not preserve the system/project distinction'
 status="$(json_request "$bootstrap_config" POST /api/v2.0/robots \
     "$integration_body" "$response")"
 assert_status "$status" 201 'integration robot create'
