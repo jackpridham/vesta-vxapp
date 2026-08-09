@@ -68,13 +68,25 @@ for match in re.finditer(r'\bserver\s*\{', text):
     if depth==0: blocks.append((match.start(),pos,text[match.start():pos]))
 needle=re.compile(r'\broot\s+'+re.escape(str(panel_root))+r'\s*;')
 matches=[b for b in blocks if needle.search(b[2])]
-if len(matches)!=1 or 'harbor-registry.conf' in text: raise SystemExit(1)
+if len(matches)!=1: raise SystemExit(1)
 start,end,block=matches[0]
 insert=end-1
 global_directives=(
     '    limit_conn_zone $binary_remote_addr zone=vesta_harbor_registry:10m;\n'
     "    log_format vesta_harbor_registry '$remote_addr - $request_method $uri $status $body_bytes_sent';\n"
 )
+installed_include='    include '+str(target_include)+';\n'
+has_managed_tokens=('harbor-registry.conf' in text
+                    or 'vesta_harbor_registry' in text)
+if has_managed_tokens:
+    if (text.count(installed_include) != 1
+            or block.count(installed_include) != 1
+            or text.count(global_directives) != 1):
+        raise SystemExit(1)
+    candidate.write_text(text.replace(
+        installed_include, '    include '+str(staged_include)+';\n', 1))
+    activation.write_text(text)
+    raise SystemExit(0)
 def build(path):
     with_global=text[:start]+global_directives+text[start:]
     adjusted_insert=insert+len(global_directives)

@@ -46,6 +46,14 @@ vx_harbor_ingress_activate "$rendered" "$candidate" "$activation" \
   || fail 'panel ingress activation failed'
 grep -Fqx -- "-t -c $candidate" "$nginx_log" \
   || fail 'candidate was not tested with the Vesta panel nginx binary'
+rerendered="$HARBOR_TEST_ROOT/rerendered.conf"
+rerendered_candidate="$HARBOR_TEST_ROOT/rerendered-candidate.conf"
+rerendered_activation="$HARBOR_TEST_ROOT/rerendered-activation.conf"
+vx_harbor_ingress_render "$rerendered" "$rerendered_candidate" "$rerendered_activation" \
+  || fail 'managed ingress could not be rendered idempotently'
+[[ "$(grep -c 'include .*harbor-registry.conf;' "$rerendered_activation")" == 1 \
+  && "$(grep -c 'limit_conn_zone .*vesta_harbor_registry' "$rerendered_activation")" == 1 ]] \
+  || fail 'idempotent ingress render duplicated managed directives'
 grep -Fqx -- "-t -c $VESTA/nginx/conf/nginx.conf" "$nginx_log" \
   || fail 'activated panel config was not tested explicitly'
 grep -Fqx reload "$nginx_log" || fail 'Vesta panel nginx was not reloaded'
