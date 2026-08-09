@@ -93,8 +93,8 @@ do
     assert_contains "$spec" "$phrase"
 done
 for file in "$provider" "$spec"; do
-    assert_contains "$file" 'quota update'
-    assert_contains "$file" 'project wildcard scope never grants quota update'
+    assert_contains "$file" 'quota read/update'
+    assert_contains "$file" 'project wildcard scope grants no quota action'
 done
 
 # Owner command and plaintext authority are fixed at this milestone. Publisher

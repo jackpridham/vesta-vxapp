@@ -159,10 +159,10 @@ secret-redacted.
 
 Routine Vesta API calls use one protected system integration robot, never the
 bootstrap administrator. Its system scope is `/`; its project scope is the
-wildcard `*`. System scope `/` grants project create/list, quota update, and
-system-volume read. Wildcard project scope grants project read/update, quota
-read, repository read/list/pull/push, and robot create/read/list/delete;
-project wildcard scope never grants quota update. These are the exact actions
+wildcard `*`. System scope `/` grants project create/list, quota read/update,
+and system-volume read. Wildcard project scope grants project read/update,
+repository read/list/pull/push, and robot create/read/list/delete.
+Project wildcard scope grants no quota action. These are the exact actions
 required by reconciliation and child delegation.
 `robot:update` is absent because Harbor's system and project robot permission
 catalogs deliberately omit it. Update and refresh therefore return `403` to

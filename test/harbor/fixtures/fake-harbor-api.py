@@ -42,7 +42,6 @@ PROJECT_ROBOT_CATALOG = {
     ("artifact", "read"),
     ("project", "read"),
     ("project", "update"),
-    ("quota", "read"),
     ("repository", "list"),
     ("repository", "pull"),
     ("repository", "push"),
@@ -576,7 +575,7 @@ class HarborHandler(BaseHTTPRequestHandler):
                 self.server.store.write(state)
                 self.finish_status(200)
             else:
-                if not self.require("project", project["name"], "quota", "read"):
+                if not self.require("system", "/", "quota", "read"):
                     return
                 self.finish_status(200, quota)
             return

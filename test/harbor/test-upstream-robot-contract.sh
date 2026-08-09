@@ -105,7 +105,7 @@ jq -e '
          == ["create", "delete", "list", "read"])
     and ([.system[] | select(.resource == "quota") | .action] | sort
          == ["list", "read", "update"])
-    and ([.project[] | select(.resource == "quota") | .action] == ["read"])
+    and ([.project[] | select(.resource == "quota")] | length == 0)
 ' "$response" >/dev/null || fail 'robot RBAC catalog does not match pinned Harbor'
 
 status="$(json_request "$bootstrap_config" POST /api/v2.0/projects \
@@ -127,13 +127,13 @@ integration_body="$(jq -cn --arg secret "$integration_request_secret" '{
       {kind:"system",namespace:"/",access:[
         {resource:"project",action:"create"},
         {resource:"project",action:"list"},
+        {resource:"quota",action:"read"},
         {resource:"quota",action:"update"},
         {resource:"system-volumes",action:"read"}
       ]},
       {kind:"project",namespace:"*",access:[
         {resource:"project",action:"read"},
         {resource:"project",action:"update"},
-        {resource:"quota",action:"read"},
         {resource:"repository",action:"list"},
         {resource:"repository",action:"pull"},
         {resource:"repository",action:"push"},
@@ -172,13 +172,13 @@ jq -e '
       {kind:"system",namespace:"/",access:[
         {resource:"project",action:"create"},
         {resource:"project",action:"list"},
+        {resource:"quota",action:"read"},
         {resource:"quota",action:"update"},
         {resource:"system-volumes",action:"read"}
       ]},
       {kind:"project",namespace:"*",access:[
         {resource:"project",action:"read"},
         {resource:"project",action:"update"},
-        {resource:"quota",action:"read"},
         {resource:"repository",action:"list"},
         {resource:"repository",action:"pull"},
         {resource:"repository",action:"push"},
@@ -198,6 +198,8 @@ jq -e 'all(.[]; has("secret") | not)' "$response" >/dev/null \
     || fail 'robot list disclosed a one-time secret'
 ! grep -Fq "$integration_request_secret" "$state_file" \
     || fail 'ignored RobotCreate.secret reached fixture state'
+status="$(api_call "$integration_config" GET /api/v2.0/quotas/1 "$response")"
+assert_status "$status" 200 'system-scoped integration quota read'
 
 runtime_body='{
   "name":"runtime-1",

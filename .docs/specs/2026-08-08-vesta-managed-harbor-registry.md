@@ -186,10 +186,10 @@ or later refresh the secret.
 
 After bootstrap, the least-privilege integration robot is the only routine API
 identity. It is system-level with system scope `/` and wildcard project scope
-`*`. Its exact system-scope grants are project create/list, quota update, and
-system-volume read. Its exact wildcard project grants are project read/update,
-quota read, repository read/list/pull/push, and robot create/read/list/delete;
-project wildcard scope never grants quota update. Those actions provision,
+`*`. Its exact system-scope grants are project create/list, quota read/update,
+and system-volume read. Its exact wildcard project grants are project
+read/update, repository read/list/pull/push, and robot create/read/list/delete.
+Project wildcard scope grants no quota action. Those actions provision,
 verify, and revoke project children. Harbor's robot RBAC catalogs
 deliberately omit `robot:update`; integration and child update/refresh
 attempts therefore return `403`. Routine Vesta lifecycle shall use create, verify, switch, and
