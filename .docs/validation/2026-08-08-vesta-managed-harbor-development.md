@@ -280,3 +280,102 @@ successor was staged on `dev.jackpridham.com`, the incomplete live checks in
 "Acceptance not claimed" were not rerun, the DNS discrepancy was not
 revalidated, and no production host was contacted. Development acceptance and
 all production deployment remain deferred.
+
+## Generated-credential successor attempt — 2026-08-09
+
+This section supersedes only the final staging statement immediately above.
+The historical failures and the checks not claimed remain preserved.
+
+### Bounded local validation
+
+The corrected generated-credential implementation passed one clean focused
+Harbor aggregate at `f41990e9`, including fixture/source parity, install,
+ingress, protected API, runtime and publisher rotation, revocation, backup,
+documentation, and panel checks. Subsequent live defects were checked only by
+their directly affected tests plus touched syntax and `git diff --check`.
+
+The repository-owned limited readiness launcher was attempted once. Its
+single source-following ShellCheck process made no diagnostic progress for
+approximately 20 minutes, performed more than 57 GB of disk reads, and
+exhausted system swap. It was terminated to prevent another workstation or
+Codex-session failure and exited `143`. This is not recorded as a pass, and
+the launcher was not rerun. No broad ShellCheck, direct canonical gate, or
+unlimited launcher was substituted.
+
+### Exact development staging
+
+The final staged source identity is:
+
+```text
+commit=e3b2b19d6d85e96cf29cad24d4798e20eb318f11
+runtime_version=0.9.9-0-16+vxapp.e3b2b19d
+final_archive_sha256=7d47fe89ebb4e235f2a09b1a1753506b7c16c1b6623305e6ae99d28f5fdd1b72
+final_runtime_files=2
+rollback=/root/vesta-backups/vesta-harbor-task10-e3b2b19d-20260809T023738Z
+```
+
+The final two-file successor followed the complete generated-credential
+runtime staged at `f41990e9`, then the bounded live corrections at `5725323e`
+and `08446067`. Every transaction used the release lock, captured prior bytes,
+installed exact archive hashes, ran touched syntax/hash checks, retained a
+root-owned mode-0700 rollback, and compared active container IDs before and
+after. No firewall, route, DNS, package, tenant desired-state, volume, bind,
+or credential was changed.
+
+### Live defects corrected
+
+Development-host evidence found and focused-tested three concrete adapter
+defects:
+
+1. Harbor v2.15.0 rejects robot-list `page_size=1000` with `422`; both system
+   and project robot discovery now use bounded 100-item pagination.
+2. The protected API adapter incorrectly expected a `root:root` socket; it
+   now uses the existing exact `root:www-data:0660` ingress-socket validator.
+   Failed candidate rollback also removes only the validated stale socket.
+3. Ingress activation edited Vesta's panel nginx configuration while testing
+   and reloading Debian's separate nginx service. It now tests the candidate
+   and activated configuration with
+   `/usr/local/vesta/nginx/sbin/vesta-nginx`, validates the root-owned PID and
+   running executable, and signals that exact panel master.
+
+The protected marker-only transaction after the socket correction reached a
+healthy ten-container provider, created and validated the generated
+integration identity, completed the delegated project/robot probe, and exited
+the integration function successfully. No marker recorded arguments, API
+bodies, usernames, passwords, robot secrets, or ciphertext.
+
+### Stable closeout and remaining blocker
+
+The final uninstrumented transaction at `e3b2b19d` again reached
+`prerequisite`, `release`, `generation`, `compose`, `migration`, `socket`, and
+`health`, but did not complete the integration phase. Its transactional
+rollback completed. Further live retries were stopped to avoid a circular
+diagnostic loop. Managed-provider acceptance, tenant publisher delivery,
+quota/revocation/outage checks, backup validation, and administrative disable
+are therefore still not claimed.
+
+Final development state is stable and fail-closed:
+
+```text
+provider MODE=disabled
+provider PINNED_VERSION=v2.15.0
+provider RUNNING_VERSION=null
+provider ORIGIN=https://dev.jackpridham.com:8083
+vesta-harbor.service=inactive,disabled
+/run/vesta-harbor/proxy.sock=absent
+Harbor containers=absent
+Harbor host TCP listener=absent
+tenant_container=fabfe8153757c9a08d95a89b357b254fd7911f79e8fc08e10afeb2fa03c63520
+tenant_state=running,healthy
+tenant_image=sha256:e274e28000ab05e5a81c3fecae992ef3c06094b0701dfa9e965e8f23de0302fd
+```
+
+The deployment client still resolves `dev.jackpridham.com` to
+`159.196.107.151`, where panel port `8083` is refused, rather than directly to
+the authorized development address `192.168.200.100`. When TLS is connected
+to `192.168.200.100` with SNI and hostname `dev.jackpridham.com`, system-store
+verification succeeds. No hosts-file, DNS, certificate, or trust setting was
+changed.
+
+Production was not contacted or changed. Production deployment remains
+deferred.
