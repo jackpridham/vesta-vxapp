@@ -97,7 +97,7 @@ vx_compose_registry_add() {
             vx_compose_error 'invalid Docker registry host'
             return 1
         }
-    [[ "$username" =~ ^[A-Za-z0-9][A-Za-z0-9._@+-]{0,127}$ ]] \
+    [[ "$username" =~ ^[A-Za-z0-9][-A-Za-z0-9._@+$]{0,127}$ ]] \
         || {
             vx_compose_error 'invalid Docker registry username'
             return 1

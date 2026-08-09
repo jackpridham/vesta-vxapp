@@ -40,7 +40,7 @@ source "$repo_root/func/vx/compose/main.sh"
 password_file="$test_root/password"
 printf 'registry-canary-must-not-leak\n' >"$password_file"
 chmod 0600 "$password_file"
-vx_compose_registry_add alice registry.example.test deploy "$password_file" \
+vx_compose_registry_add alice registry.example.test 'robot$vx-alice+runtime-fixture' "$password_file" \
     >"$test_root/add.stdout" 2>"$test_root/add.stderr"
 
 registry_root="$(vx_compose_registry_root alice)"
@@ -48,7 +48,7 @@ registry_root="$(vx_compose_registry_root alice)"
 [[ "$(stat -c '%a' "$registry_root/config.json")" == 600 ]] || fail "Docker config mode is wrong"
 vx_compose_registry_list_json alice >"$test_root/list.json"
 jq -e '
-    ."registry.example.test".USERNAME == "deploy"
+    ."registry.example.test".USERNAME == "robot$vx-alice+runtime-fixture"
     and ."registry.example.test".LAST_VALIDATION == "succeeded"
 ' "$test_root/list.json" >/dev/null || fail "redacted registry metadata is wrong"
 
