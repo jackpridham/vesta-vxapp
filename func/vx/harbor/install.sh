@@ -279,11 +279,26 @@ _vx_harbor_install_bootstrap_retry() {
 }
 
 _vx_harbor_install_bootstrap_system_robots() {
-    local stage="$1" output="$2"
-    _vx_harbor_install_bootstrap_retry "$stage" GET \
-      '/api/v2.0/robots?q=Level%3Dsystem&page=1&page_size=1000' '' "$output" 200 \
-      || return
-    /usr/bin/jq -e 'type=="array" and length<=1000 and ([.[]|has("secret")]|any|not)' "$output" >/dev/null 2>&1
+    local stage="$1" output="$2" page page_output next count
+    page_output="${output}.page"; next="${output}.next"
+    printf '[]\n' >"$output" || return 1
+    for page in {1..10}; do
+        _vx_harbor_install_bootstrap_retry "$stage" GET \
+          "/api/v2.0/robots?q=Level%3Dsystem&page=$page&page_size=100" \
+          '' "$page_output" 200 || return
+        /usr/bin/jq -e 'type=="array" and length<=100 and ([.[]|has("secret")]|any|not)' \
+          "$page_output" >/dev/null 2>&1 || return 1
+        count="$(/usr/bin/jq -r length "$page_output")" || return 1
+        /usr/bin/jq -s '.[0]+.[1]' "$output" "$page_output" >"$next" \
+          && /usr/bin/mv -fT "$next" "$output" || return 1
+        if (( count < 100 )); then
+            /usr/bin/rm -f -- "$page_output"
+            /usr/bin/jq -e 'length<=1000 and ([.[]|has("secret")]|any|not)' \
+              "$output" >/dev/null 2>&1
+            return
+        fi
+    done
+    return 1
 }
 
 _vx_harbor_install_bootstrap_robot_find() {
@@ -638,6 +653,15 @@ vx_harbor_install() {
             _vx_harbor_docker_bounded 120 compose --project-name vesta-harbor \
                 --file "$stage/docker-compose.yml" down --remove-orphans \
                 >/dev/null 2>&1 || :
+            local socket
+            socket="$(vx_harbor_socket_path)"
+            if [[ -e "$socket" || -L "$socket" ]]; then
+                if [[ -S "$socket" && ! -L "$socket" ]]; then
+                    /usr/bin/rm -f -- "$socket" || data_cleanup_status=75
+                else
+                    data_cleanup_status=75
+                fi
+            fi
         fi
         if [[ "$data_root_existed" == no && ( -e "$data_root" || -L "$data_root" ) ]]; then
             if [[ -d "$data_root" && ! -L "$data_root" ]]; then

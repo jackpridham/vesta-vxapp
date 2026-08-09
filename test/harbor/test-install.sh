@@ -34,6 +34,7 @@ VX_HARBOR_SYSTEMCTL="$systemctl"
 VX_HARBOR_SYSTEMD_TARGET="$HARBOR_TEST_ROOT/systemd/vesta-harbor.service"
 VX_HARBOR_NGINX_TARGET="$VESTA/nginx/conf/harbor-registry.conf"
 VX_HARBOR_SOCKET_GID=33
+VX_HARBOR_SOCKET_PATH="$HARBOR_TEST_ROOT/run/proxy.sock"
 printf 'events {}\nhttp { server { root %s/web; listen 8083 ssl; ssl_certificate /panel.pem; } }\n' "$VESTA" >"$VESTA/nginx/conf/nginx.conf"
 VX_HARBOR_MIN_FREE_KB=0
 _vx_harbor_install_requirements() { return 0; }
@@ -102,7 +103,15 @@ _vx_harbor_install_generate() {
 }
 vx_harbor_socket_validate() { return 0; }
 _vx_harbor_install_migration_check() { return 0; }
-_vx_harbor_install_health_check() { return 0; }
+_vx_harbor_install_health_check() {
+  rm -f -- "$VX_HARBOR_SOCKET_PATH"
+  python3 - "$VX_HARBOR_SOCKET_PATH" <<'PY'
+import socket,sys
+sock=socket.socket(socket.AF_UNIX)
+sock.bind(sys.argv[1])
+sock.close()
+PY
+}
 bootstrap_config="$HARBOR_TEST_ROOT/bootstrap-config.json"; bootstrap_robots="$HARBOR_TEST_ROOT/bootstrap-robots.json"
 cleanup_fail=no
 delegated_probe_count="$HARBOR_TEST_ROOT/delegated-probe-count"
@@ -113,13 +122,22 @@ _vx_harbor_install_bootstrap_call() {
   case "$method:$path" in
     GET:/api/v2.0/configurations) cp "$bootstrap_config" "$output" ;;
     PUT:/api/v2.0/configurations) printf '%s\n' "$body" >"$bootstrap_config"; printf '{}\n' >"$output" ;;
-    'GET:/api/v2.0/robots?q=Level%3Dsystem&page=1&page_size=1000') cp "$bootstrap_robots" "$output" ;;
+    'GET:/api/v2.0/robots?q=Level%3Dsystem&page='*'&page_size=100')
+      page="${path#*page=}"; page="${page%%&*}"; start=$(((page - 1) * 100))
+      jq --argjson start "$start" '.[$start:$start+100]' "$bootstrap_robots" >"$output" ;;
     GET:/api/v2.0/robots/*) robot_id="${path##*/}"; jq -c --argjson id "$robot_id" '.[]|select(.id==$id)' "$bootstrap_robots" >"$output"; [[ -s "$output" ]] ;;
     DELETE:/api/v2.0/robots/*) robot_id="${path##*/}"; [[ "$cleanup_fail" != yes ]] || return 75; jq --argjson id "$robot_id" 'map(select(.id!=$id))' "$bootstrap_robots" >"$bootstrap_robots.next"; mv "$bootstrap_robots.next" "$bootstrap_robots"; printf '{}\n' >"$output" ;;
     DELETE:/api/v2.0/projects/*) printf '{}\n' >"$output" ;;
     *) return 1 ;;
   esac
 }
+system_robot_pages="$HARBOR_TEST_ROOT/system-robot-pages.json"
+jq -n '[range(1;102)|{id:.,name:("robot-"+tostring)}]' >"$bootstrap_robots"
+_vx_harbor_install_bootstrap_system_robots "$HARBOR_TEST_ROOT" "$system_robot_pages" \
+  || fail 'bounded system robot pagination failed'
+[[ "$(jq -r length "$system_robot_pages")" == 101 ]] \
+  || fail 'system robot pagination truncated a live page'
+printf '[]\n' >"$bootstrap_robots"
 _vx_harbor_install_bootstrap_robot_create_secret_once() {
   local stage="$1" body="$2" basename
   jq -e '
@@ -192,6 +210,7 @@ for fail_phase in prerequisite release generation compose migration health socke
     jq -e '.self_registration==true and .project_creation_restriction=="everyone"' "$bootstrap_config" >/dev/null || fail "$fail_phase external configuration rollback failed"
     jq -e 'length==0' "$bootstrap_robots" >/dev/null || fail "$fail_phase left an integration robot orphan"
     [[ ! -e "$VESTA/data/harbor/operations/provider-install.json" ]] || fail "$fail_phase left resolved cleanup journal"
+    [[ ! -e "$VX_HARBOR_SOCKET_PATH" ]] || fail "$fail_phase left a stale registry socket"
     [[ "$(jq -r .MODE "$VESTA/data/harbor/provider.json")" == disabled ]] || fail "$fail_phase provider rollback failed"
     [[ "$(sha256sum "$VESTA/data/harbor/provider.json"|awk '{print $1}')" == "$prior_provider" ]] || fail "$fail_phase provider bytes changed"
     [[ "$(cat "$VESTA/data/harbor/release/current/marker")" == prior-current && "$(cat "$VESTA/data/harbor/release/previous/marker")" == prior-previous ]] || fail "$fail_phase release rollback failed"

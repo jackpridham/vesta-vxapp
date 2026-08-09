@@ -143,21 +143,22 @@ class HarborHandler(BaseHTTPRequestHandler):
         allowed = {"q", "page", "page_size"}
         if set(query) - allowed or any(len(values) != 1 for values in query.values()):
             return None
-        if query.get("page", ["1"])[0] != "1":
+        page = query.get("page", ["1"])[0]
+        if not page.isdigit() or not 1 <= int(page) <= 1000:
             return None
         page_size = query.get("page_size", ["10"])[0]
-        if not page_size.isdigit() or not 1 <= int(page_size) <= 1000:
+        if not page_size.isdigit() or not 1 <= int(page_size) <= 100:
             return None
         expression = query.get("q", ["Level=system"])[0]
         if expression == "Level=system":
-            return "system", 0, int(page_size)
+            return "system", 0, int(page), int(page_size)
         match = re.fullmatch(r"Level=project,ProjectID=([1-9][0-9]*)", expression)
         if not match:
             return None
         project_id = int(match.group(1))
         if not self.find(state["projects"], str(project_id)):
             return None
-        return "project", project_id, int(page_size)
+        return "project", project_id, int(page), int(page_size)
 
     def authenticate(self):
         supplied = self.headers.get("Authorization")
@@ -608,7 +609,7 @@ class HarborHandler(BaseHTTPRequestHandler):
                 if scope is None:
                     self.finish_status(400, {"errors": [{"code": "BAD_REQUEST"}]})
                     return
-                level, project_id, page_size = scope
+                level, project_id, page, page_size = scope
                 namespace = "/"
                 if level == "project":
                     namespace = self.find(state["projects"], str(project_id))["name"]
@@ -621,7 +622,8 @@ class HarborHandler(BaseHTTPRequestHandler):
                     if level == "project" and robot.get("project_id") != project_id:
                         continue
                     visible.append(self.public_robot(robot))
-                self.finish_status(200, visible[:page_size])
+                start = (page - 1) * page_size
+                self.finish_status(200, visible[start:start + page_size])
                 return
             body = self.read_json()
             if body is None:
