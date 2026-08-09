@@ -558,6 +558,7 @@ _vx_harbor_install_integration_configure() {
     installation="$(/usr/bin/jq -er '.INSTALLATION_ID // "vesta-harbor" | select(type=="string" and length>0)' "$root/provider.json")" || return 1
     operation="$(/usr/bin/od -An -N16 -tx1 /dev/urandom | /usr/bin/tr -d ' \n')"
     basename="vesta-integration-${operation:0:16}"; marker="vesta-managed:integration:$installation:v${VX_HARBOR_INTEGRATION_PERMISSION_VERSION}:$operation"; probe_project="vx-install-probe-${operation:0:12}"
+    _vx_harbor_install_step integration-bootstrap-read
     _vx_harbor_install_bootstrap_retry "$stage" GET /api/v2.0/configurations '' "$response" 200 || return 75
     prior="$(_vx_harbor_install_configuration_subset <"$response")" || return 1
     _vx_harbor_install_bootstrap_system_robots "$stage" "$response" || return 75
@@ -583,6 +584,7 @@ _vx_harbor_install_integration_configure() {
         CANDIDATE_USERNAME:null,PERMISSION_VERSION:$version,PROBE_PROJECT_NAME:$probe,
         PROBE_PROJECT_ID:null,PROBE_ROBOT_ID:null}')" || return 1
     _vx_harbor_install_journal_write "$journal" || return 1
+    _vx_harbor_install_step integration-configuration
     config_body='{"self_registration":false,"project_creation_restriction":"adminonly"}'
     _vx_harbor_install_bootstrap_retry "$stage" PUT /api/v2.0/configurations "$config_body" "$response" 200 || return 75
     _vx_harbor_install_bootstrap_retry "$stage" GET /api/v2.0/configurations '' "$response" 200 || return 75
@@ -594,6 +596,7 @@ _vx_harbor_install_integration_configure() {
         _vx_harbor_install_journal_write "$journal"
         return
     fi
+    _vx_harbor_install_step integration-candidate-create
     permissions="$(_vx_harbor_install_integration_permissions)" || return 1
     robot_body="$(/usr/bin/jq -cn --arg name "$basename" --arg marker "$marker" --argjson permissions "$permissions" \
       '{name:$name,description:$marker,disable:false,duration:-1,level:"system",permissions:$permissions}')" || return 1
@@ -608,10 +611,14 @@ _vx_harbor_install_integration_configure() {
     unset secret created robot_body
     _vx_harbor_secure_file_set "$candidate" 0600 || return 1
     _vx_harbor_api_credentials_validate "$candidate" || return 1
+    _vx_harbor_install_step integration-candidate-validate
     _vx_harbor_install_bootstrap_retry "$stage" GET "/api/v2.0/robots/$robot_id" '' "$response" 200 || return 75
     _vx_harbor_install_integration_robot_validate "$response" "$marker" || return 1
+    _vx_harbor_install_step integration-candidate-auth
     probe="$stage/integration-probe.json"; _vx_harbor_install_integration_probe "$candidate" "$probe" || return 1
+    _vx_harbor_install_step integration-delegated-probe
     _vx_harbor_install_delegated_probe "$stage" "$candidate" || return 1
+    _vx_harbor_install_step integration-switch
     /usr/bin/mv -fT "$candidate" "$root/secrets/integration.curl" || return 1
     vx_harbor_secure_regular_file "$root/secrets/integration.curl" 0600 || return 1
     _vx_harbor_fsync "$root/secrets" || return 1
