@@ -7,6 +7,10 @@ _vx_harbor_require_root(){ return 0; }; _vx_harbor_authority_uid(){ printf '%s\n
 vx_harbor_provider_prepare
 provider="$(vx_harbor_root)/provider.json"; source_file="$(mktemp "$(vx_harbor_root)/.provider.XXXXXX")"; jq '.MODE="managed"|.ORIGIN="https://panel.example:8083"' "$provider" >"$source_file"; vx_harbor_json_write_atomic "$provider" "$source_file"; rm -f "$source_file"
 mkdir -p "$VESTA/data/users/alice"; printf "PACKAGE='docker'\nSUSPENDED='no'\nDOCKER_PROJECTS='2'\nDOCKER_REGISTRY_MB='100'\n" >"$VESTA/data/users/alice/user.conf"
+mkdir -p "$VESTA/data/users/legacy"; printf "PACKAGE='legacy'\nSUSPENDED='no'\n" >"$VESTA/data/users/legacy/user.conf"
+[[ "$(_vx_harbor_owner_desired legacy)" == $'legacy\tno\t0\t0' ]] \
+  || fail 'legacy owner limits did not default fail-closed'
+! vx_harbor_owner_is_eligible legacy || fail 'legacy owner received implicit registry entitlement'
 now_epoch="$(date -u +%s)"; now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; operation="$(vx_harbor_operation_path alice)"; source_file="$(mktemp "$(vx_harbor_root)/operations/.op.XXXXXX")"
 jq -n --argjson now "$now_epoch" '{SCHEMA:1,OPERATION_ID:"0123456789abcdef0123456789abcdef",OWNER:"alice",DESIRED_PACKAGE:"docker",DESIRED_REGISTRY_MB:"100",STATE:"pending",ATTEMPTS:0,LAST_ERROR:null,CREATED_AT:$now,UPDATED_AT:$now}' >"$source_file"; vx_harbor_json_write_atomic "$operation" "$source_file"; rm -f "$source_file"
 source_file="$(mktemp "$(vx_harbor_root)/observations/.obs.XXXXXX")"; jq -n --arg now "$now" '{USED_MB:5,OBSERVED_AT:$now,GENERATION:"generation-1"}' >"$source_file"; vx_harbor_json_write_atomic "$(vx_harbor_root)/observations/alice.json" "$source_file"; rm -f "$source_file"

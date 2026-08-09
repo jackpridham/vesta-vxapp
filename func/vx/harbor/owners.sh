@@ -13,9 +13,26 @@ vx_harbor_owner_state_validate() {
 }
 
 _vx_harbor_owner_desired() {
-    local owner="$1" conf="$VESTA/data/users/$owner/user.conf"
+    local owner="$1" conf
+    conf="$VESTA/data/users/$owner/user.conf"
     [[ -f "$conf" && ! -L "$conf" ]] || return 1
-    /usr/bin/awk -F"'" '/^(PACKAGE|SUSPENDED|DOCKER_PROJECTS|DOCKER_REGISTRY_MB)=/{key=$1;sub(/=$/,"",key);v[key]=$2;c[key]++} END{for(k in c)if(c[k]!=1)exit 1;if(v["PACKAGE"]!~/^[A-Za-z0-9._-]+$/||v["SUSPENDED"]!~/^(yes|no)$/||v["DOCKER_PROJECTS"]!~/^(0|[1-9][0-9]*|unlimited)$/||v["DOCKER_REGISTRY_MB"]!~/^(0|[1-9][0-9]*|unlimited)$/)exit 1; print v["PACKAGE"]"\t"v["SUSPENDED"]"\t"v["DOCKER_PROJECTS"]"\t"v["DOCKER_REGISTRY_MB"]}' "$conf"
+    /usr/bin/awk -F"'" '
+      /^(PACKAGE|SUSPENDED|DOCKER_PROJECTS|DOCKER_REGISTRY_MB)=/ {
+          key=$1; sub(/=$/, "", key); v[key]=$2; c[key]++
+      }
+      END {
+          for (key in c) if (c[key] != 1) exit 1
+          if (!("DOCKER_PROJECTS" in v)) v["DOCKER_PROJECTS"]=0
+          if (!("DOCKER_REGISTRY_MB" in v)) v["DOCKER_REGISTRY_MB"]=0
+          if (c["PACKAGE"] != 1 || c["SUSPENDED"] != 1 ||
+              v["PACKAGE"] !~ /^[A-Za-z0-9._-]+$/ ||
+              v["SUSPENDED"] !~ /^(yes|no)$/ ||
+              v["DOCKER_PROJECTS"] !~ /^(0|[1-9][0-9]*|unlimited)$/ ||
+              v["DOCKER_REGISTRY_MB"] !~ /^(0|[1-9][0-9]*|unlimited)$/) exit 1
+          print v["PACKAGE"] "\t" v["SUSPENDED"] "\t" \
+                v["DOCKER_PROJECTS"] "\t" v["DOCKER_REGISTRY_MB"]
+      }
+    ' "$conf"
 }
 
 vx_harbor_owner_is_eligible() { local d; d="$(_vx_harbor_owner_desired "$1")" || return 1; IFS=$'\t' read -r _ suspended projects quota <<<"$d"; [[ "$suspended" == no && "$projects" != 0 && "$quota" != 0 ]]; }

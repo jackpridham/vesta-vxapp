@@ -48,6 +48,10 @@ this specification means "latest" at runtime.
   manifest with or without the daemon-added `LayerSources` metadata. Both
   forms remain bound to the exact pinned config digest; additional or
   malformed metadata fails closed.
+- Existing user state that predates a Compose or registry limit treats the
+  missing field as zero until an administrator explicitly reapplies a package.
+  Installation never grants registry eligibility while normalizing legacy
+  state.
 
 ## Goals
 

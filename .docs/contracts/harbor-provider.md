@@ -77,6 +77,8 @@ failure records `failed`; pending and failed operations block conflicting
 package changes while the same desired operation may resume. There are no
 transition HMACs, `user.conf` preimages, exchange/CAS machinery, package-trigger
 compensation, or shell/group/disk rollback authorities.
+Legacy user state missing a Compose or registry limit is interpreted as zero;
+only an explicit package application can grant the corresponding entitlement.
 
 ## Provider and owner states
 

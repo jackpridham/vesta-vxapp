@@ -14,16 +14,18 @@ _vx_harbor_health_robot_ready() {
 }
 
 _vx_harbor_certificate_observe() {
-    local certificate="${VX_HARBOR_CERTIFICATE:-$VESTA/ssl/certificate.crt}" hostname expiry names now
+    local certificate="${VX_HARBOR_CERTIFICATE:-$VESTA/ssl/certificate.crt}" hostname expiry now hostname_valid=false
     vx_harbor_secure_regular_file "$certificate" 0600 || return 1
     expiry="$(/usr/bin/openssl x509 -in "$certificate" -noout -enddate 2>/dev/null | /usr/bin/cut -d= -f2-)" || return 1
-    names="$(/usr/bin/openssl x509 -in "$certificate" -noout -ext subjectAltName 2>/dev/null)" || return 1
     hostname="$(_vx_harbor_authoritative_hostname)" || return 1
+    /usr/bin/openssl x509 -in "$certificate" -noout -checkhost "$hostname" \
+        >/dev/null 2>&1 && hostname_valid=true
     now="$(/usr/bin/date -u +%s)"
-    /usr/bin/jq -cn --arg host "$hostname" --arg expiry "$expiry" --arg names "$names" --argjson now "$now" '
+    /usr/bin/jq -cn --arg expiry "$expiry" --argjson now "$now" \
+      --argjson hostname_valid "$hostname_valid" '
       ($expiry|strptime("%b %e %H:%M:%S %Y %Z")|mktime) as $end |
       {STATE:(if $end <= $now then "expired" elif ($end-$now)<2592000 then "expiring" else "valid" end),
-       EXPIRES_AT:($end|strftime("%Y-%m-%dT%H:%M:%SZ")),HOSTNAME_VALID:($names|contains("DNS:"+$host))}'
+       EXPIRES_AT:($end|strftime("%Y-%m-%dT%H:%M:%SZ")),HOSTNAME_VALID:$hostname_valid}'
 }
 
 vx_harbor_health_observe_locked() {

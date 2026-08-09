@@ -11,6 +11,11 @@ source "$VESTA/conf/vesta.conf"
 check_args '0' "$#" '[FORMAT]'
 [[ "$format" == json || "$format" == plain ]]
 check_result $? 'Invalid format'
+provider="$(vx_harbor_root)/provider.json"
+if [[ -f "$provider" ]] && vx_harbor_provider_state_validate "$provider" \
+    && [[ "$(/usr/bin/jq -r '.MODE' "$provider")" == managed ]]; then
+    vx_harbor_health_observe >/dev/null 2>&1 || :
+fi
 status="$(vx_harbor_status_json)"
 check_result $? 'Harbor provider status unavailable'
 if [[ "$format" == json ]]; then
