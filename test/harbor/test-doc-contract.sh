@@ -1,265 +1,144 @@
 #!/usr/bin/env bash
+
 set -Eeuo pipefail
 
 root="$(cd "$(dirname "$0")/../.." && pwd)"
-guide="$root/.docs/user-guides/vesta-managed-harbor.md"
+provider="$root/.docs/contracts/harbor-provider.md"
+shell_access="$root/.docs/contracts/compose-shell-access.md"
+spec="$root/.docs/specs/2026-08-08-vesta-managed-harbor-registry.md"
+validation="$root/.docs/validation/2026-08-08-vesta-managed-harbor-development.md"
 
 fail() {
     printf 'FAIL: %s\n' "$1" >&2
     exit 1
 }
 
+assert_contains() {
+    local file="$1" phrase="$2"
+    rg -Fqi -- "$phrase" "$file" \
+        || fail "${file#"$root/"} omits: $phrase"
+}
+
 line_of() {
-    local phrase="$1" line
-    line="$(rg -n -m1 -F -- "$phrase" "$guide" | cut -d: -f1)" || :
-    [[ "$line" =~ ^[1-9][0-9]*$ ]] || fail "missing structural anchor: $phrase"
+    local file="$1" phrase="$2" line
+    line="$(rg -n -m1 -F -- "$phrase" "$file" | cut -d: -f1)" || :
+    [[ "$line" =~ ^[1-9][0-9]*$ ]] \
+        || fail "${file#"$root/"} omits structural anchor: $phrase"
     printf '%s\n' "$line"
 }
 
 assert_before() {
-    local earlier="$1" later="$2" earlier_line later_line
-    earlier_line="$(line_of "$earlier")"
-    later_line="$(line_of "$later")"
+    local file="$1" earlier="$2" later="$3" earlier_line later_line
+    earlier_line="$(line_of "$file" "$earlier")"
+    later_line="$(line_of "$file" "$later")"
     (( earlier_line < later_line )) \
-        || fail "expected '$earlier' before '$later'"
+        || fail "expected '$earlier' before '$later' in ${file#"$root/"}"
 }
 
-[[ -s "$guide" ]] || fail 'canonical Harbor tenant guide missing'
+for file in "$provider" "$shell_access" "$spec" "$validation"; do
+    [[ -s "$file" ]] || fail "missing Milestone 1 document: ${file#"$root/"}"
+done
 
-for contract_phrase in \
+# Harbor v2.15.0 source parity: RobotCreate.secret is ignored, CreateSec is
+# authoritative, RobotCreated.secret is one-time output, read/list redact it,
+# delegated child permissions must be a subset, and robot RBAC omits update.
+for phrase in \
     'e2b5ce92728f86c4b02f6a9a667741c1e5b62678' \
     'RobotCreate.secret' \
     'RobotCreated.secret' \
-    'create, verify, switch Vesta authority, and delete' \
-    'Publisher plaintext is never durable on Vesta' \
-    'runtime pull plaintext-equivalent remains Vesta-owned' \
-    'successful stdout is only one complete ASCII-armored age ciphertext' \
-    'subsequent read returns not found'
+    'always generates a valid secret' \
+    'secret-redacted' \
+    'every child permission is a subset' \
+    'robot:update' \
+    'Update and refresh therefore return `403`'
 do
-    rg -Fqi -- "$contract_phrase" \
-        "$root/.docs/contracts/harbor-provider.md" \
-        "$root/.docs/contracts/compose-shell-access.md" \
-        "$root/.docs/specs/2026-08-08-vesta-managed-harbor-registry.md" \
-        || fail "corrected Harbor contract omits: $contract_phrase"
+    assert_contains "$provider" "$phrase"
 done
 
-active_harbor_docs=(
-    "$root/DOCKER_ORCHESTRATION_DEPLOYMENT.md"
-    "$root/docs/container-orchestration.md"
-    "$root/.docs/README.md"
-    "$root/.docs/contracts/harbor-provider.md"
-    "$root/.docs/contracts/compose-shell-access.md"
-    "$root/.docs/specs/2026-08-08-vesta-managed-harbor-registry.md"
-    "$guide"
-)
+for source_path in \
+    'src/controller/robot/controller.go' \
+    'src/server/v2.0/handler/robot.go' \
+    'src/server/v2.0/handler/model/robot.go' \
+    'src/common/rbac/const.go'
+do
+    assert_contains "$validation" "$source_path"
+done
+
+# The corrected routine lifecycle is generated-secret create/verify/switch/
+# delete. Runtime is pull-only, publisher is pull+push, lost create responses
+# leave a marked candidate, and revocation is delete followed by not-found.
+for phrase in \
+    'create, verify, switch Vesta authority, and delete the prior child' \
+    'Runtime children are project-level and pull-only' \
+    'project-level and pull-plus-push' \
+    'Harbor-generated one-time create secrets' \
+    'Every create request carries a unique non-secret candidate marker' \
+    'read validates `404`' \
+    'artifacts are retained' \
+    'metadata, exactly `{"public":"false"}`'
+do
+    assert_contains "$provider" "$phrase"
+done
+
+for phrase in \
+    'system scope `/`' \
+    'wildcard project scope' \
+    'read/list/pull/push' \
+    'robot create/read/list/delete' \
+    'Routine Vesta lifecycle shall use create, verify, switch, and' \
+    'delete only, never robot update/refresh' \
+    'marked unrecoverable candidate' \
+    'delete the old generation and validate its absence'
+do
+    assert_contains "$spec" "$phrase"
+done
+
+# Owner command and plaintext authority are fixed at this milestone. Publisher
+# plaintext is never durable; runtime plaintext-equivalent remains Vesta-owned.
+for file in "$provider" "$spec"; do
+    assert_contains "$file" 'registry-publisher-rotate < age-recipient'
+    assert_contains "$file" 'ASCII-armored age ciphertext'
+done
+assert_contains "$shell_access" 'registry-publisher-rotate'
+assert_contains "$shell_access" '< age-recipient'
+assert_contains "$shell_access" 'ASCII-armored age ciphertext'
+assert_contains "$provider" 'Publisher plaintext is never durable on Vesta'
+assert_contains "$provider" 'runtime pull plaintext-equivalent remains Vesta-owned'
+assert_contains "$shell_access" 'failed rotation leaves stdout empty'
+assert_contains "$spec" 'Publisher plaintext shall never be written to a regular file'
+
+# Superseded behavior is absent only from the Milestone 1 active authorities.
+# Tenant guides and deployment runbooks are intentionally deferred to
+# Milestone 4, while the validation record intentionally preserves the failed
+# historical publisher-change evidence.
 if rg -n -i \
     'registry-publisher-change|caller-generated publisher secret|developer generates secret' \
-    "${active_harbor_docs[@]}"
+    "$provider" "$shell_access" "$spec"
 then
-    fail 'active Harbor guidance retains the superseded publisher-secret contract'
+    fail 'Milestone 1 authority retains the superseded publisher-secret contract'
 fi
 
+# Preserve the original failed development evidence, append the source-backed
+# resolution after it, and keep live acceptance explicitly incomplete.
 for phrase in \
-    'registry-info PROJECT' 'registry-publisher-rotate' \
-    'ASCII-armored age ciphertext' \
-    'immutable preview' 'No SCP, rsync' 'Automated restore apply'
+    'BLOCKED — PRODUCT' \
+    'requested creation secret equals returned secret: false' \
+    'integration robot refresh of child secret:       403' \
+    'v-docker registry-publisher-change' \
+    '## Acceptance not claimed' \
+    '## Source-validated resolution — 2026-08-09' \
+    'The failed development evidence above is preserved as observed' \
+    'development acceptance remains incomplete' \
+    'This is design and local fixture evidence only' \
+    'No corrected' \
+    'successor was staged' \
+    'all production deployment remain deferred'
 do
-    rg -q "$phrase" "$root/DOCKER_ORCHESTRATION_DEPLOYMENT.md" \
-        "$root/docs/container-orchestration.md" \
-        "$root/.docs/contracts/harbor-provider.md" \
-        || fail "missing doc behavior: $phrase"
+    assert_contains "$validation" "$phrase"
 done
+assert_before "$validation" '## Install transaction and product blocker' \
+    '## Source-validated resolution — 2026-08-09'
+assert_before "$validation" '## Acceptance not claimed' \
+    '## Source-validated resolution — 2026-08-09'
 
-for phrase in \
-    'production is deferred' \
-    'no public host TCP listener' '/v2/' '/service/token' \
-    'DOCKER_REGISTRY_MB' 'U_DOCKER_REGISTRY_MB' \
-    'Runtime pull identity' 'Publisher identity' 'Vesta administrator' \
-    'Tenant maintainer' 'Application repository' \
-    'registry-info APP_PROJECT' \
-    'registry-publisher-rotate < age-recipient' \
-    'ASCII-armored age ciphertext' \
-    '-----BEGIN AGE ENCRYPTED FILE-----' \
-    'age --decrypt' \
-    'registry-publisher-disable' '--password-stdin' \
-    'v-docker image-pull' 'v-docker rollback-preview' \
-    '26b3764595a024b5b830a955b164f0ad95a25a2b'
-do
-    rg -Fq -- "$phrase" "$guide" \
-        || fail "missing tenant guide behavior: $phrase"
-done
-
-! rg -Fq -- 'registry-publisher-change' "$guide" \
-    || fail 'tenant guide retains obsolete publisher-change command'
-! rg -Fqi -- 'caller-generated publisher secret' "$guide" \
-    || fail 'tenant guide retains obsolete caller-generated secret contract'
-
-for generic_name in slave-vxapp asterisk-vxapp; do
-    rg -Fq -- "$generic_name" "$guide" \
-        || fail "required generic application example missing: $generic_name"
-done
-for placeholder in APP_OWNER APP_PROJECT IMAGE_NAME RELEASE_TAG; do
-    rg -Fq -- "$placeholder='$placeholder'" "$guide" \
-        || fail "required command placeholder missing: $placeholder"
-done
-
-# The required development host and acknowledgement must guard every command.
-assert_before "VESTA_HOST='dev.jackpridham.com'" \
-    '[[ "$deployment_acknowledgement" == '\''DEVELOPMENT ONLY - PRODUCTION DEFERRED'\'' ]]'
-assert_before '[[ "$deployment_acknowledgement" == '\''DEVELOPMENT ONLY - PRODUCTION DEFERRED'\'' ]]' \
-    'SSH_TARGET="${APP_OWNER}@${VESTA_HOST}"'
-assert_before 'SSH_TARGET="${APP_OWNER}@${VESTA_HOST}"' \
-    'ssh -- "$SSH_TARGET" v-docker quota json'
-[[ "$(rg -F -c -- 'dev.jackpridham.com' "$guide")" -ge 2 ]] \
-    || fail 'required development hostname is not assigned and checked'
-
-# Credential-helper selection and executable validation must precede publisher
-# rotation and login. The age recipient must enter rotation on stdin, the
-# returned ciphertext must be decrypted outside Vesta before login, inline
-# base64 auth must be absent before and after login, and the password may enter
-# Docker only on stdin.
-assert_before '(.credHelpers[$registry] // .credsStore // empty)' \
-    'command -v -- "$helper_binary"'
-assert_before 'command -v -- "$helper_binary"' \
-    'ssh -- "$SSH_TARGET" v-docker registry-publisher-rotate'
-assert_before 'ssh -- "$SSH_TARGET" v-docker registry-publisher-rotate' \
-    'age --decrypt'
-assert_before 'age --decrypt' \
-    'docker login "$REGISTRY"'
-assert_before 'docker login "$REGISTRY"' \
-    '--password-stdin <"$publisher_secret_file"'
-password_stdin_line="$(line_of '--password-stdin <"$publisher_secret_file"')"
-cleanup_line="$(rg -n -F -- 'rm -f -- "$publisher_secret_file"' "$guide" \
-    | tail -n 1 | cut -d: -f1)"
-(( password_stdin_line < cleanup_line )) \
-    || fail 'publisher secret file is not removed after login'
-mapfile -t inline_auth_lines < <(
-    rg -n -F -- '((.auths[$registry].auth? // "") == "")' "$guide" \
-        | cut -d: -f1
-)
-[[ "${#inline_auth_lines[@]}" -eq 2 ]] \
-    || fail 'inline Docker auth must be checked before and after login'
-rotation_line="$(line_of 'ssh -- "$SSH_TARGET" v-docker registry-publisher-rotate')"
-login_line="$(line_of 'docker login "$REGISTRY"')"
-(( inline_auth_lines[0] < rotation_line && inline_auth_lines[1] > login_line )) \
-    || fail 'inline Docker auth checks do not bracket credential use'
-rg -Fq 'reversible base64 `auth` value' "$guide" \
-    || fail 'Docker base64 credential risk is not documented'
-rg -Fq 'does not offer a temporary isolated' "$guide" \
-    || fail 'unsafe isolated Docker config fallback is not rejected'
-rg -q 'registry-publisher-rotate.*<.*age.*recipient' "$guide" \
-    || fail 'age recipient is not passed to publisher rotation on stdin'
-rg -q 'registry-publisher-rotate.*>.*cipher' "$guide" \
-    || fail 'publisher rotation ciphertext is not captured from stdout'
-! rg -q -- '--password([ =]|$)' "$guide" \
-    || fail 'unsafe registry password argument in tenant guide'
-
-# The local Compose preflight must prove every image is immutable and the
-# requested image occurs exactly once before preview/pull.
-assert_before '[[ "$compose_image" =~ @sha256:[a-f0-9]{64}$ ]]' \
-    '((image_occurrences += 1))'
-assert_before '((image_occurrences += 1))' \
-    '[[ "$image_occurrences" -eq 1 ]]'
-assert_before '[[ "$image_occurrences" -eq 1 ]]' \
-    'v-docker preview "$APP_PROJECT" change'
-assert_before 'v-docker preview "$APP_PROJECT" change' \
-    'ssh -- "$SSH_TARGET" v-docker image-pull'
-rg -Fq 'call `v-docker image-pull` once' "$guide" \
-    && rg -Fq 'per image with the same preview tuple before apply' "$guide" \
-    || fail 'multi-image pull contract is missing'
-
-# The exact v-docker show schema must fail closed before probe extraction or
-# branch selection. WORKLOAD may be null; an object must contain a valid,
-# unique probe-name array. Optional []? extraction is forbidden here.
-schema_start_line="$(line_of '# Validate the exact v-docker show WORKLOAD contract before extraction.')"
-[[ "$(sed -n "$((schema_start_line + 1))p" "$guide")" == "jq -e '" ]] \
-    || fail 'WORKLOAD schema guard is not an enforcing jq expression'
-schema_end_line="$(awk -v start="$schema_start_line" \
-    'NR > start && /<<<"\$after_json" >\/dev\/null/ {print NR; exit}' \
-    "$guide")"
-[[ "$schema_end_line" =~ ^[1-9][0-9]*$ ]] \
-    || fail 'WORKLOAD schema guard has no fail-closed completion'
-for schema_anchor in \
-    'has("WORKLOAD")' '.WORKLOAD == null' \
-    '(.WORKLOAD | type) == "object"' \
-    '.WORKLOAD | has("PROBES")' \
-    '(.WORKLOAD.PROBES | type) == "array"' \
-    '.WORKLOAD.PROBES[];' \
-    'test("^[a-z0-9][a-z0-9-]{0,62}$")' \
-    '.WORKLOAD.PROBES | unique | length'
-do
-    schema_anchor_line="$(line_of "$schema_anchor")"
-    (( schema_start_line < schema_anchor_line \
-        && schema_anchor_line < schema_end_line )) \
-        || fail "WORKLOAD schema anchor is outside guard: $schema_anchor"
-done
-probe_extract_line="$(line_of 'if .WORKLOAD == null then empty else .WORKLOAD.PROBES[] end')"
-probe_if_line="$(line_of 'if ((${#probe_names[@]} > 0)); then')"
-(( schema_end_line < probe_extract_line && probe_extract_line < probe_if_line )) \
-    || fail 'WORKLOAD schema is not validated before extraction and branching'
-! rg -Fq '.WORKLOAD.PROBES[]?' "$guide" \
-    || fail 'optional probe extraction can hide malformed WORKLOAD schema'
-
-# Both readiness paths are executable branches and converge on common health,
-# revision, drift, and rollback-preview evidence.
-probe_command_line="$(line_of 'v-docker probe "$APP_PROJECT" "$probe_name" json')"
-probe_else_line="$(awk -v start="$probe_if_line" \
-    'NR > start && /^else$/ {print NR; exit}' "$guide")"
-app_placeholder_line="$(line_of "APP_ACCEPTANCE_COMMAND='APP_ACCEPTANCE_COMMAND'")"
-app_command_line="$(line_of '  "$app_acceptance_path"')"
-probe_fi_line="$(awk -v start="$probe_else_line" \
-    'NR > start && /^fi$/ {print NR; exit}' "$guide")"
-[[ "$probe_else_line" =~ ^[1-9][0-9]*$ \
-    && "$probe_fi_line" =~ ^[1-9][0-9]*$ ]] \
-    || fail 'probe/no-probe branch is incomplete'
-(( probe_if_line < probe_command_line \
-    && probe_command_line < probe_else_line \
-    && probe_else_line < app_placeholder_line \
-    && app_placeholder_line < app_command_line \
-    && app_command_line < probe_fi_line )) \
-    || fail 'probe/no-probe branch ordering is invalid'
-health_line="$(line_of '.STATUS == "healthy"')"
-revision_line="$(line_of 'after_revision="$(jq -er')"
-drift_line="$(line_of '.MATCH == true')"
-rollback_check_line="$(line_of 'rollback_check_json="$(')"
-(( health_line < probe_if_line && revision_line < probe_if_line \
-    && drift_line < probe_if_line && rollback_check_line > probe_fi_line )) \
-    || fail 'common health/revision/drift/rollback checks do not cover both branches'
-rg -Fq 'without `eval`' "$guide" \
-    || fail 'app-owned acceptance command safety is not documented'
-
-for source in \
-    "$root/DOCKER_ORCHESTRATION_DEPLOYMENT.md" \
-    "$root/docs/container-orchestration.md" "$root/.docs/README.md"
-do
-    rg -q 'vesta-managed-harbor\.md' "$source" \
-        || fail "Harbor tenant guide is not linked from ${source#"$root/"}"
-    rg -q 'harbor-provider\.md' "$source" \
-        || fail "Harbor provider contract is not linked from ${source#"$root/"}"
-done
-
-# Permit only the explicitly required development host and generic app names;
-# reject repository URLs, network addresses, synthetic registry hosts, and
-# common literal credential forms.
-mapfile -t documented_hosts < <(
-    rg -o '[A-Za-z0-9.-]+\.jackpridham\.com' "$guide" | sort -u
-)
-[[ "${#documented_hosts[@]}" -eq 1 \
-    && "${documented_hosts[0]}" == dev.jackpridham.com ]] \
-    || fail 'unexpected jackpridham.com host in tenant guide'
-! rg -qi 'https?://|ssh://|git@|github\.com|gitlab\.com|bitbucket\.org' "$guide" \
-    || fail 'repository URL or address in tenant guide'
-! rg -qi 'github\.com/[^ /]+/[^ /]+|gitlab\.com/[^ /]+/[^ /]+' \
-    "$root/docs/container-orchestration.md" \
-    "$root/DOCKER_ORCHESTRATION_DEPLOYMENT.md" "$guide" \
-    || fail 'private repository-like name in Harbor documentation'
-! rg -q '([0-9]{1,3}\.){3}[0-9]{1,3}' "$guide" \
-    || fail 'literal network address in tenant guide'
-! rg -qi 'registry\.example|vesta\.example|ghcr\.io' "$guide" \
-    || fail 'non-canonical registry example in tenant guide'
-! rg -q '(PASSWORD|TOKEN|PUBLISHER_SECRET)=' "$guide" \
-    || fail 'literal credential assignment in tenant guide'
-! rg -qi 'Authorization:[[:space:]]*(Basic|Bearer)|BEGIN PRIVATE KEY|robot\$' \
-    "$guide" || fail 'real credential-like value in tenant guide'
-
-printf 'PASS: Harbor documentation contract\n'
+printf 'PASS: Harbor Milestone 1 documentation contract\n'
