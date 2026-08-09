@@ -141,7 +141,7 @@ vx_harbor_owner_delete_prepare() {
 }
 
 vx_harbor_owner_reconcile_locked() {
-    local owner="$1" desired package suspended projects quota namespace path project project_id quota_id old_runtime runtime_id runtime_user origin now state_json usage provider_observation_source rotation_path project_provenance runtime_marker
+    local owner="$1" desired package suspended projects quota namespace path project project_id quota_id old_runtime runtime_id runtime_user origin now state_json usage provider_observation_source rotation_path project_provenance runtime_marker publisher_recovery_status
     desired="$(_vx_harbor_owner_desired "$owner")" || return 1; IFS=$'\t' read -r package suspended projects quota <<<"$desired"
     vx_harbor_package_transition_recover "$owner" || [[ -e "$(vx_harbor_operation_path "$owner")" ]] || return 1
     namespace="$(vx_harbor_owner_namespace "$owner")"; path="$(vx_harbor_owner_state_path "$owner")"; vx_harbor_namespace_collision_check "$owner" "$namespace" || return 1
@@ -199,7 +199,12 @@ vx_harbor_owner_reconcile_locked() {
         state_json="$(/usr/bin/jq --slurpfile old "$path" '.PUBLISHER_ROBOT_ID=$old[0].PUBLISHER_ROBOT_ID|.PUBLISHER_USERNAME=$old[0].PUBLISHER_USERNAME|.PUBLISHER_ENABLED=true|.STATE="publisher-ready"' <<<"$state_json")"
     fi
     _vx_harbor_owner_write "$path" "$state_json" || return 1
-    _vx_harbor_rotation_recover "$owner" publisher >/dev/null 2>&1 || [[ $? == 1 ]] || return 75
+    if _vx_harbor_rotation_recover "$owner" publisher >/dev/null 2>&1; then
+        :
+    else
+        publisher_recovery_status=$?
+        (( publisher_recovery_status == 4 )) || return "$publisher_recovery_status"
+    fi
     vx_harbor_package_transition_recover "$owner" || return 1
 }
 
