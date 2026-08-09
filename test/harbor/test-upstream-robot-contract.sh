@@ -116,28 +116,25 @@ status="$(json_request "$bootstrap_config" POST /api/v2.0/projects \
     "$response")"
 assert_status "$status" 400 'unsupported project metadata'
 
-integration_request_secret='CallerSecretMustBeIgnored9'
-integration_body="$(jq -cn --arg secret "$integration_request_secret" '{
+integration_body="$(jq -cn '{
     name:"vesta-integration",
     description:"vesta-managed:vesta-harbor",
-    secret:$secret,
     duration:-1,
     level:"system",
     permissions:[
       {kind:"system",namespace:"/",access:[
         {resource:"project",action:"create"},
-        {resource:"project",action:"list"},
         {resource:"quota",action:"read"},
         {resource:"quota",action:"update"},
         {resource:"system-volumes",action:"read"}
       ]},
       {kind:"project",namespace:"*",access:[
         {resource:"project",action:"read"},
-        {resource:"project",action:"update"},
         {resource:"repository",action:"list"},
         {resource:"repository",action:"pull"},
         {resource:"repository",action:"push"},
         {resource:"repository",action:"read"},
+        {resource:"artifact",action:"read"},
         {resource:"robot",action:"create"},
         {resource:"robot",action:"read"},
         {resource:"robot",action:"list"},
@@ -161,10 +158,13 @@ assert_status "$status" 201 'integration robot create'
 integration_id="$(jq -er '.id' "$response")"
 integration_username="$(jq -er '.name' "$response")"
 integration_secret="$(jq -er '.secret' "$response")"
+[[ "$(jq -r 'keys|join(",")' "$response")" == \
+    'creation_time,expires_at,id,name,secret' \
+    && "$(jq -r .expires_at "$response")" == -1 ]] \
+    || fail 'integration create response did not match exact RobotCreated shape'
 [[ "$integration_username" == vxrobot-vesta-integration ]] \
     || fail 'system robot username omitted configured prefix'
-[[ "$integration_secret" != "$integration_request_secret" \
-    && "$integration_secret" =~ [a-z] \
+[[ "$integration_secret" =~ [a-z] \
     && "$integration_secret" =~ [A-Z] \
     && "$integration_secret" =~ [0-9] \
     && ${#integration_secret} -ge 8 \
@@ -181,18 +181,17 @@ jq -e '
     and .permissions == [
       {kind:"system",namespace:"/",access:[
         {resource:"project",action:"create"},
-        {resource:"project",action:"list"},
         {resource:"quota",action:"read"},
         {resource:"quota",action:"update"},
         {resource:"system-volumes",action:"read"}
       ]},
       {kind:"project",namespace:"*",access:[
         {resource:"project",action:"read"},
-        {resource:"project",action:"update"},
         {resource:"repository",action:"list"},
         {resource:"repository",action:"pull"},
         {resource:"repository",action:"push"},
         {resource:"repository",action:"read"},
+        {resource:"artifact",action:"read"},
         {resource:"robot",action:"create"},
         {resource:"robot",action:"read"},
         {resource:"robot",action:"list"},
@@ -206,15 +205,12 @@ status="$(api_call "$bootstrap_config" GET /api/v2.0/robots "$response")"
 assert_status "$status" 200 'robot list'
 jq -e 'all(.[]; has("secret") | not)' "$response" >/dev/null \
     || fail 'robot list disclosed a one-time secret'
-! grep -Fq "$integration_request_secret" "$state_file" \
-    || fail 'ignored RobotCreate.secret reached fixture state'
 status="$(api_call "$integration_config" GET /api/v2.0/quotas/1 "$response")"
 assert_status "$status" 200 'system-scoped integration quota read'
 
 runtime_body='{
   "name":"runtime-1",
   "description":"vesta-managed:candidate:runtime-op-1",
-  "secret":"AnotherCallerSecretIgnored9",
   "duration":-1,
   "level":"project",
   "permissions":[{"kind":"project","namespace":"vx-alice","access":[
@@ -258,7 +254,7 @@ jq -e '
     || fail 'runtime update body did not preserve the current valid robot shape'
 
 status="$(json_request "$integration_config" POST /api/v2.0/robots \
-    '{"name":"too-broad","duration":-1,"level":"project","permissions":[{"kind":"project","namespace":"vx-alice","access":[{"resource":"artifact","action":"read"}]}]}' \
+    '{"name":"too-broad","duration":-1,"level":"project","permissions":[{"kind":"project","namespace":"vx-alice","access":[{"resource":"project","action":"update"}]}]}' \
     "$response")"
 assert_status "$status" 403 'delegated permission subset enforcement'
 
@@ -374,7 +370,9 @@ if curl --config "$integration_config" --request POST \
 fi
 lost_id="$(jq -er '.robots[] | select(.description == "vesta-managed:candidate:publisher-op-lost") | .id' \
     "$state_file")"
-status="$(api_call "$integration_config" GET /api/v2.0/robots "$response")"
+status="$(api_call "$integration_config" GET \
+    '/api/v2.0/robots?q=Level%3Dproject%2CProjectID%3D1&page=1&page_size=1000' \
+    "$response")"
 assert_status "$status" 200 'candidate discovery after lost response'
 jq -e --argjson id "$lost_id" '
     any(.[]; .id == $id
@@ -390,8 +388,7 @@ status="$(api_call "$integration_config" GET "/api/v2.0/robots/$runtime_id" "$re
 assert_status "$status" 404 'runtime generation delete validation'
 
 for secret in \
-    "$integration_request_secret" "$integration_secret" \
-    "$runtime_secret" "$publisher_secret"
+    "$integration_secret" "$runtime_secret" "$publisher_secret"
 do
     ! grep -Fq "$secret" "$log_file" || fail 'API log contains robot secret material'
 done

@@ -60,20 +60,20 @@ bootstrap_json_call PUT /api/v2.0/configurations \
 integration_body='{
   "name":"vesta-integration",
   "description":"vesta-managed:vesta-harbor",
-  "secret":"caller-create-secret-is-ignored",
   "duration":-1,
   "level":"system",
   "permissions":[
     {"kind":"system","namespace":"/","access":[
       {"resource":"project","action":"create"},
-      {"resource":"project","action":"list"},
       {"resource":"quota","action":"read"},
       {"resource":"quota","action":"update"},
       {"resource":"system-volumes","action":"read"}
     ]},
     {"kind":"project","namespace":"*","access":[
       {"resource":"project","action":"read"},
-      {"resource":"project","action":"update"},
+      {"resource":"artifact","action":"read"},
+      {"resource":"repository","action":"read"},
+      {"resource":"repository","action":"list"},
       {"resource":"repository","action":"pull"},
       {"resource":"repository","action":"push"},
       {"resource":"robot","action":"create"},
@@ -99,35 +99,57 @@ vx_harbor_socket_path() { printf '%s\n' "$api_socket"; }
 vx_harbor_socket_validate() { [[ -S "$api_socket" && ! -L "$api_socket" ]]; }
 
 vx_harbor_api_health | jq -e '.status=="healthy"' >/dev/null
-project_body="$(vx_harbor_root)/secrets/project-body.json"
-printf '%s\n' '{"project_name":"vx-alice","metadata":{"public":"false"}}' >"$project_body"
-chmod 0600 "$project_body"
-_vx_harbor_api_call POST /api/v2.0/projects 201 empty "$project_body"
-rm -f -- "$project_body"
+vx_harbor_api_project_create vx-alice
 project="$(vx_harbor_api_project_get vx-alice)"
 [[ "$(jq -r .name <<<"$project")" == vx-alice ]]
+project_id="$(jq -r .project_id <<<"$project")"
 quota="$(jq -r .quota_id <<<"$project")"
 vx_harbor_api_quota_set_bytes "$quota" 1048576
 [[ "$(vx_harbor_api_quota_get "$quota" | jq -r .hard.storage)" == 1048576 ]]
 
 robot_body="$(vx_harbor_root)/secrets/robot-body.json"
-printf '%s\n' '{"name":"runtime-1","description":"vesta-managed:candidate:api-test","secret":"ignored-runtime-secret-canary","duration":-1,"level":"project","permissions":[{"kind":"project","namespace":"vx-alice","access":[{"resource":"repository","action":"pull"}]}]}' >"$robot_body"
+printf '%s\n' '{"name":"runtime-1","description":"vesta-managed:candidate:runtime:0123456789abcdef0123456789abcdef","duration":-1,"level":"project","permissions":[{"kind":"project","namespace":"vx-alice","access":[{"resource":"repository","action":"pull"}]}]}' >"$robot_body"
 chmod 0600 "$robot_body"
-robot="$(_vx_harbor_api_call POST /api/v2.0/robots 201 \
-    'type=="object" and (.id|type=="number") and (.secret|type=="string")' \
-    "$robot_body")"
+! _vx_harbor_api_call POST /api/v2.0/robots 201 empty "$robot_body"
 rm -f -- "$robot_body"
+marker='vesta-managed:candidate:runtime:0123456789abcdef0123456789abcdef'
+robot="$(_vx_harbor_api_project_robot_create_secret_once \
+    "$project_id" vx-alice runtime-1 "$marker" pull)"
+jq -e 'keys==["creation_time","expires_at","id","name","secret"] and
+    .expires_at==-1 and (.secret|type=="string" and length>=8)' \
+    <<<"$robot" >/dev/null || fail 'secret-bearing create did not validate RobotCreated'
 robot_id="$(jq -r .id <<<"$robot")"
 robot_username="$(jq -r .name <<<"$robot")"
 robot_secret="$(jq -r .secret <<<"$robot")"
 [[ "$robot_username" == vxrobot-vx-alice+runtime-1 ]]
 printf %s "$robot_secret" | vx_harbor_api_credential_probe "$robot_username"
-! printf %s ignored-runtime-secret-canary | vx_harbor_api_credential_probe "$robot_username"
-robot_read="$(vx_harbor_api_robot_get "$robot_id")"
+! printf %s wrong-runtime-secret-canary | vx_harbor_api_credential_probe "$robot_username"
+robot_list="$(vx_harbor_api_project_robots_list "$project_id")"
+jq -e --argjson id "$robot_id" 'length==1 and .[0].id==$id and
+    (.[0]|has("secret")|not)' <<<"$robot_list" >/dev/null \
+    || fail 'project robot list was not bounded and redacted'
+robot_found="$(vx_harbor_api_project_robot_find "$project_id" "$marker")"
+[[ "$(jq -r .id <<<"$robot_found")" == "$robot_id" ]] \
+    || fail 'exact marked child was not found'
+robot_read="$(vx_harbor_api_project_robot_get "$project_id" "$robot_id" "$marker")"
 jq -e 'has("secret") | not' <<<"$robot_read" >/dev/null
-! vx_harbor_api_robot_disable "$robot_id"
-vx_harbor_api_robot_delete "$robot_id"
-! vx_harbor_api_robot_get "$robot_id" >/dev/null 2>&1
+! vx_harbor_api_project_robot_delete "$project_id" "$robot_id" \
+    'vesta-managed:candidate:runtime:ffffffffffffffffffffffffffffffff'
+vx_harbor_api_project_robot_get "$project_id" "$robot_id" "$marker" >/dev/null
+vx_harbor_api_project_robot_delete "$project_id" "$robot_id" "$marker"
+vx_harbor_api_project_robot_delete "$project_id" "$robot_id" "$marker"
+! vx_harbor_api_project_robot_get "$project_id" "$robot_id" "$marker" >/dev/null 2>&1
+
+duplicate_one="$(_vx_harbor_api_project_robot_create_secret_once \
+    "$project_id" vx-alice runtime-2 "$marker" pull)"
+duplicate_two="$(_vx_harbor_api_project_robot_create_secret_once \
+    "$project_id" vx-alice runtime-3 "$marker" pull)"
+! vx_harbor_api_project_robot_find "$project_id" "$marker" >/dev/null
+jq --argjson id "$(jq -r .id <<<"$duplicate_two")" \
+    '.robots |= map(select(.id != $id))' "$state" >"$state.tmp"
+mv "$state.tmp" "$state"
+duplicate_id="$(jq -r .id <<<"$duplicate_one")"
+vx_harbor_api_project_robot_delete "$project_id" "$duplicate_id" "$marker"
 
 ! vx_harbor_local_api_guard "$api_socket" GET /api/v2.0/configurations
 ! vx_harbor_api_project_get '../admin'
@@ -157,7 +179,7 @@ kill "$api_pid"
 wait "$api_pid" || :
 api_pid=
 ! vx_harbor_api_health >/dev/null 2>&1
-! grep -q 'fixture-password\|caller-create-secret-is-ignored\|ignored-runtime-secret-canary' "$log"
+! grep -q 'fixture-password\|wrong-runtime-secret-canary' "$log"
 ! grep -Fq "$integration_secret" "$log"
 ! grep -Fq "$robot_secret" "$log"
 

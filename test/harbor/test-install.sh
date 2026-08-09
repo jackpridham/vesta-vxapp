@@ -105,25 +105,61 @@ _vx_harbor_install_migration_check() { return 0; }
 _vx_harbor_install_health_check() { return 0; }
 bootstrap_config="$HARBOR_TEST_ROOT/bootstrap-config.json"; bootstrap_robots="$HARBOR_TEST_ROOT/bootstrap-robots.json"
 cleanup_fail=no
+delegated_probe_count="$HARBOR_TEST_ROOT/delegated-probe-count"
+printf '0\n' >"$delegated_probe_count"
 printf '{"self_registration":true,"project_creation_restriction":"everyone"}\n' >"$bootstrap_config"; printf '[]\n' >"$bootstrap_robots"
 _vx_harbor_install_bootstrap_call() {
   local stage="$1" method="$2" path="$3" body="$4" output="$5"
   case "$method:$path" in
     GET:/api/v2.0/configurations) cp "$bootstrap_config" "$output" ;;
     PUT:/api/v2.0/configurations) printf '%s\n' "$body" >"$bootstrap_config"; printf '{}\n' >"$output" ;;
-    GET:/api/v2.0/robots) cp "$bootstrap_robots" "$output" ;;
-    POST:/api/v2.0/robots)
-      jq -e '.duration==-1 and .level=="system" and .description=="vesta-managed:vesta-harbor" and ([.permissions[].access[].resource]|sort)==(["project","project","project","quota","quota","robot","robot","robot","robot","system-volumes"]|sort)' <<<"$body" >/dev/null || return 1
-      jq -c '.+{id:71,disabled:false}|del(.secret)' <<<"$body" >"$output"; jq -s '.[0]+[.[1]]' "$bootstrap_robots" "$output" >"$bootstrap_robots.next"; mv "$bootstrap_robots.next" "$bootstrap_robots" ;;
-    GET:/api/v2.0/robots/71) jq -c '.[]|select(.id==71)' "$bootstrap_robots" >"$output"; [[ -s "$output" ]] ;;
-    PUT:/api/v2.0/robots/71) jq 'map(if .id==71 then .+{disabled:true} else . end)' "$bootstrap_robots" >"$bootstrap_robots.next"; mv "$bootstrap_robots.next" "$bootstrap_robots"; printf '{}\n' >"$output" ;;
-    DELETE:/api/v2.0/robots/71) [[ "$cleanup_fail" != yes ]] || return 75; jq 'map(select(.id!=71))' "$bootstrap_robots" >"$bootstrap_robots.next"; mv "$bootstrap_robots.next" "$bootstrap_robots"; printf '{}\n' >"$output" ;;
+    'GET:/api/v2.0/robots?q=Level%3Dsystem&page=1&page_size=1000') cp "$bootstrap_robots" "$output" ;;
+    GET:/api/v2.0/robots/*) robot_id="${path##*/}"; jq -c --argjson id "$robot_id" '.[]|select(.id==$id)' "$bootstrap_robots" >"$output"; [[ -s "$output" ]] ;;
+    DELETE:/api/v2.0/robots/*) robot_id="${path##*/}"; [[ "$cleanup_fail" != yes ]] || return 75; jq --argjson id "$robot_id" 'map(select(.id!=$id))' "$bootstrap_robots" >"$bootstrap_robots.next"; mv "$bootstrap_robots.next" "$bootstrap_robots"; printf '{}\n' >"$output" ;;
+    DELETE:/api/v2.0/projects/*) printf '{}\n' >"$output" ;;
     *) return 1 ;;
   esac
 }
+_vx_harbor_install_bootstrap_robot_create_secret_once() {
+  local stage="$1" body="$2" basename
+  jq -e '
+    (has("secret")|not) and .duration==-1 and .level=="system" and .disable==false
+    and .permissions==[
+      {kind:"system",namespace:"/",access:[
+        {resource:"project",action:"create"},
+        {resource:"quota",action:"read"},
+        {resource:"quota",action:"update"},
+        {resource:"system-volumes",action:"read"}
+      ]},
+      {kind:"project",namespace:"*",access:[
+        {resource:"project",action:"read"},
+        {resource:"robot",action:"create"},
+        {resource:"robot",action:"read"},
+        {resource:"robot",action:"list"},
+        {resource:"robot",action:"delete"},
+        {resource:"repository",action:"read"},
+        {resource:"repository",action:"list"},
+        {resource:"repository",action:"pull"},
+        {resource:"repository",action:"push"},
+        {resource:"artifact",action:"read"}
+      ]}
+    ]
+  ' <<<"$body" >/dev/null || return 1
+  basename="$(jq -r .name <<<"$body")"
+  jq -c --arg name "vxrobot-$basename" '.+{id:71,name:$name,disable:false,expires_at:-1,creation_time:"2026-08-09T00:00:00Z"}' <<<"$body" >"$HARBOR_TEST_ROOT/new-public-robot"
+  jq -s '.[0]+[.[1]]' "$bootstrap_robots" "$HARBOR_TEST_ROOT/new-public-robot" >"$bootstrap_robots.next"
+  mv "$bootstrap_robots.next" "$bootstrap_robots"
+  jq -cn --arg name "vxrobot-$basename" '{id:71,name:$name,secret:"IntegrationGeneratedSecretAa071",creation_time:"2026-08-09T00:00:00Z",expires_at:-1}'
+}
 _vx_harbor_install_integration_probe() {
-  grep -q '^user = "vesta-integration:' "$1" || return 1
+  grep -Eq '^user = "vxrobot-vesta-integration-[a-f0-9]{16}:IntegrationGeneratedSecretAa071"$' "$1" || return 1
   printf '{"status":"healthy"}\n' >"$2"
+}
+_vx_harbor_install_delegated_probe() {
+  local count
+  grep -Eq '^user = "vxrobot-vesta-integration-[a-f0-9]{16}:IntegrationGeneratedSecretAa071"$' "$2" || return 1
+  count="$(<"$delegated_probe_count")"
+  printf '%s\n' "$((count + 1))" >"$delegated_probe_count"
 }
 vx_harbor_ingress_activate() { install -m 0600 "$1" "$(vx_harbor_ingress_target)"; install -m 0600 "$3" "$(vx_harbor_nginx_main)"; }
 
@@ -171,10 +207,6 @@ for json_phase in fsync rename; do
 done
 _vx_harbor_json_write_phase() { :; }
 _vx_harbor_install_phase() { :; }
-printf '[{"id":70,"name":"vesta-integration","description":"foreign-authority","disabled":false}]\n' >"$bootstrap_robots"
-! vx_harbor_install || fail 'conflicting non-Vesta integration robot was accepted'
-jq -e '.self_registration==true and .project_creation_restriction=="everyone"' "$bootstrap_config" >/dev/null || fail 'collision changed Harbor security configuration'
-printf '[]\n' >"$bootstrap_robots"
 rm -f "$RECONCILE_DONE"
 vx_harbor_install || fail 'valid transactional install failed'
 [[ -d "$test_data_root" ]] || fail 'committed install lost provider data'
@@ -183,8 +215,9 @@ for _ in {1..100}; do [[ -e "$RECONCILE_DONE" ]] && break; sleep .02; done
 [[ "$(jq -r .MODE "$VESTA/data/harbor/provider.json")" == managed ]] || fail 'provider not managed after commit'
 credential="$VESTA/data/harbor/secrets/integration.curl"
 [[ "$(stat -c %a "$credential")" == 600 && "$(stat -c %h "$credential")" == 1 ]] || fail 'integration credential is not root-style 0600 single-link authority'
-grep -q '^user = "vesta-integration:' "$credential" || fail 'routine integration identity missing'
+grep -Eq '^user = "vxrobot-vesta-integration-[a-f0-9]{16}:' "$credential" || fail 'actual prefixed routine integration identity missing'
 ! grep -q 'admin:' "$credential" || fail 'bootstrap identity remained routine authority'
+[[ "$(<"$delegated_probe_count")" -ge 1 ]] || fail 'delegated integration probe was not run'
 compose="$VESTA/data/harbor/release/current/docker-compose.yml"
 [[ "$(stat -c %a "$VESTA/data/harbor/release/current/common/config/nginx/nginx.conf")" == 644 ]] \
   || fail 'non-secret unprivileged proxy config is not readable'
@@ -213,14 +246,26 @@ grep -q '^start vesta-harbor.service$' "$SYSTEMCTL_LOG" || fail 'service was not
 grep -q 'systemd-run .*--no-block.*v-sync-harbor-registry-owners' "$VX_HARBOR_SYSTEMD_TARGET" || fail 'post-start reconciliation is not nonblocking'
 ! grep -q '^ExecStartPost=/usr/local/vesta/bin/v-sync-harbor-registry-owners$' "$VX_HARBOR_SYSTEMD_TARGET" || fail 'synchronous owner reconciliation deadlock restored'
 _vx_harbor_install_integration_configure "$VESTA/data/harbor/release/current" || fail 'owned integration identity was not idempotently resumed'
-jq -e 'length==1 and .[0].name=="vesta-integration" and .[0].description=="vesta-managed:vesta-harbor"' "$bootstrap_robots" >/dev/null || fail 'idempotent install duplicated integration robot'
+jq -e 'length==1 and (.[0].name|startswith("vxrobot-vesta-integration-"))' "$bootstrap_robots" >/dev/null || fail 'idempotent install duplicated integration robot'
 journal="$VESTA/data/harbor/operations/provider-install.json"
-jq '.CANDIDATE_ROBOT_ID=71|.PRIOR_CONFIGURATION={self_registration:true,project_creation_restriction:"everyone"}' "$journal" >"$journal.next"; vx_harbor_json_write_atomic "$journal" "$journal.next"; rm -f "$journal.next"
+candidate_id=72
+candidate_basename="$(jq -r .CANDIDATE_BASENAME "$journal")"
+candidate_marker="$(jq -r .CANDIDATE_MARKER "$journal")"
+candidate_username="vxrobot-$candidate_basename"
+jq --argjson id "$candidate_id" --arg name "$candidate_username" --arg marker "$candidate_marker" \
+  '.PHASE="candidate-created"|.CANDIDATE_ROBOT_ID=$id|.CANDIDATE_USERNAME=$name|.CANDIDATE_MARKER=$marker|.PRIOR_CONFIGURATION={self_registration:true,project_creation_restriction:"everyone"}' \
+  "$journal" >"$journal.next"
+_vx_harbor_install_journal_write "$(<"$journal.next")"; rm -f "$journal.next"
+jq -cn --argjson id "$candidate_id" --arg name "$candidate_username" --arg marker "$candidate_marker" \
+  --argjson permissions "$(_vx_harbor_install_integration_permissions)" \
+  '{id:$id,name:$name,description:$marker,disable:false,duration:-1,expires_at:-1,level:"system",permissions:$permissions}' \
+  >"$HARBOR_TEST_ROOT/candidate-public"
+jq -s '.[0]+[.[1]]' "$bootstrap_robots" "$HARBOR_TEST_ROOT/candidate-public" >"$bootstrap_robots.next"; mv "$bootstrap_robots.next" "$bootstrap_robots"
 cleanup_fail=yes
 ! _vx_harbor_install_external_cleanup "$VESTA/data/harbor/release/current" || fail 'unavailable external cleanup was accepted'
-[[ -f "$journal" ]] && jq -e 'length==1 and .[0].disabled==true' "$bootstrap_robots" >/dev/null || fail 'failed cleanup lost durable candidate authority'
+[[ -f "$journal" ]] && jq -e 'length==2 and all(.[]; .disable==false)' "$bootstrap_robots" >/dev/null || fail 'failed cleanup updated or lost durable candidate authority'
 cleanup_fail=no
 _vx_harbor_install_external_cleanup "$VESTA/data/harbor/release/current" || fail 'durable external cleanup did not resume'
-[[ ! -e "$journal" ]] && jq -e 'length==0' "$bootstrap_robots" >/dev/null || fail 'resumed cleanup left an orphan robot'
+[[ ! -e "$journal" ]] && jq -e 'length==1' "$bootstrap_robots" >/dev/null || fail 'resumed cleanup left an orphan robot'
 jq -e '.self_registration==true and .project_creation_restriction=="everyone"' "$bootstrap_config" >/dev/null || fail 'resumed cleanup did not restore exact prior security configuration'
 printf 'PASS: Harbor transactional install\n'

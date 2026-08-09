@@ -13,7 +13,7 @@ import tempfile
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
 
 
 class ThreadingUnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
@@ -133,10 +133,31 @@ class HarborHandler(BaseHTTPRequestHandler):
         public = {
             key: value
             for key, value in robot.items()
-            if key not in ("disabled", "secret", "stored_name")
+            if key not in ("disabled", "project_id", "secret", "stored_name")
         }
         public["disable"] = bool(robot.get("disabled", False))
         return public
+
+    def robot_list_scope(self, state):
+        query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+        allowed = {"q", "page", "page_size"}
+        if set(query) - allowed or any(len(values) != 1 for values in query.values()):
+            return None
+        if query.get("page", ["1"])[0] != "1":
+            return None
+        page_size = query.get("page_size", ["10"])[0]
+        if not page_size.isdigit() or not 1 <= int(page_size) <= 1000:
+            return None
+        expression = query.get("q", ["Level=system"])[0]
+        if expression == "Level=system":
+            return "system", 0, int(page_size)
+        match = re.fullmatch(r"Level=project,ProjectID=([1-9][0-9]*)", expression)
+        if not match:
+            return None
+        project_id = int(match.group(1))
+        if not self.find(state["projects"], str(project_id)):
+            return None
+        return "project", project_id, int(page_size)
 
     def authenticate(self):
         supplied = self.headers.get("Authorization")
@@ -583,20 +604,24 @@ class HarborHandler(BaseHTTPRequestHandler):
 
         if path == "/api/v2.0/robots" and method in ("GET", "POST"):
             if method == "GET":
+                scope = self.robot_list_scope(state)
+                if scope is None:
+                    self.finish_status(400, {"errors": [{"code": "BAD_REQUEST"}]})
+                    return
+                level, project_id, page_size = scope
+                namespace = "/"
+                if level == "project":
+                    namespace = self.find(state["projects"], str(project_id))["name"]
+                if not self.require(level, namespace, "robot", "list"):
+                    return
                 visible = []
                 for robot in state["robots"]:
-                    kind, namespace = self.robot_scope(robot)
-                    if self.can(kind, namespace, "robot", "list"):
-                        visible.append(self.public_robot(robot))
-                if not visible and not self.is_bootstrap():
-                    has_list = self.can("system", "/", "robot", "list") or any(
-                        self.can("project", project["name"], "robot", "list")
-                        for project in state["projects"]
-                    )
-                    if not has_list:
-                        self.finish_status(403, {"errors": [{"code": "FORBIDDEN"}]})
-                        return
-                self.finish_status(200, visible)
+                    if robot.get("level") != level:
+                        continue
+                    if level == "project" and robot.get("project_id") != project_id:
+                        continue
+                    visible.append(self.public_robot(robot))
+                self.finish_status(200, visible[:page_size])
                 return
             body = self.read_json()
             if body is None:
@@ -641,7 +666,14 @@ class HarborHandler(BaseHTTPRequestHandler):
                 "description": body.get("description", ""),
                 "disabled": bool(body.get("disabled", body.get("disable", False))),
                 "duration": -1,
+                "expires_at": -1,
+                "creation_time": "2026-08-09T00:00:00Z",
                 "level": level,
+                "project_id": (
+                    self.find(state["projects"], namespace)["project_id"]
+                    if level == "project"
+                    else 0
+                ),
                 "permissions": permissions,
                 "secret": secret,
             }
@@ -657,7 +689,13 @@ class HarborHandler(BaseHTTPRequestHandler):
             self.server.store.write(state)
             self.finish_status(
                 201,
-                {"id": robot_id, "name": username, "secret": secret},
+                {
+                    "id": robot_id,
+                    "name": username,
+                    "secret": secret,
+                    "creation_time": "2026-08-09T00:00:00Z",
+                    "expires_at": -1,
+                },
                 {"Location": f"/api/v2.0/robots/{robot_id}"},
             )
             return
@@ -727,7 +765,7 @@ class HarborHandler(BaseHTTPRequestHandler):
             r"/api/v2\.0/projects/([^/]+)/repositories/(.+)/artifacts/([^/]+)", path
         )
         if artifact and method == "GET":
-            if not self.require("project", artifact.group(1), "repository", "read"):
+            if not self.require("project", artifact.group(1), "artifact", "read"):
                 return
             key = f"{artifact.group(1)}/{artifact.group(2)}@{artifact.group(3)}"
             value = state["artifacts"].get(key)

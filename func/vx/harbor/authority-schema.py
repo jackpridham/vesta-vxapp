@@ -58,6 +58,29 @@ def validate(kind, value, identity):
             if user is not None and (not isinstance(user,str) or not USERNAME.fullmatch(user)): fail()
         if not isinstance(value["PUBLISHER_ENABLED"],bool) or value["PUBLISHER_ENABLED"] != (value["PUBLISHER_ROBOT_ID"] is not None): fail()
         nullable_text(value["LAST_ERROR"]); timestamp(value["UPDATED_AT"])
+    elif kind == "install-operation":
+        exact(value,("SCHEMA","OPERATION_ID","PHASE","PRIOR_CONFIGURATION","PRIOR_ROBOT_ID","PRIOR_USERNAME","PRIOR_MARKER","CANDIDATE_BASENAME","CANDIDATE_MARKER","CANDIDATE_ROBOT_ID","CANDIDATE_USERNAME","PERMISSION_VERSION","PROBE_PROJECT_NAME","PROBE_PROJECT_ID","PROBE_ROBOT_ID"))
+        operation=value["OPERATION_ID"]
+        if identity != "provider-install" or not isinstance(operation,str) or not OPERATION.fullmatch(operation): fail()
+        if value["PHASE"] not in {"prepared","candidate-created","candidate-probed","switched","reused","retire-prior","cleanup-pending"}: fail()
+        prior=value["PRIOR_CONFIGURATION"]
+        if not isinstance(prior,dict) or set(prior)!={"self_registration","project_creation_restriction"}: fail()
+        if not isinstance(prior["self_registration"],bool) or not isinstance(prior["project_creation_restriction"],str) or not 1 <= len(prior["project_creation_restriction"]) <= 64: fail()
+        nullable_robot(value["PRIOR_ROBOT_ID"]); nullable_robot(value["CANDIDATE_ROBOT_ID"])
+        for rid,user in ((value["PRIOR_ROBOT_ID"],value["PRIOR_USERNAME"]),(value["CANDIDATE_ROBOT_ID"],value["CANDIDATE_USERNAME"])):
+            if (rid is None) != (user is None): fail()
+            if user is not None and (not isinstance(user,str) or not USERNAME.fullmatch(user)): fail()
+        if (value["PRIOR_ROBOT_ID"] is None) != (value["PRIOR_MARKER"] is None): fail()
+        if value["PRIOR_MARKER"] is not None and (not isinstance(value["PRIOR_MARKER"],str) or not 1 <= len(value["PRIOR_MARKER"]) <= 160 or any(ord(char)<32 or ord(char)==127 for char in value["PRIOR_MARKER"])): fail()
+        if value["PERMISSION_VERSION"] != 2: fail()
+        if value["CANDIDATE_BASENAME"] != "vesta-integration-"+operation[:16]: fail()
+        marker=value["CANDIDATE_MARKER"]
+        if not isinstance(marker,str) or not re.fullmatch(r"vesta-managed:integration:[a-z0-9][a-z0-9-]{0,63}:v2:"+operation,marker): fail()
+        if value["PROBE_PROJECT_NAME"] != "vx-install-probe-"+operation[:12]: fail()
+        nullable_robot(value["PROBE_PROJECT_ID"]); nullable_robot(value["PROBE_ROBOT_ID"])
+        if value["PROBE_ROBOT_ID"] is not None and value["PROBE_PROJECT_ID"] is None: fail()
+        if value["PHASE"] not in {"prepared","reused"} and value["CANDIDATE_ROBOT_ID"] is None: fail()
+        if value["PHASE"] in {"candidate-probed","switched","reused","retire-prior"} and (value["PROBE_PROJECT_ID"] is not None or value["PROBE_ROBOT_ID"] is not None): fail()
     elif kind == "backup":
         exact(value,("SCHEMA","BACKUP_ID","CIPHERTEXT","SHA256","CREATED_AT","VERSION"))
         if not isinstance(value["BACKUP_ID"],str) or not re.fullmatch(r"harbor-[0-9]{8}T[0-9]{6}Z-[a-f0-9]{8}",value["BACKUP_ID"]): fail()

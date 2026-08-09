@@ -19,6 +19,8 @@ source "$_vx_harbor_dir/audit.sh"
 source "$_vx_harbor_dir/status.sh"
 # shellcheck source=func/vx/harbor/api.sh
 source "$_vx_harbor_dir/api.sh"
+# shellcheck source=func/vx/harbor/state.sh
+source "$_vx_harbor_dir/state.sh"
 # shellcheck source=func/vx/harbor/quota.sh
 source "$_vx_harbor_dir/quota.sh"
 # shellcheck source=func/vx/harbor/credentials.sh

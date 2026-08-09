@@ -26,6 +26,7 @@ bash -n "$test_dir/fixtures/fake-systemctl.sh"
 
 assert_file "$HARBOR_REPO_ROOT/.docs/contracts/harbor-provider.md"
 assert_file "$HARBOR_REPO_ROOT/func/vx/harbor/main.sh"
+assert_file "$HARBOR_REPO_ROOT/func/vx/harbor/state.sh"
 install_harbor_helpers
 
 assert_file "$HARBOR_REPO_ROOT/func/vx/harbor/common.sh"
@@ -233,6 +234,44 @@ for invalid_owner in '' Alice ../alice 'alice/name' 'alice.name'; do
         fail "invalid owner was accepted: $invalid_owner"
     fi
 done
+
+install_operation=0123456789abcdef0123456789abcdef
+install_journal="$(jq -cn --arg operation "$install_operation" '{
+    SCHEMA:1,
+    OPERATION_ID:$operation,
+    PHASE:"prepared",
+    PRIOR_CONFIGURATION:{self_registration:true,project_creation_restriction:"everyone"},
+    PRIOR_ROBOT_ID:41,
+    PRIOR_USERNAME:"vxrobot-vesta-integration-prior",
+    PRIOR_MARKER:"vesta-managed:integration:vesta-harbor:v2:ffffffffffffffffffffffffffffffff",
+    CANDIDATE_BASENAME:"vesta-integration-0123456789abcdef",
+    CANDIDATE_MARKER:("vesta-managed:integration:vesta-harbor:v2:"+$operation),
+    CANDIDATE_ROBOT_ID:null,
+    CANDIDATE_USERNAME:null,
+    PERMISSION_VERSION:2,
+    PROBE_PROJECT_NAME:"vx-install-probe-0123456789ab",
+    PROBE_PROJECT_ID:null,
+    PROBE_ROBOT_ID:null
+}')"
+_vx_harbor_install_journal_write "$install_journal"
+install_journal_path="$(_vx_harbor_install_journal_path)"
+vx_harbor_install_journal_validate "$install_journal_path" \
+    || fail 'non-secret integration install journal was rejected'
+assert_mode "$install_journal_path" 600
+if jq '.SECRET="forbidden"' "$install_journal_path" >"$install_journal_path.next" \
+    && chmod 0600 "$install_journal_path.next" \
+    && mv "$install_journal_path.next" "$install_journal_path" \
+    && vx_harbor_install_journal_validate "$install_journal_path"; then
+    fail 'secret-bearing integration install journal was accepted'
+fi
+_vx_harbor_install_journal_write "$install_journal"
+if jq '.PHASE="switched"' "$install_journal_path" >"$install_journal_path.next" \
+    && chmod 0600 "$install_journal_path.next" \
+    && mv "$install_journal_path.next" "$install_journal_path" \
+    && vx_harbor_install_journal_validate "$install_journal_path"; then
+    fail 'switched journal without candidate identity was accepted'
+fi
+rm -f -- "$install_journal_path"
 
 atomic_source="$HARBOR_TEST_ROOT/atomic-source.json"
 atomic_destination="$root/observations/provider.json"

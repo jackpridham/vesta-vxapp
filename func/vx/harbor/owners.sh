@@ -31,6 +31,32 @@ vx_harbor_namespace_collision_check() {
     done
 }
 
+_vx_harbor_owner_project_validate() {
+    local owner="$1" namespace="$2" owner_path="$3" project="$4" provenance="$5"
+    local project_id quota_id
+    [[ "$owner" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ \
+        && "$namespace" =~ ^[a-z0-9][a-z0-9-]{0,127}$ \
+        && "$provenance" =~ ^(created|existing)$ ]] || return 1
+    /usr/bin/jq -e --arg namespace "$namespace" '
+      type=="object" and .name==$namespace
+      and (.project_id|type=="number" and floor==. and .>0)
+      and (.quota_id|type=="number" and floor==. and .>0)
+      and (.metadata|type=="object") and .metadata.public=="false"
+    ' <<<"$project" >/dev/null || return 1
+    project_id="$(/usr/bin/jq -er .project_id <<<"$project")" || return 1
+    quota_id="$(/usr/bin/jq -er .quota_id <<<"$project")" || return 1
+    if [[ -f "$owner_path" ]]; then
+        vx_harbor_owner_state_validate "$owner_path" || return 1
+        /usr/bin/jq -e --arg owner "$owner" --arg namespace "$namespace" \
+          --argjson project "$project_id" --argjson quota "$quota_id" '
+          .OWNER==$owner and .NAMESPACE==$namespace
+          and .PROJECT_ID==$project and .QUOTA_ID==$quota
+        ' "$owner_path" >/dev/null
+    else
+        [[ ! -e "$owner_path" && ! -L "$owner_path" && "$provenance" == created ]]
+    fi
+}
+
 vx_harbor_tombstone_path() { [[ "$1" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ ]] && printf '%s/tombstones/%s.json\n' "$(vx_harbor_root)" "$1"; }
 vx_harbor_tombstone_validate() { vx_harbor_secure_regular_file "$1" 0600 && _vx_harbor_authority_schema_validate tombstone "$1" "$(basename "$1" .json)"; }
 _vx_harbor_tombstone_write() { local owner="$1" json="$2" source path; path="$(vx_harbor_tombstone_path "$owner")"; source="$(/usr/bin/mktemp "$(vx_harbor_root)/tombstones/.tombstone.XXXXXX")" || return 1; printf '%s\n' "$json" >"$source" && vx_harbor_json_write_atomic "$path" "$source"; local r=$?; /usr/bin/rm -f "$source"; return "$r"; }
@@ -95,7 +121,7 @@ vx_harbor_owner_delete_prepare() {
 }
 
 vx_harbor_owner_reconcile_locked() {
-    local owner="$1" desired package suspended projects quota namespace path project project_id quota_id old_runtime generation runtime origin now state_json usage provider_observation_source rotation_path installation
+    local owner="$1" desired package suspended projects quota namespace path project project_id quota_id old_runtime generation runtime origin now state_json usage provider_observation_source rotation_path project_provenance
     desired="$(_vx_harbor_owner_desired "$owner")" || return 1; IFS=$'\t' read -r package suspended projects quota <<<"$desired"
     vx_harbor_package_transition_recover "$owner" || [[ -e "$(vx_harbor_operation_path "$owner")" ]] || return 1
     namespace="$(vx_harbor_owner_namespace "$owner")"; path="$(vx_harbor_owner_state_path "$owner")"; vx_harbor_namespace_collision_check "$owner" "$namespace" || return 1
@@ -113,14 +139,15 @@ vx_harbor_owner_reconcile_locked() {
     else
         return 75
     fi
-    installation="$(/usr/bin/jq -er '.INSTALLATION_ID // "vesta-harbor" | select(type=="string")' "$(vx_harbor_root)/provider.json")" || return 1
     project="$(vx_harbor_api_project_get "$namespace" 2>/dev/null || :)"
-    if [[ -z "$project" ]]; then vx_harbor_api_project_create "$namespace" "$owner" "$installation" || return 75; project="$(vx_harbor_api_project_get "$namespace")" || return 75; fi
-    /usr/bin/jq -e --arg n "$namespace" --arg owner "$owner" --arg installation "$installation" \
-      '.name==$n and .metadata=={public:"false",vesta_managed:"true",vesta_installation:$installation,vesta_owner:$owner}' \
-      <<<"$project" >/dev/null || return 1
+    project_provenance=existing
+    if [[ -z "$project" ]]; then
+        vx_harbor_api_project_create "$namespace" || return 75
+        project="$(vx_harbor_api_project_get "$namespace")" || return 75
+        project_provenance=created
+    fi
+    _vx_harbor_owner_project_validate "$owner" "$namespace" "$path" "$project" "$project_provenance" || return 1
     project_id="$(/usr/bin/jq -er '.project_id' <<<"$project")"; quota_id="$(/usr/bin/jq -er '.quota_id' <<<"$project")"
-    [[ ! -f "$path" ]] || { vx_harbor_owner_state_validate "$path" || return 1; /usr/bin/jq -e --arg o "$owner" --arg n "$namespace" --argjson p "$project_id" --argjson q "$quota_id" '.OWNER==$o and .NAMESPACE==$n and .PROJECT_ID==$p and .QUOTA_ID==$q' "$path" >/dev/null || return 1; }
     vx_harbor_api_quota_set_bytes "$quota_id" "$(vx_harbor_quota_bytes "$quota")" >/dev/null || { vx_harbor_failure_audit "$owner" quota-reconcile quota 75; return; }
     vx_harbor_audit "$owner" quota-reconcile succeeded applied || return 1
     vx_harbor_quota_observe "$owner" "$quota_id" || return 75

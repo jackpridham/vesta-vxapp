@@ -16,4 +16,11 @@ vx_harbor_package_transition_recover alice
 [[ "$(cat "$quota_record")" == $'9\t104857600' ]]; jq -e '.STATE=="converged"' "$operation" >/dev/null
 collision="$(vx_harbor_owner_state_path bob)"; source_file="$(mktemp "$(vx_harbor_root)/owners/.owner.XXXXXX")"; jq --arg owner bob '.OWNER=$owner' "$owner_path" >"$source_file"; vx_harbor_json_write_atomic "$collision" "$source_file"; rm -f "$source_file"
 ! vx_harbor_namespace_collision_check charlie vx-alice
+private_project='{"name":"vx-alice","project_id":7,"quota_id":9,"metadata":{"public":"false"}}'
+public_project='{"name":"vx-alice","project_id":7,"quota_id":9,"metadata":{"public":"true"}}'
+! _vx_harbor_owner_project_validate alice vx-alice "$owner_path.missing" "$private_project" existing
+_vx_harbor_owner_project_validate alice vx-alice "$owner_path.missing" "$private_project" created
+_vx_harbor_owner_project_validate alice vx-alice "$owner_path" "$private_project" existing
+! _vx_harbor_owner_project_validate alice vx-alice "$owner_path" "$public_project" existing
+! _vx_harbor_owner_project_validate alice vx-bob "$owner_path" "$private_project" existing
 printf 'PASS: full owner mapping package recovery and collision rejection\n'
