@@ -164,6 +164,9 @@ remain authoritative and proxy only the exact OCI `/v2/` and emitted token
 service routes. Harbor API, portal, metrics, and all other routes stay on a
 fixed root-owned, group-restricted Unix socket whose group is derived from the
 authenticated Vesta nginx worker directive, with no host Harbor TCP listener.
+Certificate observation reads that validated Vesta nginx certificate in place
+without changing or imposing Harbor authority ownership and mode; symlinked or
+hard-linked certificate paths are rejected.
 
 The API adapter uses fixed executable paths, an empty environment, bounded
 request and response bodies, fixed timeouts, Basic authentication loaded from

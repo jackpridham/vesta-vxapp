@@ -14,12 +14,19 @@ _vx_harbor_health_robot_ready() {
 }
 
 _vx_harbor_certificate_observe() {
-    local certificate="${VX_HARBOR_CERTIFICATE:-$VESTA/ssl/certificate.crt}" hostname expiry now hostname_valid=false
-    vx_harbor_secure_regular_file "$certificate" 0600 || return 1
-    expiry="$(/usr/bin/openssl x509 -in "$certificate" -noout -enddate 2>/dev/null | /usr/bin/cut -d= -f2-)" || return 1
+    local nginx_file endpoint certificate hostname expiry now hostname_valid=false
+    nginx_file="$VESTA/nginx/conf/nginx.conf"
+    [[ -f "$nginx_file" && ! -L "$nginx_file" ]] || return 1
+    endpoint="$(_vx_harbor_nginx_panel_endpoint "$nginx_file")" || return 1
+    certificate="$(/usr/bin/jq -er '.CERTIFICATE' <<<"$endpoint")" || return 1
+    [[ "$certificate" == /* ]] || certificate="$VESTA/nginx/conf/$certificate"
+    [[ -f "$certificate" && ! -L "$certificate" \
+        && "$(/usr/bin/stat -c %h -- "$certificate" 2>/dev/null)" == 1 ]] || return 1
+    expiry="$(/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/openssl x509 \
+      -in "$certificate" -noout -enddate 2>/dev/null | /usr/bin/cut -d= -f2-)" || return 1
     hostname="$(_vx_harbor_authoritative_hostname)" || return 1
-    /usr/bin/openssl x509 -in "$certificate" -noout -checkhost "$hostname" \
-        >/dev/null 2>&1 && hostname_valid=true
+    /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/openssl x509 -in "$certificate" \
+      -noout -checkhost "$hostname" >/dev/null 2>&1 && hostname_valid=true
     now="$(/usr/bin/date -u +%s)"
     /usr/bin/jq -cn --arg expiry "$expiry" --argjson now "$now" \
       --argjson hostname_valid "$hostname_valid" '
