@@ -101,7 +101,11 @@ actor="$(vx_compose_shell_actor_resolve)" || exit 1
 vx_compose_shell_access_lock_acquire "$actor" || exit 1
 vx_compose_shell_require_eligible "$actor" || exit 1
 (( $# >= 1 && $# <= 7 )) || exit 1
-reject_unsafe_args "$@" || exit 1
+if [[ "$operation" == registry-add || "$operation" == registry-change ]]; then
+    reject_unsafe_args "$operation" || exit 1
+else
+    reject_unsafe_args "$@" || exit 1
+fi
 shift
 
 format=json
@@ -199,7 +203,12 @@ case "$operation" in
         run_vesta_user_command v-delete-docker-secret "$actor" "$1" "$2"
         ;;
     registry-add|registry-change)
-        require_count 2 2 "$@" || exit 1; valid_name "$1" && valid_name "$2" || exit 1; snapshot registry 65536 || exit 1
+        require_count 2 2 "$@" || exit 1
+        vx_compose_registry_is_valid "$1" \
+            && [[ ${#1} -le 253 \
+                && "$2" =~ ^[A-Za-z0-9][-A-Za-z0-9._@+$]{0,127}$ ]] \
+            || exit 1
+        snapshot registry 65536 || exit 1
         [[ "$operation" == registry-add ]] && command=v-add-docker-registry || command=v-change-docker-registry
         run_vesta_user_command "$command" "$actor" "$1" "$2" "$snapshot_file"
         ;;

@@ -244,6 +244,7 @@ expect_allow_stdin 'v-add-docker-secret <alice> <app> <api-key> <secret.input:12
 expect_allow_stdin 'v-change-docker-secret <alice> <app> <api-key> <secret.input:12>' 'secret-value' secret-change app api-key
 expect_allow 'v-delete-docker-secret <alice> <app> <api-key>' secret-delete app api-key
 expect_allow_stdin 'v-add-docker-registry <alice> <registry-1> <alice> <registry.input:17>' 'registry-password' registry-add registry-1 alice
+expect_allow_stdin 'v-add-docker-registry <alice> <registry.example:8083> <robot$vx-alice+runtime-fixture> <registry.input:17>' 'registry-password' registry-add registry.example:8083 'robot$vx-alice+runtime-fixture'
 expect_allow_stdin 'v-change-docker-registry <alice> <registry-1> <alice> <registry.input:17>' 'registry-password' registry-change registry-1 alice
 expect_allow 'v-delete-docker-registry <alice> <registry-1>' registry-delete registry-1
 expect_allow 'v-add-docker-project-route <alice> <alice> <app> <app.example.com> <web> <8080> <http> </>' route-add app app.example.com web 8080
