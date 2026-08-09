@@ -430,6 +430,7 @@ _vx_harbor_install_delegated_probe() {
     path="$(_vx_harbor_install_journal_path)"; vx_harbor_install_journal_validate "$path" || return 1
     operation="$(/usr/bin/jq -r .OPERATION_ID "$path")"; project="$(/usr/bin/jq -r .PROBE_PROJECT_NAME "$path")"
     response="$stage/integration-delegated.json"
+    _vx_harbor_install_step integration-delegated-project
     _vx_harbor_api_json_call_with_credential "$credential" POST /api/v2.0/projects 201 empty \
       "$(/usr/bin/jq -cn --arg name "$project" '{project_name:$name,metadata:{public:"false"}}')" \
       >/dev/null || result=$?
@@ -442,6 +443,7 @@ _vx_harbor_install_delegated_probe() {
     fi
     marker="vesta-managed:candidate:probe:$operation"; basename="probe-${operation:0:16}"
     if (( result == 0 )); then
+        _vx_harbor_install_step integration-delegated-robot-create
         created="$(_vx_harbor_api_robot_create_secret_once_with_credential "$credential" "$project_id" "$project" "$basename" "$marker" pull)" || result=$?
     fi
     if (( result == 0 )); then
@@ -453,24 +455,30 @@ _vx_harbor_install_delegated_probe() {
         _vx_harbor_install_journal_update '.PROBE_ROBOT_ID=$id' --argjson id "$robot_id" || result=1
     fi
     if (( result == 0 )); then
+        _vx_harbor_install_step integration-delegated-credential
         printf %s "$secret" | vx_harbor_api_credential_probe "$username" || result=$?
         unset secret created
     fi
     if (( result == 0 )); then
+        _vx_harbor_install_step integration-delegated-robot-list
         _vx_harbor_api_project_robots_list_with_credential "$credential" "$project_id" >/dev/null || result=$?
     fi
     if (( result == 0 )); then
+        _vx_harbor_install_step integration-delegated-robot-read
         robot_read="$(_vx_harbor_api_project_robot_get_with_credential "$credential" "$project_id" "$robot_id" "$marker")" || result=$?
     fi
     if (( result == 0 )); then
         update_body="$(/usr/bin/jq -c '.disable=true' <<<"$robot_read")" || result=1
     fi
     if (( result == 0 )); then
+        _vx_harbor_install_step integration-delegated-put-denial
         _vx_harbor_install_integration_denied_robot_call "$credential" PUT "$robot_id" "$update_body" "$response" || result=$?
     fi
     if (( result == 0 )); then
+        _vx_harbor_install_step integration-delegated-patch-denial
         _vx_harbor_install_integration_denied_robot_call "$credential" PATCH "$robot_id" '{}' "$response" || result=$?
     fi
+    (( result != 0 )) || _vx_harbor_install_step integration-delegated-cleanup
     if [[ -n "${project_id:-}" ]]; then
         if [[ -z "${robot_id:-}" ]]; then
             if robot_read="$(_vx_harbor_api_project_robot_find_with_credential "$credential" "$project_id" "$marker")"; then
@@ -488,6 +496,7 @@ _vx_harbor_install_delegated_probe() {
         || cleanup_result=1
     unset secret created
     if (( cleanup_result != 0 )); then
+        _vx_harbor_install_step integration-delegated-cleanup
         _vx_harbor_install_journal_update '.PHASE="cleanup-pending"' || return 1
         return 75
     fi
