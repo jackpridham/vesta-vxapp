@@ -79,7 +79,7 @@ for argument in "\$@"; do
             rm -f -- "\$argument"
             rmdir -- "\${argument%/*}"
         fi
-    elif [[ "\$argument" =~ ^/var/tmp/vesta-compose-shell[.][A-Za-z0-9]{8}/(secret|registry)[.]input$ ]]; then
+    elif [[ "\$argument" =~ ^/var/tmp/vesta-compose-shell[.][A-Za-z0-9]{8}/(secret|registry|recipient)[.]input$ ]]; then
         [[ -f "\$argument" && ! -L "\$argument" ]] || exit 71
         printf ' <%s:%s>' "\${argument##*/}" "\$(stat -c '%s' "\$argument")" >>'$fixture/docker.log'
     else
@@ -90,10 +90,10 @@ case "\${0##*/}" in
   v-list-user-harbor-registry)
     printf '%s\n' '{"MANAGED":true,"STATE":"ready"}'
     ;;
-  v-change-user-harbor-registry-publisher)
-    publisher_bytes="\$(wc -c)"
-    printf ' stdin-bytes=%s' "\$publisher_bytes" >>'$fixture/docker.log'
-    printf '%s\n' 'publisher credential updated'
+  v-rotate-user-harbor-registry-publisher)
+    recipient_bytes="\$(wc -c)"
+    printf ' stdin-bytes=%s' "\$recipient_bytes" >>'$fixture/docker.log'
+    printf '%s\n' '-----BEGIN AGE ENCRYPTED FILE-----' 'fixture-ciphertext' '-----END AGE ENCRYPTED FILE-----'
     ;;
   v-disable-user-harbor-registry-publisher)
     printf '%s\n' 'publisher credential disabled'
@@ -126,7 +126,7 @@ for command in \
     v-apply-docker-project-rollback v-preview-docker-project-reconcile \
     v-reconcile-docker-project v-add-docker-project-route v-delete-docker-project-route \
     v-acknowledge-docker-project-alert v-pull-docker-project-image \
-    v-list-user-harbor-registry v-change-user-harbor-registry-publisher \
+    v-list-user-harbor-registry v-rotate-user-harbor-registry-publisher \
     v-disable-user-harbor-registry-publisher; do
     cp "$fixture/fake-command" "/usr/local/vesta/bin/$command"
 done
@@ -169,11 +169,11 @@ expect_allow_stdin_output() {
     output="$(printf '%s' "$input" | "${broker[@]}" "$@")" \
         || fail "broker denied stdin output operation: $*"
     [[ "$output" == "$expected_output" && "$output" != *"$input"* ]] \
-        || fail "publisher secret reached broker output: $*"
+        || fail "publisher recipient was reflected by broker output: $*"
     grep -Fxq "$expected_log actor=alice" "$fixture/docker.log" \
         || fail "wrong stdin output dispatch for: $*"
     ! grep -Fq "$input" "$fixture/docker.log" \
-        || fail "publisher secret reached fixture log: $*"
+        || fail "publisher recipient reached fixture log: $*"
     ! compgen -G '/var/tmp/vesta-compose-shell.*' >/dev/null \
         || fail "broker retained publisher stdin snapshot for: $*"
 }
@@ -207,14 +207,15 @@ expect_allow 'v-list-docker-secrets <alice> <app> <plain>' secrets app plain
 expect_allow 'v-list-docker-registries <alice> <json>' registries
 expect_allow_output 'v-list-user-harbor-registry <alice> <app> <plain>' \
     '{"MANAGED":true,"STATE":"ready"}' registry-info app plain
-publisher_secret='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq'
+publisher_recipient='age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq'
+publisher_ciphertext=$'-----BEGIN AGE ENCRYPTED FILE-----\nfixture-ciphertext\n-----END AGE ENCRYPTED FILE-----'
 expect_allow_stdin_output \
-    'v-change-user-harbor-registry-publisher <alice> stdin-bytes=43' \
-    "$publisher_secret" 'publisher credential updated' registry-publisher-change
+    "v-rotate-user-harbor-registry-publisher <alice> stdin-bytes=${#publisher_recipient}" \
+    "$publisher_recipient" "$publisher_ciphertext" registry-publisher-rotate
 expect_allow_output 'v-disable-user-harbor-registry-publisher <alice>' \
     'publisher credential disabled' registry-publisher-disable
 expect_deny registry-info app admin
-expect_deny registry-publisher-change admin
+expect_deny registry-publisher-rotate admin
 expect_deny registry-publisher-disable admin
 expect_deny harbor-admin
 expect_allow "v-pull-docker-project-image <alice> <alice> <app> <$preview_id> <$digest_a> <$digest_b> <1> <$image_reference>" \
@@ -444,7 +445,7 @@ jq -e 'select(.ACTION == "broker-child") | .ACTOR == "alice"' \
 # Dispatch the repository adapters themselves. Dependencies are fixture-backed,
 # but each adapter acquires and revalidates the owner lock after broker release.
 mkdir -p /usr/local/vesta/func/vx/harbor /usr/local/vesta/conf
-cp "$repo_root/bin/v-list-user-harbor-registry" "$repo_root/bin/v-change-user-harbor-registry-publisher" "$repo_root/bin/v-disable-user-harbor-registry-publisher" /usr/local/vesta/bin/
+cp "$repo_root/bin/v-list-user-harbor-registry" "$repo_root/bin/v-rotate-user-harbor-registry-publisher" "$repo_root/bin/v-disable-user-harbor-registry-publisher" /usr/local/vesta/bin/
 cat >/usr/local/vesta/func/main.sh <<'EOF'
 check_args(){ [[ "$2" -ge "$1" ]]; }
 is_format_valid(){ :; }
@@ -458,7 +459,7 @@ cat >/usr/local/vesta/func/vx/harbor/main.sh <<EOF
 vx_harbor_provider_lock_acquire(){ :; }; vx_harbor_provider_lock_release(){ :; }
 vx_harbor_owner_is_eligible(){ grep -q "DOCKER_PROJECTS='2'" /usr/local/vesta/data/users/\$1/user.conf; }
 vx_harbor_registry_info_json(){ printf '%s\n' '{"MANAGED":true,"STATE":"ready","REGISTRY":"registry.example","NAMESPACE":"vx-alice","REPOSITORY":"registry.example/vx-alice/app","PUBLISHER_USERNAME":null,"PUBLISHER_ENABLED":false,"QUOTA_MB":100,"USED_MB":0,"HEALTH":"healthy","OBSERVED_AT":null,"FRESHNESS":"unavailable"}'; }
-vx_harbor_publisher_change_locked(){ wc -c >/dev/null; printf '%s\n' changed >>'$fixture/real-adapter.log'; }
+vx_harbor_publisher_rotate_locked(){ wc -c >/dev/null; printf '%s\n' changed >>'$fixture/real-adapter.log'; printf '%s\n' '-----BEGIN AGE ENCRYPTED FILE-----' 'fixture-ciphertext' '-----END AGE ENCRYPTED FILE-----'; }
 vx_harbor_publisher_revoke_locked(){ printf '%s\n' disabled >>'$fixture/real-adapter.log'; }
 vx_harbor_owner_state_path(){ printf '%s\n' /usr/local/vesta/data/users/alice/owner.json; }
 EOF
@@ -467,10 +468,10 @@ printf "OWNER='alice'\nPROJECT='app'\nPROFILE='standard'\nREVISION='1'\n" >/usr/
 chmod 0600 /usr/local/vesta/data/users/alice/docker-projects/app/project.conf
 write_user no bash 2
 : >"$fixture/real-adapter.log"
-for operation in 'registry-info app json' registry-publisher-change registry-publisher-disable; do
+for operation in 'registry-info app json' registry-publisher-rotate registry-publisher-disable; do
     read -r -a operation_args <<<"$operation"
-    if [[ "$operation" == registry-publisher-change ]]; then
-        printf %s ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopq >"$fixture/publisher.input"
+    if [[ "$operation" == registry-publisher-rotate ]]; then
+        printf %s "$publisher_recipient" >"$fixture/publisher.input"
         timeout 3 "${broker[@]}" "${operation_args[@]}" <"$fixture/publisher.input" >/dev/null
     else
         timeout 3 "${broker[@]}" "${operation_args[@]}" >/dev/null

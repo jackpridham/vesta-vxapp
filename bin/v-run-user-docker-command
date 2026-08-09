@@ -133,10 +133,10 @@ case "$operation" in
         vx_compose_shell_access_lock_release || exit 1
         run_vesta_user_command v-list-user-harbor-registry "$actor" "$1" "$format"
         ;;
-    registry-publisher-change)
-        require_count 0 0 "$@" || exit 1; snapshot registry 65536 || exit 1
+    registry-publisher-rotate)
+        require_count 0 0 "$@" || exit 1; snapshot recipient 128 || exit 1
         vx_compose_shell_access_lock_release || exit 1
-        run_vesta_user_command v-change-user-harbor-registry-publisher "$actor" <"$snapshot_file"
+        run_vesta_user_command v-rotate-user-harbor-registry-publisher "$actor" <"$snapshot_file"
         ;;
     registry-publisher-disable)
         require_count 0 0 "$@" || exit 1

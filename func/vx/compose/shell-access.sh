@@ -261,7 +261,7 @@ vx_compose_shell_snapshot_stdin() {
     local vx_snapshot_internal_declaration vx_snapshot_internal_bytes vx_snapshot_internal_name
     local vx_snapshot_internal_attempts=0
     (( $# == 4 )) || return 1
-    [[ "$vx_snapshot_internal_kind" =~ ^(compose|secret|registry)$
+    [[ "$vx_snapshot_internal_kind" =~ ^(compose|secret|registry|recipient)$
         && "$vx_snapshot_internal_max_bytes" =~ ^[1-9][0-9]*$
         && "$vx_snapshot_internal_root_name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$
         && "$vx_snapshot_internal_file_name" =~ ^[a-zA-Z_][a-zA-Z0-9_]*$

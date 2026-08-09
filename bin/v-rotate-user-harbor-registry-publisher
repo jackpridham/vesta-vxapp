@@ -9,5 +9,4 @@ check_args '1' "$#" 'USER'; is_format_valid 'user'; is_object_valid 'user' 'USER
 vx_harbor_provider_lock_acquire shared; check_result $? 'Harbor provider lock failed'; vx_compose_shell_access_lock_acquire "$user"; check_result $? 'Owner lock failed'; vx_compose_registry_lock_acquire "$user"; check_result $? 'Registry lock failed'
 trap 'vx_compose_registry_lock_release; vx_compose_shell_access_lock_release; vx_harbor_provider_lock_release' EXIT
 vx_harbor_owner_is_eligible "$user"; check_result $? 'Owner is not registry eligible'
-vx_harbor_publisher_change_locked "$user"; check_result $? 'Publisher rotation failed'
-printf 'publisher-ready\n'
+vx_harbor_publisher_rotate_locked "$user"; check_result $? 'Publisher rotation failed'

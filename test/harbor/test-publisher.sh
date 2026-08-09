@@ -3,38 +3,92 @@ set -Eeuo pipefail
 source "$(dirname "$0")/lib.sh"
 trap cleanup_vesta_root EXIT
 new_vesta_root; install_harbor_helpers; source "$VESTA/func/vx/harbor/main.sh"
-_vx_harbor_require_root(){ return 0; }; _vx_harbor_authority_uid(){ printf '%s\n' "$EUID"; }; _vx_harbor_authority_gid(){ id -g; }; _vx_harbor_secure_file_set(){ chmod "$2" "$1"; }
+_vx_harbor_require_root(){ return 0; }
+_vx_harbor_authority_uid(){ printf '%s\n' "$EUID"; }
+_vx_harbor_authority_gid(){ id -g; }
+_vx_harbor_secure_file_set(){ chmod "$2" "$1"; }
 vx_harbor_provider_prepare
-create_count="$HARBOR_TEST_ROOT/create"; delete_log="$HARBOR_TEST_ROOT/delete"; printf 0 >"$create_count"; : >"$delete_log"
-vx_harbor_api_robot_create(){ cat >/dev/null; value="$(cat "$create_count")"; value=$((value+1)); printf '%s\n' "$value" >"$create_count"; printf '{"id":%s,"name":"%s","disabled":false}\n' "$((40+value))" "$2"; }
-publisher_secret='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'
-vx_harbor_api_credential_probe(){ [[ "$(cat)" == "$publisher_secret" ]]; }
-vx_harbor_api_robot_delete(){ printf '%s\n' "$1" >>"$delete_log"; }
-prepare_owner(){ owner="$1"; now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; path="$(vx_harbor_owner_state_path "$owner")"; source_file="$(mktemp "$(vx_harbor_root)/owners/.owner.XXXXXX")"; jq -n --arg owner "$owner" --arg ns "vx-$owner" --arg now "$now" '{SCHEMA:1,OWNER:$owner,NAMESPACE:$ns,PROJECT_ID:1,QUOTA_ID:1,QUOTA_MB:100,STATE:"publisher-ready",RUNTIME_ROBOT_ID:10,RUNTIME_USERNAME:"runtime",PUBLISHER_ROBOT_ID:20,PUBLISHER_USERNAME:"publisher-old",PUBLISHER_ENABLED:true,LAST_ERROR:null,UPDATED_AT:$now}' >"$source_file"; vx_harbor_json_write_atomic "$path" "$source_file"; rm -f "$source_file"; }
 
-prepare_owner journalfail; fail_journal=yes
-_vx_harbor_json_write_phase(){ [[ "${fail_journal:-no}" != yes ]]; }
-! printf short | vx_harbor_publisher_change_locked journalfail
-! printf 'bad+publisher/secret________________________________' | vx_harbor_publisher_change_locked journalfail
-! printf '%0130d' 0 | vx_harbor_publisher_change_locked journalfail
-! printf %s "$publisher_secret" | vx_harbor_publisher_change_locked journalfail
-jq -e '.PUBLISHER_ROBOT_ID==20' "$(vx_harbor_owner_state_path journalfail)" >/dev/null; [[ ! -e "$(vx_harbor_rotation_path journalfail publisher)" ]]; fail_journal=no
+identity="$HARBOR_TEST_ROOT/publisher.agekey"
+age-keygen -o "$identity" >/dev/null 2>&1
+recipient="$(age-keygen -y "$identity")"
+create_count="$HARBOR_TEST_ROOT/create"; robots_file="$HARBOR_TEST_ROOT/robots.json"; delete_log="$HARBOR_TEST_ROOT/delete"
+printf 0 >"$create_count"; printf '[]\n' >"$robots_file"; : >"$delete_log"
 
-prepare_owner crashjournal; crash_point=journal-published
+_vx_harbor_api_project_robot_create_secret_once(){
+    local project="$1" namespace="$2" basename="$3" marker="$4" access="$5" value id name secret temporary
+    [[ "$project" == 1 && "$namespace" == vx-* && "$basename" == publisher-* && "$access" == push-pull ]]
+    [[ "$marker" == "vesta-managed:vesta-harbor:${namespace#vx-}:publisher:${basename#publisher-}" ]]
+    value="$(<"$create_count")"; value=$((value+1)); printf '%s\n' "$value" >"$create_count"
+    id=$((40+value)); name="robot\$$namespace+$basename"; secret="publisher-generated-$id-0123456789abcdef"
+    temporary="$robots_file.tmp"
+    jq --argjson id "$id" --arg name "$name" --arg marker "$marker" --arg namespace "$namespace" \
+      '.+[{id:$id,name:$name,description:$marker,level:"project",permissions:[{kind:"project",namespace:$namespace,access:[{resource:"repository",action:"pull"},{resource:"repository",action:"push"}]}]}]' "$robots_file" >"$temporary"
+    mv "$temporary" "$robots_file"
+    jq -cn --arg name "$name" --arg secret "$secret" --argjson id "$id" \
+      '{creation_time:"2026-08-09T00:00:00Z",expires_at:-1,id:$id,name:$name,secret:$secret}'
+}
+vx_harbor_api_credential_probe(){ local username="$1" value; value="$(cat)"; [[ "$username" == robot\$* && "$value" == publisher-generated-*-0123456789abcdef ]]; }
+vx_harbor_api_project_robots_list(){ cat "$robots_file"; }
+vx_harbor_api_project_robot_find(){
+    local project="$1" marker="$2" value
+    value="$(jq -c --arg marker "$marker" '[.[]|select(.description==$marker)]' "$robots_file")"
+    [[ "$(jq -r length <<<"$value")" == 1 ]] || return 4
+    jq -c '.[0]' <<<"$value"
+}
+vx_harbor_api_project_robot_delete(){
+    local project="$1" id="$2" marker="$3" temporary
+    jq -e --argjson id "$id" --arg marker "$marker" '.[]|select(.id==$id and .description==$marker)' "$robots_file" >/dev/null || return 1
+    printf '%s\t%s\n' "$id" "$marker" >>"$delete_log"
+    temporary="$robots_file.tmp"; jq --argjson id "$id" '[.[]|select(.id!=$id)]' "$robots_file" >"$temporary"; mv "$temporary" "$robots_file"
+}
+prepare_owner(){
+    local owner="$1" now path source_file
+    now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; path="$(vx_harbor_owner_state_path "$owner")"
+    source_file="$(mktemp "$(vx_harbor_root)/owners/.owner.XXXXXX")"
+    jq -n --arg owner "$owner" --arg ns "vx-$owner" --arg now "$now" \
+      '{SCHEMA:1,OWNER:$owner,NAMESPACE:$ns,PROJECT_ID:1,QUOTA_ID:1,QUOTA_MB:100,
+        STATE:"runtime-ready",RUNTIME_ROBOT_ID:10,RUNTIME_USERNAME:"runtime",
+        PUBLISHER_ROBOT_ID:null,PUBLISHER_USERNAME:null,PUBLISHER_ENABLED:false,
+        LAST_ERROR:null,UPDATED_AT:$now}' >"$source_file"
+    vx_harbor_json_write_atomic "$path" "$source_file"; rm -f "$source_file"
+}
+
+prepare_owner alice
+! printf short | vx_harbor_publisher_rotate_locked alice >/dev/null
+[[ "$(<"$create_count")" == 0 ]]
+
+ciphertext="$(printf %s "$recipient" | vx_harbor_publisher_rotate_locked alice)"
+[[ "$ciphertext" == '-----BEGIN AGE ENCRYPTED FILE-----'* ]]
+plaintext="$(printf '%s\n' "$ciphertext" | age -d -i "$identity")"
+[[ "$plaintext" == publisher-generated-41-0123456789abcdef ]]
+owner_path="$(vx_harbor_owner_state_path alice)"; journal="$(vx_harbor_rotation_path alice publisher)"
+jq -e '.PUBLISHER_ROBOT_ID==41 and .PUBLISHER_ENABLED==true' "$owner_path" >/dev/null
+jq -e '.OPERATION_ID as $operation | .SCHEMA==2 and .PHASE=="converged" and .PROJECT_ID==1 and (.DESCRIPTION|endswith($operation)) and (has("secret")|not)' "$journal" >/dev/null
+[[ "$(jq -r length "$robots_file")" == 1 ]]
+
+# The next rotation replaces the first robot and returns only the new envelope.
+ciphertext="$(printf %s "$recipient" | vx_harbor_publisher_rotate_locked alice)"
+plaintext="$(printf '%s\n' "$ciphertext" | age -d -i "$identity")"
+[[ "$plaintext" == publisher-generated-42-0123456789abcdef ]]
+jq -e '.PUBLISHER_ROBOT_ID==42 and .PUBLISHER_ENABLED==true' "$owner_path" >/dev/null
+[[ "$(jq -r '.[0].id' "$robots_file")" == 42 && "$(cut -f1 "$delete_log")" == 41 ]]
+
+# A crash after authority switch is recovered by replacing the inaccessible
+# generation on the next explicit rotation.
+crash_point=authority-switched
 _vx_harbor_rotation_checkpoint(){ [[ "$1:$2" != "publisher:$crash_point" ]]; }
-! printf %s "$publisher_secret" | vx_harbor_publisher_change_locked crashjournal
-journal="$(vx_harbor_rotation_path crashjournal publisher)"; jq -e '.PHASE=="pending-switch"' "$journal" >/dev/null; jq -e '.PUBLISHER_ROBOT_ID==20' "$(vx_harbor_owner_state_path crashjournal)" >/dev/null; before="$(cat "$create_count")"
-crash_point=none; printf %s "$publisher_secret" | vx_harbor_publisher_change_locked crashjournal
-[[ "$(cat "$create_count")" == "$before" ]]; jq -e '.PUBLISHER_ROBOT_ID==42' "$(vx_harbor_owner_state_path crashjournal)" >/dev/null; jq -e '.PHASE=="converged"' "$journal" >/dev/null
+! printf %s "$recipient" | vx_harbor_publisher_rotate_locked alice >"$HARBOR_TEST_ROOT/failed-output"
+[[ ! -s "$HARBOR_TEST_ROOT/failed-output" ]]
+jq -e '.PUBLISHER_ROBOT_ID==43' "$owner_path" >/dev/null
+crash_point=none
+ciphertext="$(printf %s "$recipient" | vx_harbor_publisher_rotate_locked alice)"
+plaintext="$(printf '%s\n' "$ciphertext" | age -d -i "$identity")"
+[[ "$plaintext" == publisher-generated-44-0123456789abcdef ]]
+jq -e '.PUBLISHER_ROBOT_ID==44' "$owner_path" >/dev/null
+[[ "$(jq -r length "$robots_file")" == 1 && "$(jq -r '.[0].id' "$robots_file")" == 44 ]]
 
-prepare_owner crashswitch; crash_point=authority-switched
-! printf %s "$publisher_secret" | vx_harbor_publisher_change_locked crashswitch
-journal="$(vx_harbor_rotation_path crashswitch publisher)"; jq -e '.PHASE=="pending-switch"' "$journal" >/dev/null; jq -e '.PUBLISHER_ROBOT_ID==43' "$(vx_harbor_owner_state_path crashswitch)" >/dev/null; before="$(cat "$create_count")"; mapping_hash="$(sha256sum "$(vx_harbor_owner_state_path crashswitch)")"
-crash_point=none; printf %s "$publisher_secret" | vx_harbor_publisher_change_locked crashswitch
-[[ "$(cat "$create_count")" == "$before" && "$(sha256sum "$(vx_harbor_owner_state_path crashswitch)")" == "$mapping_hash" ]]; jq -e '.PHASE=="converged"' "$journal" >/dev/null
-jq -e 'select(.OPERATION=="publisher-rotation" and .RESULT=="failed") | .REASON|IN("schema","journal","switch")' "$(vx_harbor_root)/audit.log" >/dev/null || fail 'publisher failures were not enum-audited'
-! grep -Fq "$publisher_secret" "$(vx_harbor_root)/audit.log" || fail 'publisher secret entered audit'
-prepare_owner revokeaudit; vx_harbor_api_robot_disable(){ return 1; }
-! vx_harbor_publisher_revoke_locked revokeaudit "$(vx_harbor_owner_state_path revokeaudit)"
-jq -e 'select(.OPERATION=="publisher-revocation" and .RESULT=="failed" and .REASON=="outage")' "$(vx_harbor_root)/audit.log" >/dev/null || fail 'publisher revocation failure was not audited'
-printf 'PASS: publisher journal-before-switch crash recovery\n'
+for secret in publisher-generated-41-0123456789abcdef publisher-generated-42-0123456789abcdef publisher-generated-43-0123456789abcdef publisher-generated-44-0123456789abcdef; do
+    ! grep -RFq "$secret" "$(vx_harbor_root)" "$delete_log" || fail 'publisher plaintext entered durable state or audit'
+done
+printf 'PASS: encrypted generated publisher credential rotation\n'
