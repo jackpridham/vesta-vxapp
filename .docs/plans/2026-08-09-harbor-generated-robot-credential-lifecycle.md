@@ -505,12 +505,33 @@ git commit -m "test(harbor): model generated robot secrets"
 
 ### Milestone 1 review
 
-- [ ] Review the contract against the pinned Harbor source paths.
-- [ ] Verify no contract says Harbor accepts a creation secret or delegates
+- [x] Review the contract against the pinned Harbor source paths.
+- [x] Verify no contract says Harbor accepts a creation secret or delegates
   robot update.
-- [ ] Run `bash test/harbor/run-focused.sh` once.
-- [ ] Do not proceed if the fixture can pass caller-selected secrets,
+- [x] Run `bash test/harbor/run-focused.sh` once.
+- [x] Do not proceed if the fixture can pass caller-selected secrets,
   integration refresh/update, or unmarked orphan deletion.
+
+### Milestone 1 record — completed 2026-08-09
+
+- Completed behavior: source-backed generated one-time secrets, project-level
+  delegated children, create/delete credential lifecycle, strict native age
+  recipient contract, delete/404 parity, and the exact Harbor distinction
+  between its advertised project quota-read permission and its system-scoped
+  quota endpoint.
+- Commits: `81765e53`, `9f02a520`, `335a5d2b`, `d48cc60e`, `5940c634`, and
+  `10b4072f`.
+- Focused evidence: Python fixture compilation; fixture, upstream robot
+  contract, protected API, documentation contract, and Compose documentation
+  tests; `git diff --check`; complete `test/harbor/run-focused.sh` pass after
+  authorization changes.
+- Specification result: approved after the five numbered source-parity
+  blockers and the direct quota-catalog regression were corrected.
+- Deferred by dependency: broker command migration and tenant-guide/runbook
+  examples remain owned by Milestones 3 and 4; the Compose documentation test
+  keeps the current broker command until that atomic migration.
+- Next milestone: correct the protected API adapter and install a generated,
+  least-privilege Harbor integration identity.
 
 ---
 
