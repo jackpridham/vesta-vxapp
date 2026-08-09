@@ -410,23 +410,19 @@ _vx_harbor_install_configuration_subset() {
     '
 }
 
-_vx_harbor_install_integration_denied_robot_call() {
-    local credential="$1" method="$2" robot_id="$3" body="$4" output="$5" socket status
-    [[ "$method" =~ ^(PUT|PATCH)$ && "$robot_id" =~ ^[1-9][0-9]*$ ]] || return 1
+_vx_harbor_install_integration_configuration_denied() {
+    local credential="$1" output="$2" socket status
     _vx_harbor_api_credentials_validate "$credential" || return 1
-    (( ${#body} <= VX_HARBOR_API_MAX_INPUT )) || return 1
-    /usr/bin/jq -e 'type=="object" and ([..|objects|has("secret")]|any|not)' <<<"$body" >/dev/null || return 1
     socket="$(_vx_harbor_api_socket)"; _vx_harbor_api_socket_validate "$socket" || return 1
     status="$(/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/curl --config "$credential" \
-      --unix-socket "$socket" --request "$method" --header 'Content-Type: application/json' \
-      --data-binary @- --connect-timeout 3 --max-time 10 --max-filesize 4096 \
+      --unix-socket "$socket" --request GET --connect-timeout 3 --max-time 10 --max-filesize 4096 \
       --output "$output" --write-out '%{http_code}' \
-      "http://localhost/api/v2.0/robots/$robot_id" 2>/dev/null <<<"$body")" || return 75
+      http://localhost/api/v2.0/configurations 2>/dev/null)" || return 75
     [[ "$status" == 403 ]] && /usr/bin/jq -e '.errors|type=="array"' "$output" >/dev/null
 }
 
 _vx_harbor_install_delegated_probe() {
-    local stage="$1" credential="$2" path operation project project_json project_id marker basename created robot_id username secret robot_read update_body response result=0 cleanup_result=0
+    local stage="$1" credential="$2" path operation project project_json project_id marker basename created robot_id username secret robot_read response result=0 cleanup_result=0
     path="$(_vx_harbor_install_journal_path)"; vx_harbor_install_journal_validate "$path" || return 1
     operation="$(/usr/bin/jq -r .OPERATION_ID "$path")"; project="$(/usr/bin/jq -r .PROBE_PROJECT_NAME "$path")"
     response="$stage/integration-delegated.json"
@@ -468,15 +464,8 @@ _vx_harbor_install_delegated_probe() {
         robot_read="$(_vx_harbor_api_project_robot_get_with_credential "$credential" "$project_id" "$robot_id" "$marker")" || result=$?
     fi
     if (( result == 0 )); then
-        update_body="$(/usr/bin/jq -c '.disable=true' <<<"$robot_read")" || result=1
-    fi
-    if (( result == 0 )); then
-        _vx_harbor_install_step integration-delegated-put-denial
-        _vx_harbor_install_integration_denied_robot_call "$credential" PUT "$robot_id" "$update_body" "$response" || result=$?
-    fi
-    if (( result == 0 )); then
-        _vx_harbor_install_step integration-delegated-patch-denial
-        _vx_harbor_install_integration_denied_robot_call "$credential" PATCH "$robot_id" '{}' "$response" || result=$?
+        _vx_harbor_install_step integration-delegated-configuration-denial
+        _vx_harbor_install_integration_configuration_denied "$credential" "$response" || result=$?
     fi
     (( result != 0 )) || _vx_harbor_install_step integration-delegated-cleanup
     if [[ -n "${project_id:-}" ]]; then
