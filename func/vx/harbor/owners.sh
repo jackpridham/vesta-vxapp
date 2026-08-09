@@ -121,7 +121,7 @@ vx_harbor_owner_delete_prepare() {
 }
 
 vx_harbor_owner_reconcile_locked() {
-    local owner="$1" desired package suspended projects quota namespace path project project_id quota_id old_runtime generation runtime origin now state_json usage provider_observation_source rotation_path project_provenance
+    local owner="$1" desired package suspended projects quota namespace path project project_id quota_id old_runtime runtime_id runtime_user origin now state_json usage provider_observation_source rotation_path project_provenance runtime_marker
     desired="$(_vx_harbor_owner_desired "$owner")" || return 1; IFS=$'\t' read -r package suspended projects quota <<<"$desired"
     vx_harbor_package_transition_recover "$owner" || [[ -e "$(vx_harbor_operation_path "$owner")" ]] || return 1
     namespace="$(vx_harbor_owner_namespace "$owner")"; path="$(vx_harbor_owner_state_path "$owner")"; vx_harbor_namespace_collision_check "$owner" "$namespace" || return 1
@@ -152,14 +152,19 @@ vx_harbor_owner_reconcile_locked() {
     vx_harbor_audit "$owner" quota-reconcile succeeded applied || return 1
     vx_harbor_quota_observe "$owner" "$quota_id" || return 75
     old_runtime=null; [[ ! -f "$path" ]] || old_runtime="$(/usr/bin/jq -r '.RUNTIME_ROBOT_ID' "$path")"
-    generation="$(/usr/bin/date -u +%s)"; origin="$(/usr/bin/jq -er '.ORIGIN|select(type=="string")' "$(vx_harbor_root)/provider.json")" || return 1
+    origin="$(/usr/bin/jq -er '.ORIGIN|select(type=="string")' "$(vx_harbor_root)/provider.json")" || return 1
     rotation_path="$(vx_harbor_rotation_path "$owner" runtime)"
     if [[ -f "$rotation_path" ]] && vx_harbor_rotation_validate "$rotation_path" && [[ "$(/usr/bin/jq -r .PHASE "$rotation_path")" != converged ]]; then
-        IFS=$'\t' read -r runtime_id runtime_user < <(vx_harbor_runtime_rotate "$owner" "$namespace" "$origin" "$old_runtime" "$generation") || return 75
-    elif [[ "$old_runtime" != null ]] && vx_harbor_api_robot_get "$old_runtime" >/dev/null; then
+        IFS=$'\t' read -r runtime_id runtime_user < <(vx_harbor_runtime_rotate "$owner" "$namespace" "$project_id" "$origin" "$old_runtime") || return 75
+    elif [[ "$old_runtime" != null && -f "$rotation_path" ]] \
+        && vx_harbor_rotation_validate "$rotation_path" \
+        && /usr/bin/jq -e --argjson id "$old_runtime" --argjson project "$project_id" \
+          '.PHASE=="converged" and .PROJECT_ID==$project and .NEW_ROBOT_ID==$id' "$rotation_path" >/dev/null \
+        && runtime_marker="$(/usr/bin/jq -er .DESCRIPTION "$rotation_path")" \
+        && vx_harbor_api_project_robot_get "$project_id" "$old_runtime" "$runtime_marker" >/dev/null; then
         runtime_id="$old_runtime"; runtime_user="$(/usr/bin/jq -r '.RUNTIME_USERNAME' "$path")"
     else
-        IFS=$'\t' read -r runtime_id runtime_user < <(vx_harbor_runtime_rotate "$owner" "$namespace" "$origin" "$old_runtime" "$generation") || return 75
+        IFS=$'\t' read -r runtime_id runtime_user < <(vx_harbor_runtime_rotate "$owner" "$namespace" "$project_id" "$origin" "$old_runtime") || return 75
     fi
     now="$(/usr/bin/date -u +%Y-%m-%dT%H:%M:%SZ)"; [[ "$quota" == unlimited ]] && quota_json='"unlimited"' || quota_json="$quota"
     state_json="$(/usr/bin/jq -n --arg owner "$owner" --arg namespace "$namespace" --argjson project "$project_id" --argjson quota_id "$quota_id" --argjson quota "$quota_json" --argjson runtime "$runtime_id" --arg runtime_user "$runtime_user" --arg now "$now" '{SCHEMA:1,OWNER:$owner,NAMESPACE:$namespace,PROJECT_ID:$project,QUOTA_ID:$quota_id,QUOTA_MB:$quota,STATE:"runtime-ready",RUNTIME_ROBOT_ID:$runtime,RUNTIME_USERNAME:$runtime_user,PUBLISHER_ROBOT_ID:null,PUBLISHER_USERNAME:null,PUBLISHER_ENABLED:false,LAST_ERROR:null,UPDATED_AT:$now}')" || return 1

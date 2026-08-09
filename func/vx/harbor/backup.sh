@@ -23,9 +23,9 @@ _vx_harbor_backup_stage() {
     /usr/bin/mkdir -m 0700 -p "$stage/payload" "$stage/secret-source" || return 1
     # Build only the fixed recovery inventory. No source tree is recursively
     # copied until Python has matched it to an allowlisted authority/data class.
-    /usr/bin/python3 - "$root" "$data" "$stage/payload" "$stage/secret-source" <<'PY' || return 1
+    /usr/bin/python3 - "$root" "$data" "$stage/payload" "$stage/secret-source" "$VESTA/data/users" <<'PY' || return 1
 import json, os, pathlib, re, shutil, stat, sys
-root, data, payload, secrets = map(pathlib.Path, sys.argv[1:])
+root, data, payload, secrets, users = map(pathlib.Path, sys.argv[1:])
 
 def regular(path):
     value=os.lstat(path)
@@ -69,8 +69,27 @@ for directory, pattern in authority_patterns.items():
     for source in sorted(source_dir.iterdir()):
         if not pattern.fullmatch(source.name): raise SystemExit(1)
         value=json_value(source)
-        if value.get('SCHEMA') != 1: raise SystemExit(1)
+        expected_schema=2 if directory=='rotations' else 1
+        if value.get('SCHEMA') != expected_schema: raise SystemExit(1)
         copy(source, f'authority/{directory}/{source.name}')
+
+# A generated runtime secret is recoverable only while its schema-2 journal is
+# in a pre-switch phase. Include exactly those root-owned candidates in the
+# separately encrypted payload; publisher journals never have a secret file.
+expected_candidates=set()
+rotation_dir=root/'rotations'
+if rotation_dir.exists():
+    for journal in sorted(rotation_dir.glob('*-runtime.json')):
+        value=json_value(journal)
+        if value.get('SCHEMA') != 2: raise SystemExit(1)
+        owner=value.get('OWNER'); operation=value.get('OPERATION_ID'); phase=value.get('PHASE')
+        if phase in {'candidate-created','pending-switch'}:
+            source=users/owner/'docker-registry'/f'.harbor-runtime-rotation.{operation}.secret'
+            relative=pathlib.PurePosixPath('runtime-candidates')/owner/source.name
+            copy(source, str(relative), secrets)
+            expected_candidates.add(source)
+for source in users.glob('*/docker-registry/.harbor-runtime-rotation.*.secret'):
+    if source not in expected_candidates: raise SystemExit(1)
 
 # Generated recovery configuration is exact, not a recursive release copy.
 release_files=('docker-compose.yml','common/config/nginx/nginx.conf','common/config/portal/nginx.conf')
@@ -154,6 +173,37 @@ _vx_harbor_restore_authority_validate() {
         case "$name" in provider) kind=observation-provider;; provider-detail) kind=observation-detail;; *) kind=observation-owner;; esac
         _vx_harbor_authority_schema_validate "$kind" "$path" "$name" || return 1
     done
+}
+
+_vx_harbor_restore_secret_payload_validate() {
+    local extract="$1" identity="$2" stage="$3" cipher archive
+    cipher="$extract/encrypted/secret-payload.age"
+    if [[ ! -f "$cipher" ]]; then
+        ! /usr/bin/jq -e '.KIND=="runtime" and (.PHASE=="candidate-created" or .PHASE=="pending-switch")' \
+          "$extract"/authority/rotations/*.json >/dev/null 2>&1
+        return
+    fi
+    archive="$stage/secret-payload.tar"
+    "$( _vx_harbor_age )" -d -i "$identity" -o "$archive" "$cipher" || return 1
+    /usr/bin/python3 - "$extract" "$archive" <<'PY'
+import io,json,pathlib,re,stat,sys,tarfile
+extract,archive=map(pathlib.Path,sys.argv[1:])
+expected=set()
+for journal in (extract/'authority/rotations').glob('*-runtime.json'):
+    value=json.loads(journal.read_text())
+    if value.get('PHASE') in {'candidate-created','pending-switch'}:
+        expected.add(f"runtime-candidates/{value['OWNER']}/.harbor-runtime-rotation.{value['OPERATION_ID']}.secret")
+seen=set()
+with tarfile.open(archive) as payload:
+    for member in payload.getmembers():
+        name=member.name.removeprefix('./')
+        if not name.startswith('runtime-candidates/'): continue
+        if name not in expected or not member.isfile() or member.issym() or member.islnk() or stat.S_IMODE(member.mode)!=0o600: raise SystemExit(1)
+        raw=payload.extractfile(member).read()
+        if not re.fullmatch(rb'[A-Za-z0-9_-]{8,256}',raw): raise SystemExit(1)
+        seen.add(name)
+if seen!=expected: raise SystemExit(1)
+PY
 }
 
 _vx_harbor_archive_create() {
@@ -265,8 +315,9 @@ provider=obj(extract/'authority/provider.json')
 if set(provider)!={'SCHEMA','MODE','PINNED_VERSION','RUNNING_VERSION','INSTALLATION_ID','ORIGIN','RELEASE_MANIFEST_SHA256','LAST_HEALTH_AT','LAST_BACKUP_ID','LAST_RESTORE_TEST_AT','LAST_UPGRADE'} or provider['SCHEMA']!=1 or provider['PINNED_VERSION']!='v2.15.0': raise SystemExit(1)
 for path in (extract/'authority').rglob('*.json'):
     value=obj(path)
-    if value.get('SCHEMA',1)!=1: raise SystemExit(1)
     rel=path.relative_to(extract).as_posix()
+    expected_schema=2 if '/rotations/' in rel else 1
+    if value.get('SCHEMA')!=expected_schema: raise SystemExit(1)
     if '/owners/' in rel:
         if {'SCHEMA','OWNER','NAMESPACE','PROJECT_ID','QUOTA_ID','QUOTA_MB','STATE','RUNTIME_ROBOT_ID','RUNTIME_USERNAME','PUBLISHER_ROBOT_ID','PUBLISHER_USERNAME','PUBLISHER_ENABLED','LAST_ERROR','UPDATED_AT'}!=set(value) or value['STATE'] not in {'project-ready','runtime-ready','publisher-ready','publisher-disabled','retained','unavailable'}: raise SystemExit(1)
     if '/backups/' in rel:
@@ -291,6 +342,7 @@ vx_harbor_restore_validate_locked() {
     if (( result == 0 )); then available="$(/usr/bin/df -Pk "$root" | /usr/bin/awk 'NR==2{print $4*1024}')" || result=1; [[ "$available" =~ ^[0-9]+$ ]] || result=1; fi
     (( result != 0 )) || _vx_harbor_restore_archive_validate "$archive" "$stage/extract" "$available" || result=1
     (( result != 0 )) || _vx_harbor_restore_authority_validate "$stage/extract" || result=1
+    (( result != 0 )) || _vx_harbor_restore_secret_payload_validate "$stage/extract" "$identity" "$stage" || result=1
     _vx_harbor_cleanup_stage; trap - HUP INT TERM
     (( result == 0 )) || return 1
     printf 'validated\n'

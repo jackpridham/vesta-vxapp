@@ -11,6 +11,8 @@ USERNAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+$-]{0,127}")
 def fail(): raise ValueError()
 def exact(value, keys):
     if not isinstance(value, dict) or set(value) != set(keys) or value.get("SCHEMA") != 1: fail()
+def exact_schema(value, keys, schema):
+    if not isinstance(value, dict) or set(value) != set(keys) or value.get("SCHEMA") != schema: fail()
 def integer(value, minimum=0, maximum=2**63-1):
     return isinstance(value, int) and not isinstance(value, bool) and minimum <= value <= maximum
 def timestamp(value):
@@ -32,14 +34,19 @@ def validate(kind, value, identity):
         nullable_text(value["LAST_ERROR"])
         if not integer(value["CREATED_AT"]) or not integer(value["UPDATED_AT"],value["CREATED_AT"]): fail()
     elif kind == "rotation":
-        exact(value,("SCHEMA","OPERATION_ID","OWNER","KIND","PHASE","NEW_ROBOT_ID","NEW_USERNAME","OLD_ROBOT_ID","UPDATED_AT"))
+        exact_schema(value,("SCHEMA","OPERATION_ID","OWNER","KIND","PROJECT_ID","ROBOT_BASENAME","DESCRIPTION","PHASE","NEW_ROBOT_ID","NEW_USERNAME","OLD_ROBOT_ID","UPDATED_AT"),2)
         owner, journal_kind = identity.split(":",1)
         if value["OWNER"] != owner or value["KIND"] != journal_kind or not OWNER.fullmatch(owner): fail()
         if journal_kind not in {"runtime","publisher"} or not OPERATION.fullmatch(value["OPERATION_ID"]): fail()
-        if value["PHASE"] not in {"pending-switch","pending-revoke","converged"}: fail()
+        if not integer(value["PROJECT_ID"],1): fail()
+        if value["ROBOT_BASENAME"] != journal_kind+"-"+value["OPERATION_ID"]: fail()
+        if value["DESCRIPTION"] != "vesta-managed:vesta-harbor:"+owner+":"+journal_kind+":"+value["OPERATION_ID"]: fail()
+        if value["PHASE"] not in {"prepared","candidate-created","pending-switch","pending-revoke","converged"}: fail()
         nullable_robot(value["NEW_ROBOT_ID"]); nullable_robot(value["OLD_ROBOT_ID"])
-        if value["NEW_ROBOT_ID"] is None or not isinstance(value["NEW_USERNAME"],str) or not USERNAME.fullmatch(value["NEW_USERNAME"]): fail()
-        if value["OLD_ROBOT_ID"] == value["NEW_ROBOT_ID"]: fail()
+        if (value["NEW_ROBOT_ID"] is None) != (value["NEW_USERNAME"] is None): fail()
+        if value["PHASE"] == "prepared" and value["NEW_ROBOT_ID"] is not None: fail()
+        if value["PHASE"] != "prepared" and (value["NEW_ROBOT_ID"] is None or not isinstance(value["NEW_USERNAME"],str) or not USERNAME.fullmatch(value["NEW_USERNAME"])): fail()
+        if value["NEW_ROBOT_ID"] is not None and value["OLD_ROBOT_ID"] == value["NEW_ROBOT_ID"]: fail()
         timestamp(value["UPDATED_AT"])
     elif kind == "tombstone":
         exact(value,("SCHEMA","OPERATION_ID","OWNER","NAMESPACE","PUBLISHER_ROBOT_ID","RUNTIME_ROBOT_ID","PHASE","UPDATED_AT"))

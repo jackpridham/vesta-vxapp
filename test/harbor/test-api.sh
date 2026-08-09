@@ -108,11 +108,11 @@ vx_harbor_api_quota_set_bytes "$quota" 1048576
 [[ "$(vx_harbor_api_quota_get "$quota" | jq -r .hard.storage)" == 1048576 ]]
 
 robot_body="$(vx_harbor_root)/secrets/robot-body.json"
-printf '%s\n' '{"name":"runtime-1","description":"vesta-managed:candidate:runtime:0123456789abcdef0123456789abcdef","duration":-1,"level":"project","permissions":[{"kind":"project","namespace":"vx-alice","access":[{"resource":"repository","action":"pull"}]}]}' >"$robot_body"
+printf '%s\n' '{"name":"runtime-1","description":"vesta-managed:vesta-harbor:alice:runtime:0123456789abcdef0123456789abcdef","duration":-1,"level":"project","permissions":[{"kind":"project","namespace":"vx-alice","access":[{"resource":"repository","action":"pull"}]}]}' >"$robot_body"
 chmod 0600 "$robot_body"
 ! _vx_harbor_api_call POST /api/v2.0/robots 201 empty "$robot_body"
 rm -f -- "$robot_body"
-marker='vesta-managed:candidate:runtime:0123456789abcdef0123456789abcdef'
+marker='vesta-managed:vesta-harbor:alice:runtime:0123456789abcdef0123456789abcdef'
 robot="$(_vx_harbor_api_project_robot_create_secret_once \
     "$project_id" vx-alice runtime-1 "$marker" pull)"
 jq -e 'keys==["creation_time","expires_at","id","name","secret"] and
@@ -134,7 +134,7 @@ robot_found="$(vx_harbor_api_project_robot_find "$project_id" "$marker")"
 robot_read="$(vx_harbor_api_project_robot_get "$project_id" "$robot_id" "$marker")"
 jq -e 'has("secret") | not' <<<"$robot_read" >/dev/null
 ! vx_harbor_api_project_robot_delete "$project_id" "$robot_id" \
-    'vesta-managed:candidate:runtime:ffffffffffffffffffffffffffffffff'
+    'vesta-managed:vesta-harbor:alice:runtime:ffffffffffffffffffffffffffffffff'
 vx_harbor_api_project_robot_get "$project_id" "$robot_id" "$marker" >/dev/null
 vx_harbor_api_project_robot_delete "$project_id" "$robot_id" "$marker"
 vx_harbor_api_project_robot_delete "$project_id" "$robot_id" "$marker"

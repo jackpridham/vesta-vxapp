@@ -101,7 +101,8 @@ _vx_harbor_api_json_call() {
 }
 
 _vx_harbor_api_marker_validate() {
-    [[ "$1" =~ ^vesta-managed:candidate:(runtime|publisher|probe):[a-f0-9]{32}$ ]]
+    [[ "$1" =~ ^vesta-managed:candidate:probe:[a-f0-9]{32}$ \
+        || "$1" =~ ^vesta-managed:vesta-harbor:[a-z0-9][a-z0-9_-]{0,31}:(runtime|publisher):[a-f0-9]{32}$ ]]
 }
 
 _vx_harbor_api_robot_created_validate() {
