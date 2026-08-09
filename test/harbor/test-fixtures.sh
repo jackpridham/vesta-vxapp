@@ -113,7 +113,7 @@ status="$(api_call POST /api/v2.0/projects "$response" \
 [[ "$status" == 409 ]] || fail 'duplicate project was not rejected'
 status="$(api_call GET /api/v2.0/projects/vx-alice "$response")"
 [[ "$status" == 200 ]] || fail 'project read by name failed'
-assert_json "$response" 'value["id"] == 1 and value["quota_id"] == 1'
+assert_json "$response" 'value["id"] == 1 and "quota_id" not in value'
 status="$(api_call PUT /api/v2.0/projects/1 "$response" \
     --header 'Content-Type: application/json' --data-binary '{"metadata":{"public":"false"}}')"
 [[ "$status" == 200 ]] || fail 'project update failed'

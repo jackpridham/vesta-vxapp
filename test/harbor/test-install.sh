@@ -38,7 +38,7 @@ VX_HARBOR_SOCKET_PATH="$HARBOR_TEST_ROOT/run/proxy.sock"
 printf 'events {}\nhttp { server { root %s/web; listen 8083 ssl; ssl_certificate /panel.pem; } }\n' "$VESTA" >"$VESTA/nginx/conf/nginx.conf"
 VX_HARBOR_MIN_FREE_KB=0
 _vx_harbor_install_requirements() { return 0; }
-vx_harbor_origin_json() { printf '{"PORT":8083,"ORIGIN":"https://host.example:8083"}\n'; }
+vx_harbor_origin_json() { printf '{"HOSTNAME":"host.example","PORT":8083,"ORIGIN":"https://host.example:8083"}\n'; }
 vx_harbor_release_stage() { mkdir -p "$1/extracted"; printf '{}\n' >"$1/evidence.json"; chmod 0600 "$1/evidence.json"; }
 config_stage="$HARBOR_TEST_ROOT/config-stage"
 mkdir -p "$config_stage/extracted/harbor"
