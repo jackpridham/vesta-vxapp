@@ -1,25 +1,23 @@
 # Publish and Deploy with Vesta-Managed Harbor
 
-> **Current status — endpoint not approved for deployment.** Vesta-managed
-> Harbor v2.15.0 remains active on the development provider, but the temporary
-> `staging.example.com` client host mappings and private-CA trust were
-> withdrawn as out of scope. Legacy workload deployment must remain blocked until an
-> operator supplies an authorized resolvable hostname and TLS configuration.
-> Production remains deferred. The preserved validation and rollback evidence
-> are in the
+> **Current status — endpoint not approved for deployment.** The generated
+> credential lifecycle is implemented, but corrected development-host
+> activation and acceptance remain pending. The last live provider transaction
+> was rolled back to disabled/inactive state. Production remains deferred. The
+> preserved validation and rollback evidence are in the
 > [development acceptance record](../validation/2026-08-08-vesta-managed-harbor-development.md).
 
 This is the canonical tenant workflow after an administrator confirms that
 Vesta-managed Harbor is operational and discovery reports healthy, fresh,
 ready state. It applies to maintainers of any existing tenant-owned
-`standard` project. Names such as `legacy-admin-app` and `internal-voice-app` are only
-generic examples; application-specific build, configuration, and acceptance
-details belong in the application repository.
+`standard` project. The examples use generic `appuser` and `myapp` labels;
+application-specific build, configuration, and acceptance details belong in
+the application repository.
 
 The normative provider boundary is the
 [Harbor provider contract](../contracts/harbor-provider.md). Administrators
-should also use the
-[container-orchestration operator guide](../../docs/container-orchestration.md).
+should use the dedicated
+[managed Harbor operator runbook](vesta-managed-harbor-operator.md).
 
 ## What the managed registry is
 
@@ -668,6 +666,7 @@ deferred.
 ## Related documentation
 
 - [Complete source-to-Vesta deployment runbook](../../DOCKER_ORCHESTRATION_DEPLOYMENT.md)
+- [Managed Harbor operator runbook](vesta-managed-harbor-operator.md)
 - [Container-orchestration operator guide](../../docs/container-orchestration.md)
 - [Harbor provider contract](../contracts/harbor-provider.md)
 - [Compose tenant shell-access contract](../contracts/compose-shell-access.md)

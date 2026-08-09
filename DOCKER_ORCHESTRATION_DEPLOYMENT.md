@@ -14,7 +14,7 @@ Privileged profiles and production workload changes are administrator-only.
 > remains safely rolled back, and production is deferred. Before use, require
 > a healthy, fresh `registry-info` result. Read the canonical
 > [tenant Harbor deployment guide](.docs/user-guides/vesta-managed-harbor.md),
-> [operator Harbor runbook](docs/container-orchestration.md#optional-vesta-managed-harbor-provider),
+> [operator Harbor runbook](.docs/user-guides/vesta-managed-harbor-operator.md),
 > the [provider contract](.docs/contracts/harbor-provider.md), and the
 > [development acceptance evidence](.docs/validation/2026-08-08-vesta-managed-harbor-development.md).
 
@@ -307,8 +307,10 @@ The canonical
 [Vesta-managed Harbor tenant guide](.docs/user-guides/vesta-managed-harbor.md)
 covers eligibility, protected publisher rotation, local build, versioned push,
 digest resolution, immutable Compose preview/pull/apply, health, readiness,
-drift, rollback, revocation, and failure handling. The normative operator
-boundary is the
+drift, rollback, revocation, and failure handling. Installation, verification,
+tenant reconciliation, backup validation, and retained-data disablement are in
+the [managed Harbor operator runbook](.docs/user-guides/vesta-managed-harbor-operator.md).
+The normative operator boundary is the
 [Harbor provider contract](.docs/contracts/harbor-provider.md).
 
 The implementation is ready for corrected development acceptance; production
@@ -1024,6 +1026,7 @@ developer/CI build and test
 Further normative detail lives in
 [`docs/container-orchestration.md`](docs/container-orchestration.md),
 the [Vesta-managed Harbor tenant guide](.docs/user-guides/vesta-managed-harbor.md),
+the [Vesta-managed Harbor operator runbook](.docs/user-guides/vesta-managed-harbor-operator.md),
 the [Harbor provider contract](.docs/contracts/harbor-provider.md),
 [`compose-shell-access.md`](.docs/contracts/compose-shell-access.md),
 [`compose-self-service-deployment.md`](.docs/contracts/compose-self-service-deployment.md),

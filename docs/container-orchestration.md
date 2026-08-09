@@ -18,6 +18,7 @@ or global Docker cleanup.
 > last live transaction is safely rolled back and production is deferred. See
 > the canonical
 > [tenant Harbor deployment guide](../.docs/user-guides/vesta-managed-harbor.md),
+> [managed Harbor operator runbook](../.docs/user-guides/vesta-managed-harbor-operator.md),
 > [operator/provider contract](../.docs/contracts/harbor-provider.md), and
 > [development acceptance evidence](../.docs/validation/2026-08-08-vesta-managed-harbor-development.md).
 
@@ -118,6 +119,9 @@ convergence or rollback.
 
 The normative operator boundary is the
 [Vesta-managed Harbor provider contract](../.docs/contracts/harbor-provider.md).
+The procedural setup, verification, tenant onboarding, backup, and disable
+workflow is the
+[Vesta-managed Harbor operator runbook](../.docs/user-guides/vesta-managed-harbor-operator.md).
 The framework-neutral Docker-user workflow is the canonical
 [Vesta-managed Harbor tenant guide](../.docs/user-guides/vesta-managed-harbor.md).
 Use its commands only after corrected development acceptance establishes a

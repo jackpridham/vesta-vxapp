@@ -8,6 +8,7 @@ shell_access="$root/.docs/contracts/compose-shell-access.md"
 spec="$root/.docs/specs/2026-08-08-vesta-managed-harbor-registry.md"
 validation="$root/.docs/validation/2026-08-08-vesta-managed-harbor-development.md"
 tenant_guide="$root/.docs/user-guides/vesta-managed-harbor.md"
+operator_guide="$root/.docs/user-guides/vesta-managed-harbor-operator.md"
 
 fail() {
     printf 'FAIL: %s\n' "$1" >&2
@@ -36,8 +37,32 @@ assert_before() {
         || fail "expected '$earlier' before '$later' in ${file#"$root/"}"
 }
 
-for file in "$provider" "$shell_access" "$spec" "$validation" "$tenant_guide"; do
+for file in "$provider" "$shell_access" "$spec" "$validation" "$tenant_guide" "$operator_guide"; do
     [[ -s "$file" ]] || fail "missing Milestone 1 document: ${file#"$root/"}"
+done
+
+# The public operator guide must provide one executable lifecycle from
+# preflight through retained-data disablement without claiming deployment
+# authorization or an automated restore apply.
+for phrase in \
+    'procedure, not deployment authorization' \
+    'v-install-harbor-registry' \
+    'v-list-harbor-registry json' \
+    'v-sync-harbor-registry-owner appuser' \
+    'v-list-harbor-registry-owners json' \
+    'v-backup-harbor-registry' \
+    'v-restore-harbor-registry "$backup_id" validate' \
+    'exit status `78`' \
+    'v-plan-disable-harbor-registry json' \
+    'v-disable-harbor-registry "$disable_token"' \
+    'retains the Harbor database, OCI artifacts, owner mappings' \
+    'does not create DNS records' \
+    'at least 10 GiB free' \
+    'PENDING_OPERATIONS=0' \
+    'FRESHNESS=fresh' \
+    'manual recovery-key initialization command'
+do
+    assert_contains "$operator_guide" "$phrase"
 done
 
 # Harbor v2.15.0 source parity: RobotCreate.secret is ignored, CreateSec is
@@ -153,6 +178,7 @@ done
 if rg -n -i \
     'registry-publisher-change|caller-generated publisher secret|developer generates secret' \
     "$provider" "$shell_access" "$spec" "$tenant_guide" \
+    "$operator_guide" \
     "$root/DOCKER_ORCHESTRATION_DEPLOYMENT.md" \
     "$root/docs/container-orchestration.md" "$root/.docs/README.md"
 then

@@ -6,6 +6,7 @@ Current documents:
 - [Repository overview](../README.md)
 - [Operator architecture and runbook](../docs/container-orchestration.md)
 - [Complete source-to-Vesta deployment runbook](../DOCKER_ORCHESTRATION_DEPLOYMENT.md)
+- [Vesta-managed Harbor operator runbook](user-guides/vesta-managed-harbor-operator.md)
 - [Vesta-managed Harbor tenant deployment guide](user-guides/vesta-managed-harbor.md)
 - [Vesta-managed Harbor registry specification](specs/2026-08-08-vesta-managed-harbor-registry.md)
 - [Vesta-managed Harbor provider contract](contracts/harbor-provider.md)
@@ -39,8 +40,11 @@ migration history and do not override current `compose-*` contracts.
 Vesta-managed Harbor's generated credential lifecycle is implemented. The
 corrected development-host activation and acceptance transaction remains
 pending, the last live provider transaction is safely rolled back, and
-production is deferred. The tenant guide is the canonical workflow after an
-administrator confirms healthy, fresh managed state through `registry-info`.
+production is deferred. The public installer currently has no recovery-key
+initialization command; activation must establish that authority through an
+approved release flow and pass encrypted backup validation before tenant
+onboarding. The tenant guide is the canonical workflow after an administrator
+confirms healthy, fresh managed state through `registry-info`.
 
 The Compose implementation supports owner-only `standard` self-service,
 immutable preview/apply, administrator-approved profiles, trusted image
