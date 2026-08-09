@@ -65,7 +65,7 @@ _vx_harbor_install_transform_generated() {
     local stage="$1" manifest="$2" ingress_gid
     ingress_gid="${VX_HARBOR_SOCKET_GID:-}"
     if [[ -z "$ingress_gid" ]]; then
-        ingress_gid="$(/usr/bin/getent group www-data | /usr/bin/awk -F: 'NR==1 {print $3}')" || return 1
+        ingress_gid="$(_vx_harbor_panel_worker_gid)" || return 1
     fi
     [[ "$ingress_gid" =~ ^[1-9][0-9]*$ ]] || return 1
     /usr/bin/python3 - "$stage/docker-compose.yml" "$stage/common/config/nginx/nginx.conf" \
@@ -145,7 +145,11 @@ chmod 0660 "$socket"
 wait "$pid"
 ''')
 PY
+    /usr/bin/sed "s/__VESTA_PANEL_GID__/$ingress_gid/g" \
+        "$VESTA/install/harbor/vesta-harbor.service" >"$stage/vesta-harbor.service" || return 1
+    ! /usr/bin/grep -q '__VESTA_PANEL_GID__' "$stage/vesta-harbor.service" || return 1
     _vx_harbor_secure_file_set "$stage/docker-compose.yml" 0600 || return 1
+    _vx_harbor_secure_file_set "$stage/vesta-harbor.service" 0600 || return 1
     _vx_harbor_secure_file_set "$stage/common/config/nginx/nginx.conf" 0644 || return 1
     _vx_harbor_secure_file_set "$stage/common/config/nginx/proxy-entrypoint.sh" 0644 || return 1
     vx_harbor_release_images_validate "$manifest" "$stage/docker-compose.yml"
@@ -178,13 +182,17 @@ _vx_harbor_install_loaded_image_config_validate() {
 
 _vx_harbor_install_generate() {
     local stage="$1" manifest="$2" origin prepare_id expected_config
+    _vx_harbor_install_step generation-configuration
     origin="$(vx_harbor_origin_json)" || return 1
     _vx_harbor_install_harbor_yml "$stage" "$origin" || return 1
+    _vx_harbor_install_step generation-image-load
     _vx_harbor_docker load --input "$stage/extracted/harbor/harbor.v2.15.0.tar.gz" >/dev/null || return 1
     prepare_id="$(_vx_harbor_docker image inspect --format '{{.Id}}' goharbor/prepare:v2.15.0)" || return 1
     expected_config="$(/usr/bin/jq -r '.generator_image.offline_config_digest' "$VESTA/install/harbor/release-provenance.json")" || return 1
+    _vx_harbor_install_step generation-image-identity
     _vx_harbor_install_loaded_image_config_validate "$prepare_id" "$expected_config" || return 1
     /usr/bin/mkdir -p "$stage/common/config" || return 1
+    _vx_harbor_install_step generation-prepare
     _vx_harbor_docker run --rm --network none --cap-drop ALL \
       --cap-add CHOWN --cap-add DAC_OVERRIDE --cap-add FOWNER --cap-add SETGID --cap-add SETUID \
       --volume "$stage/harbor.yml:/input/harbor.yml:ro" \
@@ -192,6 +200,7 @@ _vx_harbor_install_generate() {
       --volume "$stage:/compose_location" \
       --volume "$stage/common/config:/config" \
       "$prepare_id" prepare --conf /input/harbor.yml >/dev/null || return 1
+    _vx_harbor_install_step generation-transform
     _vx_harbor_install_transform_generated "$stage" "$manifest" || return 1
     /usr/bin/chown 0:0 /var/lib/vesta-harbor \
         && /usr/bin/chmod 0700 /var/lib/vesta-harbor
@@ -742,6 +751,7 @@ vx_harbor_install() {
         candidate_main="$stage/nginx.candidate.conf"; activation_main="$stage/nginx.activation.conf"; provider_next="$stage/provider.next.json"
         _vx_harbor_install_step generation
         _vx_harbor_install_generate "$stage" "$manifest" || return 1
+        _vx_harbor_install_step generation-ingress
         vx_harbor_ingress_render "$ingress" "$candidate_main" "$activation_main" || return 1
         _vx_harbor_install_phase generation || return 1
         if [[ "$current_existed" == yes ]]; then /usr/bin/mv "$root/release/current" "$root/release/.prior-current" || return 1; fi
@@ -751,7 +761,7 @@ vx_harbor_install() {
         ingress="$stage/harbor-registry.conf"
         candidate_main="$stage/nginx.candidate.conf"; activation_main="$stage/nginx.activation.conf"; provider_next="$stage/provider.next.json"
         vx_harbor_ingress_render "$ingress" "$candidate_main" "$activation_main" || return 1
-        /usr/bin/install -o "$(_vx_harbor_authority_uid)" -g "$(_vx_harbor_authority_gid)" -m 0600 "$VESTA/install/harbor/vesta-harbor.service" "$unit_target" || return 1
+        /usr/bin/install -o "$(_vx_harbor_authority_uid)" -g "$(_vx_harbor_authority_gid)" -m 0600 "$stage/vesta-harbor.service" "$unit_target" || return 1
         _vx_harbor_install_step compose
         "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" daemon-reload || return 1
         "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" enable vesta-harbor.service || return 1

@@ -31,6 +31,8 @@ this specification means "latest" at runtime.
 - A root-owned, group-restricted Unix socket is the approved fixed local
   Harbor transport. It replaces a host loopback TCP listener and reduces the
   exposed host network surface without changing the public Vesta TLS origin.
+  Its group is derived from the authenticated Vesta nginx worker directive;
+  no distribution-specific web-server group is assumed.
 - First-release recovery delivers encrypted, validated provider backups and a
   documented operator recovery procedure. Automated restore apply and
   automated version upgrade are deferred because they are destructive,

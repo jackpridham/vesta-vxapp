@@ -104,7 +104,7 @@ vx_harbor_socket_validate() {
     local socket expected_uid expected_gid
     socket="$(vx_harbor_socket_path)" || return 1
     expected_uid="${VX_HARBOR_SOCKET_UID:-0}"
-    expected_gid="${VX_HARBOR_SOCKET_GID:-$(/usr/bin/getent group www-data | /usr/bin/awk -F: 'NR==1 {print $3}')}"
+    expected_gid="${VX_HARBOR_SOCKET_GID:-$(_vx_harbor_panel_worker_gid)}"
     [[ "$expected_uid" =~ ^[0-9]+$ && "$expected_gid" =~ ^[1-9][0-9]*$ ]] || return 1
     [[ -S "$socket" && ! -L "$socket" ]] || return 1
     [[ "$(/usr/bin/stat -c '%u:%g:%a' "$socket")" == "$expected_uid:$expected_gid:660" ]]

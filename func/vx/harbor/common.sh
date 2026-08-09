@@ -372,11 +372,12 @@ _vx_harbor_nginx_panel_endpoint() {
     local nginx_file="$1"
     local panel_root="$VESTA/web"
     local mime_types="$VESTA/nginx/conf/mime.types"
+    local harbor_include="$VESTA/nginx/conf/harbor-registry.conf"
     local authority_uid authority_gid
 
     authority_uid="$(_vx_harbor_authority_uid)" || return 1
     authority_gid="$(_vx_harbor_authority_gid)" || return 1
-    /usr/bin/python3 - "$nginx_file" "$panel_root" "$mime_types" \
+    /usr/bin/python3 - "$nginx_file" "$panel_root" "$mime_types" "$harbor_include" \
         "$authority_uid" "$authority_gid" <<'PY'
 import json
 import os
@@ -387,7 +388,8 @@ import sys
 
 panel_root = sys.argv[2]
 mime_types_path = pathlib.Path(sys.argv[3])
-authority_uid, authority_gid = map(int, sys.argv[4:6])
+harbor_include_path = pathlib.Path(sys.argv[4])
+authority_uid, authority_gid = map(int, sys.argv[5:7])
 
 def tokenize(config):
     tokens = []
@@ -463,6 +465,18 @@ def parse(config):
 config_path = pathlib.Path(sys.argv[1])
 root = parse(config_path.read_text(encoding="utf-8"))
 
+worker_groups = []
+for item in root["directives"]:
+    if item[0] == "user":
+        if len(item) not in (2, 3):
+            raise SystemExit(1)
+        if any(not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_-]{0,31}", value)
+               for value in item[1:]):
+            raise SystemExit(1)
+        worker_groups.append(item[-1])
+if len(worker_groups) > 1:
+    raise SystemExit(1)
+
 # Root/http includes can add server blocks and invalidate uniqueness. The
 # authenticated static mime map is the sole safe include needed by the panel.
 mime_includes = []
@@ -525,11 +539,6 @@ def visit(node):
         visit(child)
 visit(root)
 
-# A direct server include can inject panel-identifying or TLS authority.
-if any(item[0] == "include" for server in servers
-       for item in server["directives"]):
-    raise SystemExit(1)
-
 panel_servers = []
 for server in servers:
     roots = [item[1] for item in server["directives"]
@@ -539,6 +548,32 @@ for server in servers:
 if len(panel_servers) != 1:
     raise SystemExit(1)
 panel = panel_servers[0]
+
+# The installed Harbor route is the sole direct panel-server include. It is
+# fixed Vesta authority and cannot supply a caller-controlled path.
+for server in servers:
+    includes = [item[1:] for item in server["directives"]
+                if item[0] == "include"]
+    if server is not panel:
+        if includes:
+            raise SystemExit(1)
+        continue
+    if len(includes) > 1 or any(len(item) != 1 or "$" in item[0]
+                               for item in includes):
+        raise SystemExit(1)
+    if includes:
+        included = pathlib.Path(includes[0][0])
+        if not included.is_absolute():
+            included = config_path.parent / included
+        if os.path.abspath(included) != os.path.abspath(harbor_include_path):
+            raise SystemExit(1)
+        include_fd = os.open(harbor_include_path, os.O_RDONLY | os.O_NOFOLLOW)
+        value = os.fstat(include_fd)
+        os.close(include_fd)
+        if (not stat.S_ISREG(value.st_mode) or value.st_nlink != 1
+                or value.st_uid != authority_uid or value.st_gid != authority_gid
+                or stat.S_IMODE(value.st_mode) != 0o600):
+            raise SystemExit(1)
 
 listeners = []
 certificates = []
@@ -573,9 +608,21 @@ elif ssl_directives != [["on"]]:
     raise SystemExit(1)
 if len(certificates) != 1 or not certificates[0]:
     raise SystemExit(1)
-print(json.dumps({"PORT": listeners[0][0], "CERTIFICATE": certificates[0]},
+print(json.dumps({"PORT": listeners[0][0], "CERTIFICATE": certificates[0],
+                  "WORKER_GROUP": worker_groups[0] if worker_groups else None},
                  sort_keys=True, separators=(",", ":")))
 PY
+}
+
+_vx_harbor_panel_worker_gid() {
+    local endpoint group entry
+    endpoint="$(_vx_harbor_nginx_panel_endpoint "$VESTA/nginx/conf/nginx.conf")" || return 1
+    group="$(/usr/bin/jq -er '.WORKER_GROUP | select(type=="string")' <<<"$endpoint")" || return 1
+    entry="$(/usr/bin/getent group "$group")" || return 1
+    /usr/bin/awk -F: -v expected="$group" '
+        $1 == expected && $3 ~ /^[1-9][0-9]*$/ { print $3; found++ }
+        END { if (found != 1) exit 1 }
+    ' <<<"$entry"
 }
 
 vx_harbor_origin_json() {

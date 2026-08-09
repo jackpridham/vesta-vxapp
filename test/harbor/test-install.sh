@@ -260,6 +260,9 @@ entrypoint="$VESTA/data/harbor/release/current/common/config/nginx/proxy-entrypo
 [[ "$(stat -c %a "$entrypoint")" == 644 ]] || fail 'proxy socket supervisor mode is not fixed'
 grep -q 'chown 0:33 "$socket"' "$entrypoint" || fail 'proxy socket group is not deterministic'
 grep -q 'chmod 0660 "$socket"' "$entrypoint" || fail 'proxy socket mode is not deterministic'
+grep -q 'install -o 0 -g 33 -m 0750 -d /run/vesta-harbor' \
+  "$VESTA/data/harbor/release/current/vesta-harbor.service" \
+  || fail 'service runtime directory did not use the authenticated panel group'
 grep -q '^name: vesta-harbor$' "$compose" || fail 'fixed project missing'
 vx_harbor_release_images_validate "$VESTA/install/harbor/release-manifest.json" "$compose" || fail 'installed compose trust failed'
 [[ "$(grep -c '^  [a-z].*:$' "$compose")" -ge 10 ]] || fail 'canonical service graph missing'

@@ -9,7 +9,7 @@ done
 grep -q -- '--project-name vesta-harbor' "$HARBOR_REPO_ROOT/install/harbor/vesta-harbor.service" || fail 'fixed Compose project missing'
 grep -q '/run/vesta-harbor/proxy.sock' "$HARBOR_REPO_ROOT/install/harbor/harbor-registry.conf.tpl" || fail 'fixed socket missing'
 grep -q 'listen unix:/run/vesta-harbor/proxy.sock' "$HARBOR_REPO_ROOT/func/vx/harbor/install.sh" || fail 'real Unix socket listener transform missing'
-grep -q 'install -o 0 -g www-data -m 0750 -d /run/vesta-harbor' "$HARBOR_REPO_ROOT/install/harbor/vesta-harbor.service" || fail 'protected ingress directory missing'
+grep -q 'install -o 0 -g __VESTA_PANEL_GID__ -m 0750 -d /run/vesta-harbor' "$HARBOR_REPO_ROOT/install/harbor/vesta-harbor.service" || fail 'protected ingress directory is not panel-group bound'
 grep -q "nginx='user nginx;" "$HARBOR_REPO_ROOT/func/vx/harbor/install.sh" || fail 'proxy worker privilege drop missing'
 grep -q 'chmod 0660' "$HARBOR_REPO_ROOT/func/vx/harbor/install.sh" || fail 'protected socket creation mode missing'
 ! grep -q '/bin/true' "$HARBOR_REPO_ROOT/func/vx/harbor/install.sh" || fail 'placeholder health or migration check remains'
