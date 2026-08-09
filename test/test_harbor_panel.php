@@ -10,10 +10,10 @@ $files = array(
 );
 $source = '';
 foreach ($files as $file) $source .= file_get_contents($file);
-foreach (array('$myvesta_logged_user', 'escapeshellarg', 'harbor_publisher', 'PENDING_OPERATIONS', 'CERTIFICATE_STATE', 'PUBLISHER_ENABLED') as $needle) {
+foreach (array('$myvesta_logged_user', 'escapeshellarg', 'harbor_publisher', 'PENDING_OPERATIONS', 'CERTIFICATE_STATE', 'PUBLISHER_ENABLED', 'registry-publisher-rotate') as $needle) {
     if (strpos($source, $needle) === false) { fwrite(STDERR, "FAIL: missing panel boundary $needle\n"); exit(1); }
 }
-foreach (array('integration.curl', 'backup.agekey', '/run/vesta-harbor', '/api/v2.0') as $forbidden) {
+foreach (array('integration.curl', 'backup.agekey', '/run/vesta-harbor', '/api/v2.0', 'registry-publisher-change', 'age1', 'publisher-secret') as $forbidden) {
     if (strpos($source, $forbidden) !== false) { fwrite(STDERR, "FAIL: protected panel detail $forbidden\n"); exit(1); }
 }
 echo "PASS: Harbor panel boundaries\n";

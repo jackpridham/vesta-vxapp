@@ -7,6 +7,7 @@ provider="$root/.docs/contracts/harbor-provider.md"
 shell_access="$root/.docs/contracts/compose-shell-access.md"
 spec="$root/.docs/specs/2026-08-08-vesta-managed-harbor-registry.md"
 validation="$root/.docs/validation/2026-08-08-vesta-managed-harbor-development.md"
+tenant_guide="$root/.docs/user-guides/vesta-managed-harbor.md"
 
 fail() {
     printf 'FAIL: %s\n' "$1" >&2
@@ -35,7 +36,7 @@ assert_before() {
         || fail "expected '$earlier' before '$later' in ${file#"$root/"}"
 }
 
-for file in "$provider" "$shell_access" "$spec" "$validation"; do
+for file in "$provider" "$shell_access" "$spec" "$validation" "$tenant_guide"; do
     [[ -s "$file" ]] || fail "missing Milestone 1 document: ${file#"$root/"}"
 done
 
@@ -132,15 +133,30 @@ for file in "$provider" "$shell_access" "$spec"; do
     done
 done
 
-# Superseded behavior is absent only from the Milestone 1 active authorities.
-# Tenant guides and deployment runbooks are intentionally deferred to
-# Milestone 4, while the validation record intentionally preserves the failed
-# historical publisher-change evidence.
+# The tenant workflow uses Harbor-generated passwords and an encrypted handoff.
+for phrase in \
+    'Harbor supplies the one-time password' \
+    'registry-publisher-rotate' \
+    'publisher-secret.age' \
+    'age -d -i' \
+    'docker login' \
+    '--password-stdin' \
+    'Vesta cannot recover' \
+    'registry-publisher-disable' \
+    'runtime pulls continue'
+do
+    assert_contains "$tenant_guide" "$phrase"
+done
+
+# Superseded behavior is absent from all active authorities and tenant guides.
+# The validation record intentionally preserves the failed historical command.
 if rg -n -i \
     'registry-publisher-change|caller-generated publisher secret|developer generates secret' \
-    "$provider" "$shell_access" "$spec"
+    "$provider" "$shell_access" "$spec" "$tenant_guide" \
+    "$root/DOCKER_ORCHESTRATION_DEPLOYMENT.md" \
+    "$root/docs/container-orchestration.md" "$root/.docs/README.md"
 then
-    fail 'Milestone 1 authority retains the superseded publisher-secret contract'
+    fail 'active Harbor documentation retains the superseded publisher-secret contract'
 fi
 
 # Preserve the original failed development evidence, append the source-backed
@@ -166,4 +182,4 @@ assert_before "$validation" '## Install transaction and product blocker' \
 assert_before "$validation" '## Acceptance not claimed' \
     '## Source-validated resolution — 2026-08-09'
 
-printf 'PASS: Harbor Milestone 1 documentation contract\n'
+printf 'PASS: Harbor generated-credential documentation contract\n'

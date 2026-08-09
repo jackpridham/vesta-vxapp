@@ -257,7 +257,7 @@
           <span class="docker-overview-card__label"><?=__('Managed registry')?></span>
           <strong class="docker-overview-card__value"><?=htmlspecialchars(($harbor_tenant_status['REGISTRY'] ?? '').'/'.($harbor_tenant_status['NAMESPACE'] ?? ''), ENT_QUOTES)?></strong>
           <p class="docker-overview-card__meta"><?=htmlspecialchars(__('Quota/usage').': '.($harbor_tenant_status['USED_MB'] ?? 0).'/'.($harbor_tenant_status['QUOTA_MB'] ?? 0).' MB · '.__('Runtime').': '.($harbor_tenant_status['STATE'] ?? 'unavailable').' · '.($harbor_tenant_status['FRESHNESS'] ?? 'unavailable'), ENT_QUOTES)?></p>
-          <p class="docker-overview-card__meta" data-harbor-publisher-cli><?=__('Create or rotate the publisher credential through v-docker registry-publisher-change using bounded stdin.')?></p>
+          <p class="docker-overview-card__meta" data-harbor-publisher-cli><?=__('Rotate publisher access through v-docker registry-publisher-rotate and the tenant Harbor guide; the panel never accepts credential material.')?></p>
           <button type="button" class="button" onclick="more_button_click(901)" data-harbor-publisher-disable><?=__('Disable publisher')?></button>
         </article>
         <script>

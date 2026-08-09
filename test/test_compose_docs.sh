@@ -47,7 +47,7 @@ backups	PROJECT [json|plain]
 secrets	PROJECT [json|plain]
 registries	[json|plain]
 registry-info	PROJECT [json|plain]
-registry-publisher-change	< publisher-secret
+registry-publisher-rotate	< age-recipient
 registry-publisher-disable
 image-pull	PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION IMAGE@sha256:DIGEST
 drift	PROJECT [json|plain]
@@ -77,9 +77,7 @@ alert-ack	PROJECT ALERT
 remove	PROJECT keep-data
 EOF
 
-# Milestone 3 changes the broker and this compatibility expectation atomically.
-sed 's/^registry-publisher-rotate	< age-recipient$/registry-publisher-change	< publisher-secret/' \
-    "$contract_catalog" >"$broker_contract_catalog"
+cp "$contract_catalog" "$broker_contract_catalog"
 
 cmp -s "$expected_catalog" "$broker_contract_catalog" \
     || { diff -u "$expected_catalog" "$broker_contract_catalog" >&2 || :; fail 'shell catalog signature drift'; }

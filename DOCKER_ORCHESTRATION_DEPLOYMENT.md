@@ -9,10 +9,10 @@ recovery.
 Every tenant SSH command is forced to the owner-equal `standard` profile.
 Privileged profiles and production workload changes are administrator-only.
 
-> **Managed Harbor is not operational today.** Development activation is
-> safely rolled back and **BLOCKED — PRODUCT** because Harbor v2.15.0 cannot
-> satisfy the approved least-privilege publisher-secret contract. Production
-> is deferred. Read the canonical
+> **Managed Harbor requires development-host activation and acceptance.** The
+> generated credential lifecycle is implemented, the last live transaction
+> remains safely rolled back, and production is deferred. Before use, require
+> a healthy, fresh `registry-info` result. Read the canonical
 > [tenant Harbor deployment guide](.docs/user-guides/vesta-managed-harbor.md),
 > [operator Harbor runbook](docs/container-orchestration.md#optional-vesta-managed-harbor-provider),
 > the [provider contract](.docs/contracts/harbor-provider.md), and the
@@ -302,14 +302,17 @@ drift, rollback, revocation, and failure handling. The normative operator
 boundary is the
 [Harbor provider contract](.docs/contracts/harbor-provider.md).
 
-That workflow is future-facing: development activation is currently safely
-rolled back and **BLOCKED — PRODUCT**, and production is deferred. Once the
-provider is accepted and operational, use `v-docker registry-info PROJECT
-json` to discover the existing Vesta TLS origin and exact repository. Rotate a
-43–128-character URL-safe publisher secret with
-`v-docker registry-publisher-change` on bounded stdin, and revoke it with
-`v-docker registry-publisher-disable`. Never place it in argv, environment,
-Compose, logs, HTML, metadata, Git, or an archive.
+The implementation is ready for corrected development acceptance; production
+is deferred. Once the provider is accepted and operational, use `v-docker
+registry-info PROJECT json` to discover the existing Vesta TLS origin and
+exact repository. Send one native age recipient to `v-docker
+registry-publisher-rotate` on bounded stdin, capture its ASCII-armored
+ciphertext, then decrypt directly into `docker login --password-stdin`. Harbor
+generates the password once; Vesta cannot display or recover it. Repeating
+rotation replaces a lost generation, while `registry-publisher-disable`
+deletes only publisher access and leaves runtime pulls available. Never place
+password plaintext in argv, environment, files, Compose, logs, HTML, metadata,
+Git, or an archive.
 
 No SCP, rsync, source/image archive, Harbor administrator, Debian sudo, Docker
 group/socket, or raw Docker path belongs to this pipeline. Application-specific
@@ -882,7 +885,7 @@ v-docker backups PROJECT [json|plain]
 v-docker secrets PROJECT [json|plain]
 v-docker registries [json|plain]
 v-docker registry-info PROJECT [json|plain]
-v-docker registry-publisher-change < publisher-secret
+v-docker registry-publisher-rotate < age-recipient > publisher-secret.age
 v-docker registry-publisher-disable
 v-docker image-pull PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION IMAGE@sha256:DIGEST
 v-docker drift PROJECT [json|plain]

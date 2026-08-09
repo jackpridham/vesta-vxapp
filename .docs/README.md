@@ -36,12 +36,11 @@ migration history and do not override current `compose-*` contracts.
 
 ## Readiness boundary
 
-Vesta-managed Harbor is not operational today. Development activation is
-safely rolled back and **BLOCKED — PRODUCT** because Harbor v2.15.0 cannot
-satisfy the approved least-privilege publisher-secret contract. The provider
-is disabled/inactive, no Harbor host listener or registry socket is present,
-and production is deferred. The tenant guide documents the canonical workflow
-only for use after the blocker is resolved and development acceptance passes.
+Vesta-managed Harbor's generated credential lifecycle is implemented. The
+corrected development-host activation and acceptance transaction remains
+pending, the last live provider transaction is safely rolled back, and
+production is deferred. The tenant guide is the canonical workflow after an
+administrator confirms healthy, fresh managed state through `registry-info`.
 
 The Compose implementation supports owner-only `standard` self-service,
 immutable preview/apply, administrator-approved profiles, trusted image
