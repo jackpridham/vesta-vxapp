@@ -443,3 +443,23 @@ It remains revision 1, running, healthy, ready, and drift-matched with image
 `sha256:e274e28000ab05e5a81c3fecae992ef3c06094b0701dfa9e965e8f23de0302fd`.
 Application deployment is now delegated back to the repository-owned adapter,
 using the untagged repository above. Production was not contacted or changed.
+
+## Development hostname rollback — 2026-08-09
+
+The operator rejected the temporary client-side hostname configuration as out
+of scope. The manual `staging.example.com` entries were removed from the
+development workstation and Legacy workload host by restoring their exact pre-change
+`/etc/hosts` files. The host-specific Docker CA directories and system CA
+anchors were removed from their active paths and retained in root-only rollback
+directories.
+
+The provider's original self-signed Vesta certificate was restored from the
+pre-change Harbor rollback directory, the temporary private CA was removed
+from the active SSL directory, and Vesta nginx passed its configuration check
+and reloaded the restored certificate. Vesta and Harbor remained active; Harbor
+owner state and protected credentials were not torn down.
+
+Consequently, the earlier push/pull result remains historical evidence only.
+Neither client now resolves or trusts the temporary registry endpoint, and
+Legacy workload deployment is blocked until an authorized DNS and TLS endpoint is
+provided. No Legacy workload workload or production workload was changed.

@@ -1,12 +1,11 @@
 # Publish and Deploy with Vesta-Managed Harbor
 
-> **Current status — development provider operational.** Vesta-managed Harbor
-> v2.15.0 is active and healthy on `staging.example.com:8083`. The Legacy workload
-> development host has a validated pull-only credential for the private
-> `vx-legacyadmin` namespace, and the development workstation has a separate
-> publisher credential in an encrypted Docker credential helper. A real push
-> and cross-host pull resolved the same immutable manifest digest. Production
-> remains deferred. The preserved earlier failures and the succeeding evidence
+> **Current status — endpoint not approved for deployment.** Vesta-managed
+> Harbor v2.15.0 remains active on the development provider, but the temporary
+> `staging.example.com` client host mappings and private-CA trust were
+> withdrawn as out of scope. Legacy workload deployment must remain blocked until an
+> operator supplies an authorized resolvable hostname and TLS configuration.
+> Production remains deferred. The preserved validation and rollback evidence
 > are in the
 > [development acceptance record](../validation/2026-08-08-vesta-managed-harbor-development.md).
 
