@@ -80,7 +80,7 @@ Owner-derived shell commands:
 
 ```text
 v-docker registry-info PROJECT [json|plain]
-v-docker registry-publisher-change < publisher-secret
+v-docker registry-publisher-rotate < age-recipient
 v-docker registry-publisher-disable
 ```
 
@@ -736,13 +736,12 @@ git commit -m "docs(harbor): add operator and tenant registry guidance"
 
 ## Milestone 5: Development acceptance and release closure
 
-**Status: BLOCKED — PRODUCT.** Task 11 is complete at `390bcb7f`. Task 10
-staged exact HEAD `6c7119b8` to `development.example.com` at
-`192.0.2.10`, passed the clean local aggregate, and reached authenticated
-Harbor bootstrap. Harbor v2.15.0 cannot satisfy the approved caller-selected
-publisher-secret contract through the least-privilege integration robot.
-Workstation DNS also resolves the development name to a different address.
-Production deployment remains deferred.
+**Status: ACTIVE — TASK 10 ACCEPTANCE.** Milestones 1–4 are implementation
+history and shall not be restarted. The approved contract uses
+Harbor-generated one-time robot secrets and age-encrypted publisher delivery.
+The active boundary is the final successor's post-health integration failure,
+the incomplete development acceptance scenarios, and one final limited gate
+after development acceptance. Production deployment remains deferred.
 
 ### Task 10: Perform development-host acceptance
 
@@ -782,7 +781,7 @@ git add .docs/validation test/harbor
 git commit -m "docs(harbor): record development acceptance"
 ```
 
-Task 10 outcome: **BLOCKED — PRODUCT**. One clean
+Historical Task 10 outcome at `6c7119b8`: **SUPERSEDED**. One clean
 `bash test/harbor/run-focused.sh` passed. Exact HEAD `6c7119b8` was staged as a
 57-file runtime payload and all installed hashes passed. The installer reached
 health and authenticated bootstrap. Harbor v2.15.0 rejects the shipped
@@ -902,23 +901,19 @@ These are not first-release blockers:
 
 ## Current deferred boundary and next action
 
-- Task 10 and overall Milestone 5 remain **BLOCKED — PRODUCT**, not complete.
-- Harbor v2.15.0 cannot implement caller-selected publisher secrets through
-  the approved least-privilege integration identity; changing the publisher
-  secret contract or routine administrator boundary requires explicit product
-  review.
-- Development DNS also needs to map `development.example.com` to
-  `192.0.2.10` for unpinned clients. The current certificate hostname and
-  validity are correct, but it is self-signed.
-- Production deployment and push remain deferred.
-- Exact next action: approve and implement a Harbor-supported publisher-secret
-  design, correct development DNS, stage the exact successor HEAD with a new
-  rollback, and rerun only the incomplete Task 10 host checks. After Task 10
-  passes, final closeout and push can proceed.
+- Harbor-generated one-time secrets and age-encrypted publisher delivery are
+  approved and implemented; caller-selected secrets and robot refresh are
+  superseded history.
+- Correct the bounded post-health integration readiness path and exact
+  integration grants, stage one successor, and rerun only incomplete Task 10
+  host checks.
+- Development DNS must resolve the registry hostname to the authorized
+  development address before unpinned external-client acceptance can pass.
+- Production mutation remains separately authorized and is not part of this
+  plan.
 
 ## Execution handoff
 
-Execute with `$milestone-driven-implementation`. Begin by finishing Milestone
-1 Tasks 1–2, including simplifying the already-added Task 3 rollback machinery.
-Do not start Milestone 2 until one Milestone 1 specification/security review
-passes and its closeout record is committed.
+Continue only at Task 10. Do not restart Milestones 1–4 or reopen the resolved
+credential model. Stage the exact successor revision, complete the missing
+development-host acceptance path, then run one final limited readiness gate.

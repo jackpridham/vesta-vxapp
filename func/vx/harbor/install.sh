@@ -12,6 +12,7 @@ _vx_harbor_install_requirements() {
 }
 
 _vx_harbor_install_phase() { :; }
+_vx_harbor_install_step() { VX_HARBOR_INSTALL_ACTIVE_STEP="$1"; }
 
 _vx_harbor_docker() { /usr/bin/docker "$@"; }
 _vx_harbor_docker_bounded() { local seconds="$1"; shift; /usr/bin/timeout "$seconds" /usr/bin/docker "$@"; }
@@ -264,17 +265,26 @@ _vx_harbor_install_bootstrap_robot_create_secret_once() {
 }
 
 _vx_harbor_install_integration_probe() {
-    local credential="$1" output="$2" status
-    status="$(/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/curl --config "$credential" \
-      --unix-socket "$(vx_harbor_socket_path)" --request GET --connect-timeout 3 --max-time 10 \
-      --max-filesize 4096 --output "$output" --write-out '%{http_code}' \
-      http://localhost/api/v2.0/health 2>/dev/null)" || return 1
-    [[ "$status" == 200 ]] && /usr/bin/jq -e '.status=="healthy"' "$output" >/dev/null
+    local credential="$1" output="$2" status attempt
+    for attempt in {1..12}; do
+        status="$(/usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/curl --config "$credential" \
+          --unix-socket "$(vx_harbor_socket_path)" --request GET --connect-timeout 3 --max-time 10 \
+          --max-filesize 4096 --output "$output" --write-out '%{http_code}' \
+          http://localhost/api/v2.0/health 2>/dev/null)" \
+          && [[ "$status" == 200 ]] \
+          && /usr/bin/jq -e '.status=="healthy"' "$output" >/dev/null \
+          && return 0
+        (( attempt == 12 )) || /usr/bin/sleep 1
+    done
+    return 1
 }
 
 _vx_harbor_install_bootstrap_retry() {
     local attempt
-    for attempt in 1 2 3; do _vx_harbor_install_bootstrap_call "$@" && return 0; done
+    for attempt in {1..12}; do
+        _vx_harbor_install_bootstrap_call "$@" && return 0
+        (( attempt == 12 )) || /usr/bin/sleep 1
+    done
     return 75
 }
 
@@ -303,7 +313,7 @@ _vx_harbor_install_bootstrap_system_robots() {
 
 _vx_harbor_install_bootstrap_robot_find() {
     local stage="$1" marker="$2" output robots matches count
-    [[ "$marker" =~ ^vesta-managed:integration:[a-z0-9][a-z0-9-]{0,63}:v2:[a-f0-9]{32}$ ]] || return 1
+    [[ "$marker" =~ ^vesta-managed:integration:[a-z0-9][a-z0-9-]{0,63}:v(2|3):[a-f0-9]{32}$ ]] || return 1
     output="$stage/integration-robots.json"
     _vx_harbor_install_bootstrap_system_robots "$stage" "$output" || return
     robots="$(/usr/bin/jq -cS . "$output")" || return 1
@@ -340,12 +350,14 @@ _vx_harbor_install_integration_permissions() {
     /usr/bin/jq -cn '[
       {kind:"system",namespace:"/",access:[
         {resource:"project",action:"create"},
+        {resource:"project",action:"list"},
         {resource:"quota",action:"read"},
         {resource:"quota",action:"update"},
         {resource:"system-volumes",action:"read"}
       ]},
       {kind:"project",namespace:"*",access:[
         {resource:"project",action:"read"},
+        {resource:"project",action:"update"},
         {resource:"robot",action:"create"},
         {resource:"robot",action:"read"},
         {resource:"robot",action:"list"},
@@ -534,7 +546,7 @@ _vx_harbor_install_integration_configure() {
     fi
     installation="$(/usr/bin/jq -er '.INSTALLATION_ID // "vesta-harbor" | select(type=="string" and length>0)' "$root/provider.json")" || return 1
     operation="$(/usr/bin/od -An -N16 -tx1 /dev/urandom | /usr/bin/tr -d ' \n')"
-    basename="vesta-integration-${operation:0:16}"; marker="vesta-managed:integration:$installation:v2:$operation"; probe_project="vx-install-probe-${operation:0:12}"
+    basename="vesta-integration-${operation:0:16}"; marker="vesta-managed:integration:$installation:v${VX_HARBOR_INTEGRATION_PERMISSION_VERSION}:$operation"; probe_project="vx-install-probe-${operation:0:12}"
     _vx_harbor_install_bootstrap_retry "$stage" GET /api/v2.0/configurations '' "$response" 200 || return 75
     prior="$(_vx_harbor_install_configuration_subset <"$response")" || return 1
     _vx_harbor_install_bootstrap_system_robots "$stage" "$response" || return 75
@@ -545,7 +557,7 @@ _vx_harbor_install_integration_configure() {
         [[ "$(/usr/bin/jq -r length <<<"$prior_robot")" == 1 ]] || return 1
         prior_robot="$(/usr/bin/jq -c '.[0]' <<<"$prior_robot")"; prior_id="$(/usr/bin/jq -r .id <<<"$prior_robot")"; prior_user="$active_username"; prior_marker="$(/usr/bin/jq -r .description <<<"$prior_robot")"
         printf '%s\n' "$prior_robot" >"$response"
-        if [[ "$prior_marker" =~ ^vesta-managed:integration:${installation}:v2:[a-f0-9]{32}$ ]] \
+        if [[ "$prior_marker" =~ ^vesta-managed:integration:${installation}:v${VX_HARBOR_INTEGRATION_PERMISSION_VERSION}:[a-f0-9]{32}$ ]] \
             && _vx_harbor_install_integration_robot_validate "$response" "$prior_marker"; then exact_current=yes; fi
     fi
     journal="$(/usr/bin/jq -cn --arg operation "$operation" --argjson prior "$prior" \
@@ -604,6 +616,8 @@ _vx_harbor_install_restore_file() {
 vx_harbor_install() {
     local root data_root stage manifest compose ingress unit_target ingress_target nginx_main rollback provider_next candidate_main activation_main rollback_status finalize_status
     local unit_existed=no ingress_existed=no integration_existed=no current_existed=no previous_existed=no previous_rotated=no candidate_activated=no service_active=no service_enabled=no data_root_existed=no committed=no
+    local failure_reason
+    VX_HARBOR_INSTALL_ACTIVE_STEP=initialization
     root="$(vx_harbor_root)" || return 1
     vx_harbor_provider_prepare || return 1
     vx_harbor_provider_lock_acquire exclusive || return 1
@@ -702,12 +716,15 @@ vx_harbor_install() {
     }
     trap '_vx_harbor_install_rollback; vx_harbor_provider_lock_release 2>/dev/null || :; exit 1' HUP INT TERM
     _vx_harbor_install_apply() {
+        _vx_harbor_install_step prerequisite
         _vx_harbor_install_requirements || return 1
         _vx_harbor_install_phase prerequisite || return 1
+        _vx_harbor_install_step release
         vx_harbor_release_stage "$stage" || return 1
         _vx_harbor_install_phase release || return 1
         manifest="$(vx_harbor_release_manifest)"; compose="$stage/docker-compose.yml"; ingress="$stage/harbor-registry.conf"
         candidate_main="$stage/nginx.candidate.conf"; activation_main="$stage/nginx.activation.conf"; provider_next="$stage/provider.next.json"
+        _vx_harbor_install_step generation
         _vx_harbor_install_generate "$stage" "$manifest" || return 1
         vx_harbor_ingress_render "$ingress" "$candidate_main" "$activation_main" || return 1
         _vx_harbor_install_phase generation || return 1
@@ -718,31 +735,41 @@ vx_harbor_install() {
         ingress="$stage/harbor-registry.conf"
         candidate_main="$stage/nginx.candidate.conf"; activation_main="$stage/nginx.activation.conf"; provider_next="$stage/provider.next.json"
         /usr/bin/install -o "$(_vx_harbor_authority_uid)" -g "$(_vx_harbor_authority_gid)" -m 0600 "$VESTA/install/harbor/vesta-harbor.service" "$unit_target" || return 1
+        _vx_harbor_install_step compose
         "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" daemon-reload || return 1
         "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" enable vesta-harbor.service || return 1
         "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" start vesta-harbor.service || return 1
         _vx_harbor_install_phase compose || return 1
+        _vx_harbor_install_step migration
         _vx_harbor_install_migration_check "$stage/docker-compose.yml" || return 1
         _vx_harbor_install_phase migration || return 1
+        _vx_harbor_install_step socket
         vx_harbor_socket_validate || return 1
         _vx_harbor_install_phase socket || return 1
+        _vx_harbor_install_step health
         _vx_harbor_install_health_check || return 1
         _vx_harbor_install_phase health || return 1
+        _vx_harbor_install_step integration
         _vx_harbor_install_integration_configure "$stage" || return 1
         _vx_harbor_install_phase integration || return 1
+        _vx_harbor_install_step ingress
         vx_harbor_ingress_activate "$ingress" "$candidate_main" "$activation_main" || return 1
         _vx_harbor_install_phase ingress || return 1
+        _vx_harbor_install_step provider-render
         /usr/bin/jq --arg origin "$(vx_harbor_origin_json | /usr/bin/jq -r '.ORIGIN')" \
           --arg hash "$(/usr/bin/sha256sum "$manifest" | /usr/bin/awk '{print $1}')" \
           '.MODE="managed" | .RUNNING_VERSION="v2.15.0" | .PINNED_VERSION="v2.15.0" | .ORIGIN=$origin | .RELEASE_MANIFEST_SHA256=$hash | .INSTALLATION_ID=(.INSTALLATION_ID // "vesta-harbor")' \
           "$root/provider.json" >"$provider_next" || return 1
         _vx_harbor_install_phase provider_render || return 1
+        _vx_harbor_install_step release-rotation
         [[ "$previous_existed" == yes ]] && /usr/bin/mv "$root/release/previous" "$rollback/previous"
         [[ -d "$root/release/.prior-current" ]] && /usr/bin/mv "$root/release/.prior-current" "$root/release/previous"
         previous_rotated=yes
         _vx_harbor_install_phase release_rotation || return 1
+        _vx_harbor_install_step provider-write
         vx_harbor_json_write_atomic "$root/provider.json" "$provider_next" || return 1
         _vx_harbor_install_phase provider_write || return 1
+        _vx_harbor_install_step final-cleanup
         _vx_harbor_install_phase final_cleanup || return 1
     }
     if ! _vx_harbor_install_apply; then
@@ -750,14 +777,17 @@ vx_harbor_install() {
         trap - HUP INT TERM
         (( rollback_status != 0 )) || /usr/bin/rm -rf -- "$rollback"
         vx_harbor_provider_lock_release
+        failure_reason="transaction-rolled-back-at-${VX_HARBOR_INSTALL_ACTIVE_STEP}"
+        unset VX_HARBOR_INSTALL_ACTIVE_STEP
         if (( rollback_status != 0 )); then
             vx_harbor_audit system provider-install failed cleanup-pending || return 1
             return "$rollback_status"
         fi
-        vx_harbor_audit system provider-install failed transaction-rolled-back || return 1
+        vx_harbor_audit system provider-install failed "$failure_reason" || return 1
         return 1
     fi
     committed=yes
+    unset VX_HARBOR_INSTALL_ACTIVE_STEP
     trap - HUP INT TERM
     /usr/bin/rm -rf -- "$rollback"
     finalize_status=0

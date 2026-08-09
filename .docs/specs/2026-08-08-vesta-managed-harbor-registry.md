@@ -26,10 +26,27 @@ The initial target is Harbor v2.15.0 deployed by its supported Docker Compose
 distribution. The selected release is pinned and verified; no interface in
 this specification means "latest" at runtime.
 
+## First-release amendments (2026-08-09)
+
+- A root-owned, group-restricted Unix socket is the approved fixed local
+  Harbor transport. It replaces a host loopback TCP listener and reduces the
+  exposed host network surface without changing the public Vesta TLS origin.
+- First-release recovery delivers encrypted, validated provider backups and a
+  documented operator recovery procedure. Automated restore apply and
+  automated version upgrade are deferred because they are destructive,
+  release-specific workflows and are not required to operate the pinned
+  registry safely. The reserved restore `apply` mode fails without decrypting
+  or mutating state.
+- Provider backup includes the encrypted Harbor recovery secrets needed to
+  reconstruct the service. Derived integration and runtime robot credentials
+  are deliberately not archived; a future applied recovery must recreate and
+  transactionally validate those credentials from protected bootstrap
+  authority. Publisher plaintext remains unrecoverable by design.
+
 ## Goals
 
 - Make Vesta the only product surface an operator must use to install,
-  configure, monitor, back up, and upgrade the registry service.
+  configure, monitor, and back up the pinned registry service.
 - Derive the registry origin from Vesta's existing hostname, panel TLS port,
   certificate, and ingress listener without adding DNS or a public port.
 - Give every eligible Docker tenant a private, isolated image namespace and a
@@ -124,10 +141,10 @@ firewall, NAT, or certificate object.
 Vesta's panel nginx listener shall continue to own public TLS. On that same
 host and port it shall proxy only the exact Harbor OCI `/v2/` namespace and
 the exact token-service route emitted in Harbor's authentication challenge to
-a fixed loopback-only Harbor listener. Harbor shall use an external URL equal
-to the derived Vesta origin. The Harbor portal, administrative API, metrics,
-and every other Harbor route remain loopback-only; Vesta's CLI and panel are
-the remote administration surfaces.
+a fixed root-owned, group-restricted Unix socket. Harbor shall use an external
+URL equal to the derived Vesta origin. The Harbor portal, administrative API,
+metrics, and every other Harbor route remain available only through protected
+local transport; Vesta's CLI and panel are the remote administration surfaces.
 
 The registry locations shall preserve the client `Host`, external scheme,
 client address, `WWW-Authenticate`, upload location, and
@@ -161,7 +178,7 @@ retained provider data.
 Shared Harbor integration shall live in a focused Vesta helper layer. Every
 API request shall use:
 
-- a fixed root-owned loopback endpoint;
+- a fixed root-owned, group-restricted Unix-socket endpoint;
 - a least-privilege Harbor system robot identity;
 - an allowlisted HTTP method and API path;
 - schema-validated, bounded JSON request and response bodies;
@@ -343,8 +360,8 @@ preview/pull/apply transaction using an immutable digest.
 ### R12: Administration and panel integration
 
 Vesta shall expose administrator commands for install, provider
-configuration, status, reconciliation, backup, restore validation, upgrade,
-and removal planning. Public commands remain thin adapters over shared
+configuration, status, reconciliation, backup, restore validation, and
+removal planning. Public commands remain thin adapters over shared
 helpers and preserve normal Vesta human/JSON behavior and audit conventions.
 
 The Vesta panel shall display provider mode, endpoint, pinned/running version,
@@ -361,7 +378,8 @@ ASCII-armored age ciphertext.
 
 ### R13: Health, metrics, and audit
 
-Managed mode shall enable Harbor's official metrics endpoint on loopback.
+Managed mode shall enable Harbor's official metrics endpoint on its protected
+internal service network.
 Vesta shall consume bounded component health and usage observations and expose
 fresh/stale/unavailable status without proxying arbitrary Prometheus queries.
 
@@ -377,7 +395,9 @@ image-layer content, or unredacted Harbor output.
 Harbor provider backup is a system backup separate from tenant Compose
 backups. It shall cover the exact pinned configuration, Vesta provider
 mapping, Harbor database, registry blob storage or external-storage manifest,
-certification configuration, and encrypted provider credentials.
+certificate configuration, and encrypted Harbor recovery secrets. Derived
+robot credentials are recreated and validated during a future applied
+recovery instead of being copied into the provider archive.
 
 The backup workflow shall place Harbor into a supported consistent state,
 record hashes and version metadata, verify the database and storage snapshot,
@@ -385,13 +405,20 @@ encrypt secret-bearing material, and retain a last-known-good recovery point.
 It shall support validation-only restore without changing the running
 provider.
 
-An applied restore requires explicit administrator confirmation, exact target
+Automated restore apply is deferred from the first release. Its reserved
+command mode shall fail closed without decrypting or mutating state. A future
+applied restore requires explicit administrator confirmation, exact target
 version compatibility, pre-restore backup, component-health verification,
-sample authenticated manifest verification, owner mapping reconciliation, and
-an audit result. It shall never delete tenant project data merely because a
-Vesta account is absent after restore.
+sample authenticated manifest verification, owner mapping reconciliation,
+transactional integration/runtime credential recreation, and an audit result.
+It shall never delete tenant project data merely because a Vesta account is
+absent after restore.
 
-### R15: Controlled upgrades and recovery
+### R15: Future controlled upgrades and recovery
+
+Automated version upgrade is deferred from the first release, which remains
+pinned to Harbor v2.15.0. No first-release interface accepts a target version
+or performs a database migration.
 
 Upgrade shall support only an explicitly declared predecessor-to-target path.
 Before migration Vesta shall verify capacity and release artifacts, prevent
@@ -477,9 +504,10 @@ v-disable-harbor-registry CONFIRMATION_TOKEN
 ```
 
 Install derives the external origin from Vesta and accepts no hostname or port.
-Install and update use the release pinned by Vesta source and accept no
+Install uses the release pinned by Vesta source and accepts no
 caller-selected version or installer URL. Restore resolves `BACKUP_ID` under
-the provider backup root and accepts no archive path. The plan command issues
+the provider backup root and accepts no archive path; `apply` is reserved and
+returns status 78 without decrypting or mutating state. The plan command issues
 a short-lived confirmation token bound to the current provider/dependency
 manifest; disable revalidates that immutable plan. Disable removes the Harbor
 locations from Vesta's existing listener and stops the internal service while
@@ -585,9 +613,9 @@ managed host. Existing workloads continue because Harbor is outside their
 runtime process and network dependency after image pull.
 
 The public origin is always Vesta's existing hostname and panel port. Harbor
-adds protocol locations to that listener but no socket, firewall rule, DNS
-record, NAT mapping, or certificate. Its container-facing listener remains
-loopback-only.
+adds protocol locations to that listener but no TCP socket, firewall rule,
+DNS record, NAT mapping, or certificate. Its host-facing backend is only the
+root-owned, group-restricted Unix socket.
 
 ### Harbor API and portal usage
 
@@ -596,7 +624,7 @@ account lifecycle, repository/artifact observations, health, and maintenance
 controls supported by the pinned release. Vesta does not scrape the Harbor
 portal or depend on unstable HTML.
 
-The Harbor portal remains a loopback-only emergency administrator diagnostic.
+The Harbor portal remains a local-only emergency administrator diagnostic.
 It is not the tenant onboarding, package, credential, or deployment interface.
 Vesta state remains authoritative for owner eligibility and mapping; Harbor
 state is authoritative for registry artifacts and measured project usage.
@@ -850,14 +878,12 @@ repository and digest through preview/apply.
 
 ### AC-R14/R15/R16: Recovery and lifecycle
 
-- A complete provider backup restores into a disposable host and passes
-  database, blob, mapping, authenticated manifest, and component-health
-  validation.
+- A complete provider backup validates its database, blob, mapping,
+  configuration, encrypted recovery-secret, ownership, and digest inventory.
 - Validation-only restore mutates no provider, workload, route, credential, or
   tenant data.
-- Upgrade refuses without a fresh validated backup and supported version path.
-- A rehearsed supported upgrade preserves artifacts, mappings, quotas, and
-  credentials and leaves application containers unchanged.
+- Restore `apply` and any version-upgrade request fail closed without
+  decrypting, migrating, or mutating provider or workload state.
 - Removal planning reports every dependency and retained data item; no first
   release command purges Harbor data or tenant runtime state.
 
@@ -922,7 +948,8 @@ It does not pretend that Harbor has no network attack surface: exact OCI and
 token routes become reachable through the existing listener. Strict route,
 header, cookie, logging, authentication, quota, timeout, and concurrency
 boundaries therefore form part of the release contract. Harbor remains
-loopback-only and all non-registry paths remain Vesta-owned.
+reachable only through its protected local Unix socket and all non-registry
+paths remain Vesta-owned.
 
 ### Selected: Harbor-generated child secrets with encrypted publisher delivery
 

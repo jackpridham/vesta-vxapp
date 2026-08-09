@@ -20,6 +20,9 @@ _vx_harbor_require_root() { return 0; }
 _vx_harbor_secure_file_set() { chmod "$2" "$1"; }
 fake_socket="$HARBOR_TEST_ROOT/harbor.sock"
 vx_harbor_local_socket_path() { printf '%s\n' "$fake_socket"; }
+vx_harbor_socket_path() { printf '%s\n' "$fake_socket"; }
+VX_HARBOR_SOCKET_UID="$EUID"
+VX_HARBOR_SOCKET_GID="$(id -g)"
 vx_harbor_provider_prepare
 
 vx_harbor_registry_usage_set alice 12
@@ -92,7 +95,13 @@ start_api() {
       --state "$state_file" --log "$HARBOR_TEST_ROOT/api.log" \
       --credential-file "$credential" --ready-file "$ready" &
     api_pid=$!
-    for _ in $(seq 1 50); do [[ -S "$fake_socket" && -s "$ready" ]] && return; sleep 0.1; done
+    for _ in $(seq 1 50); do
+        if [[ -S "$fake_socket" && -s "$ready" ]]; then
+            chmod 0660 "$fake_socket"
+            return
+        fi
+        sleep 0.1
+    done
     fail 'Unix-socket fake Harbor did not start'
 }
 stop_api() { kill "$api_pid"; wait "$api_pid" 2>/dev/null || :; api_pid=; }

@@ -260,7 +260,7 @@ vx_harbor_api_artifact() { [[ "$1" =~ ^[a-z0-9][a-z0-9-]{0,127}$ && "$2" =~ ^[A-
 vx_harbor_api_volume() { _vx_harbor_api_call GET /api/v2.0/systeminfo/volumes 200 'type=="object" and (.storage|type=="object")'; }
 
 vx_harbor_api_credential_probe() {
-    local username="$1" secret config socket curl_bin status
+    local username="$1" secret config socket curl_bin status attempt
     [[ "$username" =~ ^[A-Za-z0-9][-A-Za-z0-9._+$]{0,255}$ ]] || return 1
     IFS= read -r -N 257 secret <&0 || [[ ${#secret} -gt 0 ]]
     [[ "$secret" =~ ^[A-Za-z0-9_-]{8,256}$ ]] || { unset secret; return 1; }
@@ -268,10 +268,15 @@ vx_harbor_api_credential_probe() {
     unset secret
     socket="$(_vx_harbor_api_socket)"; _vx_harbor_api_socket_validate "$socket" || { unset config; return 1; }
     curl_bin="$(_vx_harbor_api_curl)"; [[ "$curl_bin" == /usr/bin/curl ]] || { unset config; return 1; }
-    status="$(/usr/bin/env -i PATH=/usr/bin:/bin "$curl_bin" --config - \
-      --unix-socket "$socket" --request GET --connect-timeout 3 --max-time 10 \
-      --max-filesize 4096 --output /dev/null --write-out '%{http_code}' \
-      http://localhost/v2/ 2>/dev/null <<<"$config")" || { unset config; return 75; }
+    for attempt in {1..12}; do
+        status="$(/usr/bin/env -i PATH=/usr/bin:/bin "$curl_bin" --config - \
+          --unix-socket "$socket" --request GET --connect-timeout 3 --max-time 10 \
+          --max-filesize 4096 --output /dev/null --write-out '%{http_code}' \
+          http://localhost/v2/ 2>/dev/null <<<"$config")" \
+          && [[ "$status" == 200 ]] \
+          && { unset config; return 0; }
+        (( attempt == 12 )) || /usr/bin/sleep 1
+    done
     unset config
-    [[ "$status" == 200 ]]
+    return 75
 }

@@ -141,7 +141,8 @@ and current panel TLS port: `https://<vesta-hostname>:<panel-port>`. No caller
 may supply either component. Vesta's existing nginx listener and certificate
 remain authoritative and proxy only the exact OCI `/v2/` and emitted token
 service routes. Harbor API, portal, metrics, and all other routes stay on a
-fixed loopback-only endpoint.
+fixed root-owned, group-restricted Unix socket with no host Harbor TCP
+listener.
 
 The API adapter uses fixed executable paths, an empty environment, bounded
 request and response bodies, fixed timeouts, Basic authentication loaded from
@@ -269,13 +270,12 @@ state, route, volume, bind, revision, tenant backup, or retained provider data.
 
 Provider backup is separate from tenant backup and covers pinned
 configuration, Vesta mappings, Harbor database and blob state (or an external
-storage manifest), certificate configuration, and encrypted credentials. It
-records hashes and version metadata, verifies database/storage snapshots, and
-retains a last-known-good recovery point. Validation-only restore cannot
-change the running provider. Applied restore requires explicit confirmation,
-version compatibility, a pre-restore backup, health and authenticated manifest
-checks, mapping reconciliation, and audit; account absence never causes
-artifact deletion.
+storage manifest), certificate configuration, and encrypted Harbor recovery
+secrets. Derived integration/runtime robot credentials are intentionally
+recreated and validated during a future applied recovery; publisher plaintext
+is never recoverable. The backup records hashes and version metadata, verifies
+database/storage snapshots, and retains a last-known-good recovery point.
+Validation-only restore cannot change the running provider.
 
 First-release restore is validation-only. `apply` exits with status 78 without
 decrypting or mutating state. Validation uses protected temporary storage and
@@ -285,3 +285,7 @@ every manifest digest. Ciphertext is stored in Vesta's system-backup layout;
 root-owned metadata remains provider authority. Curl configuration, robot
 secrets, plaintext age identities and transient sockets are never archived.
 Automated restore apply and automated provider updates are deferred.
+A future applied restore requires explicit confirmation, version
+compatibility, a pre-restore backup, health and authenticated manifest checks,
+mapping reconciliation, transactional credential recreation, and audit;
+account absence never causes artifact deletion.

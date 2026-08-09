@@ -81,7 +81,7 @@ _vx_harbor_disable_integration_revoke() {
     (( result != 0 )) || _vx_harbor_install_bootstrap_system_robots "$stage" "$response" || result=75
     if (( result == 0 )); then
         robot="$(/usr/bin/jq -c --arg username "$username" --arg installation "$installation" \
-          '[.[]|select(.name==$username and (.description|test("^vesta-managed:integration:"+$installation+":v2:[a-f0-9]{32}$")))]' "$response")" || result=1
+          '[.[]|select(.name==$username and (.description|test("^vesta-managed:integration:"+$installation+":v(2|3):[a-f0-9]{32}$")))]' "$response")" || result=1
         count="$(/usr/bin/jq -r length <<<"$robot")" || result=1
         [[ "$count" == 1 ]] || result=1
     fi

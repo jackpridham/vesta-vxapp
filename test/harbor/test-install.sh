@@ -145,12 +145,14 @@ _vx_harbor_install_bootstrap_robot_create_secret_once() {
     and .permissions==[
       {kind:"system",namespace:"/",access:[
         {resource:"project",action:"create"},
+        {resource:"project",action:"list"},
         {resource:"quota",action:"read"},
         {resource:"quota",action:"update"},
         {resource:"system-volumes",action:"read"}
       ]},
       {kind:"project",namespace:"*",access:[
         {resource:"project",action:"read"},
+        {resource:"project",action:"update"},
         {resource:"robot",action:"create"},
         {resource:"robot",action:"read"},
         {resource:"robot",action:"list"},

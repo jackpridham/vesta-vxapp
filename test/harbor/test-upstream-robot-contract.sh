@@ -124,12 +124,14 @@ integration_body="$(jq -cn '{
     permissions:[
       {kind:"system",namespace:"/",access:[
         {resource:"project",action:"create"},
+        {resource:"project",action:"list"},
         {resource:"quota",action:"read"},
         {resource:"quota",action:"update"},
         {resource:"system-volumes",action:"read"}
       ]},
       {kind:"project",namespace:"*",access:[
         {resource:"project",action:"read"},
+        {resource:"project",action:"update"},
         {resource:"repository",action:"list"},
         {resource:"repository",action:"pull"},
         {resource:"repository",action:"push"},
@@ -181,12 +183,14 @@ jq -e '
     and .permissions == [
       {kind:"system",namespace:"/",access:[
         {resource:"project",action:"create"},
+        {resource:"project",action:"list"},
         {resource:"quota",action:"read"},
         {resource:"quota",action:"update"},
         {resource:"system-volumes",action:"read"}
       ]},
       {kind:"project",namespace:"*",access:[
         {resource:"project",action:"read"},
+        {resource:"project",action:"update"},
         {resource:"repository",action:"list"},
         {resource:"repository",action:"pull"},
         {resource:"repository",action:"push"},
@@ -254,7 +258,7 @@ jq -e '
     || fail 'runtime update body did not preserve the current valid robot shape'
 
 status="$(json_request "$integration_config" POST /api/v2.0/robots \
-    '{"name":"too-broad","duration":-1,"level":"project","permissions":[{"kind":"project","namespace":"vx-alice","access":[{"resource":"project","action":"update"}]}]}' \
+    '{"name":"too-broad","duration":-1,"level":"project","permissions":[{"kind":"project","namespace":"vx-alice","access":[{"resource":"quota","action":"read"}]}]}' \
     "$response")"
 assert_status "$status" 403 'delegated permission subset enforcement'
 
@@ -371,7 +375,7 @@ fi
 lost_id="$(jq -er '.robots[] | select(.description == "vesta-managed:candidate:publisher-op-lost") | .id' \
     "$state_file")"
 status="$(api_call "$integration_config" GET \
-    '/api/v2.0/robots?q=Level%3Dproject%2CProjectID%3D1&page=1&page_size=1000' \
+    '/api/v2.0/robots?q=Level%3Dproject%2CProjectID%3D1&page=1&page_size=100' \
     "$response")"
 assert_status "$status" 200 'candidate discovery after lost response'
 jq -e --argjson id "$lost_id" '
