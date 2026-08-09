@@ -750,6 +750,7 @@ vx_harbor_install() {
         stage="$root/release/current"
         ingress="$stage/harbor-registry.conf"
         candidate_main="$stage/nginx.candidate.conf"; activation_main="$stage/nginx.activation.conf"; provider_next="$stage/provider.next.json"
+        vx_harbor_ingress_render "$ingress" "$candidate_main" "$activation_main" || return 1
         /usr/bin/install -o "$(_vx_harbor_authority_uid)" -g "$(_vx_harbor_authority_gid)" -m 0600 "$VESTA/install/harbor/vesta-harbor.service" "$unit_target" || return 1
         _vx_harbor_install_step compose
         "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" daemon-reload || return 1

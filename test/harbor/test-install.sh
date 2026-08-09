@@ -249,6 +249,9 @@ grep -Eq '^user = "vxrobot-vesta-integration-[a-f0-9]{16}:' "$credential" || fai
 ! grep -q 'admin:' "$credential" || fail 'bootstrap identity remained routine authority'
 [[ "$(<"$delegated_probe_count")" -ge 1 ]] || fail 'delegated integration probe was not run'
 compose="$VESTA/data/harbor/release/current/docker-compose.yml"
+grep -Fq "include $VESTA/data/harbor/release/current/harbor-registry.conf;" \
+  "$VESTA/data/harbor/release/current/nginx.candidate.conf" \
+  || fail 'promoted nginx candidate retained its temporary release include'
 [[ "$(stat -c %a "$VESTA/data/harbor/release/current/common/config/nginx/nginx.conf")" == 644 ]] \
   || fail 'non-secret unprivileged proxy config is not readable'
 head -1 "$VESTA/data/harbor/release/current/common/config/nginx/nginx.conf" \
