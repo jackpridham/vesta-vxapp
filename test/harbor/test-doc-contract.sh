@@ -92,6 +92,10 @@ for phrase in \
 do
     assert_contains "$spec" "$phrase"
 done
+for file in "$provider" "$spec"; do
+    assert_contains "$file" 'quota update'
+    assert_contains "$file" 'project wildcard scope never grants quota update'
+done
 
 # Owner command and plaintext authority are fixed at this milestone. Publisher
 # plaintext is never durable; runtime plaintext-equivalent remains Vesta-owned.
@@ -106,6 +110,27 @@ assert_contains "$provider" 'Publisher plaintext is never durable on Vesta'
 assert_contains "$provider" 'runtime pull plaintext-equivalent remains Vesta-owned'
 assert_contains "$shell_access" 'failed rotation leaves stdout empty'
 assert_contains "$spec" 'Publisher plaintext shall never be written to a regular file'
+
+# Publisher rotation accepts one tightly bounded native recipient. Parsing is
+# local X25519 only: no alternate recipient classes or interactive key input.
+for file in "$provider" "$shell_access" "$spec"; do
+    for phrase in \
+        'native X25519' \
+        '^age1[ac-hj-np-z02-9]{20,}$' \
+        '128 bytes' \
+        'multiple recipients' \
+        'SSH recipients' \
+        'plugin recipients' \
+        'identities' \
+        'passphrases' \
+        'multiline input' \
+        'whitespace' \
+        'control bytes' \
+        'oversize input'
+    do
+        assert_contains "$file" "$phrase"
+    done
+done
 
 # Superseded behavior is absent only from the Milestone 1 active authorities.
 # Tenant guides and deployment runbooks are intentionally deferred to

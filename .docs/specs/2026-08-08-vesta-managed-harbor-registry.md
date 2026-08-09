@@ -186,10 +186,11 @@ or later refresh the secret.
 
 After bootstrap, the least-privilege integration robot is the only routine API
 identity. It is system-level with system scope `/` and wildcard project scope
-`*`. Its exact grants are the required system project create/list and volume
-read actions plus wildcard project read/update, quota read/update, repository
-read/list/pull/push, and robot create/read/list/delete actions needed to
-provision, verify, and revoke project children. Harbor's robot RBAC catalogs
+`*`. Its exact system-scope grants are project create/list, quota update, and
+system-volume read. Its exact wildcard project grants are project read/update,
+quota read, repository read/list/pull/push, and robot create/read/list/delete;
+project wildcard scope never grants quota update. Those actions provision,
+verify, and revoke project children. Harbor's robot RBAC catalogs
 deliberately omit `robot:update`; integration and child update/refresh
 attempts therefore return `403`. Routine Vesta lifecycle shall use create, verify, switch, and
 delete only, never robot update/refresh or bootstrap-administrator fallback.
@@ -242,10 +243,16 @@ publishing changes but shall not stop running workloads.
 An eligible tenant shall create or rotate one deterministic project-scoped
 publisher generation with
 `v-docker registry-publisher-rotate < age-recipient`. Stdin contains exactly
-one bounded public age recipient, not a publisher secret. The robot receives
-only OCI pull and push within that tenant project. Harbor requires pull with
-push; no delete, project administration, member, scanner-administration, or
-cross-project permission is granted.
+one bounded native X25519 age recipient, not a publisher secret. Stdin is at
+most 128 bytes including at most one optional terminal LF. After removing that
+optional LF, the recipient must match `^age1[ac-hj-np-z02-9]{20,}$` and pass
+native X25519 decoding. Empty input, multiple recipients, SSH recipients,
+plugin recipients, identities, passphrases, multiline input, any other
+whitespace, control bytes, NUL, and oversize input are rejected before Harbor
+mutation; Vesta never invokes an age plugin. The robot receives only OCI pull
+and push within that tenant project. Harbor requires pull with push; no delete,
+project administration, member, scanner-administration, or cross-project
+permission is granted.
 
 Vesta shall configure a Harbor robot prefix compatible with the existing
 registry username validator, such as `vxrobot-`. Harbor returns a project

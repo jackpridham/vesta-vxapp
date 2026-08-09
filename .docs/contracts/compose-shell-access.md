@@ -127,11 +127,17 @@ Project removal is explicit and retained-data only.
 The managed Harbor operations remain owner-derived. `registry-info` accepts
 only an owner-scoped standard project and an optional bounded output format;
 it exposes no credential or Harbor administration. `registry-publisher-rotate`
-accepts exactly one validated age recipient through bounded stdin, never argv
-or environment. Its successful stdout is only one complete ASCII-armored age
-ciphertext; no prefix, suffix, status line, username, JSON, or plaintext may
-accompany it. The ciphertext carries the one-time Harbor-generated publisher
-secret for the supplied recipient. `registry-publisher-disable` accepts
+accepts exactly one validated native X25519 age recipient through bounded
+stdin, never argv or environment. Stdin is limited to 128 bytes including at
+most one optional terminal LF. After removing that optional LF, the recipient
+must match `^age1[ac-hj-np-z02-9]{20,}$` and pass native X25519 decoding. Empty
+input, multiple recipients, SSH recipients, plugin recipients, identities,
+passphrases, multiline input, any other whitespace, control bytes, NUL, and
+oversize input are rejected before dispatch, and plugin execution is forbidden.
+Its successful stdout is only one complete ASCII-armored age ciphertext; no
+prefix, suffix, status line, username, JSON, or plaintext may accompany it.
+The ciphertext carries the one-time Harbor-generated publisher secret for the
+supplied recipient. `registry-publisher-disable` accepts
 no tenant-selected owner, endpoint, namespace, robot identity, role, API path,
 or Harbor administration argument. All three operations use the authenticated
 broker owner and the fixed Vesta adapters defined by the Harbor provider
@@ -195,7 +201,9 @@ snapshotted into root-owned mode-0700/mode-0600 storage. Compose input is
 limited to 1 MiB per preview. A secret or registry credential is limited to
 64 KiB; the snapshot is a mode-0700 directory containing mode-0600 regular
 files for the duration of the broker operation. The publisher-rotation age
-recipient is a public identifier, not a secret snapshot. Harbor's generated
+recipient is the validated native X25519 public identifier above, not a secret
+snapshot. It is never an SSH or plugin recipient, identity, or passphrase.
+Harbor's generated
 publisher plaintext is passed only through protected descriptors and pipes to
 credential verification and age encryption; it is never written to a regular
 file, Vesta authority, journal, backup, log, or audit record. The runtime pull

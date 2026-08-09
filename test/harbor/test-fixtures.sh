@@ -138,13 +138,13 @@ integration_body="$(jq -cn --arg secret "$requested_secret" '{
     {kind:"system",namespace:"/",access:[
       {resource:"project",action:"create"},
       {resource:"project",action:"list"},
+      {resource:"quota",action:"update"},
       {resource:"system-volumes",action:"read"}
     ]},
     {kind:"project",namespace:"*",access:[
       {resource:"project",action:"read"},
       {resource:"project",action:"update"},
       {resource:"quota",action:"read"},
-      {resource:"quota",action:"update"},
       {resource:"repository",action:"list"},
       {resource:"repository",action:"read"},
       {resource:"repository",action:"pull"},
@@ -171,7 +171,7 @@ printf 'silent\nshow-error\nuser = "%s:%s"\n' \
     "$integration_username" "$integration_secret" >"$curl_config"
 chmod 0600 "$curl_config"
 
-child_body='{"name":"publisher","description":"vesta-managed:candidate:fixture","secret":"ignored-child-secret-canary","disabled":false,"duration":-1,"level":"project","permissions":[{"kind":"project","namespace":"vx-alice","access":[{"resource":"repository","action":"pull"},{"resource":"repository","action":"push"}]}]}'
+child_body='{"name":"publisher","description":"vesta-managed:candidate:fixture","secret":"ignored-child-secret-canary","disable":false,"duration":-1,"level":"project","permissions":[{"kind":"project","namespace":"vx-alice","access":[{"resource":"repository","action":"pull"},{"resource":"repository","action":"push"}]}]}'
 status="$(api_call POST /api/v2.0/robots "$response" \
     --header 'Content-Type: application/json' --data-binary "$child_body")"
 [[ "$status" == 201 ]] || fail 'project child robot create failed'
@@ -180,8 +180,12 @@ child_secret="$(jq -er .secret "$response")"
 status="$(api_call GET /api/v2.0/robots/2 "$response")"
 [[ "$status" == 200 ]] || fail 'project child robot read failed'
 assert_json "$response" '"secret" not in value and value["level"] == "project"'
+child_update_body="$(jq -c '.disable = true' "$response")"
 status="$(api_call PUT /api/v2.0/robots/2 "$response" \
-    --header 'Content-Type: application/json' --data-binary '{"disabled":true}')"
+    --header 'Content-Type: application/json' --data-binary '{"disable":true}')"
+[[ "$status" == 400 ]] || fail 'malformed robot update bypassed validation'
+status="$(api_call PUT /api/v2.0/robots/2 "$response" \
+    --header 'Content-Type: application/json' --data-binary "$child_update_body")"
 [[ "$status" == 403 ]] || fail 'routine robot update did not require robot:update'
 status="$(api_call PATCH /api/v2.0/robots/2 "$response" \
     --header 'Content-Type: application/json' --data-binary '{}')"

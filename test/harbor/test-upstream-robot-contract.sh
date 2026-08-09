@@ -12,7 +12,7 @@ set -o pipefail
 #   src/server/v2.0/handler/robot.go         one-time create response, delegated
 #                                             subset check, update/refresh RBAC
 #   src/server/v2.0/handler/model/robot.go   GET/list secret redaction
-#   src/common/rbac/const.go                 robot catalog omits robot:update
+#   src/common/rbac/const.go                 quota scope and omitted robot:update
 
 test_dir="$(cd "$(dirname "$0")" && pwd)"
 # shellcheck source=test/harbor/lib.sh
@@ -103,6 +103,9 @@ jq -e '
          == ["create", "delete", "list", "read"])
     and ([.project[] | select(.resource == "robot") | .action] | sort
          == ["create", "delete", "list", "read"])
+    and ([.system[] | select(.resource == "quota") | .action] | sort
+         == ["list", "read", "update"])
+    and ([.project[] | select(.resource == "quota") | .action] == ["read"])
 ' "$response" >/dev/null || fail 'robot RBAC catalog does not match pinned Harbor'
 
 status="$(json_request "$bootstrap_config" POST /api/v2.0/projects \
@@ -124,13 +127,13 @@ integration_body="$(jq -cn --arg secret "$integration_request_secret" '{
       {kind:"system",namespace:"/",access:[
         {resource:"project",action:"create"},
         {resource:"project",action:"list"},
+        {resource:"quota",action:"update"},
         {resource:"system-volumes",action:"read"}
       ]},
       {kind:"project",namespace:"*",access:[
         {resource:"project",action:"read"},
         {resource:"project",action:"update"},
         {resource:"quota",action:"read"},
-        {resource:"quota",action:"update"},
         {resource:"repository",action:"list"},
         {resource:"repository",action:"pull"},
         {resource:"repository",action:"push"},
@@ -169,13 +172,13 @@ jq -e '
       {kind:"system",namespace:"/",access:[
         {resource:"project",action:"create"},
         {resource:"project",action:"list"},
+        {resource:"quota",action:"update"},
         {resource:"system-volumes",action:"read"}
       ]},
       {kind:"project",namespace:"*",access:[
         {resource:"project",action:"read"},
         {resource:"project",action:"update"},
         {resource:"quota",action:"read"},
-        {resource:"quota",action:"update"},
         {resource:"repository",action:"list"},
         {resource:"repository",action:"pull"},
         {resource:"repository",action:"push"},
@@ -228,6 +231,19 @@ jq -e '
     }]
     and (has("secret") | not)
 ' "$response" >/dev/null || fail 'runtime robot level, scope, or redaction drifted'
+runtime_update_body="$(jq -c '.disable = true' "$response")"
+jq -e '
+    .name == "vxrobot-vx-alice+runtime-1"
+    and .description == "vesta-managed:candidate:runtime-op-1"
+    and .disable == true
+    and .duration == -1
+    and .level == "project"
+    and .permissions == [{
+      kind:"project", namespace:"vx-alice",
+      access:[{resource:"repository",action:"pull"}]
+    }]
+' <<<"$runtime_update_body" >/dev/null \
+    || fail 'runtime update body did not preserve the current valid robot shape'
 
 status="$(json_request "$integration_config" POST /api/v2.0/robots \
     '{"name":"too-broad","duration":-1,"level":"project","permissions":[{"kind":"project","namespace":"vx-alice","access":[{"resource":"artifact","action":"read"}]}]}' \
@@ -235,8 +251,15 @@ status="$(json_request "$integration_config" POST /api/v2.0/robots \
 assert_status "$status" 403 'delegated permission subset enforcement'
 
 status="$(json_request "$integration_config" PUT "/api/v2.0/robots/$runtime_id" \
-    '{"disabled":true}' "$response")"
+    '{"disable":true}' "$response")"
+assert_status "$status" 400 'malformed integration robot child update'
+jq -e '.errors == [{code:"BAD_REQUEST"}]' "$response" >/dev/null \
+    || fail 'malformed robot update did not fail validation before authorization'
+status="$(json_request "$integration_config" PUT "/api/v2.0/robots/$runtime_id" \
+    "$runtime_update_body" "$response")"
 assert_status "$status" 403 'integration robot child update'
+jq -e '.errors == [{code:"FORBIDDEN"}]' "$response" >/dev/null \
+    || fail 'valid robot update was not denied specifically by robot:update RBAC'
 status="$(json_request "$integration_config" PATCH "/api/v2.0/robots/$runtime_id" \
     '{}' "$response")"
 assert_status "$status" 403 'integration robot child refresh'
@@ -296,6 +319,8 @@ PY
 
 status="$(api_call "$integration_config" DELETE "/api/v2.0/robots/$publisher_id" "$response")"
 assert_status "$status" 200 'publisher revocation delete'
+status="$(api_call "$integration_config" DELETE "/api/v2.0/robots/$publisher_id" "$response")"
+assert_status "$status" 404 'publisher repeated revocation delete'
 status="$(api_call "$integration_config" GET "/api/v2.0/robots/$publisher_id" "$response")"
 assert_status "$status" 404 'publisher revocation validation'
 jq -e '

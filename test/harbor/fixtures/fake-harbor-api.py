@@ -29,6 +29,9 @@ BODY_READ_TIMEOUT = 0.5
 SYSTEM_ROBOT_CATALOG = {
     ("project", "create"),
     ("project", "list"),
+    ("quota", "list"),
+    ("quota", "read"),
+    ("quota", "update"),
     ("robot", "create"),
     ("robot", "delete"),
     ("robot", "list"),
@@ -40,7 +43,6 @@ PROJECT_ROBOT_CATALOG = {
     ("project", "read"),
     ("project", "update"),
     ("quota", "read"),
-    ("quota", "update"),
     ("repository", "list"),
     ("repository", "pull"),
     ("repository", "push"),
@@ -128,11 +130,13 @@ class HarborHandler(BaseHTTPRequestHandler):
 
     @staticmethod
     def public_robot(robot):
-        return {
+        public = {
             key: value
             for key, value in robot.items()
-            if key not in ("secret", "stored_name")
+            if key not in ("disabled", "secret", "stored_name")
         }
+        public["disable"] = bool(robot.get("disabled", False))
+        return public
 
     def authenticate(self):
         supplied = self.headers.get("Authorization")
@@ -420,6 +424,30 @@ class HarborHandler(BaseHTTPRequestHandler):
         return True
 
     @staticmethod
+    def validate_robot_update(body, robot, state):
+        duration = body.get("duration")
+        level = body.get("level")
+        permissions = body.get("permissions")
+        if (
+            not isinstance(body.get("name"), str)
+            or not isinstance(body.get("description"), str)
+            or not isinstance(body.get("disable"), bool)
+            or not isinstance(duration, int)
+            or isinstance(duration, bool)
+            or (duration != -1 and not 0 < duration < 2**31 - 1)
+            or not HarborHandler.validate_permissions(level, permissions, state)
+        ):
+            return False
+        if level == "project":
+            current_permissions = robot.get("permissions", [])
+            if not current_permissions:
+                return False
+            return permissions[0].get("namespace") == current_permissions[0].get(
+                "namespace"
+            )
+        return True
+
+    @staticmethod
     def robot_scope(robot):
         level = robot.get("level")
         if level == "project":
@@ -538,10 +566,9 @@ class HarborHandler(BaseHTTPRequestHandler):
             if not project:
                 self.finish_status(404, {"errors": [{"code": "NOT_FOUND"}]})
                 return
-            action = "update" if method == "PUT" else "read"
-            if not self.require("project", project["name"], "quota", action):
-                return
             if method == "PUT":
+                if not self.require("system", "/", "quota", "update"):
+                    return
                 body = self.read_json()
                 if body is None:
                     return
@@ -549,6 +576,8 @@ class HarborHandler(BaseHTTPRequestHandler):
                 self.server.store.write(state)
                 self.finish_status(200)
             else:
+                if not self.require("project", project["name"], "quota", "read"):
+                    return
                 self.finish_status(200, quota)
             return
 
@@ -639,7 +668,31 @@ class HarborHandler(BaseHTTPRequestHandler):
             if not robot:
                 self.finish_status(404, {"errors": [{"code": "NOT_FOUND"}]})
                 return
-            if method in ("PUT", "PATCH"):
+            if method == "PUT":
+                body = self.read_json()
+                if body is None:
+                    return
+                if not self.validate_robot_update(body, robot, state):
+                    self.finish_status(400, {"errors": [{"code": "BAD_REQUEST"}]})
+                    return
+                kind, namespace = self.robot_scope(robot)
+                if not self.require(kind, namespace, "robot", "update"):
+                    return
+                if body["level"] != robot["level"] or body["name"] != robot["name"]:
+                    self.finish_status(400, {"errors": [{"code": "BAD_REQUEST"}]})
+                    return
+                robot.update(
+                    {
+                        "description": body["description"],
+                        "disabled": body["disable"],
+                        "duration": body["duration"],
+                        "permissions": body["permissions"],
+                    }
+                )
+                self.server.store.write(state)
+                self.finish_status(200)
+                return
+            if method == "PATCH":
                 self.finish_status(403, {"errors": [{"code": "FORBIDDEN"}]})
                 return
             kind, namespace = self.robot_scope(robot)

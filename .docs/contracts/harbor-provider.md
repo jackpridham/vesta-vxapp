@@ -159,8 +159,11 @@ secret-redacted.
 
 Routine Vesta API calls use one protected system integration robot, never the
 bootstrap administrator. Its system scope is `/`; its project scope is the
-wildcard `*`. It receives only the project, quota, repository, robot, and
-system-volume actions required by reconciliation and child delegation.
+wildcard `*`. System scope `/` grants project create/list, quota update, and
+system-volume read. Wildcard project scope grants project read/update, quota
+read, repository read/list/pull/push, and robot create/read/list/delete;
+project wildcard scope never grants quota update. These are the exact actions
+required by reconciliation and child delegation.
 `robot:update` is absent because Harbor's system and project robot permission
 catalogs deliberately omit it. Update and refresh therefore return `403` to
 the integration robot and to project children. The integration robot may
@@ -181,10 +184,16 @@ create, verify, switch Vesta authority, and delete the prior child. It never
 updates or refreshes a robot and never falls back to routine bootstrap-admin
 access.
 
-`registry-publisher-rotate` reads exactly one bounded age recipient from
-stdin. On success stdout contains only ASCII-armored age ciphertext carrying
-the newly generated publisher secret; there is no surrounding human or
-JSON output. Vesta verifies the child and encrypts the one-time create secret
+`registry-publisher-rotate` reads exactly one bounded native X25519 age
+recipient from stdin. Stdin is limited to 128 bytes including at most one
+optional terminal LF. After removing that optional LF, the value must match
+`^age1[ac-hj-np-z02-9]{20,}$` and pass native X25519 recipient decoding. Empty
+input, multiple recipients, SSH recipients, plugin recipients, identities,
+passphrases, multiline input, any other whitespace, control bytes, NUL, and
+oversize input are rejected before Harbor mutation; no plugin command is
+invoked. On success stdout contains only ASCII-armored age ciphertext carrying
+the newly generated publisher secret; there is no surrounding human or JSON
+output. Vesta verifies the child and encrypts the one-time create secret
 directly to that recipient without making publisher plaintext durable. A
 failed rotation emits no partial ciphertext as success and preserves the
 previous validated publisher generation.

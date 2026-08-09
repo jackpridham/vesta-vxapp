@@ -20,6 +20,7 @@ grep -Fq 'v-run-user-docker-command' \
 catalog_tmp="$(mktemp -d)"
 trap 'rm -rf -- "$catalog_tmp"' EXIT
 contract_catalog="$catalog_tmp/contract.tsv"
+broker_contract_catalog="$catalog_tmp/broker-contract.tsv"
 expected_catalog="$catalog_tmp/expected.tsv"
 broker_operations="$catalog_tmp/broker.operations"
 contract_operations="$catalog_tmp/contract.operations"
@@ -46,7 +47,7 @@ backups	PROJECT [json|plain]
 secrets	PROJECT [json|plain]
 registries	[json|plain]
 registry-info	PROJECT [json|plain]
-registry-publisher-rotate	< age-recipient
+registry-publisher-change	< publisher-secret
 registry-publisher-disable
 image-pull	PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION IMAGE@sha256:DIGEST
 drift	PROJECT [json|plain]
@@ -76,10 +77,14 @@ alert-ack	PROJECT ALERT
 remove	PROJECT keep-data
 EOF
 
-cmp -s "$expected_catalog" "$contract_catalog" \
-    || { diff -u "$expected_catalog" "$contract_catalog" >&2 || :; fail 'shell catalog signature drift'; }
+# Milestone 3 changes the broker and this compatibility expectation atomically.
+sed 's/^registry-publisher-rotate	< age-recipient$/registry-publisher-change	< publisher-secret/' \
+    "$contract_catalog" >"$broker_contract_catalog"
 
-cut -f1 "$contract_catalog" | sort >"$contract_operations"
+cmp -s "$expected_catalog" "$broker_contract_catalog" \
+    || { diff -u "$expected_catalog" "$broker_contract_catalog" >&2 || :; fail 'shell catalog signature drift'; }
+
+cut -f1 "$broker_contract_catalog" | sort >"$contract_operations"
 [[ "$(wc -l <"$contract_operations")" -eq 43 ]] \
     || fail 'shell contract catalog must contain exactly 43 operations'
 [[ "$(uniq "$contract_operations" | wc -l)" -eq 43 ]] \
