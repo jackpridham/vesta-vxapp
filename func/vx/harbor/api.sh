@@ -2,7 +2,8 @@
 
 VX_HARBOR_API_MAX_INPUT=65536
 VX_HARBOR_API_MAX_OUTPUT=1048576
-VX_HARBOR_ROBOT_LIST_PAGE_SIZE=1000
+VX_HARBOR_ROBOT_LIST_PAGE_SIZE=100
+VX_HARBOR_ROBOT_LIST_MAX_PAGES=10
 
 _vx_harbor_api_socket() { vx_harbor_local_socket_path; }
 _vx_harbor_api_curl() { printf '%s\n' /usr/bin/curl; }
@@ -25,11 +26,9 @@ _vx_harbor_api_credentials_validate() {
 }
 
 _vx_harbor_api_socket_validate() {
-    local socket="$1" uid gid mode
-    uid="$(_vx_harbor_authority_uid)"; gid="$(_vx_harbor_authority_gid)"
-    [[ -S "$socket" && ! -L "$socket" && "$(/usr/bin/stat -c '%u:%g:%F' "$socket" 2>/dev/null)" == "$uid:$gid:socket" ]] || return 1
-    mode="$(/usr/bin/stat -c %a "$socket")" || return 1
-    (( (8#$mode & 0022) == 0 ))
+    local socket="$1"
+    [[ "$socket" == "$(vx_harbor_socket_path)" ]] || return 1
+    vx_harbor_socket_validate
 }
 
 _vx_harbor_api_call_with_credential() {
@@ -181,11 +180,19 @@ vx_harbor_api_quota_get() { [[ "$1" =~ ^[1-9][0-9]*$ ]] && _vx_harbor_api_call G
 vx_harbor_api_quota_set_bytes() { [[ "$1" =~ ^[1-9][0-9]*$ && "$2" =~ ^-1$|^[0-9]+$ ]] || return 1; _vx_harbor_api_json_call PUT "/api/v2.0/quotas/$1" 200 empty "$(/usr/bin/jq -cn --argjson b "$2" '{hard:{storage:$b}}')"; }
 
 _vx_harbor_api_project_robots_list_with_credential() {
-    local credential="$1" project_id="$2" path value
+    local credential="$1" project_id="$2" path value page count robots='[]'
     [[ "$project_id" =~ ^[1-9][0-9]*$ ]] || return 1
-    path="/api/v2.0/robots?q=Level%3Dproject%2CProjectID%3D${project_id}&page=1&page_size=${VX_HARBOR_ROBOT_LIST_PAGE_SIZE}"
-    value="$(_vx_harbor_api_call_with_credential "$credential" GET "$path" 200 'type=="array" and length<=1000')" || return
-    /usr/bin/jq -cS 'map(del(.secret))' <<<"$value"
+    for (( page=1; page<=VX_HARBOR_ROBOT_LIST_MAX_PAGES; page++ )); do
+        path="/api/v2.0/robots?q=Level%3Dproject%2CProjectID%3D${project_id}&page=${page}&page_size=${VX_HARBOR_ROBOT_LIST_PAGE_SIZE}"
+        value="$(_vx_harbor_api_call_with_credential "$credential" GET "$path" 200 'type=="array" and length<=100')" || return
+        count="$(/usr/bin/jq -r length <<<"$value")" || return 1
+        robots="$(/usr/bin/jq -cn --argjson current "$robots" --argjson page "$value" '$current+$page')" || return 1
+        if (( count < VX_HARBOR_ROBOT_LIST_PAGE_SIZE )); then
+            /usr/bin/jq -cS 'map(del(.secret))' <<<"$robots"
+            return
+        fi
+    done
+    return 1
 }
 
 vx_harbor_api_project_robots_list() {

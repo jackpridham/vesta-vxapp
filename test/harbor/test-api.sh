@@ -42,7 +42,9 @@ for _ in {1..50}; do
     sleep 0.02
 done
 [[ -S "$api_socket" ]] || fail 'fake Harbor API socket did not become ready'
-chmod 0600 "$api_socket"
+chmod 0660 "$api_socket"
+VX_HARBOR_SOCKET_UID="$EUID"
+VX_HARBOR_SOCKET_GID="$(id -g)"
 
 bootstrap_json_call() {
     local method="$1" path="$2" body="$3" expected="$4" status
@@ -96,7 +98,6 @@ chmod 0600 "$(vx_harbor_root)/secrets/integration.curl"
 _vx_harbor_api_socket() { printf '%s\n' "$api_socket"; }
 vx_harbor_local_socket_path() { printf '%s\n' "$api_socket"; }
 vx_harbor_socket_path() { printf '%s\n' "$api_socket"; }
-vx_harbor_socket_validate() { [[ -S "$api_socket" && ! -L "$api_socket" ]]; }
 
 vx_harbor_api_health | jq -e '.status=="healthy"' >/dev/null
 vx_harbor_api_project_create vx-alice
@@ -128,6 +129,19 @@ robot_list="$(vx_harbor_api_project_robots_list "$project_id")"
 jq -e --argjson id "$robot_id" 'length==1 and .[0].id==$id and
     (.[0]|has("secret")|not)' <<<"$robot_list" >/dev/null \
     || fail 'project robot list was not bounded and redacted'
+jq --argjson project_id "$project_id" '
+  .robots += [range(1000;1100) | {
+    id:.,name:("vxrobot-page-"+tostring),description:("page-"+tostring),
+    disable:false,disabled:false,duration:-1,expires_at:-1,level:"project",
+    project_id:$project_id,permissions:[]
+  }]
+' "$state" >"$state.tmp"
+mv "$state.tmp" "$state"
+robot_list="$(vx_harbor_api_project_robots_list "$project_id")"
+jq -e --argjson id "$robot_id" 'length==101 and any(.id==$id)' \
+  <<<"$robot_list" >/dev/null || fail 'project robot pagination truncated a live page'
+jq '.robots |= map(select(.id < 1000 or .id >= 1100))' "$state" >"$state.tmp"
+mv "$state.tmp" "$state"
 robot_found="$(vx_harbor_api_project_robot_find "$project_id" "$marker")"
 [[ "$(jq -r .id <<<"$robot_found")" == "$robot_id" ]] \
     || fail 'exact marked child was not found'
@@ -152,6 +166,10 @@ duplicate_id="$(jq -r .id <<<"$duplicate_one")"
 vx_harbor_api_project_robot_delete "$project_id" "$duplicate_id" "$marker"
 
 ! vx_harbor_local_api_guard "$api_socket" GET /api/v2.0/configurations
+! vx_harbor_local_api_guard "$api_socket" GET \
+    "/api/v2.0/robots?q=Level%3Dproject%2CProjectID%3D${project_id}&page=1&page_size=1000"
+vx_harbor_local_api_guard "$api_socket" GET \
+    "/api/v2.0/robots?q=Level%3Dproject%2CProjectID%3D${project_id}&page=10&page_size=100"
 ! vx_harbor_api_project_get '../admin'
 printf '{}\n' >"$HARBOR_TEST_ROOT/caller-body.json"
 chmod 0600 "$HARBOR_TEST_ROOT/caller-body.json"

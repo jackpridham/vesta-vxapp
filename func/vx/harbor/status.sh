@@ -10,7 +10,7 @@ vx_harbor_local_api_guard() {
     case "$method $path" in
         'GET /api/v2.0/health'|'POST /api/v2.0/projects'|'POST /api/v2.0/robots'|'GET /api/v2.0/systeminfo/volumes') return 0 ;;
     esac
-    [[ "$method $path" =~ ^GET\ /api/v2\.0/robots\?q=Level%3Dproject%2CProjectID%3D[1-9][0-9]*\&page=1\&page_size=1000$ \
+    [[ "$method $path" =~ ^GET\ /api/v2\.0/robots\?q=Level%3Dproject%2CProjectID%3D[1-9][0-9]*\&page=([1-9]|10)\&page_size=100$ \
         || "$method $path" =~ ^GET\ /api/v2\.0/projects/[a-z0-9][a-z0-9-]{0,127}$ \
         || "$method $path" =~ ^(GET|PUT)\ /api/v2\.0/quotas/[1-9][0-9]*$ \
         || "$method $path" =~ ^(GET|DELETE)\ /api/v2\.0/robots/[1-9][0-9]*$ \
