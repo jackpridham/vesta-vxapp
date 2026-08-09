@@ -30,7 +30,7 @@ import datetime, json, re, sys
 path, now = sys.argv[1], int(sys.argv[2])
 with open(path, encoding="utf-8") as stream:
     value = json.load(stream)
-if set(value) != {"USED_MB", "OBSERVED_AT", "GENERATION"}:
+if set(value) != {"SCHEMA", "USED_MB", "OBSERVED_AT", "GENERATION"} or value["SCHEMA"] != 1:
     raise SystemExit(1)
 if isinstance(value["USED_MB"], bool) or not isinstance(value["USED_MB"], int) or value["USED_MB"] < 0:
     raise SystemExit(1)
