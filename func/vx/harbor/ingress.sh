@@ -4,6 +4,29 @@ vx_harbor_ingress_target() { printf '%s\n' "${VX_HARBOR_NGINX_TARGET:-$VESTA/ngi
 vx_harbor_nginx_main() { printf '%s\n' "${VX_HARBOR_NGINX_MAIN:-$VESTA/nginx/conf/nginx.conf}"; }
 vx_harbor_systemd_target() { printf '%s\n' "${VX_HARBOR_SYSTEMD_TARGET:-/etc/systemd/system/vesta-harbor.service}"; }
 vx_harbor_socket_path() { printf '%s\n' "${VX_HARBOR_SOCKET_PATH:-/run/vesta-harbor/proxy.sock}"; }
+vx_harbor_panel_nginx_binary() { printf '%s\n' "${VX_HARBOR_PANEL_NGINX:-$VESTA/nginx/sbin/vesta-nginx}"; }
+
+vx_harbor_panel_nginx_test() {
+    local config="$1" binary
+    binary="$(vx_harbor_panel_nginx_binary)" || return 1
+    [[ -x "$binary" && -f "$binary" && ! -L "$binary" \
+        && -f "$config" && ! -L "$config" ]] || return 1
+    "$binary" -t -c "$config"
+}
+
+vx_harbor_panel_nginx_reload() {
+    local binary pid_file pid executable
+    binary="$(vx_harbor_panel_nginx_binary)" || return 1
+    pid_file="${VX_HARBOR_PANEL_NGINX_PID_FILE:-/var/run/vesta-nginx.pid}"
+    [[ -x "$binary" && -f "$binary" && ! -L "$binary" \
+        && -f "$pid_file" && ! -L "$pid_file" \
+        && "$(/usr/bin/stat -c '%u:%g:%a' "$pid_file")" == 0:0:644 ]] || return 1
+    IFS= read -r pid <"$pid_file" || return 1
+    [[ "$pid" =~ ^[1-9][0-9]*$ ]] || return 1
+    executable="$(/usr/bin/readlink -f "/proc/$pid/exe")" || return 1
+    [[ "$executable" == "$binary" ]] || return 1
+    /bin/kill -HUP "$pid"
+}
 
 vx_harbor_ingress_render() {
     local destination="$1" candidate_main="$2" activation_main="$3" endpoint port template main target
@@ -66,15 +89,15 @@ vx_harbor_ingress_activate() {
     main="$(vx_harbor_nginx_main)"
     [[ -d "$directory" && ! -L "$directory" && -f "$staged" && ! -L "$staged" \
         && -f "$candidate_main" && ! -L "$candidate_main" && -f "$activation_main" && ! -L "$activation_main" ]] || return 1
-    "${VX_HARBOR_NGINX:-/usr/sbin/nginx}" -t -c "$candidate_main" || return 1
+    vx_harbor_panel_nginx_test "$candidate_main" || return 1
     temporary="$(/usr/bin/mktemp "$directory/.harbor-registry.conf.XXXXXX")" || return 1
     main_temporary="$(/usr/bin/mktemp "$directory/.nginx.conf.XXXXXX")" || { /usr/bin/rm -f "$temporary"; return 1; }
     /usr/bin/install -o "$(_vx_harbor_authority_uid)" -g "$(_vx_harbor_authority_gid)" -m 0600 "$staged" "$temporary" || return 1
     /usr/bin/install -o "$(_vx_harbor_authority_uid)" -g "$(_vx_harbor_authority_gid)" -m 0600 "$activation_main" "$main_temporary" || return 1
     /usr/bin/mv -fT "$temporary" "$target" || return 1
     /usr/bin/mv -fT "$main_temporary" "$main" || return 1
-    "${VX_HARBOR_NGINX:-/usr/sbin/nginx}" -t || return 1
-    "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" reload nginx.service
+    vx_harbor_panel_nginx_test "$main" || return 1
+    vx_harbor_panel_nginx_reload
 }
 
 vx_harbor_socket_validate() {

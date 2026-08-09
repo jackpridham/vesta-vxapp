@@ -696,7 +696,8 @@ vx_harbor_install() {
         "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" daemon-reload >/dev/null 2>&1 || :
         [[ "$service_enabled" == yes ]] && "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" enable vesta-harbor.service >/dev/null 2>&1 || "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" disable vesta-harbor.service >/dev/null 2>&1 || :
         [[ "$service_active" == yes ]] && "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" start vesta-harbor.service >/dev/null 2>&1 || :
-        "${VX_HARBOR_NGINX:-/usr/sbin/nginx}" -t >/dev/null 2>&1 && "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" reload nginx.service >/dev/null 2>&1 || :
+        vx_harbor_panel_nginx_test "$nginx_main" >/dev/null 2>&1 \
+            && vx_harbor_panel_nginx_reload >/dev/null 2>&1 || :
         return "$data_cleanup_status"
     }
     trap '_vx_harbor_install_rollback; vx_harbor_provider_lock_release 2>/dev/null || :; exit 1' HUP INT TERM
