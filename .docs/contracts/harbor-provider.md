@@ -59,6 +59,9 @@ An optional pinned release cache lives only at
 archive and Sigstore-bundle names. Cache use never changes the pinned release
 manifest or skips checksum, offline signature-identity, topology, generator,
 or image-digest validation; callers cannot select its path.
+Generator identity accepts the canonical Docker saved-image manifest with or
+without daemon-added `LayerSources` metadata, but both forms must retain the
+exact pinned config digest and exact permitted metadata shape.
 
 Package quota transitions use `data/harbor/operations/<owner>.json`. Vesta
 package and user state is desired authority. Before external Harbor mutation,

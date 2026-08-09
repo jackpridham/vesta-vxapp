@@ -42,6 +42,10 @@ this specification means "latest" at runtime.
   are deliberately not archived; a future applied recovery must recreate and
   transactionally validate those credentials from protected bootstrap
   authority. Publisher plaintext remains unrecoverable by design.
+- Generator identity validation accepts Docker's canonical saved-image
+  manifest with or without the daemon-added `LayerSources` metadata. Both
+  forms remain bound to the exact pinned config digest; additional or
+  malformed metadata fails closed.
 
 ## Goals
 

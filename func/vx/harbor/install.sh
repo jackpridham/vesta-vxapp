@@ -160,7 +160,18 @@ _vx_harbor_install_loaded_image_config_validate() {
     /usr/bin/jq -e --arg config "blobs/sha256/${expected_config#sha256:}" '
         type == "array" and length == 1
         and .[0].Config == $config
-        and (.[] | keys == ["Config", "Layers", "RepoTags"])
+        and (.[] | (keys == ["Config", "Layers", "RepoTags"]
+            or (keys == ["Config", "LayerSources", "Layers", "RepoTags"]
+                and (.LayerSources | type == "object")
+                and (.LayerSources | to_entries | all(
+                    .key | test("^sha256:[0-9a-f]{64}$")
+                ))
+                and (.LayerSources | to_entries | all(
+                    (.value | keys == ["digest", "mediaType", "size"])
+                    and .value.digest == .key
+                    and (.value.mediaType | type == "string" and length > 0)
+                    and (.value.size | type == "number" and . > 0)
+                )))))
         and (.[0].Layers | type == "array" and length > 0)
     ' <<<"$saved_manifest" >/dev/null 2>&1
 }

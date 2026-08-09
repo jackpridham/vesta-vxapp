@@ -92,6 +92,15 @@ _vx_harbor_install_loaded_image_config_validate "sha256:$(printf '%064d' 1)" "sh
   || fail 'containerd image identity did not validate its pinned saved config'
 ! _vx_harbor_install_loaded_image_config_validate "sha256:$(printf '%064d' 1)" "sha256:$(printf '%064d' 2)" \
   || fail 'mismatched saved image config was accepted'
+printf '[{"Config":"blobs/sha256/%064d","LayerSources":{"sha256:%064d":{"digest":"sha256:%064d","mediaType":"application/vnd.docker.image.rootfs.diff.tar.gzip","size":1}},"Layers":["layer"],"RepoTags":null}]\n' \
+  0 3 3 >"$saved_root/manifest.json"
+tar -cf "$saved_image" -C "$saved_root" manifest.json
+_vx_harbor_install_loaded_image_config_validate "sha256:$(printf '%064d' 1)" "sha256:$(printf '%064d' 0)" \
+  || fail 'Docker LayerSources generator identity was rejected'
+sed -i 's/"size":1/"size":0/' "$saved_root/manifest.json"
+tar -cf "$saved_image" -C "$saved_root" manifest.json
+! _vx_harbor_install_loaded_image_config_validate "sha256:$(printf '%064d' 1)" "sha256:$(printf '%064d' 0)" \
+  || fail 'invalid Docker LayerSources metadata was accepted'
 _vx_harbor_docker_bounded() { return 0; }
 _vx_harbor_install_generate() {
   local stage="$1" manifest="$2"
