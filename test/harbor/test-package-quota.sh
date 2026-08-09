@@ -78,6 +78,20 @@ vx_harbor_package_transition_recover alice
 
 jq '.MODE="managed"' "$VESTA/data/harbor/provider.json" >"$HARBOR_TEST_ROOT/provider.next"
 vx_harbor_json_write_atomic "$VESTA/data/harbor/provider.json" "$HARBOR_TEST_ROOT/provider.next"
+
+# A finite first entitlement starts at zero tracked usage. Any partial authority
+# is rejected until an owner mapping and fresh observation exist together.
+mkdir -p "$VESTA/data/users/bob"
+printf "PACKAGE='starter'\nDOCKER_REGISTRY_MB='20'\nU_DOCKER_REGISTRY_MB='0'\n" >"$VESTA/data/users/bob/user.conf"
+vx_harbor_package_transition_check bob starter 20 || fail 'finite initial entitlement rejected'
+printf '{"USED_MB":0,"OBSERVED_AT":"%s","GENERATION":"orphan"}\n' \
+    "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >"$VESTA/data/harbor/observations/bob.json"
+chmod 0600 "$VESTA/data/harbor/observations/bob.json"
+if vx_harbor_package_transition_check bob starter 20; then
+    fail 'orphaned initial observation accepted'
+fi
+rm -f -- "$VESTA/data/harbor/observations/bob.json"
+
 observed_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
 printf '{"USED_MB":15,"OBSERVED_AT":"%s","GENERATION":"g1"}\n' "$observed_at" >"$VESTA/data/harbor/observations/alice.json"
 printf '{"SCHEMA":1,"OWNER":"alice","NAMESPACE":"vx-alice","PROJECT_ID":1,"QUOTA_ID":1,"QUOTA_MB":50,"STATE":"runtime-ready","RUNTIME_ROBOT_ID":1,"RUNTIME_USERNAME":"vx-alice-runtime","PUBLISHER_ROBOT_ID":null,"PUBLISHER_USERNAME":null,"PUBLISHER_ENABLED":false,"LAST_ERROR":null,"UPDATED_AT":"%s"}\n' "$observed_at" >"$VESTA/data/harbor/owners/alice.json"

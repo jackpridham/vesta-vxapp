@@ -48,6 +48,7 @@ PY
 
 vx_harbor_package_transition_check() {
     local owner="$1" package="$2" quota="$3" path state existing_package existing_quota mode observation used
+    local owner_state observation_path
     [[ "$package" =~ ^[A-Za-z0-9._-]+$ ]] || return 1
     [[ "$quota" == unlimited || "$quota" =~ ^(0|[1-9][0-9]*)$ ]] || return 1
     path="$(vx_harbor_operation_path "$owner")" || return 1
@@ -62,8 +63,19 @@ vx_harbor_package_transition_check() {
     fi
     mode="$(vx_harbor_provider_mode)" || return 1
     if [[ "$mode" == managed && "$quota" != unlimited ]]; then
-        observation="$(_vx_harbor_observation_json "$owner")" || return 1
-        used="$(/usr/bin/jq -r '.USED_MB' <<<"$observation")" || return 1
+        owner_state="$(vx_harbor_owner_state_path "$owner")" || return 1
+        observation_path="$(vx_harbor_root)/observations/$owner.json"
+        if [[ -e "$owner_state" || -L "$owner_state" ]]; then
+            vx_harbor_owner_state_validate "$owner_state" || return 1
+            observation="$(_vx_harbor_observation_json "$owner")" || return 1
+            used="$(/usr/bin/jq -r '.USED_MB' <<<"$observation")" || return 1
+        else
+            # A first entitlement has no Harbor namespace or tracked usage yet.
+            # Refuse ambiguous partial authority instead of trusting an orphaned
+            # observation; owner reconciliation separately refuses adoption.
+            [[ ! -e "$observation_path" && ! -L "$observation_path" ]] || return 1
+            used=0
+        fi
         (( 10#$quota >= used )) || return 1
     fi
 }

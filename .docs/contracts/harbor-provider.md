@@ -79,6 +79,10 @@ transition HMACs, `user.conf` preimages, exchange/CAS machinery, package-trigger
 compensation, or shell/group/disk rollback authorities.
 Legacy user state missing a Compose or registry limit is interpreted as zero;
 only an explicit package application can grant the corresponding entitlement.
+For the first explicit finite registry entitlement, the absence of both an
+owner mapping and an observation means zero tracked usage. An owner mapping
+continues to require a fresh observation, an orphaned observation fails
+closed, and owner reconciliation never adopts an untracked Harbor project.
 
 ## Provider and owner states
 

@@ -272,6 +272,15 @@ package or Harbor quota. `unlimited` maps to Harbor's supported unlimited
 project quota. Usage-query failure shall fail closed for quota increases and
 publishing changes but shall not stop running workloads.
 
+Amendment (2026-08-09): an owner receiving its first positive finite registry
+entitlement has no Harbor namespace or usage observation yet. Vesta treats
+that narrowly defined state as zero tracked usage so it can publish the first
+desired quota and provision the owner. This exception applies only when both
+the protected owner mapping and observation are absent. An owner mapping still
+requires a fresh observation, an orphaned observation fails closed, and owner
+reconciliation continues to refuse adoption of a pre-existing untracked
+Harbor project.
+
 ### R8: Publisher credential lifecycle
 
 An eligible tenant shall create or rotate one deterministic project-scoped
@@ -846,6 +855,8 @@ repository and digest through preview/apply.
   rejected before either authority changes.
 - Stale/unavailable usage cannot authorize growth or reduction and is reported
   distinctly.
+- A first finite entitlement succeeds only with no owner mapping and no
+  observation; partial or pre-existing authority fails closed.
 
 ### AC-R8/R9: Credential boundaries
 
