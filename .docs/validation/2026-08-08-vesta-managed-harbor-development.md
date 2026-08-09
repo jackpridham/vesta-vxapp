@@ -379,3 +379,67 @@ changed.
 
 Production was not contacted or changed. Production deployment remains
 deferred.
+
+## Central-provider and Legacy workload delivery acceptance — 2026-08-09
+
+This section supersedes the development-provider blocker above. It does not
+rewrite the earlier failed attempts or claim a limited-readiness pass. The
+operator explicitly stopped the resource-intensive ShellCheck run, and it was
+not restarted.
+
+The accepted topology separates the registry provider from the application
+host:
+
+```text
+provider=staging.example.com:8083 (192.0.2.20)
+application_host=development.example.com (192.0.2.10)
+owner=legacyadmin
+namespace=vx-legacyadmin
+repository=staging.example.com:8083/vx-legacyadmin/legacy-admin-app
+quota_mb=4096
+```
+
+Narrow live corrections made during the first real entitlement and delivery
+were:
+
+1. permit a finite first entitlement only when owner and observation authority
+   are both absent;
+2. use Harbor 2.15's quota-list API to prove the exact project-to-quota mapping
+   and grant only the required system `quota:list` action in addition to the
+   existing list/read/update authority;
+3. consume the canonical schema-1 usage observation and preserve pending
+   package recovery until initial owner provisioning creates that observation;
+4. make owner collision and absent-publisher recovery idempotent;
+5. accept Harbor's official `robot$...` identity through the generic registry
+   adapter and its root-owned tenant broker without weakening other argument
+   validation;
+6. forward the fixed authoritative hostname and port so Harbor emits
+   `https://staging.example.com:8083/service/token`; and
+7. replace the CN-only development certificate with a private-CA-signed,
+   SAN-bearing server certificate, distributing only the public CA to the two
+   Docker clients.
+
+The provider is now `managed`, healthy, and running Harbor v2.15.0. The
+`vx-legacyadmin` project is private, its quota reference matches the persisted
+project ID, its runtime robot is pull-only, and its publisher robot is a
+separate pull-plus-push generation. Publisher plaintext is held only by the
+workstation secret service; the application host received only the protected
+runtime pull identity through stdin. Neither secret entered Git, argv,
+environment, Vesta metadata, logs, or this record.
+
+A real OCI acceptance artifact was pushed by the publisher and pulled on the
+application host through the tenant's protected Docker configuration:
+
+```text
+tag=access-check-425c98af
+manifest=sha256:d1a8d0a4eeb63aff09f5f34d4d80505e0ba81905f36158cc3970d8e07179e59e
+publisher_result=push-succeeded
+runtime_result=pull-succeeded
+digest_match=true
+```
+
+The Legacy workload workload was not applied or restarted during registry onboarding.
+It remains revision 1, running, healthy, ready, and drift-matched with image
+`sha256:e274e28000ab05e5a81c3fecae992ef3c06094b0701dfa9e965e8f23de0302fd`.
+Application deployment is now delegated back to the repository-owned adapter,
+using the untagged repository above. Production was not contacted or changed.

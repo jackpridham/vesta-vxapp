@@ -1,17 +1,18 @@
 # Publish and Deploy with Vesta-Managed Harbor
 
-> **Current status — administrator confirmation required.** The generated
-> credential lifecycle is implemented locally, but corrected development-host
-> activation and acceptance are not yet recorded. The last live transaction
-> safely returned the provider to `disabled`; production remains deferred.
-> Do not run the release workflow until `registry-info` reports a healthy,
-> fresh managed provider. The preserved earlier evidence and its source-backed
-> resolution are in the
+> **Current status — development provider operational.** Vesta-managed Harbor
+> v2.15.0 is active and healthy on `staging.example.com:8083`. The Legacy workload
+> development host has a validated pull-only credential for the private
+> `vx-legacyadmin` namespace, and the development workstation has a separate
+> publisher credential in an encrypted Docker credential helper. A real push
+> and cross-host pull resolved the same immutable manifest digest. Production
+> remains deferred. The preserved earlier failures and the succeeding evidence
+> are in the
 > [development acceptance record](../validation/2026-08-08-vesta-managed-harbor-development.md).
 
-This is the canonical tenant workflow **once an administrator confirms that
-Vesta-managed Harbor is operational and `registry-info` reports healthy,
-fresh, ready state**. It applies to maintainers of any existing tenant-owned
+This is the canonical tenant workflow after an administrator confirms that
+Vesta-managed Harbor is operational and discovery reports healthy, fresh,
+ready state. It applies to maintainers of any existing tenant-owned
 `standard` project. Names such as `legacy-admin-app` and `internal-voice-app` are only
 generic examples; application-specific build, configuration, and acceptance
 details belong in the application repository.
@@ -170,9 +171,8 @@ broker derives the owner, endpoint, namespace, identity, and permission set.
 
 ## Canonical release workflow after activation
 
-Do not use this section until the status warning at the top has been replaced
-by passing development acceptance and the Vesta administrator has confirmed
-managed provider readiness.
+The development provider has passed the credential and OCI path acceptance
+needed for application delivery. Production remains deferred.
 
 ### 1. Discover readiness and rotate the publisher safely
 
