@@ -4,6 +4,10 @@ vx_harbor_release_manifest() {
     printf '%s/install/harbor/release-manifest.json\n' "$VESTA"
 }
 
+vx_harbor_release_cache() {
+    printf '%s/release/cache/v2.15.0\n' "$(vx_harbor_root)"
+}
+
 vx_harbor_release_manifest_validate() {
     local manifest="$1" machine policy
     [[ -f "$manifest" && ! -L "$manifest" ]] || return 1
@@ -129,13 +133,23 @@ PY
 }
 
 vx_harbor_release_stage() {
-    local destination="$1" manifest archive bundle evidence source
+    local destination="$1" manifest archive bundle evidence source cache
     manifest="$(vx_harbor_release_manifest)" || return 1
     vx_harbor_release_manifest_validate "$manifest" || return 1
     [[ -d "$destination" && ! -L "$destination" ]] || return 1
     archive="$destination/release.tgz"; bundle="$destination/release.sigstore.json"
-    _vx_harbor_release_download "$(/usr/bin/jq -r '.archive.url' "$manifest")" "$archive" || return 1
-    _vx_harbor_release_download "$(/usr/bin/jq -r '.archive.bundle_url' "$manifest")" "$bundle" || return 1
+    cache="$(vx_harbor_release_cache)" || return 1
+    if [[ -e "$cache" || -L "$cache" ]]; then
+        _vx_harbor_secure_directory "$cache" || return 1
+        vx_harbor_secure_regular_file "$cache/release.tgz" 0600 || return 1
+        vx_harbor_secure_regular_file "$cache/release.sigstore.json" 0600 || return 1
+        /usr/bin/cp --reflink=auto -- "$cache/release.tgz" "$archive" \
+            && /usr/bin/cp --reflink=auto -- "$cache/release.sigstore.json" "$bundle" \
+            || return 1
+    else
+        _vx_harbor_release_download "$(/usr/bin/jq -r '.archive.url' "$manifest")" "$archive" || return 1
+        _vx_harbor_release_download "$(/usr/bin/jq -r '.archive.bundle_url' "$manifest")" "$bundle" || return 1
+    fi
     vx_harbor_release_verify_archive "$manifest" "$archive" "$bundle" || return 1
     /usr/bin/mkdir -p "$destination/extracted" || return 1
     /usr/bin/tar -xzf "$archive" -C "$destination/extracted" --no-same-owner --no-same-permissions || return 1

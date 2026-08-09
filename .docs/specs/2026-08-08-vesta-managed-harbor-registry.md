@@ -126,6 +126,13 @@ certificate, an unavailable/incompatible Vesta panel TLS listener, or a route
 collision with the exact registry/token locations before changing a running
 service.
 
+The installer may use a fixed root-owned, mode-`0700` release cache under
+provider authority when external release download is unavailable. Cached
+archive and bundle files are fixed-path mode-`0600` inputs and must pass the
+same pinned checksum, offline signature identity, archive topology, generator,
+and image-evidence validation as freshly downloaded artifacts. No caller may
+select a cache path or bypass verification.
+
 The initial release manifest shall target Harbor v2.15.0. Updating the pinned
 version requires a reviewed Vesta source change and release validation.
 

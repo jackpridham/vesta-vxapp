@@ -54,6 +54,12 @@ runtime pull plaintext-equivalent remains Vesta-owned in protected owner
 registry state because unattended immutable pulls require it.
 Provider backups are system backups outside tenant Compose backup roots.
 
+An optional pinned release cache lives only at
+`data/harbor/release/cache/v2.15.0/`, mode `0700`, with fixed mode-`0600`
+archive and Sigstore-bundle names. Cache use never changes the pinned release
+manifest or skips checksum, offline signature-identity, topology, generator,
+or image-digest validation; callers cannot select its path.
+
 Package quota transitions use `data/harbor/operations/<owner>.json`. Vesta
 package and user state is desired authority. Before external Harbor mutation,
 the command atomically publishes one secret-free operation containing exactly
