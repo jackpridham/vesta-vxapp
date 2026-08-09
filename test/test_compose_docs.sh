@@ -51,7 +51,7 @@ registry-publisher-rotate	< age-recipient
 registry-publisher-disable
 image-pull	PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION IMAGE@sha256:DIGEST
 drift	PROJECT [json|plain]
-probe	PROJECT SERVICE [json|plain]
+probe	PROJECT PROBE [json|plain]
 start	PROJECT
 stop	PROJECT
 restart	PROJECT
@@ -140,6 +140,14 @@ for workflow_command in \
     'v-docker logs app app 100' \
     'v-docker preview app change < compose.yaml' \
     'v-docker apply app PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION' \
+    'v-docker image-pull app' \
+    'v-docker secret-add app database-password' \
+    'v-docker route-add app app.example.com web 8080 http /' \
+    'v-docker backup app' \
+    'v-docker restore app BACKUP_ID validate' \
+    'v-docker rollback-preview app REVISION' \
+    'v-docker reconcile-preview app' \
+    'v-migrate-docker-containers USER dry-run' \
     'v-docker restart app'
 do
     grep -Fq "$workflow_command" \

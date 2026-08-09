@@ -78,8 +78,8 @@ and custom logging drivers.
 
 ## Package quotas
 
-Package fields use integer values; `0` disables the capability and `unlimited`
-has the normal Vesta meaning:
+Compose workload quota fields use integer values; `0` disables the capability
+and `unlimited` has the normal Vesta meaning:
 
 - `DOCKER_PROJECTS`;
 - `DOCKER_SERVICES`;
@@ -105,6 +105,14 @@ effective user, and persisted `U_` usage values for all nine dimensions as
 `PACKAGE_VALUE`, `EFFECTIVE_VALUE`, and `USED`. CPU values retain three decimal
 places and memory/storage units are MiB. Legacy `DOCKER_CONTAINERS=unlimited`
 packages retain their compatibility defaults.
+
+`DOCKER_REGISTRY_MB` and `U_DOCKER_REGISTRY_MB` are a tenth, separate package
+and usage pair for the optional Vesta-managed Harbor provider. They are not
+part of rendered Compose workload quota calculation or the nine-row
+`v-list-docker-compose-quota` response. An existing eligible `standard`
+project discovers its managed registry quota and freshness through
+`v-docker registry-info PROJECT json`; external registries do not consume this
+Harbor artifact quota.
 
 Workload-specific limits use a dedicated package merged from the owner's
 current non-Docker package values. They never modify the shared default

@@ -101,7 +101,7 @@ Start here for current Compose work:
 - [Documentation index and status](.docs/README.md)
 - [Complete source-to-Vesta deployment runbook](DOCKER_ORCHESTRATION_DEPLOYMENT.md)
 - [Operator architecture and migration guide](docs/container-orchestration.md)
-- [Compose project user guide](.docs/user-guides/docker-compose-projects.md)
+- [Tenant Compose deployment guide — start here](.docs/user-guides/docker-compose-projects.md)
 - [Security contract](.docs/contracts/compose-security.md)
 - [Policy and quota contract](.docs/contracts/compose-policy.md)
 - [Storage contract](.docs/contracts/compose-storage.md)

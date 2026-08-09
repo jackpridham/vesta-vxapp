@@ -10,7 +10,7 @@ Current documents:
 - [Vesta-managed Harbor registry specification](specs/2026-08-08-vesta-managed-harbor-registry.md)
 - [Vesta-managed Harbor provider contract](contracts/harbor-provider.md)
 - [Vesta-managed Harbor development acceptance](validation/2026-08-08-vesta-managed-harbor-development.md)
-- [Compose project user guide](user-guides/docker-compose-projects.md)
+- [Tenant Compose deployment guide — start here](user-guides/docker-compose-projects.md)
 - [Native web-domain reverse-proxy guide](user-guides/native-web-domain-proxy.md)
 - [Native web-domain proxy validation](validation/2026-08-06-native-web-proxy-release.md)
 - [Self-service staging evidence](status/2026-07-29-compose-self-service-task7-staging-evidence.md)

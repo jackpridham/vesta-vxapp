@@ -206,7 +206,16 @@ The tenant sees the same owner-scoped diagnostic through:
 v-docker quota json | jq .
 ```
 
-For each quota row:
+These diagnostics report the nine Compose workload dimensions. The separate
+managed-Harbor `DOCKER_REGISTRY_MB` and `U_DOCKER_REGISTRY_MB` values are not
+rows in `v-list-docker-compose-quota`; the tenant sees registry quota,
+measured usage, health, and freshness through
+`v-docker registry-info PROJECT json` after an owner-scoped `standard` project
+exists. The administrator can
+inspect the assigned package and effective user fields through the ordinary
+Vesta package/user listing commands before that bootstrap.
+
+For each Compose quota row:
 
 - `PACKAGE_VALUE` is the value in the currently assigned package;
 - `EFFECTIVE_VALUE` is the value persisted for and enforced on the user; and
@@ -313,6 +322,12 @@ rotation replaces a lost generation, while `registry-publisher-disable`
 deletes only publisher access and leaves runtime pulls available. Never place
 password plaintext in argv, environment, files, Compose, logs, HTML, metadata,
 Git, or an archive.
+
+`registry-info` requires an existing owner-scoped `standard` project and never
+creates one. A tenant's first project therefore needs an approved
+public/external registry image or a separately reviewed administrator
+bootstrap. Managed Harbor becomes the publication and pull source for later
+releases only after that project and fresh provider authority both exist.
 
 No SCP, rsync, source/image archive, Harbor administrator, Debian sudo, Docker
 group/socket, or raw Docker path belongs to this pipeline. Application-specific
@@ -479,6 +494,15 @@ Apply holds the project lock through definition installation, runtime
 convergence, health and route checks, and rollback. A failed candidate is
 rolled back to the prior healthy definition/runtime where possible. Persistent
 application data is not rewound by definition rollback.
+
+If this deployment replaces a container from another host, do not transfer
+the container, Docker data directory, or raw inspect output. Publish the image
+by immutable digest, recreate the intended ports/resources/volumes in Compose,
+move durable data only into reviewed managed bind leaves or named volumes, and
+provision secrets separately. For a legacy direct-container record already on
+this Vesta host, the administrator may use
+`v-migrate-docker-containers USER dry-run|apply`; that migration adapter is not
+part of the tenant broker.
 
 ### 6.3 Reusable deployment script
 

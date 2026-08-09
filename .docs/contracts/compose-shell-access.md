@@ -88,7 +88,7 @@ registry-publisher-rotate	< age-recipient
 registry-publisher-disable
 image-pull	PROJECT PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION IMAGE@sha256:DIGEST
 drift	PROJECT [json|plain]
-probe	PROJECT SERVICE [json|plain]
+probe	PROJECT PROBE [json|plain]
 start	PROJECT
 stop	PROJECT
 restart	PROJECT
