@@ -40,11 +40,14 @@ migration history and do not override current `compose-*` contracts.
 Vesta-managed Harbor's generated credential lifecycle is implemented. The
 corrected development-host activation and acceptance transaction remains
 pending, the last live provider transaction is safely rolled back, and
-production is deferred. The public installer currently has no recovery-key
-initialization command; activation must establish that authority through an
-approved release flow and pass encrypted backup validation before tenant
-onboarding. The tenant guide is the canonical workflow after an administrator
-confirms healthy, fresh managed state through `registry-info`.
+production is deferred. Harbor provider backup and restore are disabled for
+the first production release: both public commands return status 78 without
+stopping Harbor or changing provider authority. Existing ciphertext and
+provider data are retained. Recovery-key custody and re-enablement are tracked
+in GitHub issue #2. The accepted first-release workload boundary stores no
+durable application data outside cache. The tenant guide is the canonical
+workflow after an administrator confirms healthy, fresh managed state through
+`registry-info`.
 
 The Compose implementation supports owner-only `standard` self-service,
 immutable preview/apply, administrator-approved profiles, trusted image

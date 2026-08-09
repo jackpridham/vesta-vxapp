@@ -119,7 +119,7 @@ convergence or rollback.
 
 The normative operator boundary is the
 [Vesta-managed Harbor provider contract](../.docs/contracts/harbor-provider.md).
-The procedural setup, verification, tenant onboarding, backup, and disable
+The procedural setup, verification, tenant onboarding, deferred-backup, and disable
 workflow is the
 [Vesta-managed Harbor operator runbook](../.docs/user-guides/vesta-managed-harbor-operator.md).
 The framework-neutral Docker-user workflow is the canonical
@@ -135,25 +135,21 @@ of API health, certificate hostname/expiry, storage, owner quota/usage,
 operation backlog and credential readiness. Observations never change desired
 state.
 
-Provider backup holds the exclusive lock, stops only a previously running
-provider, snapshots configuration/mappings and Harbor data, hashes a manifest,
-encrypts with age inside protected staging, restarts only that service, and
-places ciphertext in Vesta's system-backup layout. Curl files, robot secrets,
-plaintext keys and sockets are excluded. First-release restore supports
-`validate` only; `apply` returns status 78.
+Harbor provider backup and restore are disabled for the first production
+release. Both public commands return status 78 without acquiring the provider
+lock, stopping Harbor, decrypting data, or changing provider authority.
+Existing ciphertext and provider data are retained. Recovery-key custody and
+re-enablement are tracked in GitHub issue #2. The accepted first-release
+workload boundary stores no durable application data outside cache; it does
+not authorize provider-data cleanup.
 
 Disable requires a fresh blocker-free plan. It revalidates owners, revokes
 publisher then runtime access, removes only Harbor public ingress, stops the
 provider and marks it disabled. Database, artifacts, mappings and encrypted
 backups remain; workloads, routes, firewall, DNS and packages are untouched.
 
-Recovery is operator-controlled: validate the ciphertext; provision an
-isolated host with the same pinned version and sufficient capacity; decrypt
-only in protected offline staging; reverify manifest hashes and ownership;
-start without public ingress; verify database, blobs, mappings and
-authenticated health; then use transactional ingress activation. Take a new
-encrypted backup before replacing an existing provider. Automated restore
-apply and automated updates are deferred.
+Recovery re-enablement remains operator-controlled through issue #2. Automated
+restore apply and automated provider updates are deferred.
 
 Backups include definitions, revisions, image evidence, managed routes, bind
 data, named volumes, audit state, and encrypted secret payloads when
@@ -298,11 +294,15 @@ approved unconstrained host; it retains the configured nice level but does not
 claim resource isolation.
 
 The canonical gate delegates to `test/compose/run-production-shellcheck.sh`.
-That runner checks all Docker adapters locally in one invocation without
-source expansion, then follows `func/vx/compose/main.sh` once to analyze the
-complete shared helper graph. Do not replace it with per-adapter
-`shellcheck -x`; that re-expands the same graph for every adapter and makes the
-gate impractically slow on constrained hosts.
+That runner gives every Docker adapter and shared helper one full local
+analysis in its own named, 30-second bounded process without source expansion.
+It then follows `func/vx/compose/main.sh` exactly once in a 90-second bounded
+graph pass with redundant extended analysis disabled. A failure reports the
+exact file or graph scope and preserves the ShellCheck or timeout status. Do
+not replace this with per-adapter `shellcheck -x`; that re-expands the same
+graph for every adapter and makes the gate impractically slow on constrained
+hosts. The constrained-host performance correction is recorded in GitHub
+issue #3.
 
 The preserved Harbor development evidence reached authenticated bootstrap,
 demonstrated Harbor's generated one-time password behavior, and safely

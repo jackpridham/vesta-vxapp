@@ -570,16 +570,17 @@ backup/restore for application-data recovery.
 - **Provider outage:** discovery, new pushes, provisioning, rotation, and
   missing-image pulls fail closed or remain pending. Vesta does not change
   Compose, routes, firewall, DNS, or a running workload as fallback.
-- **Provider disable or restore:** these are administrator operations. Vesta
-  owns dependency planning, encrypted provider backup, validation, ingress,
-  health, revocation, retention, and recovery. Tenants cannot pass an archive
-  or invoke Harbor administration.
+- **Provider disable or restore:** these are administrator operations. Provider
+  backup and restore are disabled for the first production release and return
+  status 78 without stopping Harbor. Vesta still owns dependency planning,
+  ingress, health, revocation and retention. Tenants cannot pass an archive or
+  invoke Harbor administration.
 
 ## Responsibilities
 
 | Party | Owns | Does not own |
 | --- | --- | --- |
-| Vesta administrator | Install/disable/restore decisions; provider mode and pinned release; shared TLS ingress; package entitlement and quota; account/shell onboarding; provider health, backup, retention, and privileged provider operations. | Application source, Dockerfile, release content, application secrets, or app acceptance logic. |
+| Vesta administrator | Install/disable decisions; provider mode and pinned release; shared TLS ingress; package entitlement and quota; account/shell onboarding; provider health, retention, and privileged provider operations. | Application source, Dockerfile, release content, application secrets, app acceptance logic, or a provider backup while the first-release boundary is disabled. |
 | Tenant maintainer | Tenant SSH key; protected publisher credential store; external build/test/push; digest resolution; immutable preview review; apply approval; release health/readiness/drift evidence; publisher revocation. | Harbor administration, another owner, runtime pull credential, raw Docker on Vesta, Debian sudo, or privileged profiles. |
 | Vesta-managed Harbor | Private OCI manifests/layers, project isolation, registry authentication enforcement, and measured registry usage. | Vesta desired state, workload deployment, routes, revisions, rollback, or production authorization. |
 | Application repository | Source, Dockerfile, Compose/template, non-secret environment configuration, managed-secret declarations, build tests, deploy adapter, app-specific readiness/acceptance, and production deferral policy. | Provider lifecycle, shared ingress, tenant package authority, Vesta runtime credential, or Harbor administrator access. |

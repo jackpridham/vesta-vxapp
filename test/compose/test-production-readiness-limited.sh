@@ -118,6 +118,7 @@ grep -Fq 'invalid VX_READINESS_CPU_QUOTA' "$fixture/invalid.err" \
     || fail "invalid CPU quota error was not explicit"
 
 set +e
+VX_READINESS_TEST_AVAILABLE_MEMORY_MB=8192 \
 VX_READINESS_SYSTEMD_RUN="$fixture/missing-systemd-run" \
     "$launcher" >"$fixture/unsupported.out" 2>"$fixture/unsupported.err"
 status=$?
@@ -131,6 +132,7 @@ set +e
 PATH="$fixture/bin:$PATH" \
 VX_TEST_NICE_LOG="$nice_log" \
 VX_TEST_GATE_EXIT=29 \
+VX_READINESS_TEST_AVAILABLE_MEMORY_MB=8192 \
 VX_READINESS_SYSTEMD_RUN="$fixture/missing-systemd-run" \
 VX_READINESS_ALLOW_UNLIMITED=yes \
     "$launcher" >"$fixture/unlimited.out" 2>"$fixture/unlimited.err"

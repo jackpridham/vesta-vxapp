@@ -250,7 +250,7 @@
         <article class="docker-overview-card" data-harbor-admin-status>
           <span class="docker-overview-card__label"><?=__('Managed registry')?></span>
           <strong class="docker-overview-card__value"><?=htmlspecialchars(($harbor_admin_status['MODE'] ?? 'disabled').' / '.($harbor_admin_status['HEALTH'] ?? 'unavailable'), ENT_QUOTES)?></strong>
-          <p class="docker-overview-card__meta"><?=htmlspecialchars(__('Certificate').': '.($harbor_admin_status['CERTIFICATE_STATE'] ?? 'unavailable').' · '.__('Storage').': '.($harbor_admin_status['STORAGE_USED_BYTES'] ?? 0).'/'.($harbor_admin_status['STORAGE_TOTAL_BYTES'] ?? 0).' B · '.__('Backup age').': '.($harbor_admin_status['BACKUP_AGE_SECONDS'] ?? 'n/a').' · '.__('Pending/failed').': '.($harbor_admin_status['PENDING_OPERATIONS'] ?? 0).'/'.($harbor_admin_status['FAILED_OPERATIONS'] ?? 0), ENT_QUOTES)?></p>
+          <p class="docker-overview-card__meta"><?=htmlspecialchars(__('Certificate').': '.($harbor_admin_status['CERTIFICATE_STATE'] ?? 'unavailable').' · '.__('Storage').': '.($harbor_admin_status['STORAGE_USED_BYTES'] ?? 0).'/'.($harbor_admin_status['STORAGE_TOTAL_BYTES'] ?? 0).' B · '.__('Provider backup').': '.__('disabled for this release').' · '.__('Pending/failed').': '.($harbor_admin_status['PENDING_OPERATIONS'] ?? 0).'/'.($harbor_admin_status['FAILED_OPERATIONS'] ?? 0), ENT_QUOTES)?></p>
         </article>
         <?php } elseif (!$docker_actor_is_admin && !empty($harbor_tenant_status)) { ?>
         <article class="docker-overview-card" data-harbor-tenant-status>

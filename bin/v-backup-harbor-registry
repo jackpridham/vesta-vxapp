@@ -1,5 +1,5 @@
 #!/bin/bash
-# info: create an encrypted Harbor provider backup
+# info: report that Harbor provider backup is deferred
 # options:
 
 VESTA=${VESTA:-/usr/local/vesta}
@@ -7,5 +7,5 @@ source "$VESTA/func/main.sh"
 source "$VESTA/func/vx/harbor/main.sh"
 source "$VESTA/conf/vesta.conf"
 check_args '0' "$#" ''
-backup_id="$(vx_harbor_backup)"; check_result $? 'Harbor registry backup failed'
-printf '%s\n' "$backup_id"
+echo 'Harbor provider backup and restore are deferred for this release.' >&2
+exit "$VX_HARBOR_BACKUP_DEFERRED"

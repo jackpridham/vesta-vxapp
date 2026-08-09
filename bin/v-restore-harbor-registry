@@ -1,5 +1,5 @@
 #!/bin/bash
-# info: validate an encrypted Harbor provider backup; apply is deferred
+# info: report that Harbor provider restore is deferred
 # options: BACKUP_ID MODE
 
 backup_id=${1:-}; mode=${2:-}
@@ -10,8 +10,5 @@ source "$VESTA/conf/vesta.conf"
 check_args '2' "$#" 'BACKUP_ID MODE'
 [[ "$backup_id" =~ ^harbor-[0-9]{8}T[0-9]{6}Z-[a-f0-9]{8}$ ]]; check_result $? 'Invalid backup ID'
 [[ "$mode" == validate || "$mode" == apply ]]; check_result $? 'Invalid restore mode'
-if [[ "$mode" == apply ]]; then
-    echo 'Harbor restore apply is deferred; follow the documented operator recovery procedure.' >&2
-    exit 78
-fi
-vx_harbor_restore "$backup_id" validate; check_result $? 'Harbor registry backup validation failed'
+echo 'Harbor provider backup and restore are deferred for this release.' >&2
+exit "$VX_HARBOR_BACKUP_DEFERRED"

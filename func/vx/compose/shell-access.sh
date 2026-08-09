@@ -257,7 +257,7 @@ vx_compose_shell_access_lock_release() {
 vx_compose_shell_snapshot_stdin() {
     local vx_snapshot_internal_kind="${1-}" vx_snapshot_internal_max_bytes="${2-}"
     local vx_snapshot_internal_root_name="${3-}" vx_snapshot_internal_file_name="${4-}"
-    local vx_snapshot_internal_root= vx_snapshot_internal_file= vx_snapshot_internal_id
+    local vx_snapshot_internal_root='' vx_snapshot_internal_file='' vx_snapshot_internal_id
     local vx_snapshot_internal_declaration vx_snapshot_internal_bytes vx_snapshot_internal_name
     local vx_snapshot_internal_attempts=0
     (( $# == 4 )) || return 1
@@ -296,7 +296,10 @@ vx_compose_shell_snapshot_stdin() {
         vx_snapshot_internal_root="$(mktemp -d /var/tmp/vesta-compose-shell.XXXXXXXX)" || return 1
         vx_snapshot_internal_file="$vx_snapshot_internal_root/$vx_snapshot_internal_kind.input"
     fi
+    # The nameref outputs are consumed through caller-selected variable names.
+    # shellcheck disable=SC2034
     vx_snapshot_internal_root_output="$vx_snapshot_internal_root"
+    # shellcheck disable=SC2034
     vx_snapshot_internal_file_output="$vx_snapshot_internal_file"
     chmod 0700 "$vx_snapshot_internal_root" \
         || { rm -rf -- "$vx_snapshot_internal_root"; return 1; }

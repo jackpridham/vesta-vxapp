@@ -111,4 +111,17 @@ for variant in unexpected missing duplicate link traversal manifest-duplicate mo
 done
 [[ "$(sha256sum "$root/provider.json" "$test_data/database/harbor.db")" == "$authority_before" ]] || fail 'validate-only restore mutated provider authority or data'
 set +e; vx_harbor_restore "$id" apply >/dev/null 2>&1; code=$?; set -e; [[ "$code" == 78 ]] || fail 'restore apply did not return stable deferred code'
-printf 'PASS: allowlisted encrypted backup and exact validate-only restore\n'
+service_before="$(sha256sum "$service_log")"
+authority_before="$(sha256sum "$root/provider.json")"
+set +e
+vx_harbor_backup >/dev/null 2>&1
+backup_status=$?
+vx_harbor_restore "$id" validate >/dev/null 2>&1
+restore_status=$?
+set -e
+[[ "$backup_status" == 78 && "$restore_status" == 78 ]] \
+    || fail 'disabled backup boundary did not return status 78'
+[[ "$(sha256sum "$service_log")" == "$service_before" \
+    && "$(sha256sum "$root/provider.json")" == "$authority_before" ]] \
+    || fail 'disabled backup boundary mutated service or provider authority'
+printf 'PASS: dormant encrypted recovery primitives and disabled public backup boundary\n'

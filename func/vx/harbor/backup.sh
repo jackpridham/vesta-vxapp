@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-VX_HARBOR_RESTORE_APPLY_DEFERRED=78
+VX_HARBOR_BACKUP_DEFERRED=78
+VX_HARBOR_RESTORE_APPLY_DEFERRED=$VX_HARBOR_BACKUP_DEFERRED
 
 vx_harbor_backup_layout_root() { printf '%s\n' "${VX_HARBOR_BACKUP_LAYOUT_ROOT:-$VESTA/data/backup/harbor}"; }
 _vx_harbor_service_is_active() { "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" is-active vesta-harbor.service >/dev/null 2>&1; }
@@ -247,17 +248,7 @@ vx_harbor_backup_locked() {
 }
 
 vx_harbor_backup() {
-    local result status
-    vx_harbor_provider_lock_acquire exclusive || return 1
-    result="$(vx_harbor_backup_locked)"; status=$?
-    vx_harbor_provider_lock_release || return 1
-    if (( status == 0 )); then
-        vx_harbor_audit system provider-backup succeeded encrypted || return 1
-        printf '%s\n' "$result"
-    else
-        vx_harbor_audit system provider-backup failed rejected || return 1
-    fi
-    return "$status"
+    return "$VX_HARBOR_BACKUP_DEFERRED"
 }
 
 _vx_harbor_restore_archive_validate() {
@@ -349,16 +340,5 @@ vx_harbor_restore_validate_locked() {
 }
 
 vx_harbor_restore() {
-    local id="$1" mode="$2" result status
-    [[ "$mode" == validate ]] || return "$VX_HARBOR_RESTORE_APPLY_DEFERRED"
-    vx_harbor_provider_lock_acquire exclusive || return 1
-    result="$(vx_harbor_restore_validate_locked "$id")"; status=$?
-    vx_harbor_provider_lock_release || return 1
-    if (( status == 0 )); then
-        vx_harbor_audit system restore-validation succeeded validated || return 1
-        printf '%s\n' "$result"
-    else
-        vx_harbor_audit system restore-validation failed rejected || return 1
-    fi
-    return "$status"
+    return "$VX_HARBOR_BACKUP_DEFERRED"
 }

@@ -5,15 +5,14 @@
 > development-host activation and acceptance are still pending. Production is
 > deferred. Do not use this runbook to activate a production provider until a
 > separate release decision names the target, release, validation evidence, and
-> rollback scope. The current public installer also has no recovery-key
-> initialization command, so tenant onboarding remains blocked until an
-> approved release flow establishes that authority and backup validation
-> passes.
+> rollback scope. Harbor provider backup and restore are disabled for the first
+> production release. Recovery-key custody and re-enablement are tracked in
+> GitHub issue #2.
 
 This is the public administrator runbook for installing the optional
 Vesta-managed Harbor provider, onboarding eligible tenants, checking its
-health, creating and validating backups, and disabling access without deleting
-artifacts. The normative security and state rules remain in the
+health, observing the deferred backup boundary, and disabling access without
+deleting artifacts. The normative security and state rules remain in the
 [Harbor provider contract](../contracts/harbor-provider.md). Tenants publish
 and deploy with the separate
 [managed Harbor tenant guide](vesta-managed-harbor.md).
@@ -73,7 +72,7 @@ Before changing a host, record all of the following outside this repository:
 - the exact Vesta release containing the Harbor commands and pinned manifest;
 - a host rollback or continuity plan that retains existing workloads;
 - the acceptance transaction that will prove DNS, TLS, tenant push and pull,
-  quota observation, backup validation, and access revocation; and
+  quota observation, cache-only workload scope, and access revocation; and
 - explicit production authorization, if the target is production.
 
 The dated
@@ -347,71 +346,31 @@ without changing it:
 7. disable the publisher and confirm runtime pulls and the accepted workload
    continue while new pushes fail.
 
-Acceptance is incomplete unless the encrypted provider backup and
-validation-only restore in the next section also pass. A successful image push
-alone proves neither deployment nor recoverability.
+Acceptance records the explicit first-release recovery risk in the next
+section. A successful image push alone proves neither deployment nor future
+recoverability.
 
-## 7. Back up and validate recovery
+## 7. Observe the disabled provider-backup boundary
 
-Provider backup is separate from every tenant Compose backup. It briefly stops
-only a provider that was running, snapshots the allowlisted authority,
-configuration, database and blob state, encrypts recovery secrets separately,
-encrypts the outer archive with age, and restarts only that provider.
+Harbor provider backup and restore are disabled for the first production
+release. Both public commands return exit status `78` without stopping Harbor,
+acquiring the provider lock, decrypting data, or changing provider authority.
+Do not create recovery keys or authority files by hand.
 
-The backup implementation requires an approved provider recovery identity and
-matching recipient before the first backup. The current public command catalog
-has no manual recovery-key initialization command, and
-`v-install-harbor-registry` accepts no recovery-key arguments. Therefore the
-release acceptance process must establish and verify this authority; operators
-must not invent it or write these files by hand. Verify only ownership and
-mode, never contents:
+The accepted first-release workload boundary stores no durable application
+data outside cache. This is an explicit operational risk: Harbor database and
+OCI artifacts are still retained, and no cleanup or disposable-data behavior
+is implied. Existing ciphertext and provider data remain in place.
 
-```bash
-sudo stat -c '%U:%G %a %h %n' \
-  /usr/local/vesta/data/harbor/backup-recipient.txt \
-  /usr/local/vesta/data/harbor/secrets/backup.agekey
-```
-
-Both must be regular, single-link, root-owned mode-`0600` files. If either is
-absent or invalid, `v-backup-harbor-registry` fails closed. That is a release
-blocker: stop before onboarding tenants and correct the installation/release
-workflow rather than generating authority ad hoc.
-
-Create a backup and retain its non-secret ID:
-
-```bash
-backup_id="$(sudo /usr/local/vesta/bin/v-backup-harbor-registry)"
-printf '%s\n' "$backup_id"
-sudo /usr/local/vesta/bin/v-restore-harbor-registry "$backup_id" validate
-sudo /usr/local/vesta/bin/v-list-harbor-registry json | jq .
-```
-
-Validation must print `validated`, leave the running provider unchanged, and
-status must report a non-null `BACKUP_AGE_SECONDS`. The ciphertext is stored
-under `/usr/local/vesta/data/backup/harbor/`; its root-owned metadata remains
-under provider authority. Copy ciphertext and the required recovery custody
-material into the approved off-host system-backup process without printing,
-emailing, or committing either.
-
-First-release restore is validation-only:
-
-```bash
-sudo /usr/local/vesta/bin/v-restore-harbor-registry "$backup_id" apply
-```
-
-The command above must refuse with exit status `78`; it is shown to make the
-boundary explicit, not as an action to perform during routine validation.
-There is no supported automatic restore apply. Disaster recovery requires an
-authorized operator procedure on an isolated host with the same pinned
-version, protected staging, sufficient capacity, manifest and ownership
-verification, private authenticated health checks, mapping reconciliation,
-and transactional ingress activation. Take a new encrypted backup before
-replacing any existing provider.
+Recovery-key initialization, custody, encrypted backup re-enablement and
+validation-only restore are tracked in GitHub issue #2. Until that issue is
+implemented and separately accepted, `BACKUP_AGE_SECONDS` remains `null` and
+operators must not claim a recoverable Harbor provider backup.
 
 ## 8. Routine operation
 
 Use JSON status for automation and alert on any unexpected mode, health,
-certificate, operation, storage, or backup result:
+certificate, operation, or storage result:
 
 ```bash
 sudo /usr/local/vesta/bin/v-list-harbor-registry json | jq .

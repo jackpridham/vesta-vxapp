@@ -48,11 +48,13 @@ if len(matches) != 1: raise SystemExit(1)
 del lines[matches[0]]
 dst.write_text(''.join(lines))
 PY
-    "${VX_HARBOR_NGINX:-/usr/sbin/nginx}" -t -c "$candidate" || { /usr/bin/rm -f "$candidate"; return 1; }
+    vx_harbor_panel_nginx_test "$candidate" \
+        || { /usr/bin/rm -f "$candidate"; return 1; }
     /usr/bin/install -o "$(_vx_harbor_authority_uid)" -g "$(_vx_harbor_authority_gid)" -m 0600 "$candidate" "$main" || { /usr/bin/rm -f "$candidate"; return 1; }
     /usr/bin/rm -f -- "$candidate" || return 1
     /usr/bin/rm -f -- "$target" || return 1
-    "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" reload nginx.service
+    vx_harbor_panel_nginx_test "$main" || return 1
+    vx_harbor_panel_nginx_reload
 }
 
 _vx_harbor_disable_restore() {
@@ -64,7 +66,8 @@ _vx_harbor_disable_restore() {
         /usr/bin/rm -f -- "$ingress" || return 1
     fi
     [[ "$was_active" == no ]] || _vx_harbor_service_start || return 1
-    "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" reload nginx.service
+    vx_harbor_panel_nginx_test "$main" || return 1
+    vx_harbor_panel_nginx_reload
 }
 
 _vx_harbor_disable_integration_revoke() {

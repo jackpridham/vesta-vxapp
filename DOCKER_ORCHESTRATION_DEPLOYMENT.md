@@ -305,10 +305,11 @@ invent any of these values or approve a mutable tag as identity.
 
 The canonical
 [Vesta-managed Harbor tenant guide](.docs/user-guides/vesta-managed-harbor.md)
-covers eligibility, protected publisher rotation, local build, versioned push,
-digest resolution, immutable Compose preview/pull/apply, health, readiness,
-drift, rollback, revocation, and failure handling. Installation, verification,
-tenant reconciliation, backup validation, and retained-data disablement are in
+covers eligibility, protected publisher rotation, local
+build, versioned push, digest resolution, immutable Compose preview/pull/apply,
+health, readiness, drift, rollback, revocation, and failure handling.
+Installation, verification, tenant reconciliation, the first-release disabled
+provider-backup boundary, and retained-data disablement are in
 the [managed Harbor operator runbook](.docs/user-guides/vesta-managed-harbor-operator.md).
 The normative operator boundary is the
 [Harbor provider contract](.docs/contracts/harbor-provider.md).

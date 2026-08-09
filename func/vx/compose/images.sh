@@ -1688,7 +1688,7 @@ vx_compose_resolve_images_to_file() {
     local profile="$3"
     local output_file="$4"
     local accepted_evidence="${5-}"
-    local service reference inspection image_id image_os architecture digests
+    local service reference inspection image_id image_os architecture
     local resolved='{}' temp_file immutable_reference digest labels trust
     local admitted profile_version
 
@@ -1703,7 +1703,6 @@ vx_compose_resolve_images_to_file() {
         image_id="$(jq -r '.Id' <<<"$inspection")"
         image_os="$(jq -r '.Os' <<<"$inspection")"
         architecture="$(jq -r '.Architecture' <<<"$inspection")"
-        digests="$(jq -r '(.RepoDigests // []) | length' <<<"$inspection")"
         immutable_reference="$(
             vx_compose_image_immutable_reference "$inspection" "$reference"
         )" || {

@@ -29,11 +29,15 @@ v-docker registry-publisher-rotate < age-recipient
 v-docker registry-publisher-disable
 ```
 
-Install and update accept no hostname, port, release, or download URL. Restore
-resolves `BACKUP_ID` below the provider backup root and accepts no archive
-path. Disable consumes a short-lived token bound to the current plan and
-retains provider data. Public commands are thin Vesta adapters over shared
-`func/vx/harbor/` helpers.
+Install and update accept no hostname, port, release, or download URL. Harbor
+provider backup and restore are disabled for the first production release.
+Both catalog commands validate their fixed argument shapes, report the
+deferred boundary, and return status 78 without acquiring the provider lock,
+stopping Harbor, decrypting data, or changing provider authority. Existing
+ciphertext and provider data are retained. Recovery-key initialization and
+re-enablement are tracked in GitHub issue #2. Disable consumes a short-lived
+token bound to the current plan and retains provider data. Public commands are
+thin Vesta adapters over shared `func/vx/harbor/` helpers.
 
 ## Filesystem and service layout
 
@@ -52,7 +56,9 @@ Publisher plaintext is never durable on Vesta: it is not written to an
 authority file, temporary file, backup, journal, audit record, or log. The
 runtime pull plaintext-equivalent remains Vesta-owned in protected owner
 registry state because unattended immutable pulls require it.
-Provider backups are system backups outside tenant Compose backup roots.
+Dormant provider recovery primitives and any existing ciphertext remain
+outside tenant Compose backup roots. They are not a callable first-release
+backup surface.
 
 An optional pinned release cache lives only at
 `data/harbor/release/cache/v2.15.0/`, mode `0700`, with fixed mode-`0600`
@@ -283,24 +289,17 @@ removes only managed listener locations and stops the provider service after
 dependency-plan revalidation; it does not alter any image, container, desired
 state, route, volume, bind, revision, tenant backup, or retained provider data.
 
-Provider backup is separate from tenant backup and covers pinned
-configuration, Vesta mappings, Harbor database and blob state (or an external
-storage manifest), certificate configuration, and encrypted Harbor recovery
-secrets. Derived integration/runtime robot credentials are intentionally
-recreated and validated during a future applied recovery; publisher plaintext
-is never recoverable. The backup records hashes and version metadata, verifies
-database/storage snapshots, and retains a last-known-good recovery point.
-Validation-only restore cannot change the running provider.
+Backup creation and both restore modes return status 78 for the first
+production release without stopping Harbor or mutating authority. Dormant
+recovery code remains fail-closed and is not production authorization.
+Existing ciphertext, backup metadata, provider database, blobs, mappings and
+credentials are retained. The accepted first-release workload boundary stores
+no durable application data outside cache; this explicit operational risk does
+not make Harbor state disposable and does not authorize cleanup.
 
-First-release restore is validation-only. `apply` exits with status 78 without
-decrypting or mutating state. Validation uses protected temporary storage and
-rejects absolute/traversing members, links, devices, FIFOs, duplicates and
-unexpected members before verifying schema, version, ownership, capacity and
-every manifest digest. Ciphertext is stored in Vesta's system-backup layout;
-root-owned metadata remains provider authority. Curl configuration, robot
-secrets, plaintext age identities and transient sockets are never archived.
-Automated restore apply and automated provider updates are deferred.
-A future applied restore requires explicit confirmation, version
-compatibility, a pre-restore backup, health and authenticated manifest checks,
-mapping reconciliation, transactional credential recreation, and audit;
-account absence never causes artifact deletion.
+GitHub issue #2 tracks approved recovery-key creation and custody, encrypted
+provider backup re-enablement, validation-only restore, and recovery
+acceptance. A future re-enabled flow must preserve the current archive,
+secret-separation, exact-manifest, ownership, capacity, transactional service,
+and audit requirements. Automated restore apply and automated provider updates
+remain deferred.

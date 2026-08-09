@@ -50,9 +50,10 @@ for phrase in \
     'v-list-harbor-registry json' \
     'v-sync-harbor-registry-owner appuser' \
     'v-list-harbor-registry-owners json' \
-    'v-backup-harbor-registry' \
-    'v-restore-harbor-registry "$backup_id" validate' \
-    'exit status `78`' \
+    'Harbor provider backup and restore are disabled' \
+    'first production' \
+    'return exit status `78` without stopping Harbor' \
+    'GitHub issue #2' \
     'v-plan-disable-harbor-registry json' \
     'v-disable-harbor-registry "$disable_token"' \
     'retains the Harbor database, OCI artifacts, owner mappings' \
@@ -60,7 +61,7 @@ for phrase in \
     'at least 10 GiB free' \
     'PENDING_OPERATIONS=0' \
     'FRESHNESS=fresh' \
-    'manual recovery-key initialization command'
+    'no durable application'
 do
     assert_contains "$operator_guide" "$phrase"
 done
