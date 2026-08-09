@@ -26,7 +26,7 @@ This contract defines:
 Persisted alert records must use this exact shape:
 
 ```bash
-AID='1' NAME='app' OWNER='jack' LEVEL='warning' TYPE='health' STATUS='open' \
+AID='1' NAME='app' OWNER='appuser' LEVEL='warning' TYPE='health' STATUS='open' \
 TITLE='Health check failing' MESSAGE='GET /health returned 500 three times' \
 STARTED='2026-06-27 14:01:00' LAST_SEEN='2026-06-27 14:03:00' ACK='no'
 ```

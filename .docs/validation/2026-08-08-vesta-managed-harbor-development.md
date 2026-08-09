@@ -9,9 +9,9 @@ provider was returned to a stable disabled/inactive state. Production
 deployment is deferred and no production host was contacted.
 
 Development DNS is also not ready for unpinned clients: the workstation's
-resolver returns `159.196.107.151` for `dev.jackpridham.com`, not the authorized
-development address `192.168.200.100`. All SSH and hostname-bearing TLS probes
-in this acceptance were pinned to `192.168.200.100`; the raw IP was never used
+resolver returns `203.0.113.10` for `development.example.com`, not the authorized
+development address `192.0.2.10`. All SSH and hostname-bearing TLS probes
+in this acceptance were pinned to `192.0.2.10`; the raw IP was never used
 as the TLS identity.
 
 ## Release identity and authorization boundary
@@ -23,13 +23,13 @@ as the TLS identity.
 - Final runtime archive SHA-256:
   `fd6073a78cf965474f072216cdce8eefca13b41b6d7dfc3d233ddaf4e9629766`.
 - Runtime payload: 57 repository files; all 57 installed hashes passed.
-- SSH target: `debian@dev.jackpridham.com`, pinned to
-  `192.168.200.100` with the configured `~/.ssh/id_ed25519`.
-- Host-reported FQDN: `dev.jackpridham.com`; host address:
-  `192.168.200.100/24`; SSH peer target: `192.168.200.100:22`.
+- SSH target: `operator@development.example.com`, pinned to
+  `192.0.2.10` with the configured `~/.ssh/id_ed25519`.
+- Host-reported FQDN: `development.example.com`; host address:
+  `192.0.2.10/24`; SSH peer target: `192.0.2.10:22`.
 - No firewall, DNS, route, tenant package, tenant desired-state, or unrelated
   package change was made. No Docker prune was run.
-- `syd.vortexenterprises.com.au` was not contacted or mutated. Production
+- `production.example.com` was not contacted or mutated. Production
   deployment and push remain deferred.
 
 ## Local Milestone 5 run
@@ -88,14 +88,14 @@ Only affected Bash syntax, focused Harbor tests, Python fixture checks, and
 ## Development baseline and TLS
 
 - The authoritative Vesta hostname and interface are
-  `dev.jackpridham.com` and `192.168.200.100/24`.
-- The host resolver maps `dev.jackpridham.com` to `192.168.200.100`, while the
-  acceptance workstation's resolver maps it to `159.196.107.151`.
+  `development.example.com` and `192.0.2.10/24`.
+- The host resolver maps `development.example.com` to `192.0.2.10`, while the
+  acceptance workstation's resolver maps it to `203.0.113.10`.
 - The panel listener is `0.0.0.0:8083` and returns HTTP `302` when probed as
-  `https://dev.jackpridham.com:8083` with the connection pinned to
-  `192.168.200.100`.
+  `https://development.example.com:8083` with the connection pinned to
+  `192.0.2.10`.
 - Panel certificate subject and issuer CN are both
-  `dev.jackpridham.com`. Validity is 2025-11-29 09:21:20 UTC through
+  `development.example.com`. Validity is 2025-11-29 09:21:20 UTC through
   2026-11-29 09:21:20 UTC. SHA-256 fingerprint is
   `18:2E:30:BF:6D:19:76:93:5F:6D:32:43:37:8E:B2:C5:3A:52:0E:2F:EA:5F:8B:A1:A3:3D:1B:F0:44:A9:3B:5F`.
 - The certificate is self-signed (`curl` verification result 18), so the
@@ -205,10 +205,10 @@ unchanged:
 
 ```text
 fabfe8153757c9a08d95a89b357b254fd7911f79e8fc08e10afeb2fa03c63520
-/vx-slave-slave-vxapp-app-1 running healthy
+/vx-legacyadmin-legacy-admin-app-app-1 running healthy
 ```
 
-`slave-vxapp` desired state, image, container, network, volumes, routes, and
+`legacy-admin-app` desired state, image, container, network, volumes, routes, and
 credentials were not mutated.
 
 ## Acceptance not claimed
@@ -226,7 +226,7 @@ Before Task 10 can resume, the approved design must choose and implement a
 Harbor-supported credential contract, for example a pinned Harbor release
 that accepts caller-selected robot secrets under delegated authority, or an
 explicitly reviewed change to secret delivery/administrator use. Development
-DNS must also map `dev.jackpridham.com` to `192.168.200.100` for unpinned
+DNS must also map `development.example.com` to `192.0.2.10` for unpinned
 clients. Then stage the exact successor HEAD, create a new rollback, and rerun
 only the incomplete development-host acceptance. Production remains deferred.
 
@@ -276,7 +276,7 @@ encode those upstream rules, including generated one-time secrets, configured
 prefixes, exact levels/scopes, subset enforcement, `403` update/refresh,
 secret-redacted GET/list, validated delete, and a marked lost-response
 candidate. This is design and local fixture evidence only. No corrected
-successor was staged on `dev.jackpridham.com`, the incomplete live checks in
+successor was staged on `development.example.com`, the incomplete live checks in
 "Acceptance not claimed" were not rerun, the DNS discrepancy was not
 revalidated, and no production host was contacted. Development acceptance and
 all production deployment remain deferred.
@@ -360,7 +360,7 @@ Final development state is stable and fail-closed:
 provider MODE=disabled
 provider PINNED_VERSION=v2.15.0
 provider RUNNING_VERSION=null
-provider ORIGIN=https://dev.jackpridham.com:8083
+provider ORIGIN=https://development.example.com:8083
 vesta-harbor.service=inactive,disabled
 /run/vesta-harbor/proxy.sock=absent
 Harbor containers=absent
@@ -370,10 +370,10 @@ tenant_state=running,healthy
 tenant_image=sha256:e274e28000ab05e5a81c3fecae992ef3c06094b0701dfa9e965e8f23de0302fd
 ```
 
-The deployment client still resolves `dev.jackpridham.com` to
-`159.196.107.151`, where panel port `8083` is refused, rather than directly to
-the authorized development address `192.168.200.100`. When TLS is connected
-to `192.168.200.100` with SNI and hostname `dev.jackpridham.com`, system-store
+The deployment client still resolves `development.example.com` to
+`203.0.113.10`, where panel port `8083` is refused, rather than directly to
+the authorized development address `192.0.2.10`. When TLS is connected
+to `192.0.2.10` with SNI and hostname `development.example.com`, system-store
 verification succeeds. No hosts-file, DNS, certificate, or trust setting was
 changed.
 

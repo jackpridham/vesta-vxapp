@@ -1,27 +1,27 @@
 ## Audit Scope
 
-This audit validates Task 11 of [.docs/plans/2026-06-27-docker-panel-management.md](/home/jackpridham/Work/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed Playwright harness, environment contract, auth setup, smoke specs, and follow-up fixes:
+This audit validates Task 11 of [.docs/plans/2026-06-27-docker-panel-management.md](/path/to/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed Playwright harness, environment contract, auth setup, smoke specs, and follow-up fixes:
 
-- [package.json](/home/jackpridham/Work/vesta-vxapp/package.json)
-- [package-lock.json](/home/jackpridham/Work/vesta-vxapp/package-lock.json)
-- [.gitignore](/home/jackpridham/Work/vesta-vxapp/.gitignore)
-- [.env.playwright.example](/home/jackpridham/Work/vesta-vxapp/.env.playwright.example)
-- [playwright.config.js](/home/jackpridham/Work/vesta-vxapp/playwright.config.js)
-- [tests/playwright/README.md](/home/jackpridham/Work/vesta-vxapp/tests/playwright/README.md)
-- [tests/playwright/helpers/panel-auth.js](/home/jackpridham/Work/vesta-vxapp/tests/playwright/helpers/panel-auth.js)
-- [tests/playwright/auth.setup.js](/home/jackpridham/Work/vesta-vxapp/tests/playwright/auth.setup.js)
-- [tests/playwright/login-page.anonymous.spec.js](/home/jackpridham/Work/vesta-vxapp/tests/playwright/login-page.anonymous.spec.js)
-- [tests/playwright/panel-shell.admin.authenticated.spec.js](/home/jackpridham/Work/vesta-vxapp/tests/playwright/panel-shell.admin.authenticated.spec.js)
-- [tests/playwright/panel-shell.user.authenticated.spec.js](/home/jackpridham/Work/vesta-vxapp/tests/playwright/panel-shell.user.authenticated.spec.js)
+- [package.json](/path/to/vesta-vxapp/package.json)
+- [package-lock.json](/path/to/vesta-vxapp/package-lock.json)
+- [.gitignore](/path/to/vesta-vxapp/.gitignore)
+- [.env.playwright.example](/path/to/vesta-vxapp/.env.playwright.example)
+- [playwright.config.js](/path/to/vesta-vxapp/playwright.config.js)
+- [tests/playwright/README.md](/path/to/vesta-vxapp/tests/playwright/README.md)
+- [tests/playwright/helpers/panel-auth.js](/path/to/vesta-vxapp/tests/playwright/helpers/panel-auth.js)
+- [tests/playwright/auth.setup.js](/path/to/vesta-vxapp/tests/playwright/auth.setup.js)
+- [tests/playwright/login-page.anonymous.spec.js](/path/to/vesta-vxapp/tests/playwright/login-page.anonymous.spec.js)
+- [tests/playwright/panel-shell.admin.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/panel-shell.admin.authenticated.spec.js)
+- [tests/playwright/panel-shell.user.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/panel-shell.user.authenticated.spec.js)
 
-The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task11.audit-input.md](/home/jackpridham/Work/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task11.audit-input.md).
+The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task11.audit-input.md](/path/to/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task11.audit-input.md).
 
 ## Source Requirements
 
 1. [EXPLICIT] Add root-level Playwright tooling with `@playwright/test` and `dotenv`, plus the exact scripts `playwright:install`, `playwright:test`, `playwright:test:headed`, `playwright:test:ui`, and `playwright:report`.
 2. [EXPLICIT] Update `.gitignore` so local browser artifacts, auth state, and local env files do not dirty the repo.
 3. [EXPLICIT] Create `.env.playwright.example` with the exact base URL, secret-login, admin, and docker-user variables documented by Task 11.
-4. [EXPLICIT] Create `playwright.config.js` with the `setup`, `chromium-anonymous`, `chromium-admin-authenticated`, and `chromium-docker-user-authenticated` project classes, correct auth-state paths, `ignoreHTTPSErrors: true`, and default base URL `https://192.168.100.100:8083`.
+4. [EXPLICIT] Create `playwright.config.js` with the `setup`, `chromium-anonymous`, `chromium-admin-authenticated`, and `chromium-docker-user-authenticated` project classes, correct auth-state paths, `ignoreHTTPSErrors: true`, and default base URL `https://192.0.2.20:8083`.
 5. [EXPLICIT] Create the auth helper and setup spec with the concrete helper functions `getPanelCredentials`, `hasPanelCredentials`, `loginWithPassword`, `openPanelLogin`, `getAuthStatePath`, and the one-run storage-state setup flow for configured roles.
 6. [EXPLICIT] Add the anonymous, admin shell, and non-admin shell smoke specs with the required minimum assertions.
 7. [EXPLICIT] Document env-file usage, optional secret-login, the project matrix, and `npx playwright install-deps chromium` in `tests/playwright/README.md`.

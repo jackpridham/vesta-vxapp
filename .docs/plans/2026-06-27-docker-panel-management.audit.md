@@ -1,6 +1,6 @@
 ## Audit Scope
 
-This audit validates [.docs/plans/2026-06-27-docker-panel-management.md](/home/jackpridham/Work/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the user objective and the sanitized snapshot in [.docs/plans/2026-06-27-docker-panel-management.audit-input.md](/home/jackpridham/Work/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.audit-input.md).
+This audit validates [.docs/plans/2026-06-27-docker-panel-management.md](/path/to/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the user objective and the sanitized snapshot in [.docs/plans/2026-06-27-docker-panel-management.audit-input.md](/path/to/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.audit-input.md).
 
 Evidence used:
 - current repo files for Docker CLI, user/package/counter state, backup/restore, rebuild, suspend/delete, panel routing, and `vx-proxy`

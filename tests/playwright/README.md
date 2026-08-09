@@ -69,4 +69,4 @@ PLAYWRIGHT_ENV_FILE=.env.playwright.local npm run playwright:test -- --project=c
 PLAYWRIGHT_ENV_FILE=.env.playwright.local PLAYWRIGHT_ADMIN_PASSWORD='...' npm run playwright:test -- --project=chromium-admin-authenticated
 ```
 
-If the current host does not provide `/etc/profile.d/vesta.sh` and the local Vesta runtime, use the shell syntax checks plus `npm run playwright:test -- --list` as the Task 12 fallback validation and defer the full Docker-backed browser runs to the sydlocal closeout host in Task 13. If the runtime is local but you are reaching it through a tunnel or reverse proxy, leave `PLAYWRIGHT_LOCAL_RUNTIME_TARGET` unset so the destructive fixture helpers stay disabled.
+If the current host does not provide `/etc/profile.d/vesta.sh` and the local Vesta runtime, use the shell syntax checks plus `npm run playwright:test -- --list` as the Task 12 fallback validation and defer the full Docker-backed browser runs to the staging closeout host in Task 13. If the runtime is local but you are reaching it through a tunnel or reverse proxy, leave `PLAYWRIGHT_LOCAL_RUNTIME_TARGET` unset so the destructive fixture helpers stay disabled.

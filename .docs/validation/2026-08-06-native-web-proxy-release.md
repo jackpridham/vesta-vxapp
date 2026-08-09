@@ -1,8 +1,8 @@
 # Native Web-Domain Proxy Dev-Host Validation
 
 - **Validation date:** 2026-08-06
-- **Authorized host:** `debian@192.168.200.100` (`dev.jackpridham.com`)
-- **Authorized domain:** `admin/slave.jackpridham.com`
+- **Authorized host:** `operator@192.0.2.10` (`development.example.com`)
+- **Authorized domain:** `admin/app.example.com`
 - **Initial candidate:** `3fdd617d12ebe903a7480d405e17a1a262717abc`
 - **Validated successor:** `a357eb6649979130c71752b24cdf79cece98032a`
 - **Runtime version:** `0.9.9-0-16+vxapp.a357eb66`
@@ -13,8 +13,8 @@
 
 ## Authorization and boundaries
 
-The user replaced the original sydlocal staging target with the dev server and
-explicitly authorized deployment and testing against `slave.jackpridham.com`.
+The user replaced the original staging staging target with the dev server and
+explicitly authorized deployment and testing against `app.example.com`.
 No production host was accessed. No Docker/Compose workload, tenant domain,
 firewall, DNS record, or WAN route was changed. The existing
 `X-Business-GUID` value was captured only inside a mode-0700 root snapshot; it
@@ -124,7 +124,7 @@ never logged a GUID value.
   renders, and the backend matched the new value.
 - **Authenticated panel:** The first Playwright attempt used the existing
   mode-0600 local environment file against
-  `https://192.168.200.100:8083`; those credentials were not valid on this
+  `https://192.0.2.10:8083`; those credentials were not valid on this
   server, so it stopped at login without loading or saving the form. The user
   then explicitly authorized a temporary, reversible dev-only administrator
   password rotation. Before rotation, a root-only snapshot captured the exact
@@ -209,7 +209,7 @@ Remote `bash -n` and source-level valid/invalid authority cases passed,
 including an exact `[::1]` Host result. Nginx and Apache syntax passed, all
 three Nginx, Apache, and Vesta services remained active, and both host-local
 and public checks retained HTTP 301 and HTTPS 200 for
-`slave.jackpridham.com`. The first pre-deployment `nginx -t`, run at the SSH
+`app.example.com`. The first pre-deployment `nginx -t`, run at the SSH
 session's default file-descriptor limit, reproduced the already documented
 `Too many open files` failure; rerunning with the host's established
 `ulimit -n 65535` passed before and after deployment. The initial deployment

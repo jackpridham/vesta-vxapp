@@ -1,30 +1,30 @@
 ## Audit Scope
 
-This audit validates Task 7 of [.docs/plans/2026-06-27-docker-panel-management.md](/home/jackpridham/Work/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed navigation templates, Docker view follow-ups, shared template seam, and lightweight Playwright coverage added before Task 8:
+This audit validates Task 7 of [.docs/plans/2026-06-27-docker-panel-management.md](/path/to/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed navigation templates, Docker view follow-ups, shared template seam, and lightweight Playwright coverage added before Task 8:
 
-- [web/templates/admin/panel.html](/home/jackpridham/Work/vesta-vxapp/web/templates/admin/panel.html)
-- [web/templates/user/panel.html](/home/jackpridham/Work/vesta-vxapp/web/templates/user/panel.html)
-- [web/templates/admin/list_services.html](/home/jackpridham/Work/vesta-vxapp/web/templates/admin/list_services.html)
-- [web/list/docker/index.php](/home/jackpridham/Work/vesta-vxapp/web/list/docker/index.php)
-- [web/add/docker/index.php](/home/jackpridham/Work/vesta-vxapp/web/add/docker/index.php)
-- [web/edit/docker/index.php](/home/jackpridham/Work/vesta-vxapp/web/edit/docker/index.php)
-- [web/templates/admin/list_docker.html](/home/jackpridham/Work/vesta-vxapp/web/templates/admin/list_docker.html)
-- [web/templates/admin/add_docker.html](/home/jackpridham/Work/vesta-vxapp/web/templates/admin/add_docker.html)
-- [web/templates/admin/edit_docker.html](/home/jackpridham/Work/vesta-vxapp/web/templates/admin/edit_docker.html)
-- [web/templates/user/list_docker.html](/home/jackpridham/Work/vesta-vxapp/web/templates/user/list_docker.html)
-- [web/templates/user/add_docker.html](/home/jackpridham/Work/vesta-vxapp/web/templates/user/add_docker.html)
-- [web/templates/user/edit_docker.html](/home/jackpridham/Work/vesta-vxapp/web/templates/user/edit_docker.html)
-- [web/templates/docker_list_shared.php](/home/jackpridham/Work/vesta-vxapp/web/templates/docker_list_shared.php)
-- [web/templates/docker_add_shared.php](/home/jackpridham/Work/vesta-vxapp/web/templates/docker_add_shared.php)
-- [web/templates/docker_edit_shared.php](/home/jackpridham/Work/vesta-vxapp/web/templates/docker_edit_shared.php)
-- [web/inc/vx_docker.php](/home/jackpridham/Work/vesta-vxapp/web/inc/vx_docker.php)
-- [web/inc/i18n/en.php](/home/jackpridham/Work/vesta-vxapp/web/inc/i18n/en.php)
-- [web/js/pages/list_docker.js](/home/jackpridham/Work/vesta-vxapp/web/js/pages/list_docker.js)
-- [tests/playwright/docker-panel.admin.authenticated.spec.js](/home/jackpridham/Work/vesta-vxapp/tests/playwright/docker-panel.admin.authenticated.spec.js)
-- [tests/playwright/docker-panel.user.authenticated.spec.js](/home/jackpridham/Work/vesta-vxapp/tests/playwright/docker-panel.user.authenticated.spec.js)
-- [playwright.config.js](/home/jackpridham/Work/vesta-vxapp/playwright.config.js)
+- [web/templates/admin/panel.html](/path/to/vesta-vxapp/web/templates/admin/panel.html)
+- [web/templates/user/panel.html](/path/to/vesta-vxapp/web/templates/user/panel.html)
+- [web/templates/admin/list_services.html](/path/to/vesta-vxapp/web/templates/admin/list_services.html)
+- [web/list/docker/index.php](/path/to/vesta-vxapp/web/list/docker/index.php)
+- [web/add/docker/index.php](/path/to/vesta-vxapp/web/add/docker/index.php)
+- [web/edit/docker/index.php](/path/to/vesta-vxapp/web/edit/docker/index.php)
+- [web/templates/admin/list_docker.html](/path/to/vesta-vxapp/web/templates/admin/list_docker.html)
+- [web/templates/admin/add_docker.html](/path/to/vesta-vxapp/web/templates/admin/add_docker.html)
+- [web/templates/admin/edit_docker.html](/path/to/vesta-vxapp/web/templates/admin/edit_docker.html)
+- [web/templates/user/list_docker.html](/path/to/vesta-vxapp/web/templates/user/list_docker.html)
+- [web/templates/user/add_docker.html](/path/to/vesta-vxapp/web/templates/user/add_docker.html)
+- [web/templates/user/edit_docker.html](/path/to/vesta-vxapp/web/templates/user/edit_docker.html)
+- [web/templates/docker_list_shared.php](/path/to/vesta-vxapp/web/templates/docker_list_shared.php)
+- [web/templates/docker_add_shared.php](/path/to/vesta-vxapp/web/templates/docker_add_shared.php)
+- [web/templates/docker_edit_shared.php](/path/to/vesta-vxapp/web/templates/docker_edit_shared.php)
+- [web/inc/vx_docker.php](/path/to/vesta-vxapp/web/inc/vx_docker.php)
+- [web/inc/i18n/en.php](/path/to/vesta-vxapp/web/inc/i18n/en.php)
+- [web/js/pages/list_docker.js](/path/to/vesta-vxapp/web/js/pages/list_docker.js)
+- [tests/playwright/docker-panel.admin.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/docker-panel.admin.authenticated.spec.js)
+- [tests/playwright/docker-panel.user.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/docker-panel.user.authenticated.spec.js)
+- [playwright.config.js](/path/to/vesta-vxapp/playwright.config.js)
 
-The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task7.audit-input.md](/home/jackpridham/Work/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task7.audit-input.md).
+The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task7.audit-input.md](/path/to/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task7.audit-input.md).
 
 ## Source Requirements
 

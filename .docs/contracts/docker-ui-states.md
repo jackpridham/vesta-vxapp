@@ -69,13 +69,13 @@ The list template and JS must use these exact child ids:
 Per-container list cards must render inside `docker-list-cards` using:
 
 ```html
-<article id="docker-card-jack-app"></article>
+<article id="docker-card-appuser-app"></article>
 ```
 
 Per-alert rows must render inside `docker-alerts-panel` using:
 
 ```html
-<article id="docker-alert-jack-1"></article>
+<article id="docker-alert-appuser-1"></article>
 ```
 
 ## Add Page States

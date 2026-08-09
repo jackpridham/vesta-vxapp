@@ -45,7 +45,7 @@ All web-facing stats endpoints for Docker live charts and dashboard cards must r
 
 ```json
 {
-  "OWNER": "jack",
+  "OWNER": "appuser",
   "NAME": "app",
   "PERIOD": "5m",
   "CPU_PCT": [{"TS": "2026-06-27T14:00:00Z", "VALUE": 12.4}],

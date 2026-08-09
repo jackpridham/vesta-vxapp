@@ -7,16 +7,16 @@ overlay, focused host gates, lifecycle, authenticated browser acceptance, and
 exact isolation checks. The overlay remains installed on staging, its upload
 was removed, and the fresh rollback archive is retained.
 
-- Target: `debian@192.168.100.100` through
-  `gizmo@192.168.100.16`
+- Target: `operator@192.0.2.20` through
+  `builder@192.0.2.30`
 - Implementation: `472b19f66acc0a5c92ff103363aa4326019eae72`
 - Overlay paths: 48 committed regular files
 - Overlay archive SHA-256:
   `719af35e234e38334017a85b0038009ab2308d1982218ca8c47c1cec5e47fc4b`
 - Final rollback archive:
-  `/var/backups/vesta/vx-self-service-472b19f66acc0a5c92ff103363aa4326019eae72`
+  `/var/backups/vesta/vx-self-service-<digest>`
 - Preserved failed-Step-3 rollback evidence:
-  `/var/backups/vesta/vx-self-service-77de612ab73286e60a5c38370de82b2c9d6220d5.failed-step3-1785253945`
+  `/var/backups/vesta/vx-self-service-<digest>.failed-step3-1785253945`
 
 ## Results
 
@@ -79,7 +79,7 @@ protected browser environment before retrying.
 - After the stranded process was externally cleared, fresh preflight passed
   with about 672 MiB available memory. The prior current rollback archive was
   preserved as
-  `/var/backups/vesta/vx-self-service-77de612ab73286e60a5c38370de82b2c9d6220d5.failed-step4-1785255239`.
+  `/var/backups/vesta/vx-self-service-<digest>.failed-step4-1785255239`.
 - The exact overlay was installed again and all content hashes passed.
 - The controller-authorized sequential ShellCheck gate passed the first ten
   Compose helper files. Per-file peak process-tree RSS ranged from about
@@ -116,14 +116,14 @@ protected browser environment before retrying.
   decomposed ShellCheck evidence remained applicable to the same bytes.
 - With the authorized Vesta source/nounset correction, lifecycle reached the
   revision-one runtime apply.
-- Docker created network `vx-vxsscp12-selfservice_default`, but runtime
+- Docker created network `vx-testuser-selfservice_default`, but runtime
   validation looked for `vx_vxsscp12_selfservice_default`. Apply failed with
   `managed project network does not exist`.
 - The first exact rollback attempt exposed another runbook environment defect:
   Step 8 did not export `VESTA` before invoking scoped Vesta commands. The
   controller authorized an immediate corrected rollback.
 - The corrected rollback exported `VESTA`, removed only
-  `vxsscp12/selfservice` and exact owner-labeled runtime, deleted the scratch
+  `testuser/selfservice` and exact owner-labeled runtime, deleted the scratch
   user, restored the archive, and passed old hashes/modes, Bash, PHP, nginx,
   and Docker isolation checks.
 - The exact upload was removed and the unrelated-container baseline matched.
@@ -139,7 +139,7 @@ protected browser environment before retrying.
   backend/web/PHP, all Compose fixtures, network/canonicalization tests, and
   nginx passed.
 - The lifecycle stopped at scratch-user creation with
-  `Error: user vxsscp12 exists`, although fresh preflight had proven both the
+  `Error: user testuser exists`, although fresh preflight had proven both the
   system user and Vesta data path absent. Failure-state inspection found no
   system user but a partial Vesta user-data path.
 - Corrected scoped rollback removed the partial owner/project state, restored
@@ -164,7 +164,7 @@ protected browser environment before retrying.
 - Therefore the later `v-add-user` was not raced or invoked twice. It correctly
   rejected the orphan Vesta data left by the earlier rollback.
 - Current state at diagnosis was not isolated:
-  `/usr/local/vesta/data/users/vxsscp12` remained present, while the system
+  `/usr/local/vesta/data/users/testuser` remained present, while the system
   user, labeled Docker resources, and port listener were absent.
 - A deterministic retry must hold an exact root flock for the whole Task 7
   lifecycle and use explicit `if ...; then exit 1; fi` collision/isolation
@@ -175,14 +175,14 @@ protected browser environment before retrying.
 - Read-only enumeration found a valid Vesta user record and home, no passwd or
   group entry, no owner-labeled Docker resources, no port listener, and no
   owner previews.
-- Five exact `vxsscp12` queue entries remained: four disk updates and one
+- Five exact `testuser` queue entries remained: four disk updates and one
   traffic update.
 - Code inspection confirmed normal `v-delete-user` supports this partial
   state: it validates the Vesta record, removes scoped runtime and queue
   entries, tolerates missing passwd/group entries, and removes the exact home
   and Vesta data.
-- Under root flock `/run/lock/vx-task7-vxsscp12.lock`, normal
-  `v-delete-user vxsscp12` completed successfully.
+- Under root flock `/run/lock/vx-task7-testuser.lock`, normal
+  `v-delete-user testuser` completed successfully.
 - Explicit `if`-based checks proved the system account, Vesta data, home,
   owner-labeled containers/networks/volumes, port, previews, and queue
   references absent. Nginx passed and the unrelated container ID remained
@@ -192,7 +192,7 @@ protected browser environment before retrying.
 
 ## Locked retry after orphan recovery
 
-- One root flock on `/run/lock/vx-task7-vxsscp12.lock` was held continuously
+- One root flock on `/run/lock/vx-task7-testuser.lock` was held continuously
   across preflight, installation, gates, lifecycle, rollback, and cleanup.
 - Explicit collision checks passed. The 41-path overlay at `1a8fd363` and all
   installed hashes, decomposed ShellCheck, focused tests, PHP, fixtures,
@@ -241,7 +241,7 @@ protected browser environment before retrying.
   SHA-256 was
   `f8908c9492d8d85b09adf2058349d4e8afa9f7204ebc718487f457f9d328b346`.
 - The fresh rollback archive is retained at
-  `/var/backups/vesta/vx-self-service-ed01543705f77b779545903ca9c726886b19546a`.
+  `/var/backups/vesta/vx-self-service-<digest>`.
   The exact remote upload was removed after recording evidence.
 - Explicit collision checks passed. The archive checksum, archive/path-list
   equality, isolated extraction, all 43 source hashes, and all 43 installed
@@ -273,7 +273,7 @@ protected browser environment before retrying.
   unrelated and were not touched.
 - Final explicit checks proved the current `pw-self`, `pw-stale`, and
   `pw-rollback` projects, control/data state, labeled containers, networks,
-  volumes, and previews absent. The older Task 7 `vxsscp12` account, data,
+  volumes, and previews absent. The older Task 7 `testuser` account, data,
   home, labeled Docker resources, listener, and scratch state remain absent.
   Nginx passes and the unrelated-container baseline matches exactly.
 - Production and firewall state were not accessed. No prune, broad cleanup,
@@ -292,7 +292,7 @@ is retained.
   approved Vesta/documentation areas plus the committed
   `.env.playwright.example` contract were rejected. The archive SHA-256 was
   `2848d1eb6aa66596fa0a4fe8ce8d516f97f1db680a54f6fba4a19ecd34e988b9`.
-- A single root flock on `/run/lock/vx-task7-vxsscp12.lock` was held from
+- A single root flock on `/run/lock/vx-task7-testuser.lock` was held from
   collision preflight through install, host gates, browser execution,
   rollback, and cleanup. All collision and isolation assertions used explicit
   `if` failures rather than standalone inverted commands.
@@ -302,7 +302,7 @@ is retained.
   container baseline was exactly `ebfd7e90bada`.
 - Archive checksum, archive/path equality, isolated extraction, and all 48
   source and installed hashes passed. The fresh rollback archive is
-  `/var/backups/vesta/vx-self-service-86a73b70107830afe54f5dded3b3b9ac22ddb83e`;
+  `/var/backups/vesta/vx-self-service-<digest>`;
   it records 47 replaced files and one new file.
 - Installation retained the accepted `LC_ALL=C` correction for `comm` and
   root-side `find ... -exec chmod` for rollback metadata. The full overlay
@@ -339,7 +339,7 @@ is retained.
   `test/js/test-floating-div.js` was removed.
 - Exact current `pw-self-*`, `pw-stale-*`, and `pw-rollback-*` control/data
   state, labeled containers, networks, volumes, previews, job/queue
-  references, and the Task 7 `vxsscp12` account, Vesta data, home, labeled
+  references, and the Task 7 `testuser` account, Vesta data, home, labeled
   runtime, previews, queue references, and port were absent. Older unrelated
   `pw-self-stage-*`/`pw-self-repro-*` lock files were left untouched.
 - The exact remote upload was removed, nginx passed, and the final unrelated
@@ -353,7 +353,7 @@ rollback archive is retained for closeout evidence.
 
 ## Successful final retry at `472b19f6`
 
-- One root flock on `/run/lock/vx-task7-vxsscp12.lock` was held from the
+- One root flock on `/run/lock/vx-task7-testuser.lock` was held from the
   fresh collision preflight through archive installation, host gates,
   lifecycle, browser execution, scoped cleanup, and final baseline
   comparison.
@@ -386,7 +386,7 @@ rollback archive is retained for closeout evidence.
   the unrelated-container baseline matched. Three immediate independent
   HTTPS probes then returned HTTP 200 in approximately 0.07 seconds each.
 - That failed-attempt rollback archive was preserved at
-  `/var/backups/vesta/vx-self-service-472b19f66acc0a5c92ff103363aa4326019eae72.failed-auth-1785281740`.
+  `/var/backups/vesta/vx-self-service-<digest>.failed-auth-1785281740`.
   A fresh rollback root was created and all 48 committed overlay hashes were
   installed and verified again before the browser retry.
 - The protected mode-0600 `.env.playwright.local` was used without printing
@@ -409,7 +409,7 @@ rollback archive is retained for closeout evidence.
   the exact upload was removed, and the final sorted container list matched
   the baseline (`ebfd7e90bada`) before the root flock was released.
 - The passing overlay remains installed. The fresh rollback archive is
-  `/var/backups/vesta/vx-self-service-472b19f66acc0a5c92ff103363aa4326019eae72`.
+  `/var/backups/vesta/vx-self-service-<digest>`.
   Production and firewall state were not accessed. No prune, broad cleanup,
   or `rsync --delete` action was used.
 

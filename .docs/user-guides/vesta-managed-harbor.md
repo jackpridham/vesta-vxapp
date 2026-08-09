@@ -12,7 +12,7 @@
 This is the canonical tenant workflow **once an administrator confirms that
 Vesta-managed Harbor is operational and `registry-info` reports healthy,
 fresh, ready state**. It applies to maintainers of any existing tenant-owned
-`standard` project. Names such as `slave-vxapp` and `asterisk-vxapp` are only
+`standard` project. Names such as `legacy-admin-app` and `internal-voice-app` are only
 generic examples; application-specific build, configuration, and acceptance
 details belong in the application repository.
 
@@ -85,14 +85,14 @@ IMAGE_NAME='IMAGE_NAME'
 RELEASE_TAG='RELEASE_TAG'
 
 # DEVELOPMENT-ONLY target. Production remains deferred.
-VESTA_HOST='dev.jackpridham.com'
+VESTA_HOST='development.example.com'
 
 [[ "$APP_OWNER" != APP_OWNER && "$APP_OWNER" =~ ^[a-z][a-z0-9_-]{0,31}$ ]]
 [[ "$APP_PROJECT" != APP_PROJECT && "$APP_PROJECT" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]
 [[ "$IMAGE_NAME" != IMAGE_NAME && "$IMAGE_NAME" =~ ^[a-z0-9][a-z0-9._-]{0,127}$ ]]
 [[ "$RELEASE_TAG" != RELEASE_TAG && "$RELEASE_TAG" != latest ]]
 [[ "$RELEASE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]
-[[ "$VESTA_HOST" == 'dev.jackpridham.com' ]]
+[[ "$VESTA_HOST" == 'development.example.com' ]]
 
 # Require explicit acknowledgement before the first network operation.
 read -r -p \

@@ -1,22 +1,22 @@
 ## Audit Scope
 
-This audit validates Task 10 of [.docs/plans/2026-06-27-docker-panel-management.md](/home/jackpridham/Work/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed Docker panel docs, screenshot manifest, exact state markup, and shared-form compatibility follow-up:
+This audit validates Task 10 of [.docs/plans/2026-06-27-docker-panel-management.md](/path/to/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed Docker panel docs, screenshot manifest, exact state markup, and shared-form compatibility follow-up:
 
-- [.docs/user-guides/docker-containers.md](/home/jackpridham/Work/vesta-vxapp/.docs/user-guides/docker-containers.md)
-- [.docs/user-guides/assets/docker/README.md](/home/jackpridham/Work/vesta-vxapp/.docs/user-guides/assets/docker/README.md)
-- [web/templates/docker_list_shared.php](/home/jackpridham/Work/vesta-vxapp/web/templates/docker_list_shared.php)
-- [web/templates/docker_add_shared.php](/home/jackpridham/Work/vesta-vxapp/web/templates/docker_add_shared.php)
-- [web/templates/docker_edit_shared.php](/home/jackpridham/Work/vesta-vxapp/web/templates/docker_edit_shared.php)
-- [web/templates/admin/list_docker.html](/home/jackpridham/Work/vesta-vxapp/web/templates/admin/list_docker.html)
-- [web/templates/user/list_docker.html](/home/jackpridham/Work/vesta-vxapp/web/templates/user/list_docker.html)
-- [web/templates/admin/add_docker.html](/home/jackpridham/Work/vesta-vxapp/web/templates/admin/add_docker.html)
-- [web/templates/user/add_docker.html](/home/jackpridham/Work/vesta-vxapp/web/templates/user/add_docker.html)
-- [web/templates/admin/edit_docker.html](/home/jackpridham/Work/vesta-vxapp/web/templates/admin/edit_docker.html)
-- [web/templates/user/edit_docker.html](/home/jackpridham/Work/vesta-vxapp/web/templates/user/edit_docker.html)
-- [web/js/init.js](/home/jackpridham/Work/vesta-vxapp/web/js/init.js)
-- [web/css/styles.min.css](/home/jackpridham/Work/vesta-vxapp/web/css/styles.min.css)
+- [.docs/user-guides/docker-containers.md](/path/to/vesta-vxapp/.docs/user-guides/docker-containers.md)
+- [.docs/user-guides/assets/docker/README.md](/path/to/vesta-vxapp/.docs/user-guides/assets/docker/README.md)
+- [web/templates/docker_list_shared.php](/path/to/vesta-vxapp/web/templates/docker_list_shared.php)
+- [web/templates/docker_add_shared.php](/path/to/vesta-vxapp/web/templates/docker_add_shared.php)
+- [web/templates/docker_edit_shared.php](/path/to/vesta-vxapp/web/templates/docker_edit_shared.php)
+- [web/templates/admin/list_docker.html](/path/to/vesta-vxapp/web/templates/admin/list_docker.html)
+- [web/templates/user/list_docker.html](/path/to/vesta-vxapp/web/templates/user/list_docker.html)
+- [web/templates/admin/add_docker.html](/path/to/vesta-vxapp/web/templates/admin/add_docker.html)
+- [web/templates/user/add_docker.html](/path/to/vesta-vxapp/web/templates/user/add_docker.html)
+- [web/templates/admin/edit_docker.html](/path/to/vesta-vxapp/web/templates/admin/edit_docker.html)
+- [web/templates/user/edit_docker.html](/path/to/vesta-vxapp/web/templates/user/edit_docker.html)
+- [web/js/init.js](/path/to/vesta-vxapp/web/js/init.js)
+- [web/css/styles.min.css](/path/to/vesta-vxapp/web/css/styles.min.css)
 
-The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task10.audit-input.md](/home/jackpridham/Work/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task10.audit-input.md).
+The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task10.audit-input.md](/path/to/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task10.audit-input.md).
 
 ## Source Requirements
 

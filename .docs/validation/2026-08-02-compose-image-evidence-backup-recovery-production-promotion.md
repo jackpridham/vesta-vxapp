@@ -7,7 +7,7 @@ Status: **completed and independently accepted**
 ## Authorized boundary
 
 The user authorized control-plane-only promotion to
-`syd.vortexenterprises.com.au` during the current maintenance window using
+`production.example.com` during the current maintenance window using
 immutable tag `vesta-compose-product-corrections-20260801`, with the protected
 `vxslave` quota migration included. No production backup, image-evidence
 migration, workload restart/recreate, route/proxy/header edit, image pull/build,
@@ -79,7 +79,7 @@ passed 17/17 checks with the same runtime, revision, health, zero-restart,
 rollback-authority, and free-lock state.
 
 - runtime marker: `8dc0dc9c`;
-- `slave/slave-vxapp`: revision 4, running and healthy, zero restarts;
+- `legacyadmin/legacy-admin-app`: revision 4, running and healthy, zero restarts;
 - current plus revisions `000001`–`000004`: exact production five-field
   evidence bytes and valid revision manifests;
 - managed and stopped external container projections: byte-equal to the
@@ -110,9 +110,9 @@ needed. Under the release and project locks:
 2. Run the protected quota rollback script with
    `/root/vesta-backups/vxslave-compose-quota-20260801T232552Z`, then byte-check
    `rollback.pkg` against `data/packages/vxslave.pkg` and
-   `rollback-user.conf` against `data/users/slave/user.conf`.
+   `rollback-user.conf` against `data/users/legacyadmin/user.conf`.
 3. Disable/remove the exact mount-guard unit and Docker drop-in, reload
-   systemd, scoped-unmount `/home/slave/docker`, restore its recorded
+   systemd, scoped-unmount `/home/legacyadmin/docker`, restore its recorded
    device/inode/uid/gid/mode authority, and remove only the transaction-created
    legacy marker authority.
 4. Restore `exact-release-files.tar`; remove only paths in protected

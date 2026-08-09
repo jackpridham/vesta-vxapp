@@ -1,22 +1,22 @@
 ## Audit Scope
 
-This audit validates Task 8 of [.docs/plans/2026-06-27-docker-panel-management.md](/home/jackpridham/Work/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed Docker/web-domain ownership guard, route-source-of-truth behavior, and recovery-path evidence:
+This audit validates Task 8 of [.docs/plans/2026-06-27-docker-panel-management.md](/path/to/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed Docker/web-domain ownership guard, route-source-of-truth behavior, and recovery-path evidence:
 
-- [web/inc/vx_docker.php](/home/jackpridham/Work/vesta-vxapp/web/inc/vx_docker.php)
-- [web/edit/web/index.php](/home/jackpridham/Work/vesta-vxapp/web/edit/web/index.php)
-- [web/templates/admin/edit_web.html](/home/jackpridham/Work/vesta-vxapp/web/templates/admin/edit_web.html)
-- [web/templates/user/edit_web.html](/home/jackpridham/Work/vesta-vxapp/web/templates/user/edit_web.html)
-- [web/inc/i18n/en.php](/home/jackpridham/Work/vesta-vxapp/web/inc/i18n/en.php)
-- [func/vx/docker.sh](/home/jackpridham/Work/vesta-vxapp/func/vx/docker.sh)
-- [bin/v-change-web-domain-proxy-options](/home/jackpridham/Work/vesta-vxapp/bin/v-change-web-domain-proxy-options)
-- [bin/v-sync-docker-container-route](/home/jackpridham/Work/vesta-vxapp/bin/v-sync-docker-container-route)
-- [bin/v-add-web-domain](/home/jackpridham/Work/vesta-vxapp/bin/v-add-web-domain)
-- [func/vx/proxy.sh](/home/jackpridham/Work/vesta-vxapp/func/vx/proxy.sh)
-- [bin/v-rebuild-docker-containers](/home/jackpridham/Work/vesta-vxapp/bin/v-rebuild-docker-containers)
-- [bin/v-rebuild-user](/home/jackpridham/Work/vesta-vxapp/bin/v-rebuild-user)
-- [bin/v-restore-user](/home/jackpridham/Work/vesta-vxapp/bin/v-restore-user)
+- [web/inc/vx_docker.php](/path/to/vesta-vxapp/web/inc/vx_docker.php)
+- [web/edit/web/index.php](/path/to/vesta-vxapp/web/edit/web/index.php)
+- [web/templates/admin/edit_web.html](/path/to/vesta-vxapp/web/templates/admin/edit_web.html)
+- [web/templates/user/edit_web.html](/path/to/vesta-vxapp/web/templates/user/edit_web.html)
+- [web/inc/i18n/en.php](/path/to/vesta-vxapp/web/inc/i18n/en.php)
+- [func/vx/docker.sh](/path/to/vesta-vxapp/func/vx/docker.sh)
+- [bin/v-change-web-domain-proxy-options](/path/to/vesta-vxapp/bin/v-change-web-domain-proxy-options)
+- [bin/v-sync-docker-container-route](/path/to/vesta-vxapp/bin/v-sync-docker-container-route)
+- [bin/v-add-web-domain](/path/to/vesta-vxapp/bin/v-add-web-domain)
+- [func/vx/proxy.sh](/path/to/vesta-vxapp/func/vx/proxy.sh)
+- [bin/v-rebuild-docker-containers](/path/to/vesta-vxapp/bin/v-rebuild-docker-containers)
+- [bin/v-rebuild-user](/path/to/vesta-vxapp/bin/v-rebuild-user)
+- [bin/v-restore-user](/path/to/vesta-vxapp/bin/v-restore-user)
 
-The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task8.audit-input.md](/home/jackpridham/Work/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task8.audit-input.md).
+The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task8.audit-input.md](/path/to/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task8.audit-input.md).
 
 ## Source Requirements
 

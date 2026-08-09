@@ -263,7 +263,7 @@ for legacy_path in \
     .docs/contracts/docker-ui-states.md \
     .docs/plans/2026-06-27-docker-panel-management.md \
     .docs/user-guides/docker-containers.md \
-    .docs/validation/sydlocal-docker-e2e-closeout.md
+    .docs/validation/staging-docker-e2e-closeout.md
 do
     grep -Eqi 'historical|legacy|superseded' "$repo_root/$legacy_path" \
         || fail "legacy document lacks supersession notice: $legacy_path"

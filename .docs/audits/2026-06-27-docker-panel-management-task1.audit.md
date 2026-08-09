@@ -1,15 +1,15 @@
 ## Audit Scope
 
-This audit validates Task 1 of [.docs/plans/2026-06-27-docker-panel-management.md](/home/jackpridham/Work/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed ownership-model files:
+This audit validates Task 1 of [.docs/plans/2026-06-27-docker-panel-management.md](/path/to/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed ownership-model files:
 
-- [func/vx/docker.sh](/home/jackpridham/Work/vesta-vxapp/func/vx/docker.sh)
-- [func/docker.sh](/home/jackpridham/Work/vesta-vxapp/func/docker.sh)
-- [bin/v-check-docker-engine](/home/jackpridham/Work/vesta-vxapp/bin/v-check-docker-engine)
-- [bin/v-list-docker-containers](/home/jackpridham/Work/vesta-vxapp/bin/v-list-docker-containers)
-- [bin/v-list-docker-container](/home/jackpridham/Work/vesta-vxapp/bin/v-list-docker-container)
-- [bin/v-check-docker-container-owner](/home/jackpridham/Work/vesta-vxapp/bin/v-check-docker-container-owner)
+- [func/vx/docker.sh](/path/to/vesta-vxapp/func/vx/docker.sh)
+- [func/docker.sh](/path/to/vesta-vxapp/func/docker.sh)
+- [bin/v-check-docker-engine](/path/to/vesta-vxapp/bin/v-check-docker-engine)
+- [bin/v-list-docker-containers](/path/to/vesta-vxapp/bin/v-list-docker-containers)
+- [bin/v-list-docker-container](/path/to/vesta-vxapp/bin/v-list-docker-container)
+- [bin/v-check-docker-container-owner](/path/to/vesta-vxapp/bin/v-check-docker-container-owner)
 
-The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task1.audit-input.md](/home/jackpridham/Work/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task1.audit-input.md).
+The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task1.audit-input.md](/path/to/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task1.audit-input.md).
 
 ## Source Requirements
 

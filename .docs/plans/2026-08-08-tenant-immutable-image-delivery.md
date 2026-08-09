@@ -4,7 +4,7 @@
 
 **Goal:** Let an eligible Vesta tenant build in CI, push an immutable registry digest, pull that exact bounded image through `v-docker`, and preview/apply its own `standard` project without raw Docker or a human Debian step.
 
-**Architecture:** Add one owner-derived, preview-bound `image-pull` broker operation backed by a dedicated immutable-only Vesta adapter. The adapter verifies the exact protected preview evidence and revision, requires the image in that preview, verifies the registry manifest and bounded Linux/approved-architecture image size before Docker mutation, pulls with the owner's protected registry configuration, and records root-controlled registry-pull provenance. Standard-project resolution accepts registry images only when the submitted reference is itself immutable and matching pull provenance exists; tag/local-image references continue to require expiring administrator approval. Slave builds remain off-host, the new Slave workload uses generic `standard` v2, and exact accepted-revision compatibility preserves legacy production without authorizing new candidates until a separately authorized migration window.
+**Architecture:** Add one owner-derived, preview-bound `image-pull` broker operation backed by a dedicated immutable-only Vesta adapter. The adapter verifies the exact protected preview evidence and revision, requires the image in that preview, verifies the registry manifest and bounded Linux/approved-architecture image size before Docker mutation, pulls with the owner's protected registry configuration, and records root-controlled registry-pull provenance. Standard-project resolution accepts registry images only when the submitted reference is itself immutable and matching pull provenance exists; tag/local-image references continue to require expiring administrator approval. Legacy workload builds remain off-host, the new Legacy workload workload uses generic `standard` v2, and exact accepted-revision compatibility preserves legacy production without authorizing new candidates until a separately authorized migration window.
 
 **Tech Stack:** Bash, Docker CLI manifest/image APIs, jq, Vesta state, SSH, Compose, Python workload builder, shell namespace fixtures.
 
@@ -13,7 +13,7 @@
 ## Product milestones
 
 1. Vesta tenant immutable image delivery and local-image authority correction.
-2. Development host onboarding and a standard-profile Slave deployment rehearsal.
+2. Development host onboarding and a standard-profile Legacy workload deployment rehearsal.
 3. Cross-repository deployment documentation and production account readiness without production workload mutation.
 
 ### Task 1: Specify broker and image-authority behavior
@@ -43,7 +43,7 @@ Document these independent facts:
 immutable registry digest -> tenant may request bounded owner-scoped pull
 local archive or tag       -> administrator load plus expiring local approval
 already delivered image    -> tenant preview/apply/deploy for standard only
-slave-vxapp/admin-approved -> administrator-only; never accepted by v-docker
+legacy-admin-app/admin-approved -> administrator-only; never accepted by v-docker
 ```
 
 - [ ] **Step 3: Define image admission limits**
@@ -206,20 +206,20 @@ Rerun the affected focused tests and commit coherent corrections without broad r
 ### Task 5: Roll out and accept development
 
 **Hosts:**
-- Primary development: `debian@192.168.200.100`
-- Staging reference: `debian@192.168.100.100`
+- Primary development: `operator@192.0.2.10`
+- Staging reference: `operator@192.0.2.20`
 
 - [ ] **Step 1: Deploy the exact Vesta commit control plane**
 
 Use an immutable archive, release lock, protected exact-file rollback backup, no `--delete`, no container/service restart, targeted syntax/config checks, and before/after container/firewall/route/tenant digests.
 
-- [ ] **Step 2: Onboard development `slave`**
+- [ ] **Step 2: Onboard development `legacyadmin`**
 
-Create or select a package with positive standard-profile quotas matching one project/service, 1 CPU, 1024 MiB, 256 PIDs, one loopback port, three secrets, and one volume. Change the user package through Vesta so `DOCKER_PROJECTS` is persisted, reconcile `vesta-compose-users`, and remove `slave` from the raw `docker` group only after the managed cutover is ready.
+Create or select a package with positive standard-profile quotas matching one project/service, 1 CPU, 1024 MiB, 256 PIDs, one loopback port, three secrets, and one volume. Change the user package through Vesta so `DOCKER_PROJECTS` is persisted, reconcile `vesta-compose-users`, and remove `legacyadmin` from the raw `docker` group only after the managed cutover is ready.
 
-- [ ] **Step 3: Build the Slave candidate off-host**
+- [ ] **Step 3: Build the Legacy workload candidate off-host**
 
-On `gizmo@192.168.100.16:/home/gizmo/slave-vxapp`, build from a remotely recoverable commit using the repository-owned Docker and workload builders. Validate the exact focused deployment tests and record image ID and artifact checksums without exposing secrets.
+On `builder@192.0.2.30:/home/builder/legacy-admin-app`, build from a remotely recoverable commit using the repository-owned Docker and workload builders. Validate the exact focused deployment tests and record image ID and artifact checksums without exposing secrets.
 
 - [ ] **Step 4: Perform one-time development migration**
 
@@ -227,26 +227,26 @@ Use the root/admin workload-bundle install path once to establish three managed 
 
 - [ ] **Step 5: Prove tenant operations**
 
-From a fresh `slave` SSH identity require:
+From a fresh `legacyadmin` SSH identity require:
 
 ```bash
 v-docker projects json
-v-docker health slave-vxapp json
-v-docker drift slave-vxapp json
+v-docker health legacy-admin-app json
+v-docker drift legacy-admin-app json
 ```
 
 Require raw `docker info` and direct `sudo v-*` denial. If an approved registry is available, create the exact preview, pull its fresh immutable digest through the preview-bound `v-docker image-pull`, and apply the same evidence; otherwise retain the focused immutable-pull tests and document registry provisioning as the only external prerequisite.
 
-### Task 6: Synchronize Slave-owned deployment knowledge
+### Task 6: Synchronize Legacy workload-owned deployment knowledge
 
-**Remote repository:** `gizmo@192.168.100.16:/home/gizmo/slave-vxapp`
+**Remote repository:** `builder@192.0.2.30:/home/builder/legacy-admin-app`
 
 **Files:**
-- Modify: `.vx/skills/slave-vxapp-deploy/SKILL.md`
-- Modify: `.vx/skills/slave-vxapp-production-operations/SKILL.md`
-- Modify: `@Docs/@TechnicalDocs/slave-vxapp/deployment.md`
+- Modify: `.vx/skills/legacy-admin-app-deploy/SKILL.md`
+- Modify: `.vx/skills/legacy-admin-app-production-operations/SKILL.md`
+- Modify: `@Docs/@TechnicalDocs/legacy-admin-app/deployment.md`
 - Modify: `README.md`
-- Create or modify as the Slave maintainer chooses: repository-owned deployment script and focused tests
+- Create or modify as the Legacy workload maintainer chooses: repository-owned deployment script and focused tests
 
 - [ ] **Step 1: Replace the obsolete local-archive default**
 
@@ -254,7 +254,7 @@ Make the normal release lane:
 
 ```text
 build/test off-host -> push immutable registry digest ->
-ssh slave preview -> preview-bound image-pull -> reviewed apply -> health/drift
+ssh legacyadmin preview -> preview-bound image-pull -> reviewed apply -> health/drift
 ```
 
 Keep archive load/approval/workload import documented only as one-time migration, offline recovery, or operator fallback.
@@ -265,7 +265,7 @@ Require script inputs `environment`, SSH target, owner, project, immutable image
 
 - [ ] **Step 3: Explain profile and host state**
 
-State that new Slave releases are generic `standard` v2. The legacy production revision remains `slave-vxapp` until an authorized migration; tenant scripts must fail closed rather than trying to mutate that profile.
+State that new Legacy workload releases are generic `standard` v2. The legacy production revision remains `legacy-admin-app` until an authorized migration; tenant scripts must fail closed rather than trying to mutate that profile.
 
 - [ ] **Step 4: Commit and push submodule then parent**
 
@@ -273,15 +273,15 @@ Commit/push `@Docs` first, commit its gitlink plus root docs/skills/scripts next
 
 ### Task 7: Prepare production without interruption
 
-**Host:** `debian@syd.vortexenterprises.com.au`
+**Host:** `operator@production.example.com`
 
 - [ ] **Step 1: Deploy only the accepted Vesta control-plane commit**
 
-Retain a protected rollback backup and prove the revision-4 `slave/slave-vxapp` container ID, image, health, restart count, Docker PID, routes, firewall structure, quota authority, mount guard, and stopped external rollback container remain unchanged.
+Retain a protected rollback backup and prove the revision-4 `legacyadmin/legacy-admin-app` container ID, image, health, restart count, Docker PID, routes, firewall structure, quota authority, mount guard, and stopped external rollback container remain unchanged.
 
-- [ ] **Step 2: Onboard the `slave` account without workload mutation**
+- [ ] **Step 2: Onboard the `legacyadmin` account without workload mutation**
 
-Persist the approved Docker package quota, change the Unix/Vesta shell to Bash only if SSH access is intended and the account files agree, reconcile `vesta-compose-users`, ensure no Docker-group membership, and prove `v-docker projects` works. The broker must continue denying the current privileged `slave-vxapp` project.
+Persist the approved Docker package quota, change the Unix/Vesta shell to Bash only if SSH access is intended and the account files agree, reconcile `vesta-compose-users`, ensure no Docker-group membership, and prove `v-docker projects` works. The broker must continue denying the current privileged `legacy-admin-app` project.
 
 - [ ] **Step 3: Do not migrate the production workload**
 
@@ -295,8 +295,8 @@ Use focused Compose tests plus `test/compose/run-production-readiness-limited.sh
 
 - [ ] **Step 2: Run final specification and code-quality reviews**
 
-Review the complete Vesta change, Slave documentation/script contract, development evidence, production no-mutation evidence, and rollback material.
+Review the complete Vesta change, Legacy workload documentation/script contract, development evidence, production no-mutation evidence, and rollback material.
 
 - [ ] **Step 3: Push Vesta and report the maintainer response**
 
-Push the clean Vesta branch and provide a concise response the user can paste into the Slave thread containing the exact supported pipeline, development host readiness, production migration boundary, and commands the Slave maintainer should implement.
+Push the clean Vesta branch and provide a concise response the user can paste into the Legacy workload thread containing the exact supported pipeline, development host readiness, production migration boundary, and commands the Legacy workload maintainer should implement.

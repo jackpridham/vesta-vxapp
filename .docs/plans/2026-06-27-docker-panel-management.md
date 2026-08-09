@@ -56,7 +56,7 @@ ALERT_EMAIL='yes'
 and at least these persisted fields:
 
 ```bash
-NAME='app' CTN_NAME='vx-jack-app' OWNER='jack' IMAGE='ghcr.io/example/app:latest' COMMAND='' \
+NAME='app' CTN_NAME='vx-appuser-app' OWNER='appuser' IMAGE='ghcr.io/example/app:latest' COMMAND='' \
 ENV='PORT=3000||NODE_ENV=production' MOUNTS='data:/srv/app/data||config:/srv/app/config' \
 HOST_PORT='21001' CONTAINER_PORT='3000' DOMAIN='app.example.com' ROUTE_PATH='' \
 PROXY_MODE='proxy' PROXY_TARGET='http://127.0.0.1:21001' AUTO_START='yes' \
@@ -89,7 +89,7 @@ and this exact JSON contract:
 
 ```json
 {
-  "OWNER": "jack",
+  "OWNER": "appuser",
   "NAME": "app",
   "PERIOD": "5m",
   "CPU_PCT": [{"TS": "2026-06-27T14:00:00Z", "VALUE": 12.4}],
@@ -115,7 +115,7 @@ Create `.docs/contracts/docker-alerts-schema.md` with:
 Use this exact alert record shape:
 
 ```bash
-AID='1' NAME='app' OWNER='jack' LEVEL='warning' TYPE='health' STATUS='open' \
+AID='1' NAME='app' OWNER='appuser' LEVEL='warning' TYPE='health' STATUS='open' \
 TITLE='Health check failing' MESSAGE='GET /health returned 500 three times' \
 STARTED='2026-06-27 14:01:00' LAST_SEEN='2026-06-27 14:03:00' ACK='no'
 ```
@@ -219,7 +219,7 @@ Create `func/vx/docker.sh` and keep `func/docker.sh` as a thin adapter that sour
 Use the contract from `.docs/contracts/docker-container-schema.md` and persist a concrete metadata shape like this for each record in `data/users/<user>/docker.conf`:
 
 ```bash
-NAME='app' CTN_NAME='vx-jack-app' OWNER='jack' IMAGE='ghcr.io/example/app:latest' COMMAND='' \
+NAME='app' CTN_NAME='vx-appuser-app' OWNER='appuser' IMAGE='ghcr.io/example/app:latest' COMMAND='' \
 ENV='PORT=3000||NODE_ENV=production' MOUNTS='data:/srv/app/data||config:/srv/app/config' \
 HOST_PORT='21001' CONTAINER_PORT='3000' DOMAIN='app.example.com' ROUTE_PATH='' \
 PROXY_MODE='proxy' PROXY_TARGET='http://127.0.0.1:21001' AUTO_START='yes' \
@@ -241,9 +241,9 @@ Concrete command shapes:
 
 ```bash
 bin/v-list-docker-containers admin json
-bin/v-list-docker-containers jack json
-bin/v-list-docker-container jack app json
-bin/v-check-docker-container-owner jack app
+bin/v-list-docker-containers appuser json
+bin/v-list-docker-container appuser app json
+bin/v-check-docker-container-owner appuser app
 ```
 
 Rules:
@@ -305,8 +305,8 @@ Follow the repo pattern already used by package forms: write a temporary spec fi
 Concrete command shapes:
 
 ```bash
-bin/v-add-docker-container jack /tmp/vx-docker-app.conf
-bin/v-change-docker-container jack app /tmp/vx-docker-app.conf
+bin/v-add-docker-container appuser /tmp/vx-docker-app.conf
+bin/v-change-docker-container appuser app /tmp/vx-docker-app.conf
 ```
 
 Use a concrete spec file format:
@@ -346,12 +346,12 @@ Create/update flow must:
 Update the existing lifecycle/readback commands to require `USER NAME` rather than only container name:
 
 ```bash
-bin/v-start-docker-container jack app
-bin/v-stop-docker-container jack app
-bin/v-restart-docker-container jack app
-bin/v-delete-docker-container jack app
-bin/v-list-docker-container-logs jack app 200
-bin/v-list-docker-container-inspect jack app
+bin/v-start-docker-container appuser app
+bin/v-stop-docker-container appuser app
+bin/v-restart-docker-container appuser app
+bin/v-delete-docker-container appuser app
+bin/v-list-docker-container-logs appuser app 200
+bin/v-list-docker-container-inspect appuser app
 ```
 
 Behavior requirements:
@@ -365,15 +365,15 @@ Behavior requirements:
 Create:
 
 ```bash
-bin/v-sync-docker-container-route jack app
-bin/v-rebuild-docker-containers jack
+bin/v-sync-docker-container-route appuser app
+bin/v-rebuild-docker-containers appuser
 bin/v-rebuild-docker-containers admin
 ```
 
 `bin/v-sync-docker-container-route` must set:
 
 ```bash
-bin/v-change-web-domain-proxy-options jack app.example.com \
+bin/v-change-web-domain-proxy-options appuser app.example.com \
   'proxy' 'http://127.0.0.1:21001' 'application' 'yes' '60' '' no
 ```
 
@@ -549,8 +549,8 @@ php -l web/edit/package/index.php
 Extend suspend/unsuspend:
 
 ```bash
-bin/v-suspend-user jack yes
-bin/v-unsuspend-user jack yes
+bin/v-suspend-user appuser yes
+bin/v-unsuspend-user appuser yes
 ```
 
 Rules:
@@ -590,8 +590,8 @@ Extend `bin/v-restore-user` and `bin/v-schedule-user-restore` so restore selecto
 Concrete restore pass:
 
 ```bash
-bin/v-restore-user jack jack.2026-06-27_14-00-00.tar yes yes yes yes yes yes no
-bin/v-rebuild-docker-containers jack
+bin/v-restore-user appuser appuser.2026-06-27_14-00-00.tar yes yes yes yes yes yes no
+bin/v-rebuild-docker-containers appuser
 ```
 
 Landed contract note:
@@ -987,8 +987,8 @@ The command must:
 Create:
 
 ```bash
-bin/v-list-docker-container-stats jack app 5m json
-bin/v-list-docker-container-stats jack app 5m json
+bin/v-list-docker-container-stats appuser app 5m json
+bin/v-list-docker-container-stats appuser app 5m json
 ```
 
 The JSON response must match `.docs/contracts/docker-monitoring-schema.md` exactly so the JS chart layer does not invent field names ad hoc.
@@ -996,7 +996,7 @@ The JSON response must match `.docs/contracts/docker-monitoring-schema.md` exact
 Admin access should reuse the same owner-qualified command and only bypass the ownership check internally:
 
 ```bash
-bin/v-list-docker-container-stats jack app 5m json
+bin/v-list-docker-container-stats appuser app 5m json
 ```
 
 - [x] **Step 3: Add health-check sampling and persisted state**
@@ -1004,8 +1004,8 @@ bin/v-list-docker-container-stats jack app 5m json
 Create:
 
 ```bash
-bin/v-update-docker-container-health jack app
-bin/v-list-docker-container-health jack app json
+bin/v-update-docker-container-health appuser app
+bin/v-list-docker-container-health appuser app json
 ```
 
 Health evaluation order:
@@ -1025,7 +1025,7 @@ LAST_HEALTH_AT='2026-06-27 14:00:00'
 Create:
 
 ```bash
-bin/v-list-docker-container-alerts jack app json
+bin/v-list-docker-container-alerts appuser app json
 ```
 
 and use `data/users/<user>/docker-alerts.conf` as the persisted alert source of truth. Alert producers must open or update records when:
@@ -1043,7 +1043,7 @@ $BIN/v-add-user-notification "$user" "Docker alert: app unhealthy" "/list/docker
 Closed-loop alert handling must also support:
 
 ```bash
-bin/v-acknowledge-docker-container-alert jack 1
+bin/v-acknowledge-docker-container-alert appuser 1
 ```
 
 which sets `ACK='yes'` on the persisted Docker alert record without deleting the underlying history.
@@ -1230,7 +1230,7 @@ playwright/.auth/
 Create `.env.playwright.example` with these exact variables:
 
 ```bash
-PLAYWRIGHT_BASE_URL=https://192.168.100.100:8083
+PLAYWRIGHT_BASE_URL=https://192.0.2.20:8083
 PLAYWRIGHT_LOGIN_SECRET=
 PLAYWRIGHT_ADMIN_USER=admin
 PLAYWRIGHT_ADMIN_PASSWORD=
@@ -1248,7 +1248,7 @@ Rules:
 - anonymous tests always run
 - authenticated projects are enabled only when the matching credentials are present
 - all projects must use `ignoreHTTPSErrors: true`
-- the default base URL must be `https://192.168.100.100:8083`
+- the default base URL must be `https://192.0.2.20:8083`
 - the admin project must load `playwright/.auth/admin.json`
 - the real non-admin project must load `playwright/.auth/docker-user.json`
 
@@ -1472,7 +1472,7 @@ If local Docker is unavailable, still run:
 - shell syntax checks
 - `npm run playwright:test -- --list`
 
-and document that full runtime Docker validation moved to the sydlocal closeout host.
+and document that full runtime Docker validation moved to the staging closeout host.
 
 #### Closeout Report
 
@@ -1482,23 +1482,23 @@ and document that full runtime Docker validation moved to the sydlocal closeout 
 - Commit SHA(s): `6bc8d7a9`, `822b339e`, `89d49abb`, `3b097240`, `5139fcc9`, `ef2a1fe7`, `e8f267cd`, `357850a5`, `a7797806`, `a3d5baa5`, `7ad3f383`, `3b873357`, `a1c444dc`, `fb89abab`, `ef43b2ed`, `a21c70d5`, `8e22fa92`, `6bbdc689`, `1951ce2b`, `2e0a6320`, `9e7837d8`
 - Spec review result: PASS after the final closeout follow-up. The last spec gap was documentation of the fallback validation path when the local Vesta runtime is unavailable; the Task 12 audit artifacts and README note resolved that requirement.
 - Code quality review result: APPROVED. The final re-review accepted the explicit local-runtime opt-in guard for destructive fixtures, the stronger dashboard data assertions, and the README/env clarifications around authenticated project gating and runtime-target safety.
-- Follow-ups or concerns: Full Docker-backed browser execution and deployed-runtime validation remain intentionally deferred to Task 13 on `sydlocal.jackpridham.com`, because this workspace host does not provide `/etc/profile.d/vesta.sh` or a same-host Vesta runtime.
+- Follow-ups or concerns: Full Docker-backed browser execution and deployed-runtime validation remain intentionally deferred to Task 13 on `staging.example.com`, because this workspace host does not provide `/etc/profile.d/vesta.sh` or a same-host Vesta runtime.
 
 ---
 
-## Task 13: Validate And Close Out Against sydlocal.jackpridham.com - COMPLETE
+## Task 13: Validate And Close Out Against staging.example.com - COMPLETE
 
 **Files:**
-- Create: `.docs/validation/sydlocal-docker-e2e-closeout.md`
-- Modify: `/home/jackpridham/Work/vortex-scripts/Servers/pve01.jackpridham.com/sydlocal.jackpridham.com/README.md`
+- Create: `.docs/validation/staging-docker-e2e-closeout.md`
+- Modify: `/path/to/operations-repo/Servers/hypervisor.example.com/staging.example.com/README.md`
 
-- [x] **Step 1: Stage and apply the runtime overlay to the sydlocal host**
+- [x] **Step 1: Stage and apply the runtime overlay to the staging host**
 
-Use the host documented in `/home/jackpridham/Work/vortex-scripts/Servers/pve01.jackpridham.com/sydlocal.jackpridham.com/README.md` and always connect by internal IP:
+Use the host documented in `/path/to/operations-repo/Servers/hypervisor.example.com/staging.example.com/README.md` and always connect by internal IP:
 
 ```bash
-export TARGET_HOST="192.168.100.100"
-export TARGET_SSH="debian@${TARGET_HOST}"
+export TARGET_HOST="192.0.2.20"
+export TARGET_SSH="operator@${TARGET_HOST}"
 export DEPLOY_COMMIT="$(git rev-parse --short HEAD)"
 export DEPLOY_DATE="$(date -u +%F)"
 
@@ -1542,9 +1542,9 @@ EOF
 Constraints:
 - do not use `rsync --delete`
 - do not overwrite `/usr/local/vesta/data/users`
-- do not SSH to the hostname; use `ssh debian@192.168.100.100`
+- do not SSH to the hostname; use `ssh operator@192.0.2.20`
 
-- [x] **Step 2: Validate the deployed runtime on sydlocal before E2E**
+- [x] **Step 2: Validate the deployed runtime on staging before E2E**
 
 Run:
 
@@ -1633,7 +1633,7 @@ EOF
 login_secret="$(ssh "$TARGET_SSH" "sudo php -r 'if (file_exists(\"/usr/local/vesta/web/inc/login_url.php\")) { include \"/usr/local/vesta/web/inc/login_url.php\"; echo \$login_url; }' 2>/dev/null" || true)"
 
 cat > .env.playwright.local <<EOF_ENV
-PLAYWRIGHT_BASE_URL=https://192.168.100.100:8083
+PLAYWRIGHT_BASE_URL=https://192.0.2.20:8083
 PLAYWRIGHT_LOGIN_SECRET=${login_secret}
 PLAYWRIGHT_ADMIN_USER=admin
 PLAYWRIGHT_ADMIN_PASSWORD=
@@ -1646,10 +1646,10 @@ Expected:
 - scratch package exists with `DOCKER_CONTAINERS='2'`
 - scratch user exists
 - scratch domain exists and belongs to the scratch user
-- `.env.playwright.local` exists for the sydlocal target
+- `.env.playwright.local` exists for the staging target
 - `PLAYWRIGHT_LOGIN_SECRET` is populated only when the panel uses secret-login gating
 
-- [x] **Step 4: Run Playwright UI validation against the sydlocal installation**
+- [x] **Step 4: Run Playwright UI validation against the staging installation**
 
 Use the repo-local harness against the live panel URL:
 
@@ -1666,7 +1666,7 @@ PLAYWRIGHT_ADMIN_PASSWORD='<existing-admin-password>' \
 npm run playwright:test -- --project=chromium-admin-authenticated
 ```
 
-The sydlocal Playwright pass must validate at least:
+The staging Playwright pass must validate at least:
 - login page CSRF token surface
 - user shell authentication
 - `/list/docker/` empty state or list state
@@ -1679,7 +1679,7 @@ The sydlocal Playwright pass must validate at least:
 
 If admin credentials are intentionally withheld during an implementation pass, still execute the anonymous and real non-admin suites and record the admin suite as pending operator-secret confirmation rather than treating the entire plan as blocked.
 
-- [x] **Step 5: Validate backend routing, metrics, health, and alerts on sydlocal**
+- [x] **Step 5: Validate backend routing, metrics, health, and alerts on staging**
 
 Run:
 
@@ -1700,7 +1700,7 @@ export HOMEDIR=/home
 grep "DOMAIN='docker-e2e.local'" /usr/local/vesta/data/users/dockere2e/web.conf
 grep "NAME='app'" /usr/local/vesta/data/users/dockere2e/docker.conf
 
-curl -H 'Host: docker-e2e.local' http://192.168.100.100/ -I
+curl -H 'Host: docker-e2e.local' http://192.0.2.20/ -I
 EOF
 ```
 
@@ -1712,7 +1712,7 @@ Expected:
 
 - [x] **Step 6: Capture closeout artifacts and clean up scratch data**
 
-Create `.docs/validation/sydlocal-docker-e2e-closeout.md` and record:
+Create `.docs/validation/staging-docker-e2e-closeout.md` and record:
 - deployed commit
 - panel URL used
 - scratch package/user/domain/container names
@@ -1722,7 +1722,7 @@ Create `.docs/validation/sydlocal-docker-e2e-closeout.md` and record:
 - location of the generated HTML Playwright report when any browser suite was executed
 - any deviations from the plan
 
-Then update `/home/jackpridham/Work/vortex-scripts/Servers/pve01.jackpridham.com/sydlocal.jackpridham.com/README.md` with:
+Then update `/path/to/operations-repo/Servers/hypervisor.example.com/staging.example.com/README.md` with:
 - deployed fork commit
 - whether Docker user-management E2E passed
 - where the closeout report lives
@@ -1742,11 +1742,11 @@ EOF
 
 #### Closeout Report
 
-- Summary: Applied and validated the sydlocal runtime overlay against live host `192.168.100.100`, then used the live Task 13 loop to uncover and fix three remaining defects before closeout: admin `login as` Docker owner-scope leakage, missing nginx reload after Docker route sync, and a flaky async delete assertion in the Docker remove-modal coverage. The final host was stamped to deployed runtime commit `02e4042d`, `docker-e2e.local` proxied to the seeded `dockere2e/app` container, the backend stats/health/alert commands returned valid JSON, and the final Playwright matrix passed `17/17`.
-- Files changed: `web/inc/vx_docker.php`, `web/list/docker/index.php`, `web/templates/docker_list_shared.php`, `tests/playwright/helpers/panel-auth.js`, `tests/playwright/docker-access-control.admin.authenticated.spec.js`, `bin/v-sync-docker-container-route`, `tests/playwright/docker-dashboard.user.authenticated.spec.js`, `tests/playwright/docker-modals.user.authenticated.spec.js`, `.docs/validation/sydlocal-docker-e2e-closeout.md`, `.docs/audits/2026-06-27-docker-panel-management-task13.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task13.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`, `/home/jackpridham/Work/vortex-scripts/Servers/pve01.jackpridham.com/sydlocal.jackpridham.com/README.md`
-- Tests run: sydlocal overlay deploy + stamp; PASS. `ssh debian@192.168.100.100 "sudo bash -s"` runtime validation with `bash -n`, `php -l`, `nginx -t`, `apache2ctl configtest`, and `v-check-docker-engine json`; PASS. `PLAYWRIGHT_ENV_FILE=.env.playwright.local npx playwright test --project=chromium-anonymous --project=chromium-docker-user-authenticated --project=chromium-admin-authenticated`; PASS (`17 passed`). `v-list-docker-container dockere2e app json`; PASS. `v-list-web-domain dockere2e docker-e2e.local json`; PASS. `v-list-docker-container-health dockere2e app json`; PASS. `v-list-docker-container-stats dockere2e app 5m json`; PASS with populated `CPU_PCT`, `MEM_MB`, `RX_MBPS`, `TX_MBPS`, and `LATEST`. `v-list-docker-container-alerts dockere2e app json`; PASS. `curl -H 'Host: docker-e2e.local' http://192.168.100.100/`; PASS after the route-sync reload fix, returning the seeded container body.
+- Summary: Applied and validated the staging runtime overlay against live host `192.0.2.20`, then used the live Task 13 loop to uncover and fix three remaining defects before closeout: admin `login as` Docker owner-scope leakage, missing nginx reload after Docker route sync, and a flaky async delete assertion in the Docker remove-modal coverage. The final host was stamped to deployed runtime commit `02e4042d`, `docker-e2e.local` proxied to the seeded `dockere2e/app` container, the backend stats/health/alert commands returned valid JSON, and the final Playwright matrix passed `17/17`.
+- Files changed: `web/inc/vx_docker.php`, `web/list/docker/index.php`, `web/templates/docker_list_shared.php`, `tests/playwright/helpers/panel-auth.js`, `tests/playwright/docker-access-control.admin.authenticated.spec.js`, `bin/v-sync-docker-container-route`, `tests/playwright/docker-dashboard.user.authenticated.spec.js`, `tests/playwright/docker-modals.user.authenticated.spec.js`, `.docs/validation/staging-docker-e2e-closeout.md`, `.docs/audits/2026-06-27-docker-panel-management-task13.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task13.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`, `/path/to/operations-repo/Servers/hypervisor.example.com/staging.example.com/README.md`
+- Tests run: staging overlay deploy + stamp; PASS. `ssh operator@192.0.2.20 "sudo bash -s"` runtime validation with `bash -n`, `php -l`, `nginx -t`, `apache2ctl configtest`, and `v-check-docker-engine json`; PASS. `PLAYWRIGHT_ENV_FILE=.env.playwright.local npx playwright test --project=chromium-anonymous --project=chromium-docker-user-authenticated --project=chromium-admin-authenticated`; PASS (`17 passed`). `v-list-docker-container dockere2e app json`; PASS. `v-list-web-domain dockere2e docker-e2e.local json`; PASS. `v-list-docker-container-health dockere2e app json`; PASS. `v-list-docker-container-stats dockere2e app 5m json`; PASS with populated `CPU_PCT`, `MEM_MB`, `RX_MBPS`, `TX_MBPS`, and `LATEST`. `v-list-docker-container-alerts dockere2e app json`; PASS. `curl -H 'Host: docker-e2e.local' http://192.0.2.20/`; PASS after the route-sync reload fix, returning the seeded container body.
 - Commit SHA(s): `ea8eac0c`, `3204226b`, `02e4042d`, `30fd00d1`
-- Spec review result: PASS. The task requirements for sydlocal overlay, runtime validation, seeded auth/runtime state, full live Playwright coverage, backend route/metrics/health/alerts checks, closeout artifacts, and cleanup are all satisfied and recorded in the Task 13 audit artifacts.
+- Spec review result: PASS. The task requirements for staging overlay, runtime validation, seeded auth/runtime state, full live Playwright coverage, backend route/metrics/health/alerts checks, closeout artifacts, and cleanup are all satisfied and recorded in the Task 13 audit artifacts.
 - Code quality review result: APPROVED. The final revalidation accepted the tighter actor handling for admin `login as`, the explicit nginx reload on Docker route sync, and the more resilient dashboard/remove-modal Playwright assertions for live-host timing and data shape.
 - Follow-ups or concerns: None for Task 13. Remaining work shifts to Task 14 commit-slice/accounting and any repo-history reconciliation needed there.
 
@@ -1809,22 +1809,22 @@ git add .docs/contracts .docs/user-guides .docs/validation \
 git commit -m "docs: finalize docker ownership implementation plan"
 ```
 
-- [x] **Step 5: Commit the sydlocal README update in the `vortex-scripts` repo**
+- [x] **Step 5: Commit the staging README update in the `operations-repo` repo**
 
 After the validation run updates:
 
 ```text
-/home/jackpridham/Work/vortex-scripts/Servers/pve01.jackpridham.com/sydlocal.jackpridham.com/README.md
+/path/to/operations-repo/Servers/hypervisor.example.com/staging.example.com/README.md
 ```
 
-commit that change from the `vortex-scripts` repository separately so the server documentation does not stay dirty outside this repo.
+commit that change from the `operations-repo` repository separately so the server documentation does not stay dirty outside this repo.
 
 #### Closeout Report
 
-- Summary: Audited the final branch history against the Task 14 slice intent and confirmed the Docker ownership work is already landed in merge-friendly subsystem-scoped commit ranges for backend, web UI/routing, tests, repo-local docs, and the external sydlocal README. No history rewrite or duplicate no-op commits were needed; instead, the plan now records the exact commit ranges that satisfy each slice.
+- Summary: Audited the final branch history against the Task 14 slice intent and confirmed the Docker ownership work is already landed in merge-friendly subsystem-scoped commit ranges for backend, web UI/routing, tests, repo-local docs, and the external staging README. No history rewrite or duplicate no-op commits were needed; instead, the plan now records the exact commit ranges that satisfy each slice.
 - Files changed: `.docs/audits/2026-06-27-docker-panel-management-task14.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task14.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`
-- Tests run: `git log --oneline -- <backend slice paths>`; PASS. `git log --oneline -- <web/ui slice paths>`; PASS. `git log --oneline -- <test/playwright slice paths>`; PASS. `git log --oneline -- .docs/contracts .docs/user-guides .docs/validation .docs/plans/2026-06-27-docker-panel-management.md`; PASS. `git log --oneline` in `/home/jackpridham/Work/vortex-scripts`; PASS.
-- Commit SHA(s): `886f7d13`, `6c0063a6`, `32aeead`
+- Tests run: `git log --oneline -- <backend slice paths>`; PASS. `git log --oneline -- <web/ui slice paths>`; PASS. `git log --oneline -- <test/playwright slice paths>`; PASS. `git log --oneline -- .docs/contracts .docs/user-guides .docs/validation .docs/plans/2026-06-27-docker-panel-management.md`; PASS. `git log --oneline` in `/path/to/operations-repo`; PASS.
+- Commit SHA(s): `886f7d13`, `6c0063a6`, `<external-commit>`
 - Spec review result: PASS after the Task 14 audit clarification. The only gap was that steps 1-3 still read like literal one-commit commands even though the audited completion path was “existing committed ranges satisfy the slice boundaries.” The plan now records that mapping explicitly.
 - Code quality review result: APPROVED. Preserving the real subsystem-scoped history is cleaner and more truthful than rewriting or fabricating commits after the fact.
 - Follow-ups or concerns: None.

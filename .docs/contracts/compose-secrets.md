@@ -108,7 +108,7 @@ executable by its non-sensitive container path; the executable may then read
 the root-owned `/run/secrets/<name>` mount. The wrapper must contain no secret
 value, remain inside backup/restore coverage, and pass the same canary tests.
 
-For the current `slave-vxapp` exact-image rehearsal, `LOG_LEVEL=info` is a
+For the current `legacy-admin-app` exact-image rehearsal, `LOG_LEVEL=info` is a
 non-secret literal runtime setting. It prevents Laravel's debug-level tenant
 detection message from exposing the protected `TENANT_DETECTION` value.
 Routine log capture must still prove the canary absent; configuration alone is

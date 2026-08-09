@@ -1,23 +1,23 @@
 ## Audit Scope
 
-This audit validates Task 12 of [.docs/plans/2026-06-27-docker-panel-management.md](/home/jackpridham/Work/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed shell regressions, Docker-specific Playwright coverage, helper updates, and fallback validation documentation:
+This audit validates Task 12 of [.docs/plans/2026-06-27-docker-panel-management.md](/path/to/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed shell regressions, Docker-specific Playwright coverage, helper updates, and fallback validation documentation:
 
-- [test/test_actions.sh](/home/jackpridham/Work/vesta-vxapp/test/test_actions.sh)
-- [test/test_docker_user_actions.sh](/home/jackpridham/Work/vesta-vxapp/test/test_docker_user_actions.sh)
-- [test/test_json_listing.sh](/home/jackpridham/Work/vesta-vxapp/test/test_json_listing.sh)
-- [playwright.config.js](/home/jackpridham/Work/vesta-vxapp/playwright.config.js)
-- [tests/playwright/README.md](/home/jackpridham/Work/vesta-vxapp/tests/playwright/README.md)
-- [tests/playwright/helpers/panel-auth.js](/home/jackpridham/Work/vesta-vxapp/tests/playwright/helpers/panel-auth.js)
-- [tests/playwright/helpers/docker-runtime-fixtures.js](/home/jackpridham/Work/vesta-vxapp/tests/playwright/helpers/docker-runtime-fixtures.js)
-- [tests/playwright/docker-navigation.user.authenticated.spec.js](/home/jackpridham/Work/vesta-vxapp/tests/playwright/docker-navigation.user.authenticated.spec.js)
-- [tests/playwright/docker-access-control.admin.authenticated.spec.js](/home/jackpridham/Work/vesta-vxapp/tests/playwright/docker-access-control.admin.authenticated.spec.js)
-- [tests/playwright/docker-empty-state.user.authenticated.spec.js](/home/jackpridham/Work/vesta-vxapp/tests/playwright/docker-empty-state.user.authenticated.spec.js)
-- [tests/playwright/docker-create-form.user.authenticated.spec.js](/home/jackpridham/Work/vesta-vxapp/tests/playwright/docker-create-form.user.authenticated.spec.js)
-- [tests/playwright/docker-lifecycle.user.authenticated.spec.js](/home/jackpridham/Work/vesta-vxapp/tests/playwright/docker-lifecycle.user.authenticated.spec.js)
-- [tests/playwright/docker-modals.user.authenticated.spec.js](/home/jackpridham/Work/vesta-vxapp/tests/playwright/docker-modals.user.authenticated.spec.js)
-- [tests/playwright/docker-dashboard.user.authenticated.spec.js](/home/jackpridham/Work/vesta-vxapp/tests/playwright/docker-dashboard.user.authenticated.spec.js)
+- [test/test_actions.sh](/path/to/vesta-vxapp/test/test_actions.sh)
+- [test/test_docker_user_actions.sh](/path/to/vesta-vxapp/test/test_docker_user_actions.sh)
+- [test/test_json_listing.sh](/path/to/vesta-vxapp/test/test_json_listing.sh)
+- [playwright.config.js](/path/to/vesta-vxapp/playwright.config.js)
+- [tests/playwright/README.md](/path/to/vesta-vxapp/tests/playwright/README.md)
+- [tests/playwright/helpers/panel-auth.js](/path/to/vesta-vxapp/tests/playwright/helpers/panel-auth.js)
+- [tests/playwright/helpers/docker-runtime-fixtures.js](/path/to/vesta-vxapp/tests/playwright/helpers/docker-runtime-fixtures.js)
+- [tests/playwright/docker-navigation.user.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/docker-navigation.user.authenticated.spec.js)
+- [tests/playwright/docker-access-control.admin.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/docker-access-control.admin.authenticated.spec.js)
+- [tests/playwright/docker-empty-state.user.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/docker-empty-state.user.authenticated.spec.js)
+- [tests/playwright/docker-create-form.user.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/docker-create-form.user.authenticated.spec.js)
+- [tests/playwright/docker-lifecycle.user.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/docker-lifecycle.user.authenticated.spec.js)
+- [tests/playwright/docker-modals.user.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/docker-modals.user.authenticated.spec.js)
+- [tests/playwright/docker-dashboard.user.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/docker-dashboard.user.authenticated.spec.js)
 
-The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task12.audit-input.md](/home/jackpridham/Work/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task12.audit-input.md).
+The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task12.audit-input.md](/path/to/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task12.audit-input.md).
 
 ## Source Requirements
 
@@ -26,7 +26,7 @@ The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-manage
 3. [EXPLICIT] Add Playwright coverage for empty state, quota-reached state, the Docker create form, validation-error rendering inside `#docker-form-errors`, successful create redirect back to `/list/docker/`, and lifecycle action-label/state changes without exposing admin-only engine controls.
 4. [EXPLICIT] Use the contracted POST field names in the create-form coverage: `v_container_name`, `v_container_image`, `v_container_command`, `v_container_env`, `v_container_mounts`, `v_container_port`, `v_route_domain`, `v_auto_start`, `v_restart_policy`, `v_healthcheck_type`, `v_healthcheck_target`, `v_healthcheck_interval`, `v_cpu_alert_pct`, `v_mem_alert_mb`, `v_net_alert_mbps`, and `v_alert_email`.
 5. [EXPLICIT] Add Playwright coverage for Docker logs/inspect/remove modals, Escape-to-close behavior, dashboard presence, live metrics/detail cards, constrained health badge vocabulary, and alert acknowledgement behavior.
-6. [EXPLICIT] Run the required shell and Playwright validations, or when local Docker/Vesta runtime execution is unavailable, run shell syntax checks plus Playwright `--list` and document that full runtime validation is deferred to the sydlocal closeout host.
+6. [EXPLICIT] Run the required shell and Playwright validations, or when local Docker/Vesta runtime execution is unavailable, run shell syntax checks plus Playwright `--list` and document that full runtime validation is deferred to the staging closeout host.
 7. [QUALITY] Keep Docker Playwright coverage reliable by ensuring runtime-dependent fixture setup, login flows, and cleanup paths fail loudly on real regressions instead of silently skipping or leaking state.
 
 ## Findings By Plan Section
@@ -37,12 +37,12 @@ The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-manage
 - `info` | Requirements Auditor | Requirements [2] through [5] are satisfied. The Playwright suite now contains the seven Docker-specific spec files required by the plan and asserts the contracted navigation states, admin owner pivot flow, empty/quota states, create-form field contract, lifecycle actions, modal behavior, dashboard cards, health vocabulary, and alert acknowledgement updates.
 - `info` | Requirements Auditor | Requirement [4] is satisfied explicitly in `tests/playwright/docker-create-form.user.authenticated.spec.js`, which enumerates the contracted POST field names and submits the create flow through those exact names.
 - `info` | Validation Auditor | Requirement [6] is satisfied through the fallback path documented by the plan. `bash -n test/test_actions.sh test/test_docker_user_actions.sh test/test_json_listing.sh`, `node --check` for the touched Playwright files, `git diff --check`, and `PLAYWRIGHT_ENV_FILE=.env.playwright.example npm run playwright:test -- --list` all passed. The direct shell regression invocations `bash test/test_actions.sh`, `bash test/test_json_listing.sh`, and `bash test/test_docker_user_actions.sh` each returned `SKIP: /etc/profile.d/vesta.sh is unavailable on this host.`, which confirms this environment lacks the local Vesta runtime required for full Docker-backed execution.
-- `info` | Review Auditor | The final spec review initially failed only because the fallback validation and sydlocal deferment had not yet been written down at HEAD. The Task 12 closeout artifacts and `tests/playwright/README.md` now record that fallback and the explicit deferment to Task 13.
+- `info` | Review Auditor | The final spec review initially failed only because the fallback validation and staging deferment had not yet been written down at HEAD. The Task 12 closeout artifacts and `tests/playwright/README.md` now record that fallback and the explicit deferment to Task 13.
 - `info` | Quality Auditor | Requirement [7] is satisfied after the Task 12 follow-up fixes. The Playwright helper now handles secret-login installs and already-authenticated sessions more safely, destructive same-host fixtures require explicit `PLAYWRIGHT_LOCAL_RUNTIME_TARGET=yes` opt-in before they can touch the local Vesta runtime, dashboard summary/detail waits reject empty-placeholder states and require real chart-series rendering or concrete metric text, health-badge assertions require real badges to exist, lifecycle actions retarget the named container row after each state transition, modal remove flows validate the posted owner/container pair, and same-host create-form cleanup can fall back to direct runtime deletion so disposable containers do not leak when UI cleanup regresses.
 
 ## Requirement Gaps
 
-No remaining Task 12 implementation gaps are present in the current tree. The only deferred evidence is full end-to-end Docker/browser execution against a same-host Vesta runtime, which Task 12 explicitly allows to move to the sydlocal closeout host when `/etc/profile.d/vesta.sh` is unavailable locally.
+No remaining Task 12 implementation gaps are present in the current tree. The only deferred evidence is full end-to-end Docker/browser execution against a same-host Vesta runtime, which Task 12 explicitly allows to move to the staging closeout host when `/etc/profile.d/vesta.sh` is unavailable locally.
 
 ## Audit Summary
 

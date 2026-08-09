@@ -737,8 +737,8 @@ git commit -m "docs(harbor): add operator and tenant registry guidance"
 ## Milestone 5: Development acceptance and release closure
 
 **Status: BLOCKED — PRODUCT.** Task 11 is complete at `390bcb7f`. Task 10
-staged exact HEAD `6c7119b8` to `dev.jackpridham.com` at
-`192.168.200.100`, passed the clean local aggregate, and reached authenticated
+staged exact HEAD `6c7119b8` to `development.example.com` at
+`192.0.2.10`, passed the clean local aggregate, and reached authenticated
 Harbor bootstrap. Harbor v2.15.0 cannot satisfy the approved caller-selected
 publisher-secret contract through the least-privilege integration robot.
 Workstation DNS also resolves the development name to a different address.
@@ -760,8 +760,8 @@ Expected: one clean focused run; no broad ShellCheck or full readiness.
 
 - [ ] **Step 2: Stage and validate development**
 
-Stage directly to `debian@dev.jackpridham.com`, pinned to the authorized
-development address `192.168.200.100`. Verify pinned release, no host Harbor
+Stage directly to `operator@development.example.com`, pinned to the authorized
+development address `192.0.2.10`. Verify pinned release, no host Harbor
 TCP listener, Unix-socket permissions, exact Vesta TLS routes, no portal/API
 exposure, eligible owner reconciliation, quota, separate credentials,
 immutable push/pull/deploy, revocation, outage isolation, encrypted backup
@@ -792,10 +792,10 @@ child robot attempts secret refresh. This conflicts with the approved
 caller-generated publisher secret and no-routine-bootstrap-admin requirements.
 Disposable probes were removed. The provider is disabled, its service is
 inactive/disabled, no Harbor host listener/socket is present, and
-`slave-vxapp` remains the same healthy container. Final root-owned rollback is
+`legacy-admin-app` remains the same healthy container. Final root-owned rollback is
 `/root/vesta-backups/vesta-harbor-task10-6c7119b8-20260808T125339Z`.
-Workstation DNS currently resolves `dev.jackpridham.com` to `159.196.107.151`,
-not `192.168.200.100`; pinned hostname TLS probes verified the valid
+Workstation DNS currently resolves `development.example.com` to `203.0.113.10`,
+not `192.0.2.10`; pinned hostname TLS probes verified the valid
 development certificate without contacting that other address.
 
 ### Task 11: Final release review and closeout
@@ -907,8 +907,8 @@ These are not first-release blockers:
   the approved least-privilege integration identity; changing the publisher
   secret contract or routine administrator boundary requires explicit product
   review.
-- Development DNS also needs to map `dev.jackpridham.com` to
-  `192.168.200.100` for unpinned clients. The current certificate hostname and
+- Development DNS also needs to map `development.example.com` to
+  `192.0.2.10` for unpinned clients. The current certificate hostname and
   validity are correct, but it is self-signed.
 - Production deployment and push remain deferred.
 - Exact next action: approve and implement a Harbor-supported publisher-secret

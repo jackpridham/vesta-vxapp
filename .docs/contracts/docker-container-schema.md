@@ -116,7 +116,7 @@ Each record in `data/users/<user>/docker.conf` represents one managed container 
 ### Canonical Persisted Example
 
 ```bash
-NAME='app' CTN_NAME='vx-jack-app' OWNER='jack' IMAGE='ghcr.io/example/app:latest' COMMAND='' \
+NAME='app' CTN_NAME='vx-appuser-app' OWNER='appuser' IMAGE='ghcr.io/example/app:latest' COMMAND='' \
 ENV='PORT=3000||NODE_ENV=production' MOUNTS='data:/srv/app/data||config:/srv/app/config' \
 HOST_PORT='21001' CONTAINER_PORT='3000' DOMAIN='app.example.com' ROUTE_PATH='' \
 PROXY_MODE='proxy' PROXY_TARGET='http://127.0.0.1:21001' AUTO_START='yes' \
