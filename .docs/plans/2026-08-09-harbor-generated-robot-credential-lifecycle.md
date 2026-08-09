@@ -1015,13 +1015,13 @@ git commit -m "docs(harbor): document encrypted publisher rotation"
 
 ### Milestone 4 review
 
-- [ ] Search active code/docs/tests for
+- [x] Search active code/docs/tests for
   `registry-publisher-change`, `v-change-user-harbor`,
   `vx_harbor_api_robot_disable`, and caller-generated publisher secret text.
-- [ ] Confirm remaining matches exist only in historical evidence explicitly
+- [x] Confirm remaining matches exist only in historical evidence explicitly
   labelled as superseded.
-- [ ] Run `bash test/harbor/run-focused.sh` once.
-- [ ] Do not proceed if panel or docs can collect/display a credential.
+- [x] Run `bash test/harbor/run-focused.sh` once.
+- [x] Do not proceed if panel or docs can collect/display a credential.
 
 ---
 

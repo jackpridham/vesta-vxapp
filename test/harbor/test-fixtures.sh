@@ -137,14 +137,12 @@ integration_body="$(jq -cn --arg secret "$requested_secret" '{
   name:"vesta-integration",secret:$secret,duration:-1,level:"system",permissions:[
     {kind:"system",namespace:"/",access:[
       {resource:"project",action:"create"},
-      {resource:"project",action:"list"},
       {resource:"quota",action:"read"},
       {resource:"quota",action:"update"},
       {resource:"system-volumes",action:"read"}
     ]},
     {kind:"project",namespace:"*",access:[
       {resource:"project",action:"read"},
-      {resource:"project",action:"update"},
       {resource:"repository",action:"list"},
       {resource:"repository",action:"read"},
       {resource:"repository",action:"pull"},
@@ -152,7 +150,8 @@ integration_body="$(jq -cn --arg secret "$requested_secret" '{
       {resource:"robot",action:"create"},
       {resource:"robot",action:"read"},
       {resource:"robot",action:"list"},
-      {resource:"robot",action:"delete"}
+      {resource:"robot",action:"delete"},
+      {resource:"artifact",action:"read"}
     ]}
   ]
 }')"
