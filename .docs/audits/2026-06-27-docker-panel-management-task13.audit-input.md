@@ -19,7 +19,7 @@
 - Final Playwright validation against `.env.playwright.local` completed with `17 passed` across anonymous, docker-user, and admin-authenticated projects.
 - The validation loop exposed and fixed three issues before closeout: admin `login as` owner-scope leakage, missing nginx reload after Docker route sync, and a flaky remove-modal assertion in the Docker user suite.
 - Final backend evidence shows `dockere2e/app` route metadata persisted in both `web.conf` and `docker.conf`, health/status JSON is populated, stats JSON includes populated `CPU_PCT`, `MEM_MB`, `RX_MBPS`, `TX_MBPS`, and `LATEST`, and `docker-e2e.local` returns the container body through nginx after the route-sync fix.
-- Closeout artifacts now exist in `.docs/validation/staging-docker-e2e-closeout.md` and `/path/to/operations-repo/Servers/hypervisor.example.com/staging.example.com/README.md`.
+- Closeout artifacts now exist in `.docs/validation/staging-docker-e2e-closeout.md` and `<operations-repo>/Servers/hypervisor.example.com/staging.example.com/README.md`.
 
 ## Sensitive Content Handling
 - The admin password and any session/login tokens are omitted from this snapshot.

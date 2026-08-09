@@ -17,7 +17,7 @@
 - Web UI and routing work is already landed across `f4fac638`, `27111680`, `950db930`, `d978b1d4`, `5e9ebded`, `18209bd4`, `4c3fb19e`, `14169e62`, `0762a053`, `0ecfed03`, `e6c53a23`, `1757fad4`, `49a1af17`, `3204226b`, and `02e4042d`.
 - Playwright/test coverage is already landed across `b4870f00`, `90f245cd`, `6bc8d7a9`, the Task 12 hardening chain through `9e7837d8`, and the final Task 13 harness fixes `a9d013f2`, `ea8eac0c`, `02e4042d`, and `30fd00d1`.
 - Docs/plan artifacts were committed in `886f7d13` and Task 14 bookkeeping in `6c0063a6`.
-- The external staging README update was committed separately in `/path/to/operations-repo` as `<external-commit>`.
+- The external staging README update was committed separately in `<operations-repo>` as `<external-commit>`.
 
 ## Sensitive Content Handling
 - No secrets copied. Only commit metadata and file paths are referenced.

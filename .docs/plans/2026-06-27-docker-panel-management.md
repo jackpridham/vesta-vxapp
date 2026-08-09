@@ -1490,11 +1490,11 @@ and document that full runtime Docker validation moved to the staging closeout h
 
 **Files:**
 - Create: `.docs/validation/staging-docker-e2e-closeout.md`
-- Modify: `/path/to/operations-repo/Servers/hypervisor.example.com/staging.example.com/README.md`
+- Modify: `<operations-repo>/Servers/hypervisor.example.com/staging.example.com/README.md`
 
 - [x] **Step 1: Stage and apply the runtime overlay to the staging host**
 
-Use the host documented in `/path/to/operations-repo/Servers/hypervisor.example.com/staging.example.com/README.md` and always connect by internal IP:
+Use the host documented in `<operations-repo>/Servers/hypervisor.example.com/staging.example.com/README.md` and always connect by internal IP:
 
 ```bash
 export TARGET_HOST="192.0.2.20"
@@ -1722,7 +1722,7 @@ Create `.docs/validation/staging-docker-e2e-closeout.md` and record:
 - location of the generated HTML Playwright report when any browser suite was executed
 - any deviations from the plan
 
-Then update `/path/to/operations-repo/Servers/hypervisor.example.com/staging.example.com/README.md` with:
+Then update `<operations-repo>/Servers/hypervisor.example.com/staging.example.com/README.md` with:
 - deployed fork commit
 - whether Docker user-management E2E passed
 - where the closeout report lives
@@ -1743,7 +1743,7 @@ EOF
 #### Closeout Report
 
 - Summary: Applied and validated the staging runtime overlay against live host `192.0.2.20`, then used the live Task 13 loop to uncover and fix three remaining defects before closeout: admin `login as` Docker owner-scope leakage, missing nginx reload after Docker route sync, and a flaky async delete assertion in the Docker remove-modal coverage. The final host was stamped to deployed runtime commit `02e4042d`, `docker-e2e.local` proxied to the seeded `dockere2e/app` container, the backend stats/health/alert commands returned valid JSON, and the final Playwright matrix passed `17/17`.
-- Files changed: `web/inc/vx_docker.php`, `web/list/docker/index.php`, `web/templates/docker_list_shared.php`, `tests/playwright/helpers/panel-auth.js`, `tests/playwright/docker-access-control.admin.authenticated.spec.js`, `bin/v-sync-docker-container-route`, `tests/playwright/docker-dashboard.user.authenticated.spec.js`, `tests/playwright/docker-modals.user.authenticated.spec.js`, `.docs/validation/staging-docker-e2e-closeout.md`, `.docs/audits/2026-06-27-docker-panel-management-task13.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task13.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`, `/path/to/operations-repo/Servers/hypervisor.example.com/staging.example.com/README.md`
+- Files changed: `web/inc/vx_docker.php`, `web/list/docker/index.php`, `web/templates/docker_list_shared.php`, `tests/playwright/helpers/panel-auth.js`, `tests/playwright/docker-access-control.admin.authenticated.spec.js`, `bin/v-sync-docker-container-route`, `tests/playwright/docker-dashboard.user.authenticated.spec.js`, `tests/playwright/docker-modals.user.authenticated.spec.js`, `.docs/validation/staging-docker-e2e-closeout.md`, `.docs/audits/2026-06-27-docker-panel-management-task13.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task13.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`, `<operations-repo>/Servers/hypervisor.example.com/staging.example.com/README.md`
 - Tests run: staging overlay deploy + stamp; PASS. `ssh operator@192.0.2.20 "sudo bash -s"` runtime validation with `bash -n`, `php -l`, `nginx -t`, `apache2ctl configtest`, and `v-check-docker-engine json`; PASS. `PLAYWRIGHT_ENV_FILE=.env.playwright.local npx playwright test --project=chromium-anonymous --project=chromium-docker-user-authenticated --project=chromium-admin-authenticated`; PASS (`17 passed`). `v-list-docker-container dockere2e app json`; PASS. `v-list-web-domain dockere2e docker-e2e.local json`; PASS. `v-list-docker-container-health dockere2e app json`; PASS. `v-list-docker-container-stats dockere2e app 5m json`; PASS with populated `CPU_PCT`, `MEM_MB`, `RX_MBPS`, `TX_MBPS`, and `LATEST`. `v-list-docker-container-alerts dockere2e app json`; PASS. `curl -H 'Host: docker-e2e.local' http://192.0.2.20/`; PASS after the route-sync reload fix, returning the seeded container body.
 - Commit SHA(s): `ea8eac0c`, `3204226b`, `02e4042d`, `30fd00d1`
 - Spec review result: PASS. The task requirements for staging overlay, runtime validation, seeded auth/runtime state, full live Playwright coverage, backend route/metrics/health/alerts checks, closeout artifacts, and cleanup are all satisfied and recorded in the Task 13 audit artifacts.
@@ -1814,7 +1814,7 @@ git commit -m "docs: finalize docker ownership implementation plan"
 After the validation run updates:
 
 ```text
-/path/to/operations-repo/Servers/hypervisor.example.com/staging.example.com/README.md
+<operations-repo>/Servers/hypervisor.example.com/staging.example.com/README.md
 ```
 
 commit that change from the `operations-repo` repository separately so the server documentation does not stay dirty outside this repo.
@@ -1823,7 +1823,7 @@ commit that change from the `operations-repo` repository separately so the serve
 
 - Summary: Audited the final branch history against the Task 14 slice intent and confirmed the Docker ownership work is already landed in merge-friendly subsystem-scoped commit ranges for backend, web UI/routing, tests, repo-local docs, and the external staging README. No history rewrite or duplicate no-op commits were needed; instead, the plan now records the exact commit ranges that satisfy each slice.
 - Files changed: `.docs/audits/2026-06-27-docker-panel-management-task14.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task14.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`
-- Tests run: `git log --oneline -- <backend slice paths>`; PASS. `git log --oneline -- <web/ui slice paths>`; PASS. `git log --oneline -- <test/playwright slice paths>`; PASS. `git log --oneline -- .docs/contracts .docs/user-guides .docs/validation .docs/plans/2026-06-27-docker-panel-management.md`; PASS. `git log --oneline` in `/path/to/operations-repo`; PASS.
+- Tests run: `git log --oneline -- <backend slice paths>`; PASS. `git log --oneline -- <web/ui slice paths>`; PASS. `git log --oneline -- <test/playwright slice paths>`; PASS. `git log --oneline -- .docs/contracts .docs/user-guides .docs/validation .docs/plans/2026-06-27-docker-panel-management.md`; PASS. `git log --oneline` in `<operations-repo>`; PASS.
 - Commit SHA(s): `886f7d13`, `6c0063a6`, `<external-commit>`
 - Spec review result: PASS after the Task 14 audit clarification. The only gap was that steps 1-3 still read like literal one-commit commands even though the audited completion path was “existing committed ranges satisfy the slice boundaries.” The plan now records that mapping explicitly.
 - Code quality review result: APPROVED. Preserving the real subsystem-scoped history is cleaner and more truthful than rewriting or fabricating commits after the fact.

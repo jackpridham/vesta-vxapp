@@ -148,38 +148,38 @@ test('remote Vesta SSH jump arguments reject option injection and keep input off
   const priorPanelRuntimeHost = process.env.PLAYWRIGHT_PANEL_RUNTIME_HOST;
   const secret = 'playwright-secret-argv-canary';
   try {
-    process.env.PLAYWRIGHT_REMOTE_VESTA_SSH = 'debian@192.168.100.100';
-    process.env.PLAYWRIGHT_REMOTE_VESTA_SSH_JUMP = 'gizmo@192.168.100.16';
+    process.env.PLAYWRIGHT_REMOTE_VESTA_SSH = 'operator@192.0.2.20';
+    process.env.PLAYWRIGHT_REMOTE_VESTA_SSH_JUMP = 'builder@192.0.2.30';
     const args = remoteVestaSshArgs('exec sudo -n bash -se');
     expect(args).toEqual([
       '-J',
-      'gizmo@192.168.100.16',
-      'debian@192.168.100.100',
+      'builder@192.0.2.30',
+      'operator@192.0.2.20',
       'exec sudo -n bash -se',
     ]);
     process.env.PLAYWRIGHT_BASE_URL = 'https://127.0.0.1:18443';
-    process.env.PLAYWRIGHT_PANEL_RUNTIME_HOST = '192.168.100.100';
+    process.env.PLAYWRIGHT_PANEL_RUNTIME_HOST = '192.0.2.20';
     expect(isLocalPanelTarget()).toBe(true);
     process.env.PLAYWRIGHT_PANEL_RUNTIME_HOST = '192.168.100.101';
     expect(isLocalPanelTarget()).toBe(false);
-    process.env.PLAYWRIGHT_BASE_URL = 'https://syd.vortexenterprises.com.au:8083';
-    process.env.PLAYWRIGHT_PANEL_RUNTIME_HOST = '192.168.100.100';
+    process.env.PLAYWRIGHT_BASE_URL = 'https://production.example.com:8083';
+    process.env.PLAYWRIGHT_PANEL_RUNTIME_HOST = '192.0.2.20';
     expect(isLocalPanelTarget()).toBe(false);
     process.env.PLAYWRIGHT_BASE_URL = 'https://127.0.0.1:18443';
-    process.env.PLAYWRIGHT_PANEL_RUNTIME_HOST = 'debian@192.168.100.100';
+    process.env.PLAYWRIGHT_PANEL_RUNTIME_HOST = 'operator@192.0.2.20';
     expect(() => isLocalPanelTarget()).toThrow(/must not include a user name/);
-    process.env.PLAYWRIGHT_PANEL_RUNTIME_HOST = '192.168.100.100 extra';
+    process.env.PLAYWRIGHT_PANEL_RUNTIME_HOST = '192.0.2.20 extra';
     expect(() => isLocalPanelTarget()).toThrow(/single SSH destination/);
 
-    process.env.PLAYWRIGHT_PANEL_RUNTIME_HOST = '192.168.100.100';
+    process.env.PLAYWRIGHT_PANEL_RUNTIME_HOST = '192.0.2.20';
     const execution = remoteVestaSshExecution(`printf %s '${secret}'`);
     expect(execution.input).toContain(secret);
     expect(execution.args.join(' ')).not.toContain(secret);
 
     for (const invalid of [
       '-oProxyCommand=bad',
-      'gizmo@host extra',
-      'gizmo@host\n-oProxyCommand=bad',
+      'builder@host extra',
+      'builder@host\n-oProxyCommand=bad',
     ]) {
       process.env.PLAYWRIGHT_REMOTE_VESTA_SSH_JUMP = invalid;
       expect(() => remoteVestaSshArgs('exec sudo -n bash -se')).toThrow(

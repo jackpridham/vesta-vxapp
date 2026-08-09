@@ -1,13 +1,13 @@
 ## Audit Scope
 
-This audit validates Task 5 of [.docs/plans/2026-06-27-docker-panel-management.md](/path/to/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed helper and compatibility files:
+This audit validates Task 5 of [.docs/plans/2026-06-27-docker-panel-management.md](../../.docs/plans/2026-06-27-docker-panel-management.md) against the landed helper and compatibility files:
 
-- [web/inc/vx_docker.php](/path/to/vesta-vxapp/web/inc/vx_docker.php)
-- [web/inc/vx_proxy_form.php](/path/to/vesta-vxapp/web/inc/vx_proxy_form.php)
-- [web/inc/i18n/en.php](/path/to/vesta-vxapp/web/inc/i18n/en.php)
-- [func/vx/docker.sh](/path/to/vesta-vxapp/func/vx/docker.sh)
+- [web/inc/vx_docker.php](../../web/inc/vx_docker.php)
+- [web/inc/vx_proxy_form.php](../../web/inc/vx_proxy_form.php)
+- [web/inc/i18n/en.php](../../web/inc/i18n/en.php)
+- [func/vx/docker.sh](../../func/vx/docker.sh)
 
-The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task5.audit-input.md](/path/to/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task5.audit-input.md).
+The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task5.audit-input.md](../../.docs/audits/2026-06-27-docker-panel-management-task5.audit-input.md).
 
 ## Source Requirements
 

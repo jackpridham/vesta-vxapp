@@ -1,22 +1,22 @@
 ## Audit Scope
 
-This audit validates Task 8 of [.docs/plans/2026-06-27-docker-panel-management.md](/path/to/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed Docker/web-domain ownership guard, route-source-of-truth behavior, and recovery-path evidence:
+This audit validates Task 8 of [.docs/plans/2026-06-27-docker-panel-management.md](../../.docs/plans/2026-06-27-docker-panel-management.md) against the landed Docker/web-domain ownership guard, route-source-of-truth behavior, and recovery-path evidence:
 
-- [web/inc/vx_docker.php](/path/to/vesta-vxapp/web/inc/vx_docker.php)
-- [web/edit/web/index.php](/path/to/vesta-vxapp/web/edit/web/index.php)
-- [web/templates/admin/edit_web.html](/path/to/vesta-vxapp/web/templates/admin/edit_web.html)
-- [web/templates/user/edit_web.html](/path/to/vesta-vxapp/web/templates/user/edit_web.html)
-- [web/inc/i18n/en.php](/path/to/vesta-vxapp/web/inc/i18n/en.php)
-- [func/vx/docker.sh](/path/to/vesta-vxapp/func/vx/docker.sh)
-- [bin/v-change-web-domain-proxy-options](/path/to/vesta-vxapp/bin/v-change-web-domain-proxy-options)
-- [bin/v-sync-docker-container-route](/path/to/vesta-vxapp/bin/v-sync-docker-container-route)
-- [bin/v-add-web-domain](/path/to/vesta-vxapp/bin/v-add-web-domain)
-- [func/vx/proxy.sh](/path/to/vesta-vxapp/func/vx/proxy.sh)
-- [bin/v-rebuild-docker-containers](/path/to/vesta-vxapp/bin/v-rebuild-docker-containers)
-- [bin/v-rebuild-user](/path/to/vesta-vxapp/bin/v-rebuild-user)
-- [bin/v-restore-user](/path/to/vesta-vxapp/bin/v-restore-user)
+- [web/inc/vx_docker.php](../../web/inc/vx_docker.php)
+- [web/edit/web/index.php](../../web/edit/web/index.php)
+- [web/templates/admin/edit_web.html](../../web/templates/admin/edit_web.html)
+- [web/templates/user/edit_web.html](../../web/templates/user/edit_web.html)
+- [web/inc/i18n/en.php](../../web/inc/i18n/en.php)
+- [func/vx/docker.sh](../../func/vx/docker.sh)
+- [bin/v-change-web-domain-proxy-options](../../bin/v-change-web-domain-proxy-options)
+- [bin/v-sync-docker-container-route](../../bin/v-sync-docker-container-route)
+- [bin/v-add-web-domain](../../bin/v-add-web-domain)
+- [func/vx/proxy.sh](../../func/vx/proxy.sh)
+- [bin/v-rebuild-docker-containers](../../bin/v-rebuild-docker-containers)
+- [bin/v-rebuild-user](../../bin/v-rebuild-user)
+- [bin/v-restore-user](../../bin/v-restore-user)
 
-The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task8.audit-input.md](/path/to/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task8.audit-input.md).
+The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task8.audit-input.md](../../.docs/audits/2026-06-27-docker-panel-management-task8.audit-input.md).
 
 ## Source Requirements
 

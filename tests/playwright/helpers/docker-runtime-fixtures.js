@@ -73,7 +73,7 @@ function hasExplicitLocalRuntimeTarget() {
 }
 
 function isLocalPanelTarget() {
-  const baseUrl = process.env.PLAYWRIGHT_BASE_URL || 'https://192.168.100.100:8083';
+  const baseUrl = process.env.PLAYWRIGHT_BASE_URL || 'https://192.0.2.20:8083';
   const hostname = new URL(baseUrl).hostname;
 
   if (hasRemoteVestaRuntime()) {

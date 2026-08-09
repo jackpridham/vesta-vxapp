@@ -1,5 +1,5 @@
 ## Source Metadata
-- Source path: /path/to/vesta-vxapp/.docs/plans/2026-08-08-vesta-managed-harbor-registry.md
+- Source path: <repo>/.docs/plans/2026-08-08-vesta-managed-harbor-registry.md
 - Redactions applied: yes
 - Sensitive categories: development hostname, development network addresses, rollback archive path
 

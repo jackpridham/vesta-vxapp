@@ -1,23 +1,23 @@
 ## Audit Scope
 
-This audit validates Task 4 of [.docs/plans/2026-06-27-docker-panel-management.md](/path/to/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed lifecycle, backup, restore, and rebuild files:
+This audit validates Task 4 of [.docs/plans/2026-06-27-docker-panel-management.md](../../.docs/plans/2026-06-27-docker-panel-management.md) against the landed lifecycle, backup, restore, and rebuild files:
 
-- [bin/v-suspend-user](/path/to/vesta-vxapp/bin/v-suspend-user)
-- [bin/v-unsuspend-user](/path/to/vesta-vxapp/bin/v-unsuspend-user)
-- [bin/v-delete-user](/path/to/vesta-vxapp/bin/v-delete-user)
-- [bin/v-backup-user](/path/to/vesta-vxapp/bin/v-backup-user)
-- [bin/v-list-user-backups](/path/to/vesta-vxapp/bin/v-list-user-backups)
-- [bin/v-list-user-backup](/path/to/vesta-vxapp/bin/v-list-user-backup)
-- [bin/v-restore-user](/path/to/vesta-vxapp/bin/v-restore-user)
-- [bin/v-schedule-user-restore](/path/to/vesta-vxapp/bin/v-schedule-user-restore)
-- [bin/v-rebuild-user](/path/to/vesta-vxapp/bin/v-rebuild-user)
-- [bin/v-rebuild-docker-containers](/path/to/vesta-vxapp/bin/v-rebuild-docker-containers)
-- [bin/v-start-docker-container](/path/to/vesta-vxapp/bin/v-start-docker-container)
-- [bin/v-restart-docker-container](/path/to/vesta-vxapp/bin/v-restart-docker-container)
-- [func/rebuild.sh](/path/to/vesta-vxapp/func/rebuild.sh)
-- [func/vx/docker.sh](/path/to/vesta-vxapp/func/vx/docker.sh)
+- [bin/v-suspend-user](../../bin/v-suspend-user)
+- [bin/v-unsuspend-user](../../bin/v-unsuspend-user)
+- [bin/v-delete-user](../../bin/v-delete-user)
+- [bin/v-backup-user](../../bin/v-backup-user)
+- [bin/v-list-user-backups](../../bin/v-list-user-backups)
+- [bin/v-list-user-backup](../../bin/v-list-user-backup)
+- [bin/v-restore-user](../../bin/v-restore-user)
+- [bin/v-schedule-user-restore](../../bin/v-schedule-user-restore)
+- [bin/v-rebuild-user](../../bin/v-rebuild-user)
+- [bin/v-rebuild-docker-containers](../../bin/v-rebuild-docker-containers)
+- [bin/v-start-docker-container](../../bin/v-start-docker-container)
+- [bin/v-restart-docker-container](../../bin/v-restart-docker-container)
+- [func/rebuild.sh](../../func/rebuild.sh)
+- [func/vx/docker.sh](../../func/vx/docker.sh)
 
-The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task4.audit-input.md](/path/to/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task4.audit-input.md).
+The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task4.audit-input.md](../../.docs/audits/2026-06-27-docker-panel-management-task4.audit-input.md).
 
 ## Source Requirements
 

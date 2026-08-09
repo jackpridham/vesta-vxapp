@@ -14,7 +14,7 @@
 | Bash CLI/persistence/lifecycle | `.agents/skills/bash-cli/SKILL.md` |
 | PHP/templates/JavaScript/AJAX | `.agents/skills/web-ui/SKILL.md` |
 | Compose state/readiness | `docs/container-orchestration.md` |
-| Production product gaps | `docs/container-orchestration.md`; evidence in `kb-vxapp/@Reports/@Servers/syd.vortexenterprises.com.au/vesta-compose-orchestration-product-audit/` |
+| Production product gaps | `docs/container-orchestration.md`; evidence in the private operations knowledge base |
 | Compose behavior | Matching `.docs/contracts/compose-*.md` |
 | Self-service preview/apply | `.docs/contracts/compose-self-service-deployment.md` |
 | Documentation taxonomy | `.docs/README.md` |
@@ -43,11 +43,11 @@
 - Keep image trust profile/version bound; adapters use fixed root-owned paths, empty environments, immutable digests, and bounded redacted output.
 - Reject privileged mode, Docker sockets, host PID/IPC, devices, arbitrary host paths, unsafe capabilities, and unapproved host networking.
 - Retain project data by default; never use global Docker prune, broad cleanup, automatic firewall changes, or route rendering without routes.
-- Stage through `debian@192.168.100.100` via `gizmo@192.168.100.16`; audit production through `debian@syd.vortexenterprises.com.au`.
-- Production `slave/slave-vxapp` is managed revision 4; preserve its stopped external rollback authority until retention and retirement gates pass.
+- Stage through the authorized staging jump host; audit production only through the authorized production endpoint.
+- The production legacy compatibility workload is managed revision 4; preserve its stopped external rollback authority until retention and retirement gates pass.
 - Never deploy the withdrawn `vesta-compose-product-corrections-20260731` tag; production uses immutable successor `vesta-compose-product-corrections-20260801` at runtime `8dc0dc9c`.
-- Production `slave-vxapp` current/revisions 1–4 use the exact five-field legacy image-evidence shape. Do not broaden that compatibility boundary.
-- Production's mount guard is enabled/active and `slave` uses `vxslave-compose`; preserve both unless a separately authorized rollback changes them.
+- Production legacy compatibility revisions 1–4 use the exact five-field legacy image-evidence shape. Do not broaden that compatibility boundary.
+- Production's mount guard is enabled/active and the legacy owner uses its dedicated Compose group; preserve both unless a separately authorized rollback changes them.
 - Keep cross-owner BusinessGUID values in native domain authority; Docker UI may show redacted consumer metadata and header names only.
 - Production is read-only without explicit authorization naming target, release, and workload mutation.
 - On constrained hosts, use `test/compose/run-production-readiness-limited.sh`; do not run broad ShellCheck or the canonical full gate directly, and never set `VX_READINESS_ALLOW_UNLIMITED=yes` without explicit operator approval.

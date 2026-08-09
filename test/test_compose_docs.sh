@@ -298,7 +298,7 @@ do
         || fail "interface contract omits command: $command_name"
 done
 
-for profile_name in standard admin-approved slave-vxapp; do
+for profile_name in standard admin-approved legacy-admin-app; do
     grep -Fq "$profile_name" "$repo_root/.docs/contracts/compose-policy.md" \
         || fail "policy contract omits profile: $profile_name"
 done

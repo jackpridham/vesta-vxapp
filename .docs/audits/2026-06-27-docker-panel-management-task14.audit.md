@@ -1,14 +1,14 @@
 ## Audit Scope
 
-This audit validates Task 14 of [.docs/plans/2026-06-27-docker-panel-management.md](/path/to/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the actual landed history in both repositories rather than against a hypothetical rewritten history:
+This audit validates Task 14 of [.docs/plans/2026-06-27-docker-panel-management.md](../../.docs/plans/2026-06-27-docker-panel-management.md) against the actual landed history in both repositories rather than against a hypothetical rewritten history:
 
 - `git log --oneline -- <backend slice paths>`
 - `git log --oneline -- <web/ui slice paths>`
 - `git log --oneline -- <test/playwright slice paths>`
 - `git log --oneline -- <docs slice paths>`
-- `git log --oneline` in `/path/to/operations-repo`
+- `git log --oneline` in `<operations-repo>`
 
-The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task14.audit-input.md](/path/to/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task14.audit-input.md).
+The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task14.audit-input.md](../../.docs/audits/2026-06-27-docker-panel-management-task14.audit-input.md).
 
 ## Source Requirements
 
@@ -27,7 +27,7 @@ The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-manage
 - `info` | Requirements Auditor | Requirement [2] is satisfied by the actual UI/routing history. The Docker panel/UI layer landed across `f4fac638`, `27111680`, `950db930`, `d978b1d4`, `5e9ebded`, `18209bd4`, `4c3fb19e`, `14169e62`, `0762a053`, `0ecfed03`, `e6c53a23`, `1757fad4`, `49a1af17`, and the later live-access-control/runtime polish commits `3204226b` and `02e4042d`.
 - `info` | Requirements Auditor | Requirement [3] is satisfied by the actual test history. The Playwright/test slice starts with `b4870f00` and `90f245cd`, then the Docker-specific suite and hardening chain runs from `6bc8d7a9` through `9e7837d8`, with final live-host coverage fixes in `a9d013f2`, `ea8eac0c`, `02e4042d`, and `30fd00d1`.
 - `info` | Requirements Auditor | Requirement [4] is satisfied. The final docs/plan artifacts were committed in this repo as `886f7d13`, and the Task 14 bookkeeping update was committed as `6c0063a6`.
-- `info` | Requirements Auditor | Requirement [5] is satisfied. The staging README update was committed separately in `/path/to/operations-repo` as `<external-commit>`.
+- `info` | Requirements Auditor | Requirement [5] is satisfied. The staging README update was committed separately in `<operations-repo>` as `<external-commit>`.
 - `info` | Quality Auditor | Requirement [6] is satisfied. The branch history remains reviewable without amending or rewriting prior commits. Adding artificial empty commits now would reduce signal and misrepresent when the actual backend/UI/test work landed.
 - `warning` | Review Auditor | The original Task 14 step text implies one literal commit per slice via exact `git add ... && git commit ...` commands. Current evidence proves the slice intent was met by commit ranges rather than one commit each. The plan should record that audited interpretation explicitly so completion does not depend on history rewriting.
 

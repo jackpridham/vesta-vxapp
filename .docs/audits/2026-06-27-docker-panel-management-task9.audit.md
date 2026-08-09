@@ -1,22 +1,22 @@
 ## Audit Scope
 
-This audit validates Task 9 of [.docs/plans/2026-06-27-docker-panel-management.md](/path/to/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed Docker monitoring, health, and alert pipeline implementation:
+This audit validates Task 9 of [.docs/plans/2026-06-27-docker-panel-management.md](../../.docs/plans/2026-06-27-docker-panel-management.md) against the landed Docker monitoring, health, and alert pipeline implementation:
 
-- [func/vx/docker.sh](/path/to/vesta-vxapp/func/vx/docker.sh)
-- [func/rebuild.sh](/path/to/vesta-vxapp/func/rebuild.sh)
-- [bin/v-rebuild-user](/path/to/vesta-vxapp/bin/v-rebuild-user)
-- [bin/v-update-sys-rrd](/path/to/vesta-vxapp/bin/v-update-sys-rrd)
-- [bin/v-update-sys-rrd-docker](/path/to/vesta-vxapp/bin/v-update-sys-rrd-docker)
-- [bin/v-list-docker-container-stats](/path/to/vesta-vxapp/bin/v-list-docker-container-stats)
-- [bin/v-update-docker-container-health](/path/to/vesta-vxapp/bin/v-update-docker-container-health)
-- [bin/v-list-docker-container-health](/path/to/vesta-vxapp/bin/v-list-docker-container-health)
-- [bin/v-list-docker-container-alerts](/path/to/vesta-vxapp/bin/v-list-docker-container-alerts)
-- [bin/v-acknowledge-docker-container-alert](/path/to/vesta-vxapp/bin/v-acknowledge-docker-container-alert)
-- [web/inc/vx_docker.php](/path/to/vesta-vxapp/web/inc/vx_docker.php)
-- [web/ajax/docker/actions/health.php](/path/to/vesta-vxapp/web/ajax/docker/actions/health.php)
-- [.docs/contracts/docker-monitoring-schema.md](/path/to/vesta-vxapp/.docs/contracts/docker-monitoring-schema.md)
+- [func/vx/docker.sh](../../func/vx/docker.sh)
+- [func/rebuild.sh](../../func/rebuild.sh)
+- [bin/v-rebuild-user](../../bin/v-rebuild-user)
+- [bin/v-update-sys-rrd](../../bin/v-update-sys-rrd)
+- [bin/v-update-sys-rrd-docker](../../bin/v-update-sys-rrd-docker)
+- [bin/v-list-docker-container-stats](../../bin/v-list-docker-container-stats)
+- [bin/v-update-docker-container-health](../../bin/v-update-docker-container-health)
+- [bin/v-list-docker-container-health](../../bin/v-list-docker-container-health)
+- [bin/v-list-docker-container-alerts](../../bin/v-list-docker-container-alerts)
+- [bin/v-acknowledge-docker-container-alert](../../bin/v-acknowledge-docker-container-alert)
+- [web/inc/vx_docker.php](../../web/inc/vx_docker.php)
+- [web/ajax/docker/actions/health.php](../../web/ajax/docker/actions/health.php)
+- [.docs/contracts/docker-monitoring-schema.md](../../.docs/contracts/docker-monitoring-schema.md)
 
-The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task9.audit-input.md](/path/to/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task9.audit-input.md).
+The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task9.audit-input.md](../../.docs/audits/2026-06-27-docker-panel-management-task9.audit-input.md).
 
 ## Source Requirements
 

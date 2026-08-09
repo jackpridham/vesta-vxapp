@@ -75,7 +75,7 @@ module.exports = defineConfig({
     ['html', { outputFolder: 'playwright-report', open: 'never' }],
   ],
   use: {
-    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'https://192.168.100.100:8083',
+    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'https://192.0.2.20:8083',
     ignoreHTTPSErrors: true,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',

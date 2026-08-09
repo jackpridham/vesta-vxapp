@@ -1,23 +1,23 @@
 ## Audit Scope
 
-This audit validates Task 12 of [.docs/plans/2026-06-27-docker-panel-management.md](/path/to/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed shell regressions, Docker-specific Playwright coverage, helper updates, and fallback validation documentation:
+This audit validates Task 12 of [.docs/plans/2026-06-27-docker-panel-management.md](../../.docs/plans/2026-06-27-docker-panel-management.md) against the landed shell regressions, Docker-specific Playwright coverage, helper updates, and fallback validation documentation:
 
-- [test/test_actions.sh](/path/to/vesta-vxapp/test/test_actions.sh)
-- [test/test_docker_user_actions.sh](/path/to/vesta-vxapp/test/test_docker_user_actions.sh)
-- [test/test_json_listing.sh](/path/to/vesta-vxapp/test/test_json_listing.sh)
-- [playwright.config.js](/path/to/vesta-vxapp/playwright.config.js)
-- [tests/playwright/README.md](/path/to/vesta-vxapp/tests/playwright/README.md)
-- [tests/playwright/helpers/panel-auth.js](/path/to/vesta-vxapp/tests/playwright/helpers/panel-auth.js)
-- [tests/playwright/helpers/docker-runtime-fixtures.js](/path/to/vesta-vxapp/tests/playwright/helpers/docker-runtime-fixtures.js)
-- [tests/playwright/docker-navigation.user.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/docker-navigation.user.authenticated.spec.js)
-- [tests/playwright/docker-access-control.admin.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/docker-access-control.admin.authenticated.spec.js)
-- [tests/playwright/docker-empty-state.user.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/docker-empty-state.user.authenticated.spec.js)
-- [tests/playwright/docker-create-form.user.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/docker-create-form.user.authenticated.spec.js)
-- [tests/playwright/docker-lifecycle.user.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/docker-lifecycle.user.authenticated.spec.js)
-- [tests/playwright/docker-modals.user.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/docker-modals.user.authenticated.spec.js)
-- [tests/playwright/docker-dashboard.user.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/docker-dashboard.user.authenticated.spec.js)
+- [test/test_actions.sh](../../test/test_actions.sh)
+- [test/test_docker_user_actions.sh](../../test/test_docker_user_actions.sh)
+- [test/test_json_listing.sh](../../test/test_json_listing.sh)
+- [playwright.config.js](../../playwright.config.js)
+- [tests/playwright/README.md](../../tests/playwright/README.md)
+- [tests/playwright/helpers/panel-auth.js](../../tests/playwright/helpers/panel-auth.js)
+- [tests/playwright/helpers/docker-runtime-fixtures.js](../../tests/playwright/helpers/docker-runtime-fixtures.js)
+- [tests/playwright/docker-navigation.user.authenticated.spec.js](../../tests/playwright/docker-navigation.user.authenticated.spec.js)
+- [tests/playwright/docker-access-control.admin.authenticated.spec.js](../../tests/playwright/docker-access-control.admin.authenticated.spec.js)
+- [tests/playwright/docker-empty-state.user.authenticated.spec.js](../../tests/playwright/docker-empty-state.user.authenticated.spec.js)
+- [tests/playwright/docker-create-form.user.authenticated.spec.js](../../tests/playwright/docker-create-form.user.authenticated.spec.js)
+- [tests/playwright/docker-lifecycle.user.authenticated.spec.js](../../tests/playwright/docker-lifecycle.user.authenticated.spec.js)
+- [tests/playwright/docker-modals.user.authenticated.spec.js](../../tests/playwright/docker-modals.user.authenticated.spec.js)
+- [tests/playwright/docker-dashboard.user.authenticated.spec.js](../../tests/playwright/docker-dashboard.user.authenticated.spec.js)
 
-The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task12.audit-input.md](/path/to/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task12.audit-input.md).
+The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task12.audit-input.md](../../.docs/audits/2026-06-27-docker-panel-management-task12.audit-input.md).
 
 ## Source Requirements
 

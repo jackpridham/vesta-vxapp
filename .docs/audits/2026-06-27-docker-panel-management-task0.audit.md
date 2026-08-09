@@ -1,13 +1,13 @@
 ## Audit Scope
 
-This audit validates Task 0 of [.docs/plans/2026-06-27-docker-panel-management.md](/path/to/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed contract documents:
+This audit validates Task 0 of [.docs/plans/2026-06-27-docker-panel-management.md](../../.docs/plans/2026-06-27-docker-panel-management.md) against the landed contract documents:
 
-- [.docs/contracts/docker-container-schema.md](/path/to/vesta-vxapp/.docs/contracts/docker-container-schema.md)
-- [.docs/contracts/docker-monitoring-schema.md](/path/to/vesta-vxapp/.docs/contracts/docker-monitoring-schema.md)
-- [.docs/contracts/docker-alerts-schema.md](/path/to/vesta-vxapp/.docs/contracts/docker-alerts-schema.md)
-- [.docs/contracts/docker-ui-states.md](/path/to/vesta-vxapp/.docs/contracts/docker-ui-states.md)
+- [.docs/contracts/docker-container-schema.md](../../.docs/contracts/docker-container-schema.md)
+- [.docs/contracts/docker-monitoring-schema.md](../../.docs/contracts/docker-monitoring-schema.md)
+- [.docs/contracts/docker-alerts-schema.md](../../.docs/contracts/docker-alerts-schema.md)
+- [.docs/contracts/docker-ui-states.md](../../.docs/contracts/docker-ui-states.md)
 
-The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task0.audit-input.md](/path/to/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task0.audit-input.md).
+The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task0.audit-input.md](../../.docs/audits/2026-06-27-docker-panel-management-task0.audit-input.md).
 
 ## Source Requirements
 

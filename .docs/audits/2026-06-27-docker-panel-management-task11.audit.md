@@ -1,20 +1,20 @@
 ## Audit Scope
 
-This audit validates Task 11 of [.docs/plans/2026-06-27-docker-panel-management.md](/path/to/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed Playwright harness, environment contract, auth setup, smoke specs, and follow-up fixes:
+This audit validates Task 11 of [.docs/plans/2026-06-27-docker-panel-management.md](../../.docs/plans/2026-06-27-docker-panel-management.md) against the landed Playwright harness, environment contract, auth setup, smoke specs, and follow-up fixes:
 
-- [package.json](/path/to/vesta-vxapp/package.json)
-- [package-lock.json](/path/to/vesta-vxapp/package-lock.json)
-- [.gitignore](/path/to/vesta-vxapp/.gitignore)
-- [.env.playwright.example](/path/to/vesta-vxapp/.env.playwright.example)
-- [playwright.config.js](/path/to/vesta-vxapp/playwright.config.js)
-- [tests/playwright/README.md](/path/to/vesta-vxapp/tests/playwright/README.md)
-- [tests/playwright/helpers/panel-auth.js](/path/to/vesta-vxapp/tests/playwright/helpers/panel-auth.js)
-- [tests/playwright/auth.setup.js](/path/to/vesta-vxapp/tests/playwright/auth.setup.js)
-- [tests/playwright/login-page.anonymous.spec.js](/path/to/vesta-vxapp/tests/playwright/login-page.anonymous.spec.js)
-- [tests/playwright/panel-shell.admin.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/panel-shell.admin.authenticated.spec.js)
-- [tests/playwright/panel-shell.user.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/panel-shell.user.authenticated.spec.js)
+- [package.json](../../package.json)
+- [package-lock.json](../../package-lock.json)
+- [.gitignore](../../.gitignore)
+- [.env.playwright.example](../../.env.playwright.example)
+- [playwright.config.js](../../playwright.config.js)
+- [tests/playwright/README.md](../../tests/playwright/README.md)
+- [tests/playwright/helpers/panel-auth.js](../../tests/playwright/helpers/panel-auth.js)
+- [tests/playwright/auth.setup.js](../../tests/playwright/auth.setup.js)
+- [tests/playwright/login-page.anonymous.spec.js](../../tests/playwright/login-page.anonymous.spec.js)
+- [tests/playwright/panel-shell.admin.authenticated.spec.js](../../tests/playwright/panel-shell.admin.authenticated.spec.js)
+- [tests/playwright/panel-shell.user.authenticated.spec.js](../../tests/playwright/panel-shell.user.authenticated.spec.js)
 
-The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task11.audit-input.md](/path/to/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task11.audit-input.md).
+The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task11.audit-input.md](../../.docs/audits/2026-06-27-docker-panel-management-task11.audit-input.md).
 
 ## Source Requirements
 

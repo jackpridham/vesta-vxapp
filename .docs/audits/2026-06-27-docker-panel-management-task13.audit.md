@@ -1,19 +1,19 @@
 ## Audit Scope
 
-This audit validates Task 13 of [.docs/plans/2026-06-27-docker-panel-management.md](/path/to/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed staging deployment evidence, runtime fixes, Playwright validation, and closeout artifacts:
+This audit validates Task 13 of [.docs/plans/2026-06-27-docker-panel-management.md](../../.docs/plans/2026-06-27-docker-panel-management.md) against the landed staging deployment evidence, runtime fixes, Playwright validation, and closeout artifacts:
 
-- [web/inc/vx_docker.php](/path/to/vesta-vxapp/web/inc/vx_docker.php)
-- [web/list/docker/index.php](/path/to/vesta-vxapp/web/list/docker/index.php)
-- [web/templates/docker_list_shared.php](/path/to/vesta-vxapp/web/templates/docker_list_shared.php)
-- [bin/v-sync-docker-container-route](/path/to/vesta-vxapp/bin/v-sync-docker-container-route)
-- [tests/playwright/helpers/panel-auth.js](/path/to/vesta-vxapp/tests/playwright/helpers/panel-auth.js)
-- [tests/playwright/docker-access-control.admin.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/docker-access-control.admin.authenticated.spec.js)
-- [tests/playwright/docker-dashboard.user.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/docker-dashboard.user.authenticated.spec.js)
-- [tests/playwright/docker-modals.user.authenticated.spec.js](/path/to/vesta-vxapp/tests/playwright/docker-modals.user.authenticated.spec.js)
-- [.docs/validation/staging-docker-e2e-closeout.md](/path/to/vesta-vxapp/.docs/validation/staging-docker-e2e-closeout.md)
-- [/path/to/operations-repo/Servers/hypervisor.example.com/staging.example.com/README.md](</path/to/operations-repo/Servers/hypervisor.example.com/staging.example.com/README.md>)
+- [web/inc/vx_docker.php](../../web/inc/vx_docker.php)
+- [web/list/docker/index.php](../../web/list/docker/index.php)
+- [web/templates/docker_list_shared.php](../../web/templates/docker_list_shared.php)
+- [bin/v-sync-docker-container-route](../../bin/v-sync-docker-container-route)
+- [tests/playwright/helpers/panel-auth.js](../../tests/playwright/helpers/panel-auth.js)
+- [tests/playwright/docker-access-control.admin.authenticated.spec.js](../../tests/playwright/docker-access-control.admin.authenticated.spec.js)
+- [tests/playwright/docker-dashboard.user.authenticated.spec.js](../../tests/playwright/docker-dashboard.user.authenticated.spec.js)
+- [tests/playwright/docker-modals.user.authenticated.spec.js](../../tests/playwright/docker-modals.user.authenticated.spec.js)
+- [.docs/validation/staging-docker-e2e-closeout.md](../../.docs/validation/staging-docker-e2e-closeout.md)
+- External operations evidence: `<operations-repo>/Servers/hypervisor.example.com/staging.example.com/README.md`
 
-The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task13.audit-input.md](/path/to/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task13.audit-input.md).
+The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task13.audit-input.md](../../.docs/audits/2026-06-27-docker-panel-management-task13.audit-input.md).
 
 ## Source Requirements
 

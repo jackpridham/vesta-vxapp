@@ -1,20 +1,20 @@
 ## Audit Scope
 
-This audit validates Task 2 of [.docs/plans/2026-06-27-docker-panel-management.md](/path/to/vesta-vxapp/.docs/plans/2026-06-27-docker-panel-management.md) against the landed provisioning and lifecycle files:
+This audit validates Task 2 of [.docs/plans/2026-06-27-docker-panel-management.md](../../.docs/plans/2026-06-27-docker-panel-management.md) against the landed provisioning and lifecycle files:
 
-- [func/vx/docker.sh](/path/to/vesta-vxapp/func/vx/docker.sh)
-- [bin/v-add-docker-container](/path/to/vesta-vxapp/bin/v-add-docker-container)
-- [bin/v-change-docker-container](/path/to/vesta-vxapp/bin/v-change-docker-container)
-- [bin/v-start-docker-container](/path/to/vesta-vxapp/bin/v-start-docker-container)
-- [bin/v-stop-docker-container](/path/to/vesta-vxapp/bin/v-stop-docker-container)
-- [bin/v-restart-docker-container](/path/to/vesta-vxapp/bin/v-restart-docker-container)
-- [bin/v-delete-docker-container](/path/to/vesta-vxapp/bin/v-delete-docker-container)
-- [bin/v-list-docker-container-logs](/path/to/vesta-vxapp/bin/v-list-docker-container-logs)
-- [bin/v-list-docker-container-inspect](/path/to/vesta-vxapp/bin/v-list-docker-container-inspect)
-- [bin/v-sync-docker-container-route](/path/to/vesta-vxapp/bin/v-sync-docker-container-route)
-- [bin/v-rebuild-docker-containers](/path/to/vesta-vxapp/bin/v-rebuild-docker-containers)
+- [func/vx/docker.sh](../../func/vx/docker.sh)
+- [bin/v-add-docker-container](../../bin/v-add-docker-container)
+- [bin/v-change-docker-container](../../bin/v-change-docker-container)
+- [bin/v-start-docker-container](../../bin/v-start-docker-container)
+- [bin/v-stop-docker-container](../../bin/v-stop-docker-container)
+- [bin/v-restart-docker-container](../../bin/v-restart-docker-container)
+- [bin/v-delete-docker-container](../../bin/v-delete-docker-container)
+- [bin/v-list-docker-container-logs](../../bin/v-list-docker-container-logs)
+- [bin/v-list-docker-container-inspect](../../bin/v-list-docker-container-inspect)
+- [bin/v-sync-docker-container-route](../../bin/v-sync-docker-container-route)
+- [bin/v-rebuild-docker-containers](../../bin/v-rebuild-docker-containers)
 
-The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task2.audit-input.md](/path/to/vesta-vxapp/.docs/audits/2026-06-27-docker-panel-management-task2.audit-input.md).
+The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-management-task2.audit-input.md](../../.docs/audits/2026-06-27-docker-panel-management-task2.audit-input.md).
 
 ## Source Requirements
 

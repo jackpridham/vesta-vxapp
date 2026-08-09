@@ -438,7 +438,7 @@ runtime_result=pull-succeeded
 digest_match=true
 ```
 
-The Legacy workload workload was not applied or restarted during registry onboarding.
+The legacy workload was not applied or restarted during registry onboarding.
 It remains revision 1, running, healthy, ready, and drift-matched with image
 `sha256:e274e28000ab05e5a81c3fecae992ef3c06094b0701dfa9e965e8f23de0302fd`.
 Application deployment is now delegated back to the repository-owned adapter,
@@ -462,4 +462,4 @@ owner state and protected credentials were not torn down.
 Consequently, the earlier push/pull result remains historical evidence only.
 Neither client now resolves or trusts the temporary registry endpoint, and
 Legacy workload deployment is blocked until an authorized DNS and TLS endpoint is
-provided. No Legacy workload workload or production workload was changed.
+provided. Neither the legacy workload nor any production workload was changed.
