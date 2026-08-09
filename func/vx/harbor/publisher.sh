@@ -114,10 +114,12 @@ vx_harbor_publisher_rotate_locked() {
 }
 
 vx_harbor_publisher_revoke_locked() {
-    local owner="$1" path="$2" id now json
+    local owner="$1" path="$2" id namespace project_id now json
     vx_harbor_owner_state_validate "$path" || { vx_harbor_failure_audit "$owner" publisher-revocation schema 1; return; }
     id="$(/usr/bin/jq -r '.PUBLISHER_ROBOT_ID' "$path")"
-    [[ "$id" == null ]] || vx_harbor_api_robot_disable "$id" >/dev/null || { vx_harbor_failure_audit "$owner" publisher-revocation outage 75; return; }
+    namespace="$(/usr/bin/jq -r .NAMESPACE "$path")"; project_id="$(/usr/bin/jq -r .PROJECT_ID "$path")"
+    _vx_harbor_owned_robot_delete "$owner" publisher "$namespace" "$project_id" "$id" \
+        || { vx_harbor_failure_audit "$owner" publisher-revocation outage 75; return; }
     now="$(/usr/bin/date -u +%Y-%m-%dT%H:%M:%SZ)"
     json="$(/usr/bin/jq --arg now "$now" '.PUBLISHER_ROBOT_ID=null|.PUBLISHER_USERNAME=null|.PUBLISHER_ENABLED=false|.STATE=(if .RUNTIME_ROBOT_ID==null then "retained" else "publisher-disabled" end)|.UPDATED_AT=$now' "$path")" || return 1
     _vx_harbor_owner_write "$path" "$json" || return 1

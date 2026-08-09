@@ -67,8 +67,39 @@ _vx_harbor_disable_restore() {
     "${VX_HARBOR_SYSTEMCTL:-/usr/bin/systemctl}" reload nginx.service
 }
 
+_vx_harbor_disable_integration_revoke() {
+    local root="$1" active admin stage response username installation robot count id marker result=0
+    active="$root/secrets/integration.curl"; [[ -f "$active" ]] || return 0
+    _vx_harbor_api_credentials_validate "$active" || return 1
+    admin="$root/release/current/secrets/admin"; vx_harbor_secure_regular_file "$admin" 0600 || return 1
+    username="$(_vx_harbor_install_active_username "$active")" || return 1
+    installation="$(/usr/bin/jq -er '.INSTALLATION_ID|select(type=="string" and length>0)' "$root/provider.json")" || return 1
+    stage="$(/usr/bin/mktemp -d "$root/.disable-bootstrap.XXXXXX")" || return 1
+    /usr/bin/mkdir -m 0700 "$stage/secrets" || result=1
+    (( result != 0 )) || /usr/bin/install -o "$(_vx_harbor_authority_uid)" -g "$(_vx_harbor_authority_gid)" -m 0600 "$admin" "$stage/secrets/admin" || result=1
+    response="$stage/integration-robots.json"
+    (( result != 0 )) || _vx_harbor_install_bootstrap_system_robots "$stage" "$response" || result=75
+    if (( result == 0 )); then
+        robot="$(/usr/bin/jq -c --arg username "$username" --arg installation "$installation" \
+          '[.[]|select(.name==$username and (.description|test("^vesta-managed:integration:"+$installation+":v2:[a-f0-9]{32}$")))]' "$response")" || result=1
+        count="$(/usr/bin/jq -r length <<<"$robot")" || result=1
+        [[ "$count" == 1 ]] || result=1
+    fi
+    if (( result == 0 )); then
+        id="$(/usr/bin/jq -er '.[0].id' <<<"$robot")" || result=1
+        marker="$(/usr/bin/jq -er '.[0].description' <<<"$robot")" || result=1
+    fi
+    (( result != 0 )) || _vx_harbor_install_bootstrap_robot_delete_identity "$stage" "$id" "$username" "$marker" || result=75
+    if (( result == 0 )); then
+        /usr/bin/unlink "$active" || result=1
+        (( result != 0 )) || _vx_harbor_fsync "$root/secrets" || result=1
+    fi
+    /usr/bin/find "$stage" -depth -delete 2>/dev/null || :
+    return "$result"
+}
+
 vx_harbor_disable_locked() {
-    local token="$1" root plan now owners operations blockers owner_file publisher runtime provider_source ingress main backup_ingress backup_main was_active=no ingress_existed=no
+    local token="$1" root plan now owners operations blockers owner_file owner namespace project_id publisher runtime provider_source ingress main backup_ingress backup_main was_active=no ingress_existed=no
     [[ "${VX_HARBOR_PROVIDER_LOCK_MODE:-}" == exclusive && "$token" =~ ^[a-f0-9]{32}$ ]] || return 1
     root="$(vx_harbor_root)"; plan="$root/operations/provider-disable.json"; vx_harbor_secure_regular_file "$plan" 0600 || return 1
     now="$(/usr/bin/date -u +%s)"
@@ -83,14 +114,17 @@ vx_harbor_disable_locked() {
     /usr/bin/jq -e --arg token "$token" --argjson now "$now" '.TOKEN==$token and .EXPIRES_AT >= $now and .MODE=="managed"' "$plan" >/dev/null || return 1
     for owner_file in "$root"/owners/*.json; do
         [[ -f "$owner_file" ]] || continue; vx_harbor_owner_state_validate "$owner_file" || return 1
+        owner="$(/usr/bin/jq -r .OWNER "$owner_file")"; namespace="$(/usr/bin/jq -r .NAMESPACE "$owner_file")"; project_id="$(/usr/bin/jq -r .PROJECT_ID "$owner_file")"
         publisher="$(/usr/bin/jq -r '.PUBLISHER_ROBOT_ID // empty' "$owner_file")"
-        [[ -z "$publisher" ]] || vx_harbor_api_robot_disable "$publisher" >/dev/null || return 75
+        [[ -z "$publisher" ]] || _vx_harbor_owned_robot_delete "$owner" publisher "$namespace" "$project_id" "$publisher" || return 75
     done
     for owner_file in "$root"/owners/*.json; do
         [[ -f "$owner_file" ]] || continue
+        owner="$(/usr/bin/jq -r .OWNER "$owner_file")"; namespace="$(/usr/bin/jq -r .NAMESPACE "$owner_file")"; project_id="$(/usr/bin/jq -r .PROJECT_ID "$owner_file")"
         runtime="$(/usr/bin/jq -r '.RUNTIME_ROBOT_ID // empty' "$owner_file")"
-        [[ -z "$runtime" ]] || vx_harbor_api_robot_disable "$runtime" >/dev/null || return 75
+        [[ -z "$runtime" ]] || _vx_harbor_owned_robot_delete "$owner" runtime "$namespace" "$project_id" "$runtime" || return 75
     done
+    _vx_harbor_disable_integration_revoke "$root" || return $?
     ingress="$(vx_harbor_ingress_target)"; main="$(vx_harbor_nginx_main)"; backup_ingress="$(/usr/bin/mktemp "$root/.disable-ingress.XXXXXX")" || return 1; backup_main="$(/usr/bin/mktemp "$root/.disable-main.XXXXXX")" || { /usr/bin/rm -f "$backup_ingress"; return 1; }
     if [[ -f "$ingress" && ! -L "$ingress" ]]; then ingress_existed=yes; /usr/bin/cp -p "$ingress" "$backup_ingress" || return 1; else : >"$backup_ingress"; fi
     [[ -f "$main" && ! -L "$main" ]] && /usr/bin/cp -p "$main" "$backup_main" || { /usr/bin/rm -f "$backup_ingress" "$backup_main"; return 1; }

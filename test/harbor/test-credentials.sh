@@ -65,7 +65,7 @@ vx_harbor_runtime_rotate crashswitch vx-crashswitch 7 https://panel.example:8083
 jq -e '.PHASE=="converged"' "$journal" >/dev/null
 ! grep -Fq "$runtime_secret" "$(vx_harbor_root)/audit.log" || fail 'runtime secret entered audit'
 
-prepare_owner revokeaudit; vx_harbor_api_robot_disable(){ return 1; }
-! vx_harbor_runtime_revoke revokeaudit https://panel.example:8083 99
+prepare_owner revokeaudit; vx_harbor_api_project_robots_list(){ return 75; }
+! vx_harbor_runtime_revoke revokeaudit https://panel.example:8083 vx-revokeaudit 7 99
 jq -e 'select(.OPERATION=="runtime-revocation" and .RESULT=="failed" and .REASON=="outage")' "$(vx_harbor_root)/audit.log" >/dev/null || fail 'runtime revocation failure was not audited'
 printf 'PASS: generated runtime credential rotation recovery\n'

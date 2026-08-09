@@ -73,10 +73,13 @@ _vx_harbor_runtime_candidate_read() {
 
 _vx_harbor_owned_robot_delete() {
     local owner="$1" kind="$2" namespace="$3" project_id="$4" robot_id="$5"
-    local robots robot marker
+    local robots robot marker result
     [[ "$robot_id" == null || -z "$robot_id" ]] && return 0
     robots="$(vx_harbor_api_project_robots_list "$project_id")" || return
-    robot="$(/usr/bin/jq -ce --argjson id "$robot_id" '[.[]|select(.id==$id)]|if length==1 then .[0] else empty end' <<<"$robots")" || return 1
+    result="$(/usr/bin/jq -r --argjson id "$robot_id" '[.[]|select(.id==$id)]|length' <<<"$robots")" || return 1
+    [[ "$result" == 0 ]] && return 0
+    [[ "$result" == 1 ]] || return 1
+    robot="$(/usr/bin/jq -ce --argjson id "$robot_id" '.[]|select(.id==$id)' <<<"$robots")" || return 1
     /usr/bin/jq -e --arg owner "$owner" --arg kind "$kind" --arg namespace "$namespace" '
       .level=="project"
       and (.description|test("^vesta-managed:vesta-harbor:"+$owner+":"+$kind+":[a-f0-9]{32}$"))
@@ -209,8 +212,9 @@ vx_harbor_runtime_rotate() {
 }
 
 vx_harbor_runtime_revoke() {
-    local owner="$1" origin="$2" id="$3" root host temporary
-    [[ "$id" == null || -z "$id" ]] || vx_harbor_api_robot_disable "$id" >/dev/null || { vx_harbor_failure_audit "$owner" runtime-revocation outage 75; return; }
+    local owner="$1" origin="$2" namespace="$3" project_id="$4" id="$5" root host temporary
+    _vx_harbor_owned_robot_delete "$owner" runtime "$namespace" "$project_id" "$id" \
+        || { vx_harbor_failure_audit "$owner" runtime-revocation outage 75; return; }
     root="$(vx_compose_registry_root "$owner")"; host="${origin#https://}"
     [[ -d "$root" ]] || return 0
     for file in config.json registries.json; do

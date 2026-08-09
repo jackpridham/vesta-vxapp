@@ -2,6 +2,17 @@
 
 VX_HARBOR_OBSERVATION_MAX_BYTES=1048576
 
+_vx_harbor_health_robot_ready() {
+    local owner="$1" kind="$2" owner_file="$3" robot_id="$4" rotation project_id marker
+    [[ "$robot_id" =~ ^[1-9][0-9]*$ ]] || return 1
+    rotation="$(vx_harbor_rotation_path "$owner" "$kind")"
+    vx_harbor_rotation_validate "$rotation" || return 1
+    project_id="$(/usr/bin/jq -r .PROJECT_ID "$owner_file")"; marker="$(/usr/bin/jq -r .DESCRIPTION "$rotation")"
+    /usr/bin/jq -e --argjson id "$robot_id" --argjson project "$project_id" \
+      '.PHASE=="converged" and .NEW_ROBOT_ID==$id and .PROJECT_ID==$project' "$rotation" >/dev/null \
+      && vx_harbor_api_project_robot_get "$project_id" "$robot_id" "$marker" >/dev/null
+}
+
 _vx_harbor_certificate_observe() {
     local certificate="${VX_HARBOR_CERTIFICATE:-$VESTA/ssl/certificate.crt}" hostname expiry names now
     vx_harbor_secure_regular_file "$certificate" 0600 || return 1
@@ -38,8 +49,8 @@ vx_harbor_health_observe_locked() {
         [[ "$used_bytes" =~ ^[0-9]+$ ]] || used_bytes=0
         runtime_id="$(/usr/bin/jq -r '.RUNTIME_ROBOT_ID // empty' "$owner_file")"; publisher_id="$(/usr/bin/jq -r '.PUBLISHER_ROBOT_ID // empty' "$owner_file")"
         runtime_ready=false; publisher_ready=false
-        [[ -n "$runtime_id" ]] && vx_harbor_api_robot_get "$runtime_id" >/dev/null 2>&1 && runtime_ready=true
-        [[ -n "$publisher_id" && "$(/usr/bin/jq -r .PUBLISHER_ENABLED "$owner_file")" == true ]] && vx_harbor_api_robot_get "$publisher_id" >/dev/null 2>&1 && publisher_ready=true
+        [[ -n "$runtime_id" ]] && _vx_harbor_health_robot_ready "$owner" runtime "$owner_file" "$runtime_id" >/dev/null 2>&1 && runtime_ready=true
+        [[ -n "$publisher_id" && "$(/usr/bin/jq -r .PUBLISHER_ENABLED "$owner_file")" == true ]] && _vx_harbor_health_robot_ready "$owner" publisher "$owner_file" "$publisher_id" >/dev/null 2>&1 && publisher_ready=true
         owner_json="$(/usr/bin/jq -c --argjson used "$(((used_bytes + 1048575) / 1048576))" --argjson runtime "$runtime_ready" --argjson publisher "$publisher_ready" '{OWNER,QUOTA_MB,STATE,USED_MB:$used,CREDENTIAL_READY:$runtime,PUBLISHER_READY:$publisher}' "$owner_file")"
         owners="$(/usr/bin/jq -c --argjson item "$owner_json" '.+[$item]' <<<"$owners")"
         owner_source="$(/usr/bin/mktemp "$root/observations/.owner.XXXXXX")" || return 1

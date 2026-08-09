@@ -89,14 +89,16 @@ vx_harbor_tombstone_lock_release() {
 }
 
 vx_harbor_tombstone_reconcile_locked() {
-    local owner="$1" path phase publisher runtime json now
+    local owner="$1" path phase publisher runtime json now owner_path namespace project_id
     path="$(vx_harbor_tombstone_path "$owner")"; vx_harbor_tombstone_validate "$path" || return 1
     phase="$(/usr/bin/jq -r .PHASE "$path")"; publisher="$(/usr/bin/jq -r .PUBLISHER_ROBOT_ID "$path")"; runtime="$(/usr/bin/jq -r .RUNTIME_ROBOT_ID "$path")"
+    namespace="$(/usr/bin/jq -r .NAMESPACE "$path")"; owner_path="$(vx_harbor_owner_state_path "$owner")"
+    vx_harbor_owner_state_validate "$owner_path" || return 1; project_id="$(/usr/bin/jq -r .PROJECT_ID "$owner_path")"
     if [[ "$phase" == publisher ]]; then
-        [[ "$publisher" == null ]] || vx_harbor_api_robot_disable "$publisher" >/dev/null || return 75
+        _vx_harbor_owned_robot_delete "$owner" publisher "$namespace" "$project_id" "$publisher" || return 75
         now="$(/usr/bin/date -u +%Y-%m-%dT%H:%M:%SZ)"; json="$(/usr/bin/jq --arg now "$now" '.PHASE="runtime"|.UPDATED_AT=$now' "$path")"; _vx_harbor_tombstone_write "$owner" "$json" || return 1
     fi
-    [[ "$runtime" == null ]] || vx_harbor_api_robot_disable "$runtime" >/dev/null || return 75
+    _vx_harbor_owned_robot_delete "$owner" runtime "$namespace" "$project_id" "$runtime" || return 75
     /usr/bin/rm -f -- "$path"; _vx_harbor_fsync "$(vx_harbor_root)/tombstones"
 }
 
@@ -129,7 +131,7 @@ vx_harbor_owner_reconcile_locked() {
         [[ -f "$path" ]] || return 0
         vx_harbor_owner_state_validate "$path" || return 1
         vx_harbor_publisher_revoke_locked "$owner" "$path" || return 1
-        vx_harbor_runtime_revoke "$owner" "$(/usr/bin/jq -r '.ORIGIN' "$(vx_harbor_root)/provider.json")" "$(/usr/bin/jq -r '.RUNTIME_ROBOT_ID' "$path")" || return 1
+        vx_harbor_runtime_revoke "$owner" "$(/usr/bin/jq -r '.ORIGIN' "$(vx_harbor_root)/provider.json")" "$namespace" "$(/usr/bin/jq -r .PROJECT_ID "$path")" "$(/usr/bin/jq -r '.RUNTIME_ROBOT_ID' "$path")" || return 1
         now="$(/usr/bin/date -u +%Y-%m-%dT%H:%M:%SZ)"; state_json="$(/usr/bin/jq --arg now "$now" '.STATE="retained"|.RUNTIME_ROBOT_ID=null|.RUNTIME_USERNAME=null|.PUBLISHER_ROBOT_ID=null|.PUBLISHER_USERNAME=null|.PUBLISHER_ENABLED=false|.UPDATED_AT=$now' "$path")"; _vx_harbor_owner_write "$path" "$state_json"; return
     fi
     if vx_harbor_api_health >/dev/null; then
@@ -199,7 +201,7 @@ vx_harbor_owner_revoke() {
     if [[ -z "${result:-}" ]]; then
         origin="$(/usr/bin/jq -r '.ORIGIN' "$(vx_harbor_root)/provider.json")"; runtime="$(/usr/bin/jq -r '.RUNTIME_ROBOT_ID' "$path")"
         if vx_harbor_publisher_revoke_locked "$owner" "$path"; then
-            vx_harbor_runtime_revoke "$owner" "$origin" "$runtime" || result=1
+            vx_harbor_runtime_revoke "$owner" "$origin" "$(/usr/bin/jq -r .NAMESPACE "$path")" "$(/usr/bin/jq -r .PROJECT_ID "$path")" "$runtime" || result=1
         else
             result=1
         fi
