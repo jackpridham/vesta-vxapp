@@ -46,6 +46,7 @@ vx_harbor_namespace_collision_check() {
         vx_harbor_owner_state_validate "$file" || return 1
         /usr/bin/jq -e --arg owner "$owner" --arg namespace "$namespace" '.OWNER!=$owner and .NAMESPACE==$namespace' "$file" >/dev/null && return 1
     done
+    return 0
 }
 
 _vx_harbor_owner_project_validate() {

@@ -15,6 +15,8 @@ now_epoch="$(date -u +%s)"; now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"; operation="$(v
 jq -n --argjson now "$now_epoch" '{SCHEMA:1,OPERATION_ID:"0123456789abcdef0123456789abcdef",OWNER:"alice",DESIRED_PACKAGE:"docker",DESIRED_REGISTRY_MB:"100",STATE:"pending",ATTEMPTS:0,LAST_ERROR:null,CREATED_AT:$now,UPDATED_AT:$now}' >"$source_file"; vx_harbor_json_write_atomic "$operation" "$source_file"; rm -f "$source_file"
 source_file="$(mktemp "$(vx_harbor_root)/observations/.obs.XXXXXX")"; jq -n --arg now "$now" '{SCHEMA:1,USED_MB:5,OBSERVED_AT:$now,GENERATION:"generation-1"}' >"$source_file"; vx_harbor_json_write_atomic "$(vx_harbor_root)/observations/alice.json" "$source_file"; rm -f "$source_file"
 owner_path="$(vx_harbor_owner_state_path alice)"; source_file="$(mktemp "$(vx_harbor_root)/owners/.owner.XXXXXX")"; jq -n --arg now "$now" '{SCHEMA:1,OWNER:"alice",NAMESPACE:"vx-alice",PROJECT_ID:7,QUOTA_ID:9,QUOTA_MB:100,STATE:"runtime-ready",RUNTIME_ROBOT_ID:11,RUNTIME_USERNAME:"runtime",PUBLISHER_ROBOT_ID:null,PUBLISHER_USERNAME:null,PUBLISHER_ENABLED:false,LAST_ERROR:null,UPDATED_AT:$now}' >"$source_file"; vx_harbor_json_write_atomic "$owner_path" "$source_file"; rm -f "$source_file"
+vx_harbor_namespace_collision_check alice vx-alice \
+  || fail 'owner namespace collided with its own persisted mapping'
 quota_record="$HARBOR_TEST_ROOT/quota"; vx_harbor_api_quota_set_bytes(){ printf '%s\t%s\n' "$1" "$2" >"$quota_record"; }; vx_compose_shell_access_transition_complete(){ return 0; }
 vx_harbor_package_transition_recover alice
 [[ "$(cat "$quota_record")" == $'9\t104857600' ]]; jq -e '.STATE=="converged"' "$operation" >/dev/null
