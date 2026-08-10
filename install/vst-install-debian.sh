@@ -1556,11 +1556,13 @@ fi
 if [ "$dovecot" = 'yes' ]; then
     echo "=== Configure Dovecot"
     gpasswd -a dovecot mail
-    if [ "$release" -lt 13 ]; then
-        cp -rf $vestacp/dovecot /etc/
-        cp -f $vestacp/logrotate/dovecot /etc/logrotate.d/
-        chown -R root:root /etc/dovecot*
+    if [ "$release" -eq 13 ] && [ -d /etc/dovecot/conf.d ]; then
+        find /etc/dovecot/conf.d -mindepth 1 -maxdepth 1 -type f \
+            \( -name '*.conf' -o -name '*.conf.ext' \) -delete
     fi
+    cp -rf $vestacp/dovecot /etc/
+    cp -f $vestacp/logrotate/dovecot /etc/logrotate.d/
+    chown -R root:root /etc/dovecot*
     # update-rc.d dovecot defaults
     currentservice='dovecot'
     ensure_startup $currentservice
