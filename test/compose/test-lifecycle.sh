@@ -405,7 +405,8 @@ printf '{"services":{}}\n' >"$candidate_remove/canonical.json"
 printf '{}\n' >"$candidate_remove/images.json"
 : >"$candidate_remove/variables.env"
 restart_count_before="$(grep -c '^ARG=restart$' "$docker_log" || :)"
-if VX_COMPOSE_INVOKE_CANONICAL_OVERRIDE="$candidate_remove/canonical.json" \
+if VX_COMPOSE_RUNTIME_PREFLIGHT_CANDIDATE=yes \
+    VX_COMPOSE_INVOKE_CANONICAL_OVERRIDE="$candidate_remove/canonical.json" \
     VX_COMPOSE_INVOKE_IMAGES_OVERRIDE="$candidate_remove/images.json" \
     VX_COMPOSE_INVOKE_REVISION_OVERRIDE=2 \
     VX_COMPOSE_INVOKE_ENV_OVERRIDE="$candidate_remove/variables.env" \

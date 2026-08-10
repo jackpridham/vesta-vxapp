@@ -414,20 +414,11 @@ vx_compose_run_lifecycle() {
         vx_compose_lock_release
         return 1
     fi
-    if [[ "${VX_COMPOSE_RUNTIME_PREFLIGHT_CANDIDATE:-no}" == yes ]]; then
-        runtime_identity="$(
-            vx_compose_runtime_identity_preflight \
-                "$owner" "$project" "$canonical" \
-                "${VX_COMPOSE_INVOKE_IMAGES_OVERRIDE:-$active_images}" \
-                "${VX_COMPOSE_INVOKE_REVISION_OVERRIDE:-$active_revision}"
-        )" || runtime_identity=
-    else
-        runtime_identity="$(
-            vx_compose_runtime_identity_preflight \
-                "$owner" "$project" "$active_canonical" \
-                "$active_images" "$active_revision"
-        )" || runtime_identity=
-    fi
+    runtime_identity="$(
+        vx_compose_runtime_identity_preflight \
+            "$owner" "$project" "$active_canonical" \
+            "$active_images" "$active_revision"
+    )" || runtime_identity=
     if [[ -z "$runtime_identity" ]]; then
         [[ "$quota_locked" != yes ]] || vx_compose_owner_quota_lock_release
         [[ "$ports_locked" != yes ]] || vx_compose_ports_lock_release
