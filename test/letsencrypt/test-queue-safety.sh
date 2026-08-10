@@ -25,6 +25,10 @@ install -d \
     "$test_root/data/queue"
 install -m 0755 "$repo_root/bin/v-update-sys-queue" \
     "$test_root/bin/v-update-sys-queue"
+# The live profile intentionally pins VESTA to /usr/local/vesta. Keep the
+# copied command inside this isolated fixture instead.
+sed -i 's|^source /etc/profile$|: # profile bypassed by isolated test fixture|' \
+    "$test_root/bin/v-update-sys-queue"
 
 cat >"$test_root/func/main.sh" <<'EOF'
 check_args() {
