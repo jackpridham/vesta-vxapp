@@ -17,6 +17,7 @@ grep -q 'pg_isready' "$HARBOR_REPO_ROOT/func/vx/harbor/install.sh" || fail 'data
 grep -q 'for attempt in {1..30}' "$HARBOR_REPO_ROOT/func/vx/harbor/install.sh" || fail 'bounded startup retries missing'
 grep -q -- 'down --remove-orphans' "$HARBOR_REPO_ROOT/func/vx/harbor/install.sh" || fail 'failed candidate cleanup missing'
 grep -q '/api/v2.0/health' "$HARBOR_REPO_ROOT/func/vx/harbor/install.sh" || fail 'bounded Harbor health check missing'
+grep -q 'vx_harbor_health_observe_locked' "$HARBOR_REPO_ROOT/bin/v-list-user-harbor-registry" || fail 'tenant registry discovery does not refresh bounded health'
 grep -q '/usr/bin/age' "$HARBOR_REPO_ROOT/func/vx/harbor/install.sh" || fail 'fixed age prerequisite missing'
 grep -q '/usr/bin/age-keygen' "$HARBOR_REPO_ROOT/func/vx/harbor/install.sh" || fail 'fixed age-keygen prerequisite missing'
 grep -q -- '--config -' "$HARBOR_REPO_ROOT/func/vx/harbor/api.sh" || fail 'credential probe does not stream curl config'

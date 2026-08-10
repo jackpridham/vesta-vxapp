@@ -459,6 +459,7 @@ EOF
 cat >/usr/local/vesta/func/vx/harbor/main.sh <<EOF
 vx_harbor_provider_lock_acquire(){ :; }; vx_harbor_provider_lock_release(){ :; }
 vx_harbor_owner_is_eligible(){ grep -q "DOCKER_PROJECTS='2'" /usr/local/vesta/data/users/\$1/user.conf; }
+vx_harbor_health_observe_locked(){ :; }
 vx_harbor_registry_info_json(){ printf '%s\n' '{"MANAGED":true,"STATE":"ready","REGISTRY":"registry.example","NAMESPACE":"vx-alice","REPOSITORY":"registry.example/vx-alice/app","PUBLISHER_USERNAME":null,"PUBLISHER_ENABLED":false,"QUOTA_MB":100,"USED_MB":0,"HEALTH":"healthy","OBSERVED_AT":null,"FRESHNESS":"unavailable"}'; }
 vx_harbor_publisher_rotate_locked(){ wc -c >/dev/null; printf '%s\n' changed >>'$fixture/real-adapter.log'; printf '%s\n' '-----BEGIN AGE ENCRYPTED FILE-----' 'fixture-ciphertext' '-----END AGE ENCRYPTED FILE-----'; }
 vx_harbor_publisher_revoke_locked(){ printf '%s\n' disabled >>'$fixture/real-adapter.log'; }

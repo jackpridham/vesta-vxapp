@@ -15,5 +15,6 @@ vx_harbor_provider_lock_acquire shared; check_result $? 'Harbor provider lock fa
 trap 'vx_compose_registry_lock_release; vx_compose_shell_access_lock_release; vx_harbor_provider_lock_release' EXIT
 vx_harbor_owner_is_eligible "$user"; check_result $? 'Owner is not registry eligible'
 vx_compose_require_profile "$user" "$project" standard; check_result $? 'Standard project required'
+vx_harbor_health_observe_locked >/dev/null; check_result $? 'Registry health refresh unavailable'
 result="$(vx_harbor_registry_info_json "$user" "$project")"; check_result $? 'Registry discovery unavailable'
 if [[ "$format" == json ]]; then /usr/bin/jq -cS . <<<"$result"; else /usr/bin/jq -r '[.MANAGED,.STATE,(.REGISTRY//""),(.NAMESPACE//""),(.REPOSITORY//""),(.PUBLISHER_USERNAME//""),.PUBLISHER_ENABLED,(.QUOTA_MB|tostring),(.USED_MB|tostring),.HEALTH,(.OBSERVED_AT//""),.FRESHNESS]|@tsv' <<<"$result"; fi
