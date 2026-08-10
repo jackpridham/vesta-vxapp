@@ -58,10 +58,13 @@ grep -Fqx '    maxsize 50M' "$reference_logrotate"
 grep -Fqx '    compress' "$reference_logrotate"
 grep -Fqx '    delaycompress' "$reference_logrotate"
 
-while IFS= read -r logrotate_file; do
+for logrotate_file in \
+    "$repo_root"/install/debian/{7,8,9,10,11,12,13}/logrotate/vesta \
+    "$repo_root"/install/ubuntu/{12.04,12.10,13.04,13.10,14.04,14.10}/logrotate/vesta \
+    "$repo_root"/install/ubuntu/{15.04,15.10,16.04,16.10,17.04,17.10}/logrotate/vesta \
+    "$repo_root"/install/ubuntu/{18.04,18.10}/logrotate/vesta \
+    "$repo_root"/install/rhel/{5,6,7}/logrotate/vesta; do
     cmp -s "$reference_logrotate" "$logrotate_file"
-done < <(find \
-    "$repo_root/install/debian" "$repo_root/install/ubuntu" \
-    "$repo_root/install/rhel" -path '*/logrotate/vesta' -type f -print)
+done
 
 printf 'Let\x27s Encrypt queue safety tests passed.\n'
