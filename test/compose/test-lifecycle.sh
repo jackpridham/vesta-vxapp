@@ -578,15 +578,16 @@ jq -e '
 ' <<<"$inspect_json" >/dev/null \
     || fail "inspect output omitted the safe service/revision summary"
 
-# Bundle-managed canonical runtime definitions use immutable IDs, while
-# refresh must inspect the accepted tag reference and reject a moved tag.
+# Managed canonical definitions retain protected secret authority paths while
+# runtime invocations use container-readable copies and immutable image IDs.
+# Refresh must inspect the accepted tag reference and reject a moved tag.
 project_root="$(vx_compose_project_root alice web)"
 revision_root="$project_root/revisions/000001"
 image_id="sha256:fefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefefe"
 for canonical_path in \
     "$project_root/runtime/canonical.json" "$revision_root/canonical.json"; do
     jq --arg id "$image_id" \
-        --arg source "$project_root/runtime/workload-secrets/current/credential" '
+        --arg source "$project_root/secrets/credential" '
         .services.web.image=$id
         | .services.web.secrets=[{source:"credential",target:"/run/secrets/credential"}]
         | .services.worker=.services.web
@@ -625,6 +626,26 @@ runtime_secret="$project_root/runtime/workload-secrets/current/credential"
     && "$(stat -c '%a' "$project_root/secrets/credential")" == 600 \
     && "$(stat -c '%a' "$runtime_secret")" == 444 ]] \
     || fail 'deploy did not materialize its protected runtime secret copy'
+
+# Generic preview/apply revisions have no workload manifest. They derive the
+# same bounded runtime copy set from their validated canonical secret names.
+mv "$project_root/workload.json" "$test_root/workload.held"
+printf 'generic-secret\n' >"$project_root/secrets/credential"
+chmod 0600 "$project_root/secrets/credential"
+unset VX_COMPOSE_RUNTIME_SECRETS_REFRESHED
+vx_compose_runtime_secrets_materialize alice web \
+    || fail 'generic managed secrets were not materialized'
+[[ "$(<"$runtime_secret")" == generic-secret \
+    && "$(stat -c '%a' "$runtime_secret")" == 444 \
+    && "${VX_COMPOSE_RUNTIME_SECRETS_REFRESHED:-no}" == yes \
+    && -z "$(find "$project_root/runtime" -maxdepth 1 \
+        -name '.managed-secrets.*' -print -quit)" ]] \
+    || fail 'generic managed secret runtime authority is incorrect'
+mv "$test_root/workload.held" "$project_root/workload.json"
+printf 'lifecycle-secret\n' >"$project_root/secrets/credential"
+chmod 0600 "$project_root/secrets/credential"
+vx_compose_runtime_secrets_materialize alice web \
+    || fail 'workload secret authority was not restored'
 vx_compose_drift_observe_json alice web | jq -e '
     .MATCH == true
     and .DESIRED[0].MOUNTS[0].READ_ONLY == true

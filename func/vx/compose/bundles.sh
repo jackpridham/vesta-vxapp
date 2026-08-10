@@ -257,7 +257,8 @@ vx_compose_current_workload_image_approval_require() {
 }
 
 vx_compose_runtime_secrets_materialize() {
-    local owner="$1" project="$2" root workload authority_root canonical runtime_root
+    local owner="$1" project="$2" root workload authority_root canonical
+    local generated_workload=''
     local materialize_status=0
     root="$(vx_compose_project_root "$owner" "$project")"
     workload="${VX_COMPOSE_WORKLOAD_OVERRIDE:-$root/workload.json}"
@@ -265,24 +266,34 @@ vx_compose_runtime_secrets_materialize() {
     if [[ ! -e "$workload"
         && ! -e "$authority_root/workload-evidence.json"
         && ! -e "$authority_root/workload-manifest.sha256" ]]; then
-        env -i PATH="$VX_COMPOSE_SAFE_PATH" /usr/bin/python3 \
-            "$VX_COMPOSE_LIB_DIR/runtime-secrets.py" clear "$root" \
-            || return 1
         canonical="${VX_COMPOSE_INVOKE_CANONICAL_OVERRIDE:-$root/runtime/canonical.json}"
-        runtime_root="$root/runtime/workload-secrets/current/"
-        if [[ -f "$canonical" && ! -L "$canonical" ]] \
-            && jq -e --arg root "$runtime_root" '
-                any((.secrets // {})[]?; (.file // "") | startswith($root))
-            ' "$canonical" >/dev/null; then
-            vx_compose_error 'runtime secret paths require workload authority'
+        [[ -f "$canonical" && ! -L "$canonical" ]] || return 1
+        if jq -e '((.secrets // {}) | length) == 0' \
+            "$canonical" >/dev/null; then
+            env -i PATH="$VX_COMPOSE_SAFE_PATH" /usr/bin/python3 \
+                "$VX_COMPOSE_LIB_DIR/runtime-secrets.py" clear "$root" \
+                || return 1
+            return 0
+        fi
+        generated_workload="$(mktemp \
+            "$root/runtime/.managed-secrets.XXXXXX")" || return 1
+        if ! jq -S '{secrets: [
+                ((.secrets // {}) | keys[]) as $name | {name: $name}
+            ]}' "$canonical" >"$generated_workload" \
+            || ! chmod 0600 "$generated_workload"; then
+            rm -f -- "$generated_workload"
             return 1
         fi
-        return 0
+        workload="$generated_workload"
     fi
-    [[ -f "$workload" && ! -L "$workload" ]] || return 1
+    if [[ ! -f "$workload" || -L "$workload" ]]; then
+        [[ -z "$generated_workload" ]] || rm -f -- "$generated_workload"
+        return 1
+    fi
     env -i PATH="$VX_COMPOSE_SAFE_PATH" /usr/bin/python3 \
         "$VX_COMPOSE_LIB_DIR/runtime-secrets.py" "$root" "$workload" \
         || materialize_status=$?
+    [[ -z "$generated_workload" ]] || rm -f -- "$generated_workload"
     # The refresh flag is consumed by lifecycle.sh after this helper returns.
     # shellcheck disable=SC2034
     case "$materialize_status" in

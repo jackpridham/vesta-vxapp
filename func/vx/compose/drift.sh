@@ -66,6 +66,7 @@ vx_compose_drift_observe_json() {
     evidence="$(jq -S -n \
         --arg owner "$owner" --arg project "$project" \
         --arg runtime "$runtime" --arg desired_state "$desired_state" \
+        --arg runtime_secret_root "$root/runtime/workload-secrets/current" \
         --arg workload_current "$workload_current" \
         --arg workload_revision "$workload_revision" \
         --arg workload_evidence_current "$workload_evidence_current" \
@@ -93,10 +94,10 @@ vx_compose_drift_observe_json() {
                 end]
             + [($service.secrets // [])[] |
                 if type=="string" then
-                    {SOURCE:($root.secrets[.].file//""),
+                    {SOURCE:($runtime_secret_root+"/"+.),
                      TARGET:("/run/secrets/"+.),READ_ONLY:true}
                 else
-                    {SOURCE:($root.secrets[.source].file//""),
+                    {SOURCE:($runtime_secret_root+"/"+.source),
                      TARGET:(.target//("/run/secrets/"+.source)),READ_ONLY:true}
                 end]) | sort_by(.TARGET,.SOURCE);
         def ports($service):

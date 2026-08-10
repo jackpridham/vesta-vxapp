@@ -22,6 +22,8 @@ vx_compose_runtime_definition_prepare() {
         --arg owner "$owner" \
         --arg project "$project" \
         --arg revision "$revision" \
+        --arg secret_root "$(vx_compose_project_root \
+            "$owner" "$project")/runtime/workload-secrets/current" \
         --slurpfile images "$images" '
         .services |= with_entries(
             .key as $service
@@ -37,6 +39,11 @@ vx_compose_runtime_definition_prepare() {
                 }
             )
         )
+        | if ((.secrets // {}) | length) > 0 then
+            .secrets |= with_entries(
+                .key as $name | .value.file = ($secret_root + "/" + $name)
+            )
+          else . end
     ' "$canonical" >"$output_file"
 }
 
@@ -108,7 +115,7 @@ vx_compose_runtime_identity_preflight() {
                     | ([($canonical[0].services[$service].secrets // [])[]
                         | . as $secret
                         | ($secret.source // $secret) as $name
-                        | {SOURCE:$canonical[0].secrets[$name].file,
+                        | {SOURCE:($root+"/runtime/workload-secrets/current/"+$name),
                            TARGET:($secret.target // ("/run/secrets/"+$name)),
                            READ_ONLY:true}] | sort_by(.TARGET,.SOURCE)) as $desired
                     | $desired
