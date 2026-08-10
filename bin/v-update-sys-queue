@@ -34,29 +34,28 @@ PATH=$PATH:$BIN
 check_args '1' "$#" 'QUEUE'
 
 
+case $queue in
+    restart|webstats|backup|disk|traffic|dns-cluster|letsencrypt) ;;
+    *)              check_args '1' '0' 'QUEUE' ;;
+esac
+
+
 #----------------------------------------------------------#
 #                       Action                             #
 #----------------------------------------------------------#
 
-b_task=$(ps auxf |grep -v "grep" |grep "$VESTA/bin/v-update-sys-queue backup")
-b_task=$(echo "$b_task" |grep -v sudo |wc -l)
-d_task=$(ps auxf |grep -v "grep" |grep "$VESTA/bin/v-update-sys-queue dns")
-d_task=$(echo "$d_task" |grep -v sudo |wc -l)
-if [ "$b_task" -gt 2 ] || [ "$d_task" -gt 2 ]; then
+# Serialize each queue. A slow queue must never overlap with the next cron
+# invocation and replay the same pending work concurrently.
+queue_file="$VESTA/data/queue/$queue.pipe"
+lock_file="$VESTA/data/queue/$queue.lock"
+touch "$lock_file"
+chmod 600 "$lock_file"
+exec 9>"$lock_file"
+if ! flock -n 9; then
     exit
 fi
 
-# Defining pipe functions
-case $queue in
-    restart)        bash $VESTA/data/queue/$queue.pipe > /dev/null 2>&1;;
-    webstats)       bash $VESTA/data/queue/$queue.pipe > /dev/null 2>&1 ;;
-    backup)         bash $VESTA/data/queue/$queue.pipe > /dev/null 2>&1 ;;
-    disk)           bash $VESTA/data/queue/$queue.pipe > /dev/null 2>&1;;
-    traffic)        bash $VESTA/data/queue/$queue.pipe > /dev/null 2>&1;;
-    dns-cluster)    bash $VESTA/data/queue/$queue.pipe > /dev/null 2>&1 ;;
-    letsencrypt)    bash $VESTA/data/queue/$queue.pipe > /dev/null 2>&1 ;;
-    *)              check_args '1' '0' 'QUEUE' ;;
-esac
+bash "$queue_file" > /dev/null 2>&1
 
 if [ "$queue" = "disk" ]; then
     if [ ! -d "/usr/local/vesta/data/df" ]; then

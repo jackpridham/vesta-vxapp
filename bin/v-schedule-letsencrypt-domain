@@ -44,6 +44,15 @@ if [ -z "$aliases" ]; then
     aliases="$ALIAS"
 fi
 
+# Public CAs cannot issue certificates for reserved test names. Reject them
+# before they can become permanent queue entries.
+while IFS= read -r acme_name; do
+    [ -z "$acme_name" ] && continue
+    if is_acme_name_reserved "$acme_name"; then
+        check_result "$E_INVALID" "reserved domain $acme_name cannot use Let's Encrypt"
+    fi
+done < <(printf '%s\n' "$domain,$aliases" | tr ',' '\n')
+
 # Adding cronjob scheduler for LE
 $BIN/v-add-cron-letsencrypt-job
 

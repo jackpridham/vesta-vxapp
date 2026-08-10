@@ -6,6 +6,26 @@ if [ -f "$VESTA/func/vx/proxy.sh" ]; then
     source "$VESTA/func/vx/proxy.sh"
 fi
 
+# Check whether a DNS name is reserved and cannot receive a public ACME
+# certificate. RFC 2606/6761 names are useful for tests, but repeatedly
+# submitting them to a public CA creates a permanent retry queue.
+is_acme_name_reserved() {
+    local name
+
+    name=$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')
+    name=${name#\*.}
+
+    case "$name" in
+        localhost|*.localhost|test|*.test|example|*.example|invalid|*.invalid|\
+        example.com|*.example.com|example.net|*.example.net|\
+        example.org|*.example.org)
+            return 0
+            ;;
+    esac
+
+    return 1
+}
+
 # Web template check
 is_web_template_valid() {
     if [ ! -z "$WEB_SYSTEM" ]; then

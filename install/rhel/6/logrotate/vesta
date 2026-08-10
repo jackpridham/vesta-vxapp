@@ -1,7 +1,10 @@
 /usr/local/vesta/log/*.log {
     missingok
     notifempty
-    size 30k
-    yearly
+    daily
+    rotate 7
+    maxsize 50M
+    compress
+    delaycompress
     create 0600 root root
 }
