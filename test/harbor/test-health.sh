@@ -19,6 +19,9 @@ jq -e '.STATE=="valid" and .HOSTNAME_VALID and (.EXPIRES_AT|type=="string")' \
     || fail 'Vesta-owned panel certificate observation is invalid'
 [[ "$(stat -c %a "$certificate")" == 660 ]] \
     || fail 'panel certificate mode was mutated'
+if grep -Eq 'strptime|mktime' "$VESTA/func/vx/harbor/health.sh"; then
+    fail 'certificate observation depends on jq version-specific date parsing'
+fi
 
 certificate_link="$HARBOR_TEST_ROOT/panel-link.pem"
 ln -s "$certificate" "$certificate_link"

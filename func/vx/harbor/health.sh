@@ -14,7 +14,7 @@ _vx_harbor_health_robot_ready() {
 }
 
 _vx_harbor_certificate_observe() {
-    local nginx_file endpoint certificate hostname expiry now hostname_valid=false
+    local nginx_file endpoint certificate hostname expiry expiry_epoch now hostname_valid=false
     nginx_file="$VESTA/nginx/conf/nginx.conf"
     [[ -f "$nginx_file" && ! -L "$nginx_file" ]] || return 1
     endpoint="$(_vx_harbor_nginx_panel_endpoint "$nginx_file")" || return 1
@@ -27,12 +27,13 @@ _vx_harbor_certificate_observe() {
     hostname="$(_vx_harbor_authoritative_hostname)" || return 1
     /usr/bin/env -i PATH=/usr/bin:/bin /usr/bin/openssl x509 -in "$certificate" \
       -noout -checkhost "$hostname" >/dev/null 2>&1 && hostname_valid=true
+    expiry_epoch="$(/usr/bin/date -u -d "$expiry" +%s 2>/dev/null)" || return 1
+    [[ "$expiry_epoch" =~ ^[0-9]+$ ]] || return 1
     now="$(/usr/bin/date -u +%s)"
-    /usr/bin/jq -cn --arg expiry "$expiry" --argjson now "$now" \
+    /usr/bin/jq -cn --argjson expiry_epoch "$expiry_epoch" --argjson now "$now" \
       --argjson hostname_valid "$hostname_valid" '
-      ($expiry|strptime("%b %e %H:%M:%S %Y %Z")|mktime) as $end |
-      {STATE:(if $end <= $now then "expired" elif ($end-$now)<2592000 then "expiring" else "valid" end),
-       EXPIRES_AT:($end|strftime("%Y-%m-%dT%H:%M:%SZ")),HOSTNAME_VALID:$hostname_valid}'
+      {STATE:(if $expiry_epoch <= $now then "expired" elif ($expiry_epoch-$now)<2592000 then "expiring" else "valid" end),
+       EXPIRES_AT:($expiry_epoch|strftime("%Y-%m-%dT%H:%M:%SZ")),HOSTNAME_VALID:$hostname_valid}'
 }
 
 vx_harbor_health_observe_locked() {
