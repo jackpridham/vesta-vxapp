@@ -314,8 +314,8 @@ the [managed Harbor operator runbook](.docs/user-guides/vesta-managed-harbor-ope
 The normative operator boundary is the
 [Harbor provider contract](.docs/contracts/harbor-provider.md).
 
-The implementation is ready for corrected development acceptance; production
-is deferred. Once the provider is accepted and operational, use `v-docker
+The corrected managed-registry lane passed development application acceptance
+on 2026-08-11; production is deferred. For each release, use `v-docker
 registry-info PROJECT json` to discover the existing Vesta TLS origin and
 exact repository. Send one native age recipient to `v-docker
 registry-publisher-rotate` on bounded stdin, capture its ASCII-armored

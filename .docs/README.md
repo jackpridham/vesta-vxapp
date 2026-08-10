@@ -10,7 +10,8 @@ Current documents:
 - [Vesta-managed Harbor tenant deployment guide](user-guides/vesta-managed-harbor.md)
 - [Vesta-managed Harbor registry specification](specs/2026-08-08-vesta-managed-harbor-registry.md)
 - [Vesta-managed Harbor provider contract](contracts/harbor-provider.md)
-- [Vesta-managed Harbor development acceptance](validation/2026-08-08-vesta-managed-harbor-development.md)
+- [Vesta-managed Harbor application release acceptance](validation/2026-08-11-slave-vxapp-managed-harbor-release.md)
+- [Earlier Vesta-managed Harbor development attempts](validation/2026-08-08-vesta-managed-harbor-development.md)
 - [Tenant Compose deployment guide — start here](user-guides/docker-compose-projects.md)
 - [Native web-domain reverse-proxy guide](user-guides/native-web-domain-proxy.md)
 - [Native web-domain proxy validation](validation/2026-08-06-native-web-proxy-release.md)
@@ -37,17 +38,19 @@ migration history and do not override current `compose-*` contracts.
 
 ## Readiness boundary
 
-Vesta-managed Harbor's generated credential lifecycle is implemented. The
-corrected development-host activation and acceptance transaction remains
-pending, the last live provider transaction is safely rolled back, and
-production is deferred. Harbor provider backup and restore are disabled for
+Vesta-managed Harbor's generated credential lifecycle is implemented and the
+corrected development tenant lane passed a complete application release on
+2026-08-11. The accepted path covered fresh discovery, encrypted publisher
+rotation, external push, immutable preview-bound pull/apply, health, drift,
+and public ingress. Production is still deferred. Harbor provider backup and
+restore are disabled for
 the first production release: both public commands return status 78 without
 stopping Harbor or changing provider authority. Existing ciphertext and
 provider data are retained. Recovery-key custody and re-enablement are tracked
 in GitHub issue #2. The accepted first-release workload boundary stores no
 durable application data outside cache. The tenant guide is the canonical
-workflow after an administrator confirms healthy, fresh managed state through
-`registry-info`.
+workflow after `registry-info` refreshes and confirms healthy, fresh managed
+state.
 
 The Compose implementation supports owner-only `standard` self-service,
 immutable preview/apply, administrator-approved profiles, trusted image

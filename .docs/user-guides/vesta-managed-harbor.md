@@ -1,11 +1,13 @@
 # Publish and Deploy with Vesta-Managed Harbor
 
-> **Current status — endpoint not approved for deployment.** The generated
-> credential lifecycle is implemented, but corrected development-host
-> activation and acceptance remain pending. The last live provider transaction
-> was rolled back to disabled/inactive state. Production remains deferred. The
-> preserved validation and rollback evidence are in the
-> [development acceptance record](../validation/2026-08-08-vesta-managed-harbor-development.md).
+> **Current status — development application delivery accepted.** The generated credential
+> lifecycle and tenant release lane passed a complete managed-Harbor
+> application deployment on 2026-08-11. Production remains deferred. See the
+> [current acceptance record](../validation/2026-08-11-slave-vxapp-managed-harbor-release.md)
+> and the preserved
+> [earlier blocked attempts](../validation/2026-08-08-vesta-managed-harbor-development.md).
+> That application record does not claim post-publication publisher
+> disablement or provider-backup acceptance.
 
 This is the canonical tenant workflow after an administrator confirms that
 Vesta-managed Harbor is operational and discovery reports healthy, fresh,
@@ -162,9 +164,10 @@ v-docker registry-publisher-rotate < age-recipient > publisher-secret.age
 v-docker registry-publisher-disable
 ```
 
-`registry-info` returns redacted discovery and readiness only. Publisher change
-accepts no arguments; publisher disable accepts no arguments. The authenticated
-broker derives the owner, endpoint, namespace, identity, and permission set.
+`registry-info` refreshes the bounded provider-health observation, then
+returns redacted discovery and readiness only. Publisher change accepts no
+arguments; publisher disable accepts no arguments. The authenticated broker
+derives the owner, endpoint, namespace, identity, and permission set.
 
 ## Canonical release workflow after activation
 
@@ -210,6 +213,10 @@ jq -e --arg registry "$REGISTRY" '
   ((.auths[$registry].auth? // "") == "")
 ' "$docker_config_file" >/dev/null
 
+# Before continuing, prove this helper can store, read, and erase a disposable
+# non-secret record. Do not use the real registry name or publisher password
+# for that preflight.
+
 umask 077
 publisher_handoff_dir="$(mktemp -d "${TMPDIR:-/tmp}/vesta-publisher.XXXXXX")"
 trap 'find "$publisher_handoff_dir" -depth -delete' EXIT
@@ -254,8 +261,14 @@ credential helper. Without `credsStore` or a registry-specific `credHelpers`
 entry, Docker may write a reversible base64 `auth` value to `config.json`; file
 permissions do not turn that value into encryption. The block above therefore
 fails before publisher rotation unless the selected helper is configured and
-its `docker-credential-HELPER` binary is available, then verifies login did not
-write inline auth. The decrypted password travels directly from `age` to
+its `docker-credential-HELPER` binary is available. The release operator must
+also prove a disposable non-secret helper store/get/erase round trip before
+rotation; executable discovery alone cannot prove that the backing store is
+writable. On a headless Linux builder, prefer an encryption-capable
+GPG-backed `pass` store. Use `secretservice` only when its persistent
+collection exists and is unlocked; an installed daemon without that
+collection fails when Docker saves the credential. After login, verify again
+that Docker did not write inline auth. The decrypted password travels directly from `age` to
 `docker login --password-stdin`; it is never written to a plaintext file. This
 guide does not offer a temporary isolated
 `DOCKER_CONFIG` fallback: interruption or incomplete cleanup could leave that
@@ -660,9 +673,8 @@ robot update/refresh is unavailable to the least-privilege integration
 identity. The durable solution is the generated-password flow: Vesta captures
 the one-time create response in memory, verifies it, encrypts the publisher
 password to the tenant, and uses deletion for rotation and revocation.
-Bootstrap authority remains installation/disablement-only. Live development
-acceptance of that corrected flow is still required; production remains
-deferred.
+Bootstrap authority remains installation/disablement-only. The corrected flow
+passed live development acceptance on 2026-08-11; production remains deferred.
 
 ## Related documentation
 
@@ -670,6 +682,7 @@ deferred.
 - [Managed Harbor operator runbook](vesta-managed-harbor-operator.md)
 - [Container-orchestration operator guide](../../docs/container-orchestration.md)
 - [Harbor provider contract](../contracts/harbor-provider.md)
+- [Accepted Slave application release](../validation/2026-08-11-slave-vxapp-managed-harbor-release.md)
 - [Compose tenant shell-access contract](../contracts/compose-shell-access.md)
 - [Compose self-service deployment contract](../contracts/compose-self-service-deployment.md)
 - [Compose project probe contract](../contracts/compose-project-probes.md)

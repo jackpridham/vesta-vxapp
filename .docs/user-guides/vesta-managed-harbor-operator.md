@@ -307,6 +307,13 @@ do not bypass it by editing owner JSON or creating projects in Harbor.
 
 ## 6. Run the first-tenant acceptance transaction
 
+The application-delivery portion of this transaction passed for the
+`slave-vxapp` development tenant on 2026-08-11; see the
+[dated acceptance record](../validation/2026-08-11-slave-vxapp-managed-harbor-release.md).
+That record did not exercise post-publication publisher disablement or provider
+backup, so retain the remaining checks below for a complete provider
+acceptance.
+
 Use a dedicated development acceptance tenant and a disposable application
 image. `registry-info` does not create a Compose project: the owner-scoped
 `standard` project must already exist through the approved external-image or

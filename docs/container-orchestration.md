@@ -13,14 +13,20 @@ multi-node scheduling, host networking, host firewall mutation, Docker socket
 mounts, privileged workloads, arbitrary host paths, host PID or IPC, devices,
 or global Docker cleanup.
 
-> **Managed Harbor status:** the generated credential lifecycle is implemented,
-> while corrected development activation and acceptance remain pending. The
-> last live transaction is safely rolled back and production is deferred. See
+> **Managed Harbor status:** the generated credential lifecycle is implemented
+> and corrected development application delivery is accepted. A tenant-owned `standard` application
+> completed encrypted publisher rotation, external build/push, immutable
+> preview-bound pull/apply, full-readiness health, drift, and public ingress
+> acceptance on 2026-08-11. Production remains deferred. See
 > the canonical
 > [tenant Harbor deployment guide](../.docs/user-guides/vesta-managed-harbor.md),
 > [managed Harbor operator runbook](../.docs/user-guides/vesta-managed-harbor-operator.md),
 > [operator/provider contract](../.docs/contracts/harbor-provider.md), and
-> [development acceptance evidence](../.docs/validation/2026-08-08-vesta-managed-harbor-development.md).
+> [current development acceptance evidence](../.docs/validation/2026-08-11-slave-vxapp-managed-harbor-release.md)
+> and the preserved
+> [earlier blocked attempts](../.docs/validation/2026-08-08-vesta-managed-harbor-development.md).
+> The application record does not claim post-publication publisher disablement
+> or provider-backup acceptance.
 
 ## Authority and storage
 
@@ -124,8 +130,9 @@ workflow is the
 [Vesta-managed Harbor operator runbook](../.docs/user-guides/vesta-managed-harbor-operator.md).
 The framework-neutral Docker-user workflow is the canonical
 [Vesta-managed Harbor tenant guide](../.docs/user-guides/vesta-managed-harbor.md).
-Use its commands only after corrected development acceptance establishes a
-healthy, fresh managed provider. Production remains separately deferred.
+Development acceptance has established a healthy, fresh managed provider for
+tenant delivery. Continue to require fresh discovery for every release;
+production remains separately deferred.
 
 Eligible packages may use the managed registry at the existing Vesta TLS
 origin. Vesta remains authoritative for entitlement, owner namespace, quota,
@@ -195,8 +202,9 @@ build/test, registry publication, immutable digest resolution, local Compose
 rendering, and their deploy adapter. A recurring tenant deployment
 authenticates as the owner over SSH and uses only `v-docker`: inspect current
 owner/profile/revision, preview through stdin, pull exact preview images,
-apply the unchanged tuple after approval, then require health, declared probes,
-and drift match. It does not require administrator SSH and must not fall back
+apply the unchanged tuple after approval, then require health, the
+application-owned acceptance contract, and drift match. It does not require
+administrator SSH and must not fall back
 to raw Docker, direct `sudo v-*`, image archives, or copying desired state into
 Vesta paths.
 
@@ -304,11 +312,15 @@ graph for every adapter and makes the gate impractically slow on constrained
 hosts. The constrained-host performance correction is recorded in GitHub
 issue #3.
 
-The preserved Harbor development evidence reached authenticated bootstrap,
+The preserved 2026-08-08 Harbor evidence reached authenticated bootstrap,
 demonstrated Harbor's generated one-time password behavior, and safely
-returned the provider to disabled/inactive state without changing the tenant
-workload. The corrected implementation now uses generated runtime credentials,
-an age-encrypted publisher handoff, and deletion-based revocation. Corrected
-development acceptance remains pending; production deployment remains
-deferred. Exact evidence is in the
-[development validation record](../.docs/validation/2026-08-08-vesta-managed-harbor-development.md).
+returned that candidate to disabled/inactive state without changing its
+tenant workload. The corrected implementation uses generated runtime
+credentials, an age-encrypted publisher handoff, and deletion-based
+revocation. A complete tenant-owned application release was then accepted on
+2026-08-11 through immutable managed-Harbor delivery, revision advancement,
+full-readiness health, exact drift, and public ingress. Production deployment
+remains deferred. Exact evidence is in the
+[current acceptance record](../.docs/validation/2026-08-11-slave-vxapp-managed-harbor-release.md)
+and the
+[preserved earlier record](../.docs/validation/2026-08-08-vesta-managed-harbor-development.md).

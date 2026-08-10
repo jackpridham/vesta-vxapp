@@ -7,6 +7,7 @@ provider="$root/.docs/contracts/harbor-provider.md"
 shell_access="$root/.docs/contracts/compose-shell-access.md"
 spec="$root/.docs/specs/2026-08-08-vesta-managed-harbor-registry.md"
 validation="$root/.docs/validation/2026-08-08-vesta-managed-harbor-development.md"
+accepted_validation="$root/.docs/validation/2026-08-11-slave-vxapp-managed-harbor-release.md"
 tenant_guide="$root/.docs/user-guides/vesta-managed-harbor.md"
 operator_guide="$root/.docs/user-guides/vesta-managed-harbor-operator.md"
 
@@ -37,7 +38,7 @@ assert_before() {
         || fail "expected '$earlier' before '$later' in ${file#"$root/"}"
 }
 
-for file in "$provider" "$shell_access" "$spec" "$validation" "$tenant_guide" "$operator_guide"; do
+for file in "$provider" "$shell_access" "$spec" "$validation" "$accepted_validation" "$tenant_guide" "$operator_guide"; do
     [[ -s "$file" ]] || fail "missing Milestone 1 document: ${file#"$root/"}"
 done
 
@@ -208,5 +209,30 @@ assert_before "$validation" '## Install transaction and product blocker' \
     '## Source-validated resolution — 2026-08-09'
 assert_before "$validation" '## Acceptance not claimed' \
     '## Source-validated resolution — 2026-08-09'
+
+# Preserve the separately dated application-delivery acceptance without
+# broadening it into publisher-revocation, provider-backup, or production
+# authorization.
+for phrase in \
+    'PASS — DEVELOPMENT APPLICATION DELIVERY' \
+    'slave/slave-vxapp' \
+    'standard` version 2' \
+    'sha256:e4e1aade91f49a709041949149a073cb731c97f6ab3134a02d133ae58b70998b' \
+    'Resulting revision' \
+    'PUBLISHER_ENABLED=true' \
+    'this record does not claim' \
+    'publisher revocation acceptance' \
+    'Production deployment remains deferred'
+do
+    assert_contains "$accepted_validation" "$phrase"
+done
+for file in \
+    "$tenant_guide" \
+    "$operator_guide" \
+    "$root/docs/container-orchestration.md" \
+    "$root/.docs/README.md"
+do
+    assert_contains "$file" '2026-08-11-slave-vxapp-managed-harbor-release.md'
+done
 
 printf 'PASS: Harbor generated-credential documentation contract\n'
