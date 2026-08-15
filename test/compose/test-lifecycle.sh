@@ -132,9 +132,12 @@ elif [[ " $* " == *" inspect aaaaaaaaaaaa "* \
     if [[ -f "$(dirname -- "$0")/secret-runtime" && "$project" == web ]]; then
         mount_rw=false
         [[ ! -f "$(dirname -- "$0")/secret-mount-rw" ]] || mount_rw=true
+        secret_source="$(dirname -- "$0")/vesta/data/users/alice/docker-projects/web/runtime/workload-secrets/current/credential"
+        if [[ -f "$(dirname -- "$0")/secret-mount-authority" ]]; then
+            secret_source="$(dirname -- "$0")/vesta/data/users/alice/docker-projects/web/secrets/credential"
+        fi
         printf '"Mounts":[{"Source":"%s","Destination":"/run/secrets/credential","RW":%s}' \
-            "$(dirname -- "$0")/vesta/data/users/alice/docker-projects/web/runtime/workload-secrets/current/credential" \
-            "$mount_rw"
+            "$secret_source" "$mount_rw"
         if [[ -f "$(dirname -- "$0")/secret-mount-extra" ]]; then
             printf ',{"Source":"%s","Destination":"/run/secrets/extra","RW":false}' \
                 "$(dirname -- "$0")/vesta/data/users/alice/docker-projects/web/runtime/workload-secrets/current/extra"
@@ -651,6 +654,17 @@ vx_compose_drift_observe_json alice web | jq -e '
     and .DESIRED[0].MOUNTS[0].READ_ONLY == true
     and .OBSERVED[0].MOUNTS[0].READ_ONLY == true
 ' >/dev/null || fail 'runtime secret mount produced false drift'
+touch "$test_root/secret-mount-authority"
+[[ "$(vx_compose_runtime_identity_preflight alice web \
+        "$project_root/runtime/canonical.json" \
+        "$project_root/images.json" 1)" == complete ]] \
+    || fail 'accepted protected secret source failed exact preflight'
+vx_compose_drift_observe_json alice web | jq -e '
+    .MATCH == true
+    and .CHANGED_SERVICES == []
+    and .DESIRED[0].MOUNTS == .OBSERVED[0].MOUNTS
+' >/dev/null || fail 'accepted protected secret source produced false drift'
+rm -f -- "$test_root/secret-mount-authority"
 touch "$test_root/secret-mount-rw"
 if vx_compose_runtime_identity_preflight alice web \
     "$project_root/runtime/canonical.json" "$project_root/images.json" 1 \

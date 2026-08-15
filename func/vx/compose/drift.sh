@@ -94,10 +94,10 @@ vx_compose_drift_observe_json() {
                 end]
             + [($service.secrets // [])[] |
                 if type=="string" then
-                    {SOURCE:($runtime_secret_root+"/"+.),
+                    {SOURCE:($root.secrets[.].file // ""),
                      TARGET:("/run/secrets/"+.),READ_ONLY:true}
                 else
-                    {SOURCE:($runtime_secret_root+"/"+.source),
+                    {SOURCE:($root.secrets[.source].file // ""),
                      TARGET:(.target//("/run/secrets/"+.source)),READ_ONLY:true}
                 end]) | sort_by(.TARGET,.SOURCE);
         def ports($service):
@@ -121,12 +121,30 @@ vx_compose_drift_observe_json() {
                 else . end] | sort;
         def actualmounts($root):
             . as $container
-            | [(.Mounts // [])[] | {
+            | [($root.services[
+                    $container.Config.Labels["com.docker.compose.service"]
+                ].secrets // [])[]
+                | . as $secret
+                | ($secret.source // $secret) as $name
+                | {NAME:$name,
+                   SOURCE:($root.secrets[$name].file // ""),
+                   TARGET:($secret.target // ("/run/secrets/"+$name))}]
+                as $declared_secrets
+            | [(.Mounts // [])[]
+            | . as $mount
+            | ($declared_secrets
+                | map(select(.TARGET == ($mount.Destination // "")))
+                | first) as $declared_secret
+            | {
                 SOURCE:(
                     (.Name // .Source // "") as $source
                     | ("vx_"+$owner+"_"+$project+"_") as $prefix
                     | ($source|ltrimstr($prefix)) as $logical
-                    | if $container.Config.Labels["com.docker.compose.project"] == $runtime
+                    | if $declared_secret != null
+                        and $source == ($runtime_secret_root
+                            + "/" + $declared_secret.NAME)
+                      then $declared_secret.SOURCE
+                      elif $container.Config.Labels["com.docker.compose.project"] == $runtime
                         and $container.Config.Labels["vx.managed"] == "yes"
                         and $container.Config.Labels["vx.user"] == $owner
                         and $container.Config.Labels["vx.project"] == $project

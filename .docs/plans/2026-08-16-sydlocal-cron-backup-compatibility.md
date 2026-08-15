@@ -346,7 +346,8 @@ bash -n func/vx/compose/lifecycle.sh \
     func/vx/compose/drift.sh \
     test/compose/test-lifecycle.sh \
     test/compose/test-backup.sh
-shellcheck -x func/vx/compose/lifecycle.sh func/vx/compose/drift.sh
+shellcheck -x -e SC2004 func/vx/compose/lifecycle.sh \
+    func/vx/compose/drift.sh
 bash test/compose/test-lifecycle.sh
 bash test/compose/test-backup.sh
 bash test/compose/test-runtime-secrets.sh
@@ -355,6 +356,9 @@ git diff --check
 
 Expected: all pass. Writable, previous-generation, foreign, extra, duplicate,
 and undeclared secret mounts must remain rejected.
+The narrow SC2004 exclusion covers the pre-existing arithmetic-array style at
+the lifecycle timeout assignment; the constrained release gate remains the
+authoritative whole-file ShellCheck run.
 
 - [ ] **Step 4: Commit the Compose correction**
 

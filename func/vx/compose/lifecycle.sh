@@ -115,10 +115,11 @@ vx_compose_runtime_identity_preflight() {
                     | ([($canonical[0].services[$service].secrets // [])[]
                         | . as $secret
                         | ($secret.source // $secret) as $name
-                        | {SOURCE:($root+"/runtime/workload-secrets/current/"+$name),
+                        | {NAME:$name,
+                           SOURCE:($canonical[0].secrets[$name].file // ""),
                            TARGET:($secret.target // ("/run/secrets/"+$name)),
                            READ_ONLY:true}] | sort_by(.TARGET,.SOURCE)) as $desired
-                    | $desired
+                    | ($desired | map(del(.NAME)))
                       == ([($container.Mounts // [])[]
                         | . as $mount
                         | select(
@@ -126,7 +127,20 @@ vx_compose_runtime_identity_preflight() {
                                 | startswith($root+"/runtime/workload-secrets/"))
                             or any($desired[];
                                 .TARGET == ($mount.Destination // "")))
-                        | {SOURCE:(.Source//""),TARGET:(.Destination//""),
+                        | ($desired
+                            | map(select(
+                                .TARGET == ($mount.Destination // "")))
+                            | first) as $want
+                        | {SOURCE:(
+                               if $want != null
+                                   and ($mount.Source // "")
+                                       == ($root
+                                           + "/runtime/workload-secrets/current/"
+                                           + $want.NAME)
+                               then $want.SOURCE
+                               else ($mount.Source // "")
+                               end),
+                           TARGET:(.Destination//""),
                            READ_ONLY:(.RW == false)}]
                           | sort_by(.TARGET,.SOURCE)))
             )
