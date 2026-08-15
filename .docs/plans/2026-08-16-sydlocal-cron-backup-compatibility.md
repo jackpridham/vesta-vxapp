@@ -62,6 +62,8 @@ Production and Dev are outside this release. Deploy only to SydLocal
 
 - **web/inc/main.php**: safely handles a missing CLI remote address and uses
   PHP 8.4-compatible interpolation.
+- **web/inc/i18n.php**: uses PHP's canonical float cast when the shared panel
+  bootstrap is compiled by PHP 8.4.
 - **test/compose/test-mail-wrapper-php-compatibility.sh**: focused
   compile/runtime guard
   for the CLI mail-wrapper use of **main.php**.
@@ -135,6 +137,7 @@ The test must not send mail or invoke a backup.
 - Modify: **web/inc/main.php:47**
 - Modify: **web/inc/main.php:389**
 - Modify: **web/inc/main.php:393**
+- Modify: **web/inc/i18n.php:89**
 - Test: **test/compose/test-mail-wrapper-php-compatibility.sh**
 
 - [ ] **Step 1: Make the remote address optional only when PHP supplies none**
@@ -173,10 +176,17 @@ $timezone_list[$timezone] = "$timezone [ $current_time ] {$pretty_offset}";
 Do not change **mail-wrapper.php** to suppress all errors. Backup failures must
 remain observable.
 
+Replace the deprecated alias cast loaded by the same wrapper:
+
+~~~php
+$accept_langs_sorted[$code] = (float)$q;
+~~~
+
 - [ ] **Step 3: Validate the PHP surface**
 
 ~~~bash
 php -l web/inc/main.php
+php -l web/inc/i18n.php
 php -l web/inc/mail-wrapper.php
 bash test/compose/test-mail-wrapper-php-compatibility.sh
 git diff --check
@@ -188,7 +198,8 @@ no whitespace errors are reported.
 - [ ] **Step 4: Commit the notification correction**
 
 ~~~bash
-git add web/inc/main.php test/compose/test-mail-wrapper-php-compatibility.sh
+git add web/inc/main.php web/inc/i18n.php \
+    test/compose/test-mail-wrapper-php-compatibility.sh
 git commit -m "fix(web): make backup notifications PHP 8.4 safe"
 ~~~
 
@@ -362,6 +373,7 @@ Expected: normal commit hooks pass without bypasses.
 **Files:**
 - Create: **.docs/validation/2026-08-16-sydlocal-cron-backup-compatibility.md**
 - Deploy: **/usr/local/vesta/web/inc/main.php**
+- Deploy: **/usr/local/vesta/web/inc/i18n.php**
 - Deploy: **/usr/local/vesta/func/vx/compose/lifecycle.sh**
 - Deploy: **/usr/local/vesta/func/vx/compose/drift.sh**
 
@@ -403,7 +415,7 @@ REMOTE
 
 Expected: services active; **asteriskvx/pbx** running at revision 1.
 
-- [ ] **Step 4: Install only three runtime files with a backup**
+- [ ] **Step 4: Install only four runtime files with a backup**
 
 Copy each tested file to its named **/tmp/*.release** path, then:
 
@@ -413,17 +425,21 @@ set -euo pipefail
 backup_dir=$(mktemp -d \
     /root/vesta-backups/pre-cron-backup-compatibility.XXXXXXXX)
 install -m 0644 /usr/local/vesta/web/inc/main.php "$backup_dir/main.php"
+install -m 0644 /usr/local/vesta/web/inc/i18n.php "$backup_dir/i18n.php"
 install -m 0644 /usr/local/vesta/func/vx/compose/lifecycle.sh \
     "$backup_dir/lifecycle.sh"
 install -m 0644 /usr/local/vesta/func/vx/compose/drift.sh \
     "$backup_dir/drift.sh"
 install -o root -g root -m 0644 /tmp/main.php.release \
     /usr/local/vesta/web/inc/main.php
+install -o root -g root -m 0644 /tmp/i18n.php.release \
+    /usr/local/vesta/web/inc/i18n.php
 install -o root -g root -m 0644 /tmp/lifecycle.sh.release \
     /usr/local/vesta/func/vx/compose/lifecycle.sh
 install -o root -g root -m 0644 /tmp/drift.sh.release \
     /usr/local/vesta/func/vx/compose/drift.sh
-rm -f /tmp/main.php.release /tmp/lifecycle.sh.release /tmp/drift.sh.release
+rm -f /tmp/main.php.release /tmp/i18n.php.release \
+    /tmp/lifecycle.sh.release /tmp/drift.sh.release
 printf 'BACKUP=%s\n' "$backup_dir"
 REMOTE
 ~~~
@@ -436,11 +452,13 @@ files require no service or container restart.
 ~~~bash
 ssh debian@192.168.100.100 'sudo env VESTA=/usr/local/vesta bash -s' <<'REMOTE'
 set -euo pipefail
-/usr/local/vesta/php/bin/php -d error_reporting=-1 -d display_errors=1 \
-    -l /usr/local/vesta/web/inc/main.php 2>&1 \
-    | tee /tmp/vesta-main-lint.out
-! grep -Eq 'Deprecated:|Warning:|Notice:' /tmp/vesta-main-lint.out
-rm -f /tmp/vesta-main-lint.out
+for file in /usr/local/vesta/web/inc/main.php \
+    /usr/local/vesta/web/inc/i18n.php; do
+    /usr/local/vesta/php/bin/php -d error_reporting=-1 -d display_errors=1 \
+        -l "$file" 2>&1 | tee /tmp/vesta-php-lint.out
+    ! grep -Eq 'Deprecated:|Warning:|Notice:' /tmp/vesta-php-lint.out
+done
+rm -f /tmp/vesta-php-lint.out
 user=asteriskvx
 source /usr/local/vesta/func/main.sh
 source /usr/local/vesta/func/vx/compose/main.sh
@@ -454,7 +472,7 @@ REMOTE
 Expected: PHP clean, preflight **complete**, and no secret-mount drift. The
 known specialized-profile network presentation gap may remain and must be
 recorded rather than authorized away. If any required check fails, restore the
-three files from the recorded backup and stop before backup execution.
+four files from the recorded backup and stop before backup execution.
 
 - [ ] **Step 6: Run the single-user backup in an approved window**
 

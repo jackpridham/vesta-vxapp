@@ -16,7 +16,7 @@ require_once(dirname(__FILE__).'/i18n.php');
 
 
 // Saving user IPs to the session for preventing session hijacking
-$user_combined_ip = $_SERVER['REMOTE_ADDR'];
+$user_combined_ip = $_SERVER['REMOTE_ADDR'] ?? '';
 
 if(isset($_SERVER['HTTP_CLIENT_IP'])){
     $user_combined_ip .=  '|'. $_SERVER['HTTP_CLIENT_IP'];
@@ -44,7 +44,10 @@ if (isset($_SESSION['DISABLE_IP_CHECK']) && $_SESSION['DISABLE_IP_CHECK'] == 'ye
 }
 
 // Checking user to use session from the same IP he has been logged in
-if ($_SESSION['user_combined_ip'] != $user_combined_ip && $_SERVER['REMOTE_ADDR'] != '127.0.0.1' && $SKIP_IP_CHECK==false) {
+if (isset($_SERVER['REMOTE_ADDR'])
+    && $_SESSION['user_combined_ip'] != $user_combined_ip
+    && $_SERVER['REMOTE_ADDR'] != '127.0.0.1'
+    && $SKIP_IP_CHECK == false) {
     session_destroy();
     session_start();
     $_SESSION['request_uri'] = $_SERVER['REQUEST_URI'];
@@ -386,11 +389,11 @@ function list_timezones() {
     foreach($timezone_offsets as $timezone => $offset){
         $offset_prefix = $offset < 0 ? '-' : '+';
         $offset_formatted = gmdate( 'H:i', abs($offset) );
-        $pretty_offset = "UTC${offset_prefix}${offset_formatted}";
+        $pretty_offset = "UTC{$offset_prefix}{$offset_formatted}";
         $t = new DateTimeZone($timezone);
         $c = new DateTime(null, $t);
         $current_time = $c->format('H:i:s');
-        $timezone_list[$timezone] = "$timezone [ $current_time ] ${pretty_offset}";
+        $timezone_list[$timezone] = "$timezone [ $current_time ] {$pretty_offset}";
     }
     return $timezone_list;
 }
