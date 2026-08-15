@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Atomically materialize container-readable copies of managed secrets."""
 
+import hashlib
 import json
 import os
 import re
@@ -12,6 +13,7 @@ import time
 NAME = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 CLEANUP = None
 UNCHANGED = 20
+EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
 
 
 def identity(value):
@@ -30,6 +32,27 @@ def write_all(fd, value):
         if count < 1:
             raise ValueError("runtime secret write failed")
         offset += count
+
+
+def legacy_empty_secret_is_bound(project_fd, name, uid, gid):
+    integrity_fd = os.open(
+        "secret-integrity.json", os.O_RDONLY | os.O_NOFOLLOW,
+        dir_fd=project_fd)
+    integrity_state = os.fstat(integrity_fd)
+    if not stat.S_ISREG(integrity_state.st_mode) \
+            or (integrity_state.st_mode & 0o777) != 0o600 \
+            or integrity_state.st_uid != uid or integrity_state.st_gid != gid:
+        os.close(integrity_fd)
+        return False
+    try:
+        with os.fdopen(integrity_fd, encoding="utf-8") as handle:
+            integrity = json.load(handle)
+    except Exception:
+        return False
+    return isinstance(integrity, dict) \
+        and isinstance(integrity.get(name), dict) \
+        and integrity[name].get("SHA256") == EMPTY_SHA256 \
+        and set(integrity[name]) == {"SHA256"}
 
 
 def remove_directory(parent_fd, name):
@@ -198,9 +221,13 @@ def main():
             name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=source_fd)
         before = os.fstat(source_secret)
         inode = (before.st_dev, before.st_ino)
+        empty_is_bound = before.st_size == 0 \
+            and legacy_empty_secret_is_bound(
+                project_fd, name, authority_uid, authority_gid)
         if not stat.S_ISREG(before.st_mode) or (before.st_mode & 0o777) != 0o600 \
                 or before.st_uid != authority_uid or before.st_gid != authority_gid \
-                or not 0 < before.st_size <= 1048576 or inode in seen:
+                or not before.st_size <= 1048576 \
+                or (before.st_size == 0 and not empty_is_bound) or inode in seen:
             raise ValueError("managed secret file authority is invalid")
         seen.add(inode)
         total += before.st_size

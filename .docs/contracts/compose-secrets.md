@@ -14,6 +14,12 @@ accepted as CLI arguments. Create/change commands accept a root-readable input
 file descriptor or protected temporary file and remove the temporary file
 after an atomic install.
 
+New secret creation and bundle import reject empty values. A legacy project
+whose accepted private integrity metadata already binds a zero-byte value may
+materialize that value as an application-specific disabled sentinel. The
+exception requires the exact protected empty SHA-256 record; missing, malformed,
+or mismatched integrity fails closed and does not replace active runtime copies.
+
 Bundle-managed workloads use container-readable runtime copies at
 `runtime/workload-secrets/current/<name>`. Before every start-like lifecycle
 action, while holding the project lock, Vesta snapshots the exact declared

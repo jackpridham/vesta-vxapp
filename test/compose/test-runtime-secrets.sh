@@ -52,6 +52,38 @@ set -e
     && "$(stat -c '%d:%i' "$runtime_secret")" == "$unchanged_inode" ]] \
     || fail 'unchanged runtime secret generation was replaced'
 
+# Existing bundle deployments may carry an intentional empty sentinel from
+# before empty inputs were rejected. Only its exact protected integrity record
+# permits that legacy value to enter disposable runtime authority.
+: >"$project/secrets/disabled"
+chmod 0600 "$project/secrets/disabled"
+printf '%s\n' \
+    '{"disabled":{"SHA256":"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"}}' \
+    >"$project/secret-integrity.json"
+chmod 0600 "$project/secret-integrity.json"
+printf '%s\n' '{"secrets":[{"name":"credential","target":"/run/secrets/credential"},{"name":"disabled","target":"/run/secrets/disabled"}]}' \
+    >"$test_root/workload.json"
+/usr/bin/python3 "$helper" "$project" "$test_root/workload.json" \
+    || fail 'integrity-bound empty legacy secret was rejected'
+[[ -f "$runtime_parent/current/disabled" \
+    && ! -s "$runtime_parent/current/disabled" \
+    && "$(stat -c '%a' "$runtime_parent/current/disabled")" == 444 ]] \
+    || fail 'integrity-bound empty legacy secret was not materialized safely'
+printf '%s\n' '{"disabled":{"SHA256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}}' \
+    >"$project/secret-integrity.json"
+if /usr/bin/python3 "$helper" "$project" "$test_root/workload.json" \
+    >/dev/null 2>&1; then
+    fail 'empty legacy secret with mismatched integrity was accepted'
+fi
+[[ -f "$runtime_parent/current/disabled" \
+    && ! -s "$runtime_parent/current/disabled" ]] \
+    || fail 'empty legacy secret rejection changed active runtime authority'
+rm -f -- "$project/secrets/disabled" "$project/secret-integrity.json"
+printf '%s\n' '{"secrets":[{"name":"credential","target":"/run/secrets/credential"}]}' \
+    >"$test_root/workload.json"
+/usr/bin/python3 "$helper" "$project" "$test_root/workload.json" \
+    || fail 'legacy empty secret cleanup failed'
+
 if (( EUID != 0 )); then
     printf 'failed-value\n' >"$project/secrets/credential"
     if VX_COMPOSE_RUNTIME_SECRET_TEST_FAIL=before-activate \
