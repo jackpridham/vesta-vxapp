@@ -84,6 +84,11 @@ The canonical gate checks Bash, resource-bounded ShellCheck, Compose suites and
 fixtures, PHP, JavaScript, documentation consistency, Playwright discovery,
 and whitespace. A failed or incomplete gate is a stop condition.
 
+Every tracked command under `bin/v-*` must be a regular executable file with
+Git mode `100755` and a shebang at byte zero. The canonical gate enforces this
+before a release archive can be accepted; a deployment must preserve the
+manifest mode rather than inferring executability from the filename.
+
 ## Target preflight
 
 Before installing bytes, establish a read-only baseline under the release

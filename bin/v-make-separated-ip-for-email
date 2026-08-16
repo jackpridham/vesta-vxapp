@@ -1,4 +1,4 @@
- #!/bin/bash
+#!/bin/bash
 
 # info: add new ip and makes email to be sent via that IP only for SMTP authenticated users
 # options: MAIL_HOSTNAME MAIL_IP
