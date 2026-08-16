@@ -8,7 +8,7 @@ transactions, monitoring, backup, and audit.
 ## Fast path for an existing containerized application
 
 Use this path when the application already has a Docker image and needs to run
-as a tenant-owned project on a vesta-vxapp host. Do not copy a running
+as a tenant-owned project on a Vesta host. Do not copy a running
 container, Docker data directory, or `docker inspect` output into Vesta. A
 container is runtime evidence; the deployment inputs are an immutable image,
 a policy-compliant Compose definition, and any separately managed data or
@@ -21,7 +21,12 @@ broker. The tenant verifies that boundary without Docker or administrator
 sudo:
 
 ```bash
-ssh appuser@vesta.example.com \
+: "${VESTA_HOST:?set the approved Vesta hostname from protected configuration}"
+VESTA_OWNER=appuser
+SSH_TARGET="${VESTA_OWNER}@${VESTA_HOST}"
+: "${REGISTRY_HOST:?set the approved registry hostname}"
+
+ssh "$SSH_TARGET" \
   'command -v v-docker && v-docker quota json && v-docker projects json'
 ```
 
@@ -47,7 +52,7 @@ A minimal one-service definition has this shape:
 ```yaml
 services:
   app:
-    image: registry.example.com/team/app@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    image: ${REGISTRY_HOST}/team/app@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
     restart: unless-stopped
     deploy:
       resources:
@@ -62,7 +67,7 @@ returned by the server:
 
 ```bash
 preview_json="$(
-  ssh appuser@vesta.example.com \
+  ssh "$SSH_TARGET" \
     'v-docker preview app add' < compose.yaml
 )"
 
@@ -82,19 +87,19 @@ preview_id="$(jq -er '.PREVIEW_ID' <<<"$preview_json")"
 source_sha="$(jq -er '.SOURCE_SHA256' <<<"$preview_json")"
 candidate_sha="$(jq -er '.CANDIDATE_SHA256' <<<"$preview_json")"
 revision="$(jq -er '.EXPECTED_CURRENT_REVISION' <<<"$preview_json")"
-image='registry.example.com/team/app@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
+image="${REGISTRY_HOST}/team/app@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-ssh appuser@vesta.example.com -- \
+ssh "$SSH_TARGET" -- \
   v-docker image-pull app "$preview_id" "$source_sha" \
   "$candidate_sha" "$revision" "$image"
 
 # Apply only after reviewing the complete bounded preview result.
-ssh appuser@vesta.example.com -- \
+ssh "$SSH_TARGET" -- \
   v-docker apply app "$preview_id" "$source_sha" \
   "$candidate_sha" "$revision"
 
-ssh appuser@vesta.example.com 'v-docker health app json'
-ssh appuser@vesta.example.com 'v-docker drift app json'
+ssh "$SSH_TARGET" 'v-docker health app json'
+ssh "$SSH_TARGET" 'v-docker drift app json'
 ```
 
 Use the panel's simple **Add Container** flow instead when one service and its
@@ -171,9 +176,9 @@ tenant's pull credential once through bounded stdin:
 
 ```bash
 printf '%s' "$REGISTRY_TOKEN" |
-  ssh appuser@vesta.example.com \
-    'v-docker registry-add registry.example.com deploy-user'
-ssh appuser@vesta.example.com 'v-docker registries json' | jq .
+  ssh "$SSH_TARGET" \
+    'v-docker registry-add "$REGISTRY_HOST" deploy-user'
+ssh "$SSH_TARGET" 'v-docker registries json' | jq .
 ```
 
 Never put that token in argv, Compose, Git, logs, deployment JSON, or an
@@ -208,7 +213,7 @@ The core update transaction is:
 
 ```bash
 preview_json="$(
-  ssh appuser@vesta.example.com \
+  ssh "$SSH_TARGET" \
     'v-docker preview app change' < rendered-compose.yaml
 )"
 
@@ -228,27 +233,27 @@ preview_id="$(jq -er '.PREVIEW_ID' <<<"$preview_json")"
 source_sha="$(jq -er '.SOURCE_SHA256' <<<"$preview_json")"
 candidate_sha="$(jq -er '.CANDIDATE_SHA256' <<<"$preview_json")"
 revision="$(jq -er '.EXPECTED_CURRENT_REVISION' <<<"$preview_json")"
-image='registry.example.com/team/app@sha256:<64-lowercase-hex>'
+image="${REGISTRY_HOST}/team/app@sha256:<64-lowercase-hex>"
 
-ssh appuser@vesta.example.com -- \
+ssh "$SSH_TARGET" -- \
   v-docker image-pull app "$preview_id" "$source_sha" \
   "$candidate_sha" "$revision" "$image"
 
 # Run only after the deployment's explicit confirmation gate.
-ssh appuser@vesta.example.com -- \
+ssh "$SSH_TARGET" -- \
   v-docker apply app "$preview_id" "$source_sha" \
   "$candidate_sha" "$revision"
 
-ssh appuser@vesta.example.com \
+ssh "$SSH_TARGET" \
   'v-docker health app json' | jq -e '.STATUS == "healthy"'
-ssh appuser@vesta.example.com \
+ssh "$SSH_TARGET" \
   'v-docker drift app json' | jq -e '.MATCH == true'
 ```
 
 When the current workload manifest declares a readiness probe, also require:
 
 ```bash
-ssh appuser@vesta.example.com \
+ssh "$SSH_TARGET" \
   'v-docker probe app ready json' | jq -e '.STATE == "pass"'
 ```
 
@@ -292,7 +297,7 @@ new managed bind leaves, privileged or compatibility profiles, protected
 first installation of secret-dependent workloads, local archive admission,
 and migrations. Deployment scripts must never fall back to raw Docker,
 direct tenant sudo, administrator SSH, archive upload, or SCP/rsync of Vesta control
-state. See the [complete source-to-Vesta runbook](../../DOCKER_ORCHESTRATION_DEPLOYMENT.md)
+state. See the [container workload runbook](../../DOCKER_ORCHESTRATION_DEPLOYMENT.md)
 for package fields, an approval-separated reusable script, bootstrap, routes,
 secrets, backup, rollback, and troubleshooting.
 
@@ -406,11 +411,11 @@ already belong to the same Vesta owner, and the service/container port must
 resolve to exactly one loopback-published TCP endpoint:
 
 ```bash
-v-docker route-add app app.example.com web 8080 http /
+v-docker route-add app "$APP_DOMAIN" web 8080 http /
 v-docker deploy app
 v-docker routes app json | jq .
 
-v-docker route-delete app app.example.com
+v-docker route-delete app "$APP_DOMAIN"
 v-docker deploy app
 ```
 

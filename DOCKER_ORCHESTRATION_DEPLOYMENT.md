@@ -1,22 +1,28 @@
-# Docker Orchestration Deployment for vesta-vxapp
+# Deploy Container Workloads through Vesta
 
 This runbook explains how an ordinary Vesta account such as `appuser` can
-deploy and operate its own Docker Compose projects through vesta-vxapp. It
+deploy and operate its own Docker Compose projects through Vesta. It
 covers the complete path from account entitlement and SSH access through image
 delivery, Compose preview/apply, routes, data, operations, backup, and
 recovery.
 
+This is the workload deployment procedure. Vesta itself is not a Docker image
+and is not installed through Compose. Operators installing repository files on
+a host must use the separate
+[Vesta control-plane release runbook](.docs/user-guides/vesta-control-plane-releases.md).
+
 Every tenant SSH command is forced to the owner-equal `standard` profile.
 Privileged profiles and production workload changes are administrator-only.
 
-> **Managed Harbor requires development-host activation and acceptance.** The
-> generated credential lifecycle is implemented, the last live transaction
-> remains safely rolled back, and production is deferred. Before use, require
-> a healthy, fresh `registry-info` result. Read the canonical
+> **Managed Harbor development delivery is accepted; production is deferred.**
+> The generated credential lifecycle and a complete generic application
+> release passed development acceptance on 2026-08-11. Before every release,
+> require a healthy, fresh `registry-info` result. Read the canonical
 > [tenant Harbor deployment guide](.docs/user-guides/vesta-managed-harbor.md),
 > [operator Harbor runbook](.docs/user-guides/vesta-managed-harbor-operator.md),
 > the [provider contract](.docs/contracts/harbor-provider.md), and the
-> [development acceptance evidence](.docs/validation/2026-08-08-vesta-managed-harbor-development.md).
+> [current development acceptance evidence](.docs/validation/2026-08-11-managed-harbor-application-release.md)
+> and preserved [earlier failure evidence](.docs/validation/2026-08-08-vesta-managed-harbor-development.md).
 
 ## 1. The deployment model
 
@@ -48,7 +54,8 @@ tenant.
 
 ### 2.1 Install Docker orchestration and shell access
 
-Install the vesta-vxapp release through the normal release process,
+Install the Vesta release through the
+[control-plane release procedure](.docs/user-guides/vesta-control-plane-releases.md),
 then install or repair the shell-access boundary:
 
 ```bash
@@ -229,11 +236,16 @@ effective limits before granting SSH access or attempting the first preview.
 ### 2.3 Configure SSH safely
 
 Use an ordinary SSH public key for the tenant account. For example, from the
-operator workstation:
+operator workstation, load the approved endpoint from protected environment
+configuration rather than hard-coding it in the repository:
 
 ```bash
-ssh-copy-id appuser@vesta.example.com
-ssh appuser@vesta.example.com /usr/local/bin/v-docker quota json
+: "${VESTA_HOST:?set the approved Vesta hostname from protected configuration}"
+VESTA_OWNER=appuser
+SSH_TARGET="${VESTA_OWNER}@${VESTA_HOST}"
+
+ssh-copy-id "$SSH_TARGET"
+ssh -- "$SSH_TARGET" /usr/local/bin/v-docker quota json
 ```
 
 For automation, provision a dedicated deployment key, restrict possession of
@@ -246,7 +258,7 @@ administrator key, or expose the Vesta/Docker socket over SSH.
 Log in as the tenant itself:
 
 ```bash
-ssh appuser@vesta.example.com
+ssh "$SSH_TARGET"
 command -v v-docker
 v-docker quota json | jq .
 v-docker projects json | jq .
@@ -270,7 +282,7 @@ Use this supply chain instead:
 2. Push it to an approved public or private registry.
 3. Resolve the pushed image to an immutable repository digest.
 4. Put the immutable reference in Compose, for example
-   `registry.example.com/team/app@sha256:<64-hex-digest>`.
+   `${REGISTRY_HOST}/team/app@sha256:<64-hex-digest>`.
 5. Stage a protected `standard` preview, pull that exact image through the
    preview-bound tenant command, review, and apply the unchanged preview.
 
@@ -339,12 +351,12 @@ build and acceptance details remain in the owning application repository.
 #### Independently managed external registry
 
 The tenant may install an owner-scoped registry credential through bounded
-stdin. The registry is a hostname accepted by the tenant broker, such as
-`ghcr.io` or `registry.example.com`:
+stdin. Load the approved registry hostname from protected configuration:
 
 ```bash
+: "${REGISTRY_HOST:?set the approved registry hostname}"
 printf '%s' "$REGISTRY_TOKEN" \
-  | v-docker registry-add registry.example.com deploy-user
+  | v-docker registry-add "$REGISTRY_HOST" deploy-user
 v-docker registries json | jq .
 ```
 
@@ -352,8 +364,8 @@ Rotate or remove it with:
 
 ```bash
 printf '%s' "$NEW_REGISTRY_TOKEN" \
-  | v-docker registry-change registry.example.com deploy-user
-v-docker registry-delete registry.example.com
+  | v-docker registry-change "$REGISTRY_HOST" deploy-user
+v-docker registry-delete "$REGISTRY_HOST"
 ```
 
 Never put a registry password in argv, Compose, logs, labels, environment
@@ -382,7 +394,7 @@ Example shape (replace the digest and resource values with approved values):
 ```yaml
 services:
   web:
-    image: registry.example.com/team/app@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    image: ${REGISTRY_HOST}/team/app@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
     restart: unless-stopped
     deploy:
       resources:
@@ -442,7 +454,7 @@ From the developer workstation, stream the local file over SSH:
 
 ```bash
 preview_json="$(
-  ssh appuser@vesta.example.com \
+  ssh "$SSH_TARGET" \
     '/usr/local/bin/v-docker preview app add' < compose.yaml
 )"
 printf '%s\n' "$preview_json" | jq .
@@ -458,12 +470,12 @@ preview_id="$(jq -er '.PREVIEW_ID' <<<"$preview_json")"
 source_sha="$(jq -er '.SOURCE_SHA256' <<<"$preview_json")"
 candidate_sha="$(jq -er '.CANDIDATE_SHA256' <<<"$preview_json")"
 revision="$(jq -er '.EXPECTED_CURRENT_REVISION' <<<"$preview_json")"
-image='registry.example.com/team/app@sha256:<64-lowercase-hex-digest>'
+image="${REGISTRY_HOST}/team/app@sha256:<64-lowercase-hex-digest>"
 
-ssh appuser@vesta.example.com \
+ssh "$SSH_TARGET" \
   "/usr/local/bin/v-docker image-pull app $preview_id $source_sha $candidate_sha $revision $image"
 
-ssh appuser@vesta.example.com \
+ssh "$SSH_TARGET" \
   "/usr/local/bin/v-docker apply app $preview_id $source_sha $candidate_sha $revision"
 ```
 
@@ -473,7 +485,7 @@ Change only the mode:
 
 ```bash
 preview_json="$(
-  ssh appuser@vesta.example.com \
+  ssh "$SSH_TARGET" \
     '/usr/local/bin/v-docker preview app change' < compose.yaml
 )"
 printf '%s\n' "$preview_json" | jq .
@@ -668,14 +680,14 @@ tenant-owned managed bind leaf. For example:
 
 ```bash
 rsync -a -- ./public/ \
-  appuser@vesta.example.com:/home/appuser/docker/app/binds/public/
+  "${SSH_TARGET}:/home/appuser/docker/app/binds/public/"
 ```
 
 or:
 
 ```bash
 scp -- ./config/defaults.json \
-  appuser@vesta.example.com:/home/appuser/docker/app/binds/config/
+  "${SSH_TARGET}:/home/appuser/docker/app/binds/config/"
 ```
 
 Guidelines:
@@ -773,10 +785,11 @@ Compose port publication and Vesta HTTP routing are separate.
 For a service `web` listening on container port `8080`:
 
 ```bash
-v-docker route-add app app.example.com web 8080 http /
+: "${APP_DOMAIN:?set the Vesta-owned application domain}"
+v-docker route-add app "$APP_DOMAIN" web 8080 http /
 v-docker deploy app
 v-docker routes app json | jq .
-v-docker route-delete app app.example.com
+v-docker route-delete app "$APP_DOMAIN"
 v-docker deploy app
 ```
 

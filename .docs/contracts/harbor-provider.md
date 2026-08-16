@@ -238,9 +238,9 @@ artifacts are retained.
 {
   "MANAGED": true,
   "STATE": "ready",
-  "REGISTRY": "server.example.com:8083",
+  "REGISTRY": "<vesta-host>:8083",
   "NAMESPACE": "vx-owner",
-  "REPOSITORY": "server.example.com:8083/vx-owner/project",
+  "REPOSITORY": "<vesta-host>:8083/vx-owner/project",
   "PUBLISHER_USERNAME": "vxrobot-vx-owner+publisher",
   "PUBLISHER_ENABLED": true,
   "QUOTA_MB": 40960,

@@ -7,8 +7,8 @@ overlay, focused host gates, lifecycle, authenticated browser acceptance, and
 exact isolation checks. The overlay remains installed on staging, its upload
 was removed, and the fresh rollback archive is retained.
 
-- Target: `operator@192.0.2.20` through
-  `builder@192.0.2.30`
+- Target: `operator@<staging-host>` through
+  `builder@<staging-jump-host>`
 - Implementation: `472b19f66acc0a5c92ff103363aa4326019eae72`
 - Overlay paths: 48 committed regular files
 - Overlay archive SHA-256:

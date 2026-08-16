@@ -87,7 +87,7 @@ expiry defined by [Compose images](compose-images.md). Neither approval nor
 revocation loads, removes, starts, stops, or rebuilds an image or project.
 
 `v-approve-docker-project-profile` accepts installed versioned administrator
-profiles, including the bridge-only `legacy-admin-app` compatibility profile.
+profiles, including the bridge-only `restricted-compatibility` profile.
 Unknown, disabled, expired, mismatched-version, or unassigned profiles fail
 closed before candidate persistence.
 

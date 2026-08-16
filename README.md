@@ -99,7 +99,8 @@ bridges. The full command contract is in
 Start here for current Compose work:
 
 - [Documentation index and status](.docs/README.md)
-- [Complete source-to-Vesta deployment runbook](DOCKER_ORCHESTRATION_DEPLOYMENT.md)
+- [Vesta control-plane release runbook](.docs/user-guides/vesta-control-plane-releases.md)
+- [Container workload deployment runbook](DOCKER_ORCHESTRATION_DEPLOYMENT.md)
 - [Operator architecture and migration guide](docs/container-orchestration.md)
 - [Tenant Compose deployment guide — start here](.docs/user-guides/docker-compose-projects.md)
 - [Security contract](.docs/contracts/compose-security.md)
@@ -135,10 +136,9 @@ comparison on disposable staging proved exact repository bytes, modes, and
 preview/update, stale-preview rejection, failed-update recovery, restore, and
 scoped deletion all passed.
 
-For the later tenant shell-access change, the exact commit/archive were
-verified locally, but deployment was not applied because local
-release-readiness prerequisites were incomplete. Development-host acceptance
-was not recorded, and no production access occurred during that validation.
+Later tenant shell-access and managed-registry changes have their own dated
+development acceptance records. Those records prove their named transactions;
+they do not authorize production or replace the standing release runbooks.
 
 The legacy myVesta upstream README follows.
 

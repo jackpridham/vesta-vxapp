@@ -7,7 +7,7 @@ provider="$root/.docs/contracts/harbor-provider.md"
 shell_access="$root/.docs/contracts/compose-shell-access.md"
 spec="$root/.docs/specs/2026-08-08-vesta-managed-harbor-registry.md"
 validation="$root/.docs/validation/2026-08-08-vesta-managed-harbor-development.md"
-accepted_validation="$root/.docs/validation/2026-08-11-slave-vxapp-managed-harbor-release.md"
+accepted_validation="$root/.docs/validation/2026-08-11-managed-harbor-application-release.md"
 tenant_guide="$root/.docs/user-guides/vesta-managed-harbor.md"
 operator_guide="$root/.docs/user-guides/vesta-managed-harbor-operator.md"
 
@@ -46,7 +46,7 @@ done
 # preflight through retained-data disablement without claiming deployment
 # authorization or an automated restore apply.
 for phrase in \
-    'procedure, not deployment authorization' \
+    'development delivery accepted' \
     'v-install-harbor-registry' \
     'v-list-harbor-registry json' \
     'v-sync-harbor-registry-owner appuser' \
@@ -215,14 +215,13 @@ assert_before "$validation" '## Acceptance not claimed' \
 # authorization.
 for phrase in \
     'PASS — DEVELOPMENT APPLICATION DELIVERY' \
-    'slave/slave-vxapp' \
-    'standard` version 2' \
-    'sha256:e4e1aade91f49a709041949149a073cb731c97f6ab3134a02d133ae58b70998b' \
-    'Resulting revision' \
-    'PUBLISHER_ENABLED=true' \
-    'this record does not claim' \
-    'publisher revocation acceptance' \
-    'Production deployment remains deferred'
+    'generic `standard` profile' \
+    'Owner-equal tenant and existing managed project' \
+    'Exact `repository@sha256:<digest>`' \
+    'Positive revision greater than the pre-release revision' \
+    'Private source, tenant, project, endpoint, route, and artifact identifiers' \
+    'does not claim publisher-revocation' \
+    'Production remains deferred'
 do
     assert_contains "$accepted_validation" "$phrase"
 done
@@ -232,7 +231,7 @@ for file in \
     "$root/docs/container-orchestration.md" \
     "$root/.docs/README.md"
 do
-    assert_contains "$file" '2026-08-11-slave-vxapp-managed-harbor-release.md'
+    assert_contains "$file" '2026-08-11-managed-harbor-application-release.md'
 done
 
 printf 'PASS: Harbor generated-credential documentation contract\n'

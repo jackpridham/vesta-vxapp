@@ -42,4 +42,8 @@ The detailed controls are in
 Disposable-staging acceptance is complete. Production promotion is not
 authorized by repository state or test evidence; it requires explicit target
 authorization, exact file manifests and hashes, rollback backups, and scoped
-post-deployment checks.
+post-deployment checks. Use the
+[Vesta control-plane release runbook](.docs/user-guides/vesta-control-plane-releases.md)
+for host-file releases and the
+[container workload runbook](DOCKER_ORCHESTRATION_DEPLOYMENT.md) for projects
+managed through Compose.

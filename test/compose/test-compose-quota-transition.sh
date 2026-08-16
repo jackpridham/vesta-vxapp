@@ -10,7 +10,7 @@ fail() {
     exit 1
 }
 
-source_package="$test_root/current-vxslave.pkg"
+source_package="$test_root/current-package.pkg"
 cat >"$source_package" <<'EOF'
 WEB_DOMAINS='unlimited'
 DNS_DOMAINS='4'
@@ -30,7 +30,7 @@ EOF
 source_bytes="$(sha256sum "$source_package" | awk '{print $1}')"
 source_user="$test_root/prior-user.conf"
 cat >"$source_user" <<'EOF'
-PACKAGE='existing-vxslave'
+PACKAGE='existing-package'
 DOCKER_PROJECTS='unlimited'
 DOCKER_SERVICES='unlimited'
 DOCKER_CPUS='unlimited'
@@ -52,8 +52,9 @@ U_DOCKER_VOLUMES='2'
 EOF
 source_user_bytes="$(sha256sum "$source_user" | awk '{print $1}')"
 output_dir="$test_root/prepared"
-"$repo_root/install/migrations/vxslave-compose-quota/prepare.sh" \
-    "$source_package" "$source_user" "$output_dir" existing-vxslave \
+"$repo_root/install/migrations/compose-quota-transition/prepare.sh" \
+    "$source_package" "$source_user" "$output_dir" existing-package \
+    migrationuser \
     >"$test_root/prepare.out"
 
 assertion_file="$output_dir/apply-and-rollback.txt"
@@ -74,19 +75,19 @@ for line in \
     "MAIL_DOMAINS='2'" \
     "DATABASES='3'" \
     "BACKUPS='5'"; do
-    grep -Fxq "$line" "$output_dir/vxslave-compose.pkg" \
+    grep -Fxq "$line" "$output_dir/compose-transition.pkg" \
         || fail "non-Docker package field changed: $line"
 done
 cmp -s \
-    "$repo_root/install/migrations/vxslave-compose-quota/docker-quota.conf" \
-    <(grep '^DOCKER_' "$output_dir/vxslave-compose.pkg") \
+    "$repo_root/install/migrations/compose-quota-transition/docker-quota.conf" \
+    <(grep '^DOCKER_' "$output_dir/compose-transition.pkg") \
     || fail 'candidate does not contain the exact approved Docker limits'
 grep -Fq 'v-add-user-package' "$output_dir/apply-and-rollback.txt" \
     || fail 'exact apply command was not emitted'
-grep -Fq 'v-update-user-counters slave' \
+grep -Fq "v-update-user-counters 'migrationuser'" \
     "$output_dir/apply-and-rollback.txt" \
     || fail 'exact counter recalculation command was not emitted'
-grep -Fq "rollback.sh '$output_dir' slave 'existing-vxslave'" \
+grep -Fq "rollback.sh '$output_dir' 'migrationuser' 'existing-package'" \
     "$output_dir/apply-and-rollback.txt" \
     || fail 'exact rollback command was not emitted'
 [[ "$(sha256sum "$output_dir/rollback-user.conf" | awk '{print $1}')" \
@@ -108,8 +109,9 @@ grep -Fq \
     "$output_dir/apply-and-rollback.txt" \
     || fail 'procedure did not record authoritative source usage'
 
-if "$repo_root/install/migrations/vxslave-compose-quota/prepare.sh" \
+if "$repo_root/install/migrations/compose-quota-transition/prepare.sh" \
     "$test_root/default.pkg" "$source_user" "$test_root/forbidden" default \
+    migrationuser \
     >"$test_root/forbidden.out" 2>&1; then
     fail 'shared default package migration was accepted'
 fi
@@ -120,16 +122,16 @@ mkdir -p \
     "$VESTA/data/packages" \
     "$VESTA/data/users/rehearsal/docker-projects" \
     "$HOMEDIR/rehearsal/docker"
-cp "$output_dir/vxslave-compose.pkg" \
-    "$VESTA/data/packages/vxslave-compose.pkg"
-cp "$source_package" "$VESTA/data/packages/existing-vxslave.pkg"
+cp "$output_dir/compose-transition.pkg" \
+    "$VESTA/data/packages/compose-transition.pkg"
+cp "$source_package" "$VESTA/data/packages/existing-package.pkg"
 printf "UNRELATED='keep-me'\n" >"$VESTA/data/packages/unrelated.pkg"
 unrelated_sha="$(
     sha256sum "$VESTA/data/packages/unrelated.pkg" | awk '{print $1}'
 )"
 cp "$source_user" "$VESTA/data/users/rehearsal/user.conf"
 cat >"$VESTA/data/users/rehearsal/user.conf" <<'EOF'
-PACKAGE='vxslave-compose'
+PACKAGE='compose-transition'
 DOCKER_PROJECTS='1'
 DOCKER_SERVICES='1'
 DOCKER_CPUS='1.000'
@@ -190,17 +192,17 @@ jq -e '
     || fail 'applied rehearsal state did not match the approved limits'
 
 printf "CORRUPTED='yes'\n" \
-    >"$VESTA/data/packages/existing-vxslave.pkg"
-"$repo_root/install/migrations/vxslave-compose-quota/rollback.sh" \
-    "$output_dir" rehearsal existing-vxslave "$VESTA" \
+    >"$VESTA/data/packages/existing-package.pkg"
+"$repo_root/install/migrations/compose-quota-transition/rollback.sh" \
+    "$output_dir" rehearsal existing-package "$VESTA" \
     >"$test_root/rollback.out"
 cmp -s "$source_user" \
     "$VESTA/data/users/rehearsal/user.conf" \
     || fail 'prior user bytes were not restored exactly'
 cmp -s "$source_package" \
-    "$VESTA/data/packages/existing-vxslave.pkg" \
+    "$VESTA/data/packages/existing-package.pkg" \
     || fail 'prior package bytes were not reinstalled exactly'
-[[ ! -e "$VESTA/data/packages/vxslave-compose.pkg" ]] \
+[[ ! -e "$VESTA/data/packages/compose-transition.pkg" ]] \
     || fail 'dedicated rehearsal package remained after rollback'
 [[ "$(sha256sum "$VESTA/data/packages/unrelated.pkg" | awk '{print $1}')" \
     == "$unrelated_sha" ]] || fail 'rollback changed an unrelated package'
@@ -209,27 +211,27 @@ tampered_dir="$test_root/tampered"
 cp -a "$output_dir" "$tampered_dir"
 printf "TAMPERED='yes'\n" >>"$tampered_dir/rollback-user.conf"
 restored_package_sha="$(
-    sha256sum "$VESTA/data/packages/existing-vxslave.pkg" | awk '{print $1}'
+    sha256sum "$VESTA/data/packages/existing-package.pkg" | awk '{print $1}'
 )"
 restored_user_sha="$(
     sha256sum "$VESTA/data/users/rehearsal/user.conf" | awk '{print $1}'
 )"
-if "$repo_root/install/migrations/vxslave-compose-quota/rollback.sh" \
-    "$tampered_dir" rehearsal existing-vxslave "$VESTA" \
+if "$repo_root/install/migrations/compose-quota-transition/rollback.sh" \
+    "$tampered_dir" rehearsal existing-package "$VESTA" \
     >"$test_root/tampered-rollback.out" 2>&1; then
     fail 'rollback accepted tampered saved bytes'
 fi
-[[ "$(sha256sum "$VESTA/data/packages/existing-vxslave.pkg" \
+[[ "$(sha256sum "$VESTA/data/packages/existing-package.pkg" \
     | awk '{print $1}')" == "$restored_package_sha" ]] \
     || fail 'failed rollback changed the prior package'
 [[ "$(sha256sum "$VESTA/data/users/rehearsal/user.conf" \
     | awk '{print $1}')" == "$restored_user_sha" ]] \
     || fail 'failed rollback changed the prior user'
 
-if "$repo_root/install/migrations/vxslave-compose-quota/rollback.sh" \
+if "$repo_root/install/migrations/compose-quota-transition/rollback.sh" \
     "$output_dir" rehearsal ../escape "$VESTA" \
     >"$test_root/unsafe-rollback.out" 2>&1; then
     fail 'rollback accepted an unsafe package target'
 fi
 
-echo "vxslave quota migration local rehearsal passed."
+echo "Compose quota transition local rehearsal passed."

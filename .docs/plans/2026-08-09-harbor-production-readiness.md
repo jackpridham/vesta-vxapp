@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bash, ShellCheck 0.11, systemd-run cgroup scopes, PHP, GitHub Issues, repository shell test harnesses.
 
-**Validation evidence (2026-08-09):** GitHub issues [#2](https://github.com/jackpridham/vesta-vxapp/issues/2) and [#3](https://github.com/jackpridham/vesta-vxapp/issues/3) record the deferred recovery work and constrained-host ShellCheck correction. `test/harbor/run-focused.sh` passed. `test/compose/run-production-readiness-limited.sh` passed at 50% CPU with dynamic cgroup limits and printed `Compose production-readiness release gate passed.` No live provider, container, site, route, firewall, DNS, or production workload was mutated.
+**Validation evidence (2026-08-09):** Repository issues #2 and #3 record the deferred recovery work and constrained-host ShellCheck correction. `test/harbor/run-focused.sh` passed. `test/compose/run-production-readiness-limited.sh` passed at 50% CPU with dynamic cgroup limits and printed `Compose production-readiness release gate passed.` No live provider, container, site, route, firewall, DNS, or production workload was mutated.
 
 ---
 

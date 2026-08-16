@@ -1,13 +1,13 @@
-# SydLocal Cron Backup Compatibility Implementation Plan
+# compatibility host Cron Backup Compatibility Implementation Plan
 
 > **For agentic workers:** Selected workflow: Inline Execution. These are two
-> small compatibility corrections that share one SydLocal acceptance run and
+> small compatibility corrections that share one compatibility host acceptance run and
 > must be applied in order. The preferred executing-plans helper is unavailable,
 > so execute these checked steps directly without subagents. Stop before the
 > live backup rerun unless the operator has approved the maintenance window in
 > Task 5.
 
-**Goal:** Make SydLocal's weekly **v-backup-users** run complete successfully
+**Goal:** Make compatibility host's weekly **v-backup-users** run complete successfully
 and send a clean PHP 8.4 notification while preserving existing Compose
 secret, ownership, backup-consistency, and tenant-isolation boundaries.
 
@@ -26,37 +26,37 @@ resource-limited production-readiness launcher.
 
 ## Scope, evidence, and safety boundary
 
-This plan addresses two confirmed SydLocal defects:
+This plan addresses two confirmed compatibility host defects:
 
 1. **web/inc/mail-wrapper.php** includes **web/inc/main.php** under bundled PHP
    8.4.11. **main.php** contains deprecated dollar-brace interpolation and
    assumes **REMOTE_ADDR** exists, so the backup notification emits warnings.
-2. **asteriskvx/pbx** revision 1 is healthy and correctly labelled, but its
+2. **compatuser/app** revision 1 is healthy and correctly labelled, but its
    accepted containers mount secrets from the exact protected
-   **pbx/secrets/name** authority. Current runtime preflight expects only
-   **pbx/runtime/workload-secrets/current/name**, so backup fails with the
+   **app/secrets/name** authority. Current runtime preflight expects only
+   **app/runtime/workload-secrets/current/name**, so backup fails with the
    misleading message “Compose runtime container ownership mismatch”.
 
 The same read-only drift report contains a separate network presentation gap:
-the specialized Asterisk profile runs its approved host network while generic
+the specialized compatibility workload profile runs its approved host network while generic
 drift projection reports desired **default**. That discrepancy does not cause
 the confirmed identity-preflight failure and is outside this correction. Do
 not weaken generic network policy or normalize host networking here; retain it
 as explicit follow-up evidence.
 
 The August 15 run backed up every other user successfully, failed only
-**asteriskvx**, wrote **data/df/backup-error.txt**, and did not write
+**compatuser**, wrote **data/df/backup-error.txt**, and did not write
 **data/df/backup-success.txt**.
 
-Do not change cron timing, notification recipients, retention, Asterisk
+Do not change cron timing, notification recipients, retention, compatibility workload
 desired state, container labels, secret files, routes, or service definitions.
-Do not recreate Asterisk merely to change its secret source. Do not accept a
+Do not recreate compatibility workload merely to change its secret source. Do not accept a
 source because it shares a prefix: only the canonical file and exact current
 runtime-copy file are equivalent. Never print secret contents. Do not use
 Docker prune or mutate unrelated containers/sites.
 
-Production and Dev are outside this release. Deploy only to SydLocal
-**debian@192.168.100.100** after the complete limited gate passes.
+Production and Dev are outside this release. Deploy only to compatibility host
+**debian@<compatibility-host>** after the complete limited gate passes.
 
 ## File responsibility map
 
@@ -72,7 +72,7 @@ Production and Dev are outside this release. Deploy only to SydLocal
 - **func/vx/compose/drift.sh**: applies the same normalization to drift evidence.
 - **test/compose/test-lifecycle.sh**: fixture covering both accepted secret
   representations and all rejected alternatives.
-- **.docs/validation/2026-08-16-sydlocal-cron-backup-compatibility.md**:
+- **.docs/validation/2026-08-16-legacy-container-backup-compatibility.md**:
   release hashes, tests, installation backup, and redacted acceptance evidence.
 
 ## Milestone 1: PHP 8.4-safe backup notifications
@@ -370,12 +370,12 @@ git commit -m "fix(compose): preserve accepted secret mount authority"
 
 Expected: normal commit hooks pass without bypasses.
 
-## Milestone 3: Release validation and SydLocal acceptance
+## Milestone 3: Release validation and compatibility host acceptance
 
 ### Task 5: Validate, publish, install, and exercise the corrected path
 
 **Files:**
-- Create: **.docs/validation/2026-08-16-sydlocal-cron-backup-compatibility.md**
+- Create: **.docs/validation/2026-08-16-legacy-container-backup-compatibility.md**
 - Deploy: **/usr/local/vesta/web/inc/main.php**
 - Deploy: **/usr/local/vesta/web/inc/i18n.php**
 - Deploy: **/usr/local/vesta/func/vx/compose/lifecycle.sh**
@@ -393,7 +393,7 @@ Expected final line:
 Compose production-readiness release gate passed.
 ~~~
 
-Do not run the unlimited gate or broad standalone ShellCheck on SydLocal.
+Do not run the unlimited gate or broad standalone ShellCheck on compatibility host.
 
 - [ ] **Step 2: Push the exact tested commits**
 
@@ -407,24 +407,24 @@ Expected: clean worktree, synchronized branch, and passing pre-push hooks.
 - [ ] **Step 3: Capture pre-install evidence**
 
 ~~~bash
-ssh debian@192.168.100.100 'sudo env VESTA=/usr/local/vesta bash -s' <<'REMOTE'
+ssh debian@<compatibility-host> 'sudo env VESTA=/usr/local/vesta bash -s' <<'REMOTE'
 set -euo pipefail
 systemctl is-active cron docker nginx dovecot exim4
 stat -c '%n|%s|%y' /usr/local/vesta/log/backup.log \
     /usr/local/vesta/data/df/backup-error.txt
-/usr/local/vesta/bin/v-list-docker-project asteriskvx pbx json \
+/usr/local/vesta/bin/v-list-docker-project compatuser app json \
     | jq -c '{OWNER,PROJECT,PROFILE,STATE,REVISION,HEALTH}'
 REMOTE
 ~~~
 
-Expected: services active; **asteriskvx/pbx** running at revision 1.
+Expected: services active; **compatuser/app** running at revision 1.
 
 - [ ] **Step 4: Install only four runtime files with a backup**
 
 Copy each tested file to its named **/tmp/*.release** path, then:
 
 ~~~bash
-ssh debian@192.168.100.100 'sudo bash -s' <<'REMOTE'
+ssh debian@<compatibility-host> 'sudo bash -s' <<'REMOTE'
 set -euo pipefail
 backup_dir=$(mktemp -d \
     /root/vesta-backups/pre-cron-backup-compatibility.XXXXXXXX)
@@ -454,7 +454,7 @@ files require no service or container restart.
 - [ ] **Step 5: Validate installed code before backup**
 
 ~~~bash
-ssh debian@192.168.100.100 'sudo env VESTA=/usr/local/vesta bash -s' <<'REMOTE'
+ssh debian@<compatibility-host> 'sudo env VESTA=/usr/local/vesta bash -s' <<'REMOTE'
 set -euo pipefail
 for file in /usr/local/vesta/web/inc/main.php \
     /usr/local/vesta/web/inc/i18n.php; do
@@ -463,11 +463,11 @@ for file in /usr/local/vesta/web/inc/main.php \
     ! grep -Eq 'Deprecated:|Warning:|Notice:' /tmp/vesta-php-lint.out
 done
 rm -f /tmp/vesta-php-lint.out
-user=asteriskvx
+user=compatuser
 source /usr/local/vesta/func/main.sh
 source /usr/local/vesta/func/vx/compose/main.sh
-test "$(vx_compose_runtime_identity_preflight asteriskvx pbx)" = complete
-vx_compose_drift_observe_json asteriskvx pbx | jq -e '
+test "$(vx_compose_runtime_identity_preflight compatuser app)" = complete
+vx_compose_drift_observe_json compatuser app | jq -e '
     all(.CHANGED_SERVICES[]?.CHANGES[]?; . != "mount")
 ' >/dev/null
 REMOTE
@@ -483,19 +483,19 @@ four files from the recorded backup and stop before backup execution.
 The Compose backup contract may briefly quiesce and restart a project:
 
 ~~~bash
-ssh debian@192.168.100.100 \
-    'sudo env VESTA=/usr/local/vesta /usr/local/vesta/bin/v-backup-user asteriskvx'
+ssh debian@<compatibility-host> \
+    'sudo env VESTA=/usr/local/vesta /usr/local/vesta/bin/v-backup-user compatuser'
 ~~~
 
 Immediately verify:
 
 ~~~bash
-ssh debian@192.168.100.100 'sudo env VESTA=/usr/local/vesta bash -s' <<'REMOTE'
+ssh debian@<compatibility-host> 'sudo env VESTA=/usr/local/vesta bash -s' <<'REMOTE'
 set -euo pipefail
-/usr/local/vesta/bin/v-list-docker-project asteriskvx pbx json \
+/usr/local/vesta/bin/v-list-docker-project compatuser app json \
     | jq -e '.STATE == "running" and .REVISION == 1 and .HEALTH == "healthy"' \
     >/dev/null
-/usr/local/vesta/bin/v-list-docker-project-health asteriskvx pbx json \
+/usr/local/vesta/bin/v-list-docker-project-health compatuser app json \
     | jq -e '.STATUS == "healthy" and .FRESHNESS == "fresh"' >/dev/null
 REMOTE
 ~~~
@@ -508,7 +508,7 @@ Still inside the approved window, skip only the optional MySQL repair and keep
 the normal backup/notification behavior:
 
 ~~~bash
-ssh debian@192.168.100.100 'sudo env VESTA=/usr/local/vesta bash -s' <<'REMOTE'
+ssh debian@<compatibility-host> 'sudo env VESTA=/usr/local/vesta bash -s' <<'REMOTE'
 set -euo pipefail
 output=$(mktemp /root/v-backup-users-acceptance.XXXXXXXX)
 chmod 0600 "$output"
@@ -532,13 +532,13 @@ absent, and cron configuration unchanged.
 - [ ] **Step 8: Record evidence and commit**
 
 Create the validation document with exact commits and hashes, focused/full
-gate results, SydLocal backup directory, pre/post project revision and health,
+gate results, compatibility host backup directory, pre/post project revision and health,
 backup result markers, and confirmation that no secret values, unrelated
 workloads, routes, sites, or cron entries changed.
 
 ~~~bash
-git add .docs/validation/2026-08-16-sydlocal-cron-backup-compatibility.md
-git commit -m "docs(validation): record SydLocal backup compatibility"
+git add .docs/validation/2026-08-16-legacy-container-backup-compatibility.md
+git commit -m "docs(validation): record compatibility host backup compatibility"
 git push origin master
 git status --short --branch
 ~~~
@@ -555,12 +555,12 @@ Expected: hooks pass and the final worktree is clean and synchronized.
 - [ ] Foreign, previous-generation, writable, duplicate, extra, and undeclared
   mounts remain rejected.
 - [ ] Fixture drift matches for both accepted secret-source representations;
-  SydLocal no longer reports **mount** drift for Asterisk.
+  compatibility host no longer reports **mount** drift for compatibility workload.
 - [ ] Focused tests and limited production-readiness gate pass.
-- [ ] Individual Asterisk backup and **v-backup-users 0** exit zero.
-- [ ] **asteriskvx/pbx** remains revision 1, running and healthy.
+- [ ] Individual compatibility workload backup and **v-backup-users 0** exit zero.
+- [ ] **compatuser/app** remains revision 1, running and healthy.
 - [ ] **backup-success.txt** replaces **backup-error.txt**.
 - [ ] Cron schedule, retention, notification recipient, sites, routes, and
   unrelated containers remain unchanged.
-- [ ] The pre-existing Asterisk host-network drift presentation is recorded as
+- [ ] The pre-existing compatibility workload host-network drift presentation is recorded as
   separate follow-up and this patch does not broaden network authorization.

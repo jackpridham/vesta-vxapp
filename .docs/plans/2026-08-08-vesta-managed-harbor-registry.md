@@ -759,8 +759,8 @@ Expected: one clean focused run; no broad ShellCheck or full readiness.
 
 - [ ] **Step 2: Stage and validate development**
 
-Stage directly to `operator@development.example.com`, pinned to the authorized
-development address `192.0.2.10`. Verify pinned release, no host Harbor
+Stage directly to `operator@<development-fqdn>`, pinned to the authorized
+development address `<development-host>`. Verify pinned release, no host Harbor
 TCP listener, Unix-socket permissions, exact Vesta TLS routes, no portal/API
 exposure, eligible owner reconciliation, quota, separate credentials,
 immutable push/pull/deploy, revocation, outage isolation, encrypted backup
@@ -791,10 +791,10 @@ child robot attempts secret refresh. This conflicts with the approved
 caller-generated publisher secret and no-routine-bootstrap-admin requirements.
 Disposable probes were removed. The provider is disabled, its service is
 inactive/disabled, no Harbor host listener/socket is present, and
-`legacy-admin-app` remains the same healthy container. Final root-owned rollback is
+`compatibility-app` remains the same healthy container. Final root-owned rollback is
 `/root/vesta-backups/vesta-harbor-task10-6c7119b8-20260808T125339Z`.
-Workstation DNS currently resolves `development.example.com` to `203.0.113.10`,
-not `192.0.2.10`; pinned hostname TLS probes verified the valid
+Workstation DNS currently resolves `<development-fqdn>` to `<unexpected-resolver-target>`,
+not `<development-host>`; pinned hostname TLS probes verified the valid
 development certificate without contacting that other address.
 
 ### Task 11: Final release review and closeout

@@ -24,7 +24,7 @@ Policy evaluates the rendered model, never YAML text or UI fields alone.
 | --- | --- | --- | --- | --- |
 | `standard` | Package/user eligible | Bridge only | Managed project roots | Safe defaults only |
 | `admin-approved` | Admin per project | Bridge; approved public binds allowed | Managed project roots | No capability additions |
-| `legacy-admin-app` | Admin per project | Bridge only | Managed project roots | `CHOWN`, `DAC_OVERRIDE`, `KILL`, `SETGID`, `SETUID` only |
+| `restricted-compatibility` | Admin per project | Bridge only | Managed project roots | `CHOWN`, `DAC_OVERRIDE`, `KILL`, `SETGID`, `SETUID` only |
 
 Approval is stored in root-owned mode-0600 Vesta metadata with actor, timestamp,
 profile version, and a required UTC expiry no more than one year ahead. A
@@ -67,12 +67,13 @@ dependency edge. Empty owner directories are skipped; linked or mismatched
 authority entries fail closed. Owner deletion explicitly unmounts only that
 owner root.
 
-The `standard`, `admin-approved`, and `legacy-admin-app` profiles reject host
+The `standard`, `admin-approved`, and `restricted-compatibility` profiles reject host
 networking. `standard` and `admin-approved` reject every `cap_add`;
-`legacy-admin-app` accepts only `CHOWN`, `DAC_OVERRIDE`, `KILL`, `SETGID`, and
+`restricted-compatibility` accepts only `CHOWN`, `DAC_OVERRIDE`, `KILL`, `SETGID`, and
 `SETUID` after an expiring root assignment. These are the exact capabilities
-required by the existing image to prepare Nginx runtime directories, change
-PHP-FPM identity, and stop Supervisor children. All projects also
+available for a separately reviewed compatibility workload that must prepare
+bounded runtime directories, change its unprivileged service identity, and
+stop supervised child processes. All projects also
 reject custom security options, user namespace overrides, kernel tunables,
 and custom logging drivers.
 

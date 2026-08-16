@@ -22,7 +22,7 @@ or global Docker cleanup.
 > [tenant Harbor deployment guide](../.docs/user-guides/vesta-managed-harbor.md),
 > [managed Harbor operator runbook](../.docs/user-guides/vesta-managed-harbor-operator.md),
 > [operator/provider contract](../.docs/contracts/harbor-provider.md), and
-> [current development acceptance evidence](../.docs/validation/2026-08-11-slave-vxapp-managed-harbor-release.md)
+> [current development acceptance evidence](../.docs/validation/2026-08-11-managed-harbor-application-release.md)
 > and the preserved
 > [earlier blocked attempts](../.docs/validation/2026-08-08-vesta-managed-harbor-development.md).
 > The application record does not claim post-publication publisher disablement
@@ -321,6 +321,6 @@ revocation. A complete tenant-owned application release was then accepted on
 2026-08-11 through immutable managed-Harbor delivery, revision advancement,
 full-readiness health, exact drift, and public ingress. Production deployment
 remains deferred. Exact evidence is in the
-[current acceptance record](../.docs/validation/2026-08-11-slave-vxapp-managed-harbor-release.md)
+[current acceptance record](../.docs/validation/2026-08-11-managed-harbor-application-release.md)
 and the
 [preserved earlier record](../.docs/validation/2026-08-08-vesta-managed-harbor-development.md).

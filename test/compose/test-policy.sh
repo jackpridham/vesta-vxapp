@@ -31,10 +31,10 @@ if vx_compose_profile_require_authorized \
     alice app admin-approved 2>/dev/null; then
     fail "admin-approved profile was usable without an assignment"
 fi
-vx_compose_profile_is_available slave-vxapp \
-    || fail "slave-vxapp profile is not enabled"
-[[ "$(vx_compose_profile_version slave-vxapp)" == 2 ]] \
-    || fail "slave-vxapp profile version is unavailable"
+vx_compose_profile_is_available restricted-compatibility \
+    || fail "restricted-compatibility profile is not enabled"
+[[ "$(vx_compose_profile_version restricted-compatibility)" == 2 ]] \
+    || fail "restricted-compatibility profile version is unavailable"
 jq -e '
     .enabled == true
     and .admin_only == true
@@ -43,8 +43,8 @@ jq -e '
     and .allow_host_namespaces == false
     and .allowed_cap_add
         == ["CHOWN", "DAC_OVERRIDE", "KILL", "SETGID", "SETUID"]
-' "$repo_root/func/vx/compose/profiles/slave-vxapp.json" >/dev/null \
-    || fail "slave-vxapp profile data exceeds its narrow contract"
+' "$repo_root/func/vx/compose/profiles/restricted-compatibility.json" >/dev/null \
+    || fail "restricted-compatibility profile data exceeds its narrow contract"
 
 base_service='{
     "image": "alpine:3.20",
@@ -60,7 +60,7 @@ base_service='{
     }
 }'
 
-slave_model="$test_root/slave-profile.json"
+compatibility_model="$test_root/compatibility-profile.json"
 jq -n --argjson service "$base_service" '
     {
         services: {
@@ -69,21 +69,21 @@ jq -n --argjson service "$base_service" '
             })
         }
     }
-' >"$slave_model"
-vx_compose_policy_evaluate "$slave_model" slave-vxapp \
-    || fail "slave-vxapp profile rejected its exact capabilities"
+' >"$compatibility_model"
+vx_compose_policy_evaluate "$compatibility_model" restricted-compatibility \
+    || fail "restricted-compatibility profile rejected its exact capabilities"
 for rejected_capability in MKNOD NET_ADMIN SYS_ADMIN; do
     jq --arg capability "$rejected_capability" \
         '.services.app.cap_add += [$capability]' \
-        "$slave_model" >"$test_root/slave-$rejected_capability.json"
+        "$compatibility_model" >"$test_root/compatibility-$rejected_capability.json"
     if vx_compose_policy_evaluate \
-        "$test_root/slave-$rejected_capability.json" slave-vxapp \
-        2>"$test_root/slave-$rejected_capability.error"; then
-        fail "slave-vxapp profile accepted $rejected_capability"
+        "$test_root/compatibility-$rejected_capability.json" restricted-compatibility \
+        2>"$test_root/compatibility-$rejected_capability.error"; then
+        fail "restricted-compatibility profile accepted $rejected_capability"
     fi
     grep -Fq 'Compose policy rejection [CAP_ADD]' \
-        "$test_root/slave-$rejected_capability.error" \
-        || fail "slave-vxapp $rejected_capability returned wrong diagnostic"
+        "$test_root/compatibility-$rejected_capability.error" \
+        || fail "restricted-compatibility $rejected_capability returned wrong diagnostic"
 done
 
 expect_rejection() {

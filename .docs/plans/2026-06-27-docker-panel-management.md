@@ -40,7 +40,7 @@ COMMAND=''
 ENV='PORT=3000||NODE_ENV=production'
 MOUNTS='data:/srv/app/data||config:/srv/app/config'
 CONTAINER_PORT='3000'
-DOMAIN='app.example.com'
+DOMAIN='<application-domain>'
 ROUTE_PATH=''
 AUTO_START='yes'
 RESTART_POLICY='unless-stopped'
@@ -58,7 +58,7 @@ and at least these persisted fields:
 ```bash
 NAME='app' CTN_NAME='vx-appuser-app' OWNER='appuser' IMAGE='ghcr.io/example/app:latest' COMMAND='' \
 ENV='PORT=3000||NODE_ENV=production' MOUNTS='data:/srv/app/data||config:/srv/app/config' \
-HOST_PORT='21001' CONTAINER_PORT='3000' DOMAIN='app.example.com' ROUTE_PATH='' \
+HOST_PORT='21001' CONTAINER_PORT='3000' DOMAIN='<application-domain>' ROUTE_PATH='' \
 PROXY_MODE='proxy' PROXY_TARGET='http://127.0.0.1:21001' AUTO_START='yes' \
 RESTART_POLICY='unless-stopped' HEALTHCHECK_TYPE='http' \
 HEALTHCHECK_TARGET='http://127.0.0.1:21001/health' HEALTHCHECK_INTERVAL='60' \
@@ -221,7 +221,7 @@ Use the contract from `.docs/contracts/docker-container-schema.md` and persist a
 ```bash
 NAME='app' CTN_NAME='vx-appuser-app' OWNER='appuser' IMAGE='ghcr.io/example/app:latest' COMMAND='' \
 ENV='PORT=3000||NODE_ENV=production' MOUNTS='data:/srv/app/data||config:/srv/app/config' \
-HOST_PORT='21001' CONTAINER_PORT='3000' DOMAIN='app.example.com' ROUTE_PATH='' \
+HOST_PORT='21001' CONTAINER_PORT='3000' DOMAIN='<application-domain>' ROUTE_PATH='' \
 PROXY_MODE='proxy' PROXY_TARGET='http://127.0.0.1:21001' AUTO_START='yes' \
 RESTART_POLICY='unless-stopped' HEALTHCHECK_TYPE='http' \
 HEALTHCHECK_TARGET='http://127.0.0.1:21001/health' HEALTHCHECK_INTERVAL='60' \
@@ -318,7 +318,7 @@ COMMAND=''
 ENV='PORT=3000||NODE_ENV=production'
 MOUNTS='data:/srv/app/data||config:/srv/app/config'
 CONTAINER_PORT='3000'
-DOMAIN='app.example.com'
+DOMAIN='<application-domain>'
 ROUTE_PATH=''
 AUTO_START='yes'
 RESTART_POLICY='unless-stopped'
@@ -373,7 +373,7 @@ bin/v-rebuild-docker-containers admin
 `bin/v-sync-docker-container-route` must set:
 
 ```bash
-bin/v-change-web-domain-proxy-options appuser app.example.com \
+bin/v-change-web-domain-proxy-options appuser <application-domain> \
   'proxy' 'http://127.0.0.1:21001' 'application' 'yes' '60' '' no
 ```
 
@@ -930,7 +930,7 @@ When a domain is already linked to a managed Docker container:
 Persist that relationship in Docker metadata with:
 
 ```bash
-DOMAIN='app.example.com'
+DOMAIN='<application-domain>'
 PROXY_TARGET='http://127.0.0.1:21001'
 ```
 
@@ -1230,7 +1230,7 @@ playwright/.auth/
 Create `.env.playwright.example` with these exact variables:
 
 ```bash
-PLAYWRIGHT_BASE_URL=https://192.0.2.20:8083
+PLAYWRIGHT_BASE_URL=https://<staging-host>:8083
 PLAYWRIGHT_LOGIN_SECRET=
 PLAYWRIGHT_ADMIN_USER=admin
 PLAYWRIGHT_ADMIN_PASSWORD=
@@ -1248,7 +1248,7 @@ Rules:
 - anonymous tests always run
 - authenticated projects are enabled only when the matching credentials are present
 - all projects must use `ignoreHTTPSErrors: true`
-- the default base URL must be `https://192.0.2.20:8083`
+- the default base URL must be `https://<staging-host>:8083`
 - the admin project must load `playwright/.auth/admin.json`
 - the real non-admin project must load `playwright/.auth/docker-user.json`
 
@@ -1482,22 +1482,22 @@ and document that full runtime Docker validation moved to the staging closeout h
 - Commit SHA(s): `6bc8d7a9`, `822b339e`, `89d49abb`, `3b097240`, `5139fcc9`, `ef2a1fe7`, `e8f267cd`, `357850a5`, `a7797806`, `a3d5baa5`, `7ad3f383`, `3b873357`, `a1c444dc`, `fb89abab`, `ef43b2ed`, `a21c70d5`, `8e22fa92`, `6bbdc689`, `1951ce2b`, `2e0a6320`, `9e7837d8`
 - Spec review result: PASS after the final closeout follow-up. The last spec gap was documentation of the fallback validation path when the local Vesta runtime is unavailable; the Task 12 audit artifacts and README note resolved that requirement.
 - Code quality review result: APPROVED. The final re-review accepted the explicit local-runtime opt-in guard for destructive fixtures, the stronger dashboard data assertions, and the README/env clarifications around authenticated project gating and runtime-target safety.
-- Follow-ups or concerns: Full Docker-backed browser execution and deployed-runtime validation remain intentionally deferred to Task 13 on `staging.example.com`, because this workspace host does not provide `/etc/profile.d/vesta.sh` or a same-host Vesta runtime.
+- Follow-ups or concerns: Full Docker-backed browser execution and deployed-runtime validation remain intentionally deferred to Task 13 on `<staging-fqdn>`, because this workspace host does not provide `/etc/profile.d/vesta.sh` or a same-host Vesta runtime.
 
 ---
 
-## Task 13: Validate And Close Out Against staging.example.com - COMPLETE
+## Task 13: Validate And Close Out Against <staging-fqdn> - COMPLETE
 
 **Files:**
 - Create: `.docs/validation/staging-docker-e2e-closeout.md`
-- Modify: `<operations-repo>/Servers/hypervisor.example.com/staging.example.com/README.md`
+- Modify: `<operations-repo>/Servers/<staging-jump>/<staging-fqdn>/README.md`
 
 - [x] **Step 1: Stage and apply the runtime overlay to the staging host**
 
-Use the host documented in `<operations-repo>/Servers/hypervisor.example.com/staging.example.com/README.md` and always connect by internal IP:
+Use the host documented in `<operations-repo>/Servers/<staging-jump>/<staging-fqdn>/README.md` and always connect by internal IP:
 
 ```bash
-export TARGET_HOST="192.0.2.20"
+export TARGET_HOST="<staging-host>"
 export TARGET_SSH="operator@${TARGET_HOST}"
 export DEPLOY_COMMIT="$(git rev-parse --short HEAD)"
 export DEPLOY_DATE="$(date -u +%F)"
@@ -1542,7 +1542,7 @@ EOF
 Constraints:
 - do not use `rsync --delete`
 - do not overwrite `/usr/local/vesta/data/users`
-- do not SSH to the hostname; use `ssh operator@192.0.2.20`
+- do not SSH to the hostname; use `ssh operator@<staging-host>`
 
 - [x] **Step 2: Validate the deployed runtime on staging before E2E**
 
@@ -1604,8 +1604,8 @@ export HOMEDIR=/home
 scratch_pkg="docker-e2e"
 scratch_user="dockere2e"
 scratch_pass="ChangeMe-123!"
-scratch_mail="dockere2e@local.test"
-scratch_domain="docker-e2e.local"
+scratch_mail="docker-user@invalid"
+scratch_domain="<test-domain>"
 
 if [ -d "$VESTA/data/users/$scratch_user" ]; then
   /usr/local/vesta/bin/v-delete-user "$scratch_user" yes || true
@@ -1633,7 +1633,7 @@ EOF
 login_secret="$(ssh "$TARGET_SSH" "sudo php -r 'if (file_exists(\"/usr/local/vesta/web/inc/login_url.php\")) { include \"/usr/local/vesta/web/inc/login_url.php\"; echo \$login_url; }' 2>/dev/null" || true)"
 
 cat > .env.playwright.local <<EOF_ENV
-PLAYWRIGHT_BASE_URL=https://192.0.2.20:8083
+PLAYWRIGHT_BASE_URL=https://<staging-host>:8083
 PLAYWRIGHT_LOGIN_SECRET=${login_secret}
 PLAYWRIGHT_ADMIN_USER=admin
 PLAYWRIGHT_ADMIN_PASSWORD=
@@ -1690,17 +1690,17 @@ export VESTA=/usr/local/vesta
 export HOMEDIR=/home
 
 /usr/local/vesta/bin/v-list-docker-container dockere2e app json
-/usr/local/vesta/bin/v-list-web-domain dockere2e docker-e2e.local json
+/usr/local/vesta/bin/v-list-web-domain dockere2e <test-domain> json
 /usr/local/vesta/bin/v-update-docker-container-health dockere2e app
 /usr/local/vesta/bin/v-list-docker-container-health dockere2e app json
 /usr/local/vesta/bin/v-update-sys-rrd-docker daily
 /usr/local/vesta/bin/v-list-docker-container-stats dockere2e app 5m json
 /usr/local/vesta/bin/v-list-docker-container-alerts dockere2e app json || true
 
-grep "DOMAIN='docker-e2e.local'" /usr/local/vesta/data/users/dockere2e/web.conf
+grep "DOMAIN='<test-domain>'" /usr/local/vesta/data/users/dockere2e/web.conf
 grep "NAME='app'" /usr/local/vesta/data/users/dockere2e/docker.conf
 
-curl -H 'Host: docker-e2e.local' http://192.0.2.20/ -I
+curl -H 'Host: <test-domain>' http://<staging-host>/ -I
 EOF
 ```
 
@@ -1722,7 +1722,7 @@ Create `.docs/validation/staging-docker-e2e-closeout.md` and record:
 - location of the generated HTML Playwright report when any browser suite was executed
 - any deviations from the plan
 
-Then update `<operations-repo>/Servers/hypervisor.example.com/staging.example.com/README.md` with:
+Then update `<operations-repo>/Servers/<staging-jump>/<staging-fqdn>/README.md` with:
 - deployed fork commit
 - whether Docker user-management E2E passed
 - where the closeout report lives
@@ -1742,9 +1742,9 @@ EOF
 
 #### Closeout Report
 
-- Summary: Applied and validated the staging runtime overlay against live host `192.0.2.20`, then used the live Task 13 loop to uncover and fix three remaining defects before closeout: admin `login as` Docker owner-scope leakage, missing nginx reload after Docker route sync, and a flaky async delete assertion in the Docker remove-modal coverage. The final host was stamped to deployed runtime commit `02e4042d`, `docker-e2e.local` proxied to the seeded `dockere2e/app` container, the backend stats/health/alert commands returned valid JSON, and the final Playwright matrix passed `17/17`.
-- Files changed: `web/inc/vx_docker.php`, `web/list/docker/index.php`, `web/templates/docker_list_shared.php`, `tests/playwright/helpers/panel-auth.js`, `tests/playwright/docker-access-control.admin.authenticated.spec.js`, `bin/v-sync-docker-container-route`, `tests/playwright/docker-dashboard.user.authenticated.spec.js`, `tests/playwright/docker-modals.user.authenticated.spec.js`, `.docs/validation/staging-docker-e2e-closeout.md`, `.docs/audits/2026-06-27-docker-panel-management-task13.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task13.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`, `<operations-repo>/Servers/hypervisor.example.com/staging.example.com/README.md`
-- Tests run: staging overlay deploy + stamp; PASS. `ssh operator@192.0.2.20 "sudo bash -s"` runtime validation with `bash -n`, `php -l`, `nginx -t`, `apache2ctl configtest`, and `v-check-docker-engine json`; PASS. `PLAYWRIGHT_ENV_FILE=.env.playwright.local npx playwright test --project=chromium-anonymous --project=chromium-docker-user-authenticated --project=chromium-admin-authenticated`; PASS (`17 passed`). `v-list-docker-container dockere2e app json`; PASS. `v-list-web-domain dockere2e docker-e2e.local json`; PASS. `v-list-docker-container-health dockere2e app json`; PASS. `v-list-docker-container-stats dockere2e app 5m json`; PASS with populated `CPU_PCT`, `MEM_MB`, `RX_MBPS`, `TX_MBPS`, and `LATEST`. `v-list-docker-container-alerts dockere2e app json`; PASS. `curl -H 'Host: docker-e2e.local' http://192.0.2.20/`; PASS after the route-sync reload fix, returning the seeded container body.
+- Summary: Applied and validated the staging runtime overlay against live host `<staging-host>`, then used the live Task 13 loop to uncover and fix three remaining defects before closeout: admin `login as` Docker owner-scope leakage, missing nginx reload after Docker route sync, and a flaky async delete assertion in the Docker remove-modal coverage. The final host was stamped to deployed runtime commit `02e4042d`, `<test-domain>` proxied to the seeded `dockere2e/app` container, the backend stats/health/alert commands returned valid JSON, and the final Playwright matrix passed `17/17`.
+- Files changed: `web/inc/vx_docker.php`, `web/list/docker/index.php`, `web/templates/docker_list_shared.php`, `tests/playwright/helpers/panel-auth.js`, `tests/playwright/docker-access-control.admin.authenticated.spec.js`, `bin/v-sync-docker-container-route`, `tests/playwright/docker-dashboard.user.authenticated.spec.js`, `tests/playwright/docker-modals.user.authenticated.spec.js`, `.docs/validation/staging-docker-e2e-closeout.md`, `.docs/audits/2026-06-27-docker-panel-management-task13.audit-input.md`, `.docs/audits/2026-06-27-docker-panel-management-task13.audit.md`, `.docs/plans/2026-06-27-docker-panel-management.md`, `<operations-repo>/Servers/<staging-jump>/<staging-fqdn>/README.md`
+- Tests run: staging overlay deploy + stamp; PASS. `ssh operator@<staging-host> "sudo bash -s"` runtime validation with `bash -n`, `php -l`, `nginx -t`, `apache2ctl configtest`, and `v-check-docker-engine json`; PASS. `PLAYWRIGHT_ENV_FILE=.env.playwright.local npx playwright test --project=chromium-anonymous --project=chromium-docker-user-authenticated --project=chromium-admin-authenticated`; PASS (`17 passed`). `v-list-docker-container dockere2e app json`; PASS. `v-list-web-domain dockere2e <test-domain> json`; PASS. `v-list-docker-container-health dockere2e app json`; PASS. `v-list-docker-container-stats dockere2e app 5m json`; PASS with populated `CPU_PCT`, `MEM_MB`, `RX_MBPS`, `TX_MBPS`, and `LATEST`. `v-list-docker-container-alerts dockere2e app json`; PASS. `curl -H 'Host: <test-domain>' http://<staging-host>/`; PASS after the route-sync reload fix, returning the seeded container body.
 - Commit SHA(s): `ea8eac0c`, `3204226b`, `02e4042d`, `30fd00d1`
 - Spec review result: PASS. The task requirements for staging overlay, runtime validation, seeded auth/runtime state, full live Playwright coverage, backend route/metrics/health/alerts checks, closeout artifacts, and cleanup are all satisfied and recorded in the Task 13 audit artifacts.
 - Code quality review result: APPROVED. The final revalidation accepted the tighter actor handling for admin `login as`, the explicit nginx reload on Docker route sync, and the more resilient dashboard/remove-modal Playwright assertions for live-host timing and data shape.
@@ -1814,7 +1814,7 @@ git commit -m "docs: finalize docker ownership implementation plan"
 After the validation run updates:
 
 ```text
-<operations-repo>/Servers/hypervisor.example.com/staging.example.com/README.md
+<operations-repo>/Servers/<staging-jump>/<staging-fqdn>/README.md
 ```
 
 commit that change from the `operations-repo` repository separately so the server documentation does not stay dirty outside this repo.

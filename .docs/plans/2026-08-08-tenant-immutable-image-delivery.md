@@ -43,7 +43,7 @@ Document these independent facts:
 immutable registry digest -> tenant may request bounded owner-scoped pull
 local archive or tag       -> administrator load plus expiring local approval
 already delivered image    -> tenant preview/apply/deploy for standard only
-legacy-admin-app/admin-approved -> administrator-only; never accepted by v-docker
+compatibility-app/admin-approved -> administrator-only; never accepted by v-docker
 ```
 
 - [ ] **Step 3: Define image admission limits**
@@ -206,20 +206,20 @@ Rerun the affected focused tests and commit coherent corrections without broad r
 ### Task 5: Roll out and accept development
 
 **Hosts:**
-- Primary development: `operator@192.0.2.10`
-- Staging reference: `operator@192.0.2.20`
+- Primary development: `operator@<development-host>`
+- Staging reference: `operator@<staging-host>`
 
 - [ ] **Step 1: Deploy the exact Vesta commit control plane**
 
 Use an immutable archive, release lock, protected exact-file rollback backup, no `--delete`, no container/service restart, targeted syntax/config checks, and before/after container/firewall/route/tenant digests.
 
-- [ ] **Step 2: Onboard development `legacyadmin`**
+- [ ] **Step 2: Onboard development `compatuser`**
 
-Create or select a package with positive standard-profile quotas matching one project/service, 1 CPU, 1024 MiB, 256 PIDs, one loopback port, three secrets, and one volume. Change the user package through Vesta so `DOCKER_PROJECTS` is persisted, reconcile `vesta-compose-users`, and remove `legacyadmin` from the raw `docker` group only after the managed cutover is ready.
+Create or select a package with positive standard-profile quotas matching one project/service, 1 CPU, 1024 MiB, 256 PIDs, one loopback port, three secrets, and one volume. Change the user package through Vesta so `DOCKER_PROJECTS` is persisted, reconcile `vesta-compose-users`, and remove `compatuser` from the raw `docker` group only after the managed cutover is ready.
 
 - [ ] **Step 3: Build the Legacy workload candidate off-host**
 
-On `builder@192.0.2.30:/home/builder/legacy-admin-app`, build from a remotely recoverable commit using the repository-owned Docker and workload builders. Validate the exact focused deployment tests and record image ID and artifact checksums without exposing secrets.
+On `builder@<staging-jump-host>:/home/builder/compatibility-app`, build from a remotely recoverable commit using the repository-owned Docker and workload builders. Validate the exact focused deployment tests and record image ID and artifact checksums without exposing secrets.
 
 - [ ] **Step 4: Perform one-time development migration**
 
@@ -227,24 +227,24 @@ Use the root/admin workload-bundle install path once to establish three managed 
 
 - [ ] **Step 5: Prove tenant operations**
 
-From a fresh `legacyadmin` SSH identity require:
+From a fresh `compatuser` SSH identity require:
 
 ```bash
 v-docker projects json
-v-docker health legacy-admin-app json
-v-docker drift legacy-admin-app json
+v-docker health compatibility-app json
+v-docker drift compatibility-app json
 ```
 
 Require raw `docker info` and direct `sudo v-*` denial. If an approved registry is available, create the exact preview, pull its fresh immutable digest through the preview-bound `v-docker image-pull`, and apply the same evidence; otherwise retain the focused immutable-pull tests and document registry provisioning as the only external prerequisite.
 
 ### Task 6: Synchronize Legacy workload-owned deployment knowledge
 
-**Remote repository:** `builder@192.0.2.30:/home/builder/legacy-admin-app`
+**Remote repository:** `builder@<staging-jump-host>:/home/builder/compatibility-app`
 
 **Files:**
-- Modify: `.vx/skills/legacy-admin-app-deploy/SKILL.md`
-- Modify: `.vx/skills/legacy-admin-app-production-operations/SKILL.md`
-- Modify: `@Docs/@TechnicalDocs/legacy-admin-app/deployment.md`
+- Modify: `.vx/skills/compatibility-app-deploy/SKILL.md`
+- Modify: `.vx/skills/compatibility-app-production-operations/SKILL.md`
+- Modify: `@Docs/@TechnicalDocs/compatibility-app/deployment.md`
 - Modify: `README.md`
 - Create or modify as the Legacy workload maintainer chooses: repository-owned deployment script and focused tests
 
@@ -254,7 +254,7 @@ Make the normal release lane:
 
 ```text
 build/test off-host -> push immutable registry digest ->
-ssh legacyadmin preview -> preview-bound image-pull -> reviewed apply -> health/drift
+ssh compatuser preview -> preview-bound image-pull -> reviewed apply -> health/drift
 ```
 
 Keep archive load/approval/workload import documented only as one-time migration, offline recovery, or operator fallback.
@@ -265,7 +265,7 @@ Require script inputs `environment`, SSH target, owner, project, immutable image
 
 - [ ] **Step 3: Explain profile and host state**
 
-State that new Legacy workload releases are generic `standard` v2. The legacy production revision remains `legacy-admin-app` until an authorized migration; tenant scripts must fail closed rather than trying to mutate that profile.
+State that new Legacy workload releases are generic `standard` v2. The legacy production revision remains `compatibility-app` until an authorized migration; tenant scripts must fail closed rather than trying to mutate that profile.
 
 - [ ] **Step 4: Commit and push submodule then parent**
 
@@ -273,15 +273,15 @@ Commit/push `@Docs` first, commit its gitlink plus root docs/skills/scripts next
 
 ### Task 7: Prepare production without interruption
 
-**Host:** `operator@production.example.com`
+**Host:** `operator@<production-fqdn>`
 
 - [ ] **Step 1: Deploy only the accepted Vesta control-plane commit**
 
-Retain a protected rollback backup and prove the revision-4 `legacyadmin/legacy-admin-app` container ID, image, health, restart count, Docker PID, routes, firewall structure, quota authority, mount guard, and stopped external rollback container remain unchanged.
+Retain a protected rollback backup and prove the revision-4 `compatuser/compatibility-app` container ID, image, health, restart count, Docker PID, routes, firewall structure, quota authority, mount guard, and stopped external rollback container remain unchanged.
 
-- [ ] **Step 2: Onboard the `legacyadmin` account without workload mutation**
+- [ ] **Step 2: Onboard the `compatuser` account without workload mutation**
 
-Persist the approved Docker package quota, change the Unix/Vesta shell to Bash only if SSH access is intended and the account files agree, reconcile `vesta-compose-users`, ensure no Docker-group membership, and prove `v-docker projects` works. The broker must continue denying the current privileged `legacy-admin-app` project.
+Persist the approved Docker package quota, change the Unix/Vesta shell to Bash only if SSH access is intended and the account files agree, reconcile `vesta-compose-users`, ensure no Docker-group membership, and prove `v-docker projects` works. The broker must continue denying the current privileged `compatibility-app` project.
 
 - [ ] **Step 3: Do not migrate the production workload**
 

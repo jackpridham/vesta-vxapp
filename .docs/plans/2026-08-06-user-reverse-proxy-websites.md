@@ -92,8 +92,8 @@ the tests and staging lifecycle below. Merely checking that an `.stpl` file
 exists is not sufficient release evidence.
 
 The production migration and validation records confirm that
-`customer-one.example` and `customer-two.example` already use this
-native `vx-proxy` state to reach the loopback-published `legacy-admin-app` service,
+`<first-domain>` and `<second-domain>` already use this
+native `vx-proxy` state to reach the loopback-published `compatibility-app` service,
 with a distinct `X-Business-GUID` on each domain. No new routing model or
 tenant migration is required.
 
@@ -315,7 +315,7 @@ Use a disposable staging user/domain, public DNS resolving to the staging
 host, and a local echo backend that records received paths and headers. Ports
 80 and 443 must reach the staging Nginx instance. Use the Let's Encrypt
 staging endpoint for issuance and renewal testing. Do not mutate production,
-either existing tenant domain, or `legacyadmin/legacy-admin-app`.
+either existing tenant domain, or `compatuser/compatibility-app`.
 
 - [x] Create the staging domain through the documented
   `v-add-web-domain` proxy options with an application profile, preserve-host
@@ -410,8 +410,8 @@ match native `vx-proxy` state, make no change.
 ### Milestone 3 implementation record
 
 - **Completed behavior and authority boundary:** the user-authorized dev host
-  at `192.0.2.10` received the exact additive control-plane candidate and
-  `admin/app.example.com` completed a protected real create, CLI edit,
+  at `<development-host>` received the exact additive control-plane candidate and
+  `admin/<application-domain>` completed a protected real create, CLI edit,
   authenticated panel edit, rebuild, Let's Encrypt staging issuance and
   scheduled renewal, immediate disable-to-`public_html`, HTTPS, and cleanup
   lifecycle. Production, tenant domains, Compose workloads, DNS, firewall, and
@@ -453,8 +453,8 @@ match native `vx-proxy` state, make no change.
 - [x] Explain briefly that native domain proxy state may point at a
   Docker-published loopback port but does not create or own a Docker/Compose
   project or Compose route.
-- [x] State that `customer-one.example` and
-  `customer-two.example` are already on this model and do not require
+- [x] State that `<first-domain>` and
+  `<second-domain>` are already on this model and do not require
   recreation as part of this feature release.
 
 ### Task 6: Run final validation and commit
@@ -531,7 +531,7 @@ git diff --check
   SHA-256
   `1ea77efd1e64bf039b2087f47c02d06c05cc5ba91cb040190ba0886637a06db2`.
   Remote syntax/source cases, Nginx/Apache/service checks, and public
-  `app.example.com` HTTP 301/HTTPS 200 checks passed. Exact prior runtime
+  `<application-domain>` HTTP 301/HTTPS 200 checks passed. Exact prior runtime
   authority is retained at
   `/root/vesta-backups/native-web-proxy-authority-a357eb66`.
 - **Boundary:** no domain, user authentication, workload, or production state
@@ -558,5 +558,5 @@ git diff --check
 - [x] Disabling Proxy Support returns the site to `public_html` delivery.
 - [x] Existing Compose/Docker route ownership behavior is unchanged.
 - [x] No administrator-approved URL/header or other new approval layer exists.
-- [x] Existing tenant proxies and `legacyadmin/legacy-admin-app` are not changed by the
+- [x] Existing tenant proxies and `compatuser/compatibility-app` are not changed by the
   implementation or staging proof.

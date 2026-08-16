@@ -64,7 +64,7 @@ COMMAND=''
 ENV='PORT=3000||NODE_ENV=production'
 MOUNTS='data:/srv/app/data||config:/srv/app/config'
 CONTAINER_PORT='3000'
-DOMAIN='app.example.com'
+DOMAIN='<application-domain>'
 ROUTE_PATH=''
 AUTO_START='yes'
 RESTART_POLICY='unless-stopped'
@@ -118,7 +118,7 @@ Each record in `data/users/<user>/docker.conf` represents one managed container 
 ```bash
 NAME='app' CTN_NAME='vx-appuser-app' OWNER='appuser' IMAGE='ghcr.io/example/app:latest' COMMAND='' \
 ENV='PORT=3000||NODE_ENV=production' MOUNTS='data:/srv/app/data||config:/srv/app/config' \
-HOST_PORT='21001' CONTAINER_PORT='3000' DOMAIN='app.example.com' ROUTE_PATH='' \
+HOST_PORT='21001' CONTAINER_PORT='3000' DOMAIN='<application-domain>' ROUTE_PATH='' \
 PROXY_MODE='proxy' PROXY_TARGET='http://127.0.0.1:21001' AUTO_START='yes' \
 RESTART_POLICY='unless-stopped' HEALTHCHECK_TYPE='http' \
 HEALTHCHECK_TARGET='http://127.0.0.1:21001/health' HEALTHCHECK_INTERVAL='60' \

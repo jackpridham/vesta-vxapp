@@ -1,5 +1,5 @@
 {
-  "name": "slave-vxapp",
+  "name": "restricted-compatibility",
   "version": 2,
   "enabled": true,
   "admin_only": true,

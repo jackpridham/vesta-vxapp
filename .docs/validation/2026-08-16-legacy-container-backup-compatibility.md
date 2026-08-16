@@ -1,8 +1,8 @@
-# SydLocal cron backup compatibility validation
+# compatibility host cron backup compatibility validation
 
-Date: 2026-08-16 AEST  
-Target: `192.168.100.100` (SydLocal)  
-Plan: `.docs/plans/2026-08-16-sydlocal-cron-backup-compatibility.md`
+Date: 2026-08-16 AEST
+Target: `<compatibility-host>` (compatibility host)
+Plan: `.docs/plans/2026-08-16-legacy-container-backup-compatibility.md`
 
 ## Release
 
@@ -16,7 +16,7 @@ Plan: `.docs/plans/2026-08-16-sydlocal-cron-backup-compatibility.md`
 
 ## Recovery and acceptance
 
-The first targeted backup exposed an older accepted Asterisk revision whose
+The first targeted backup exposed an older accepted compatibility workload revision whose
 empty `maxotel-creds` value is an intentional carrier-disabled sentinel. Its
 private integrity metadata has bound the empty SHA-256 since installation.
 New secret creation and bundle import continue to reject empty inputs; the
@@ -32,7 +32,7 @@ secret value, route, or unrelated container was changed.
 
 Acceptance evidence:
 
-- `v-backup-user asteriskvx` exited successfully and produced a validated
+- `v-backup-user compatuser` exited successfully and produced a validated
   7 MB archive.
 - The exact cron path, `v-backup-users`, exited successfully for all 10 active
   users.
@@ -40,7 +40,7 @@ Acceptance evidence:
   `backup-error.txt` is absent.
 - The current backup log contains 10 successful-user records and no PHP
   deprecation/warning/undefined-key or Compose project backup failure.
-- `asteriskvx/pbx` remains revision 1, `running`, `healthy`, `fresh`, with zero
+- `compatuser/app` remains revision 1, `running`, `healthy`, `fresh`, with zero
   restarts and no backup recovery marker.
 - Mount comparison is clean. The only remaining drift is the known pre-existing
   approved host-network compatibility difference, outside this repair.
@@ -51,7 +51,7 @@ Acceptance evidence:
 ## Rollback and retained space recovery
 
 - Pre-install runtime files are retained at
-  `/root/vesta-backups/pre-cron-backup-compatibility.Alezg4Pi` on SydLocal.
+  `/root/vesta-backups/pre-cron-backup-compatibility.Alezg4Pi` on compatibility host.
 - Two stale Harbor working directories moved during capacity recovery remain
   recoverable below `/var/tmp/codex-recoverable-20260816`, outside live Vesta
   and registry data.

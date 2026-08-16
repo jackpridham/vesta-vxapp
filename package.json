@@ -14,18 +14,10 @@
     "playwright:report": "npx playwright show-report",
     "test": "npm run playwright:test"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/jackpridham/vesta-vxapp.git"
-  },
   "keywords": [],
   "author": "",
   "license": "MIT",
   "type": "commonjs",
-  "bugs": {
-    "url": "https://github.com/jackpridham/vesta-vxapp/issues"
-  },
-  "homepage": "https://github.com/jackpridham/vesta-vxapp#readme",
   "engines": {
     "node": ">=18"
   },

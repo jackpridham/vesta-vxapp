@@ -91,5 +91,5 @@ loopback port, such as `127.0.0.1:8420`. The web domain does not create or own
 that Docker/Compose project, and its native proxy record is not a Compose
 route. Project lifecycle and route ownership remain separate.
 
-`customer-one.example` and `customer-two.example` already use this
+`<first-domain>` and `<second-domain>` already use this
 native model and do not require recreation for this feature release.

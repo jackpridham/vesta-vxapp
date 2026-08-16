@@ -503,7 +503,7 @@ vx_compose_resolve_images_to_file alice "$test_root/tag-canonical.json" \
 printf '{"services":{"web":{"image":"example.test/legacy:1"}}}\n' \
     >"$test_root/legacy-canonical.json"
 if vx_compose_resolve_images_to_file alice "$test_root/legacy-canonical.json" \
-    slave-vxapp "$test_root/legacy-images.json" 2>/dev/null; then
+    restricted-compatibility "$test_root/legacy-images.json" 2>/dev/null; then
     fail 'fresh non-standard candidate used broad RepoDigests compatibility'
 fi
 

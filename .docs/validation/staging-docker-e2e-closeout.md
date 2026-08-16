@@ -6,7 +6,7 @@
 > [the operator architecture](../../docs/container-orchestration.md).
 
 Date: `2026-06-27`
-Panel URL: `https://192.0.2.20:8083`
+Panel URL: `https://<staging-host>:8083`
 Deployed runtime commit: `02e4042d`
 Local validation harness HEAD after final rerun: `30fd00d1`
 Playwright env file: `.env.playwright.local`
@@ -15,7 +15,7 @@ Playwright env file: `.env.playwright.local`
 
 - Package: `docker-e2e`
 - User: `dockere2e`
-- Domain: `docker-e2e.local`
+- Domain: `<test-domain>`
 - Container: `app`
 - Empty-state user: `dockempt`
 - Quota-state user: `dockqta`
@@ -24,7 +24,7 @@ Playwright env file: `.env.playwright.local`
 
 ```bash
 # Overlay and runtime stamp
-TARGET_HOST="192.0.2.20"
+TARGET_HOST="<staging-host>"
 TARGET_SSH="operator@${TARGET_HOST}"
 DEPLOY_COMMIT="02e4042d"
 DEPLOY_DATE="2026-06-27"
@@ -78,8 +78,8 @@ EOF
 ssh "$TARGET_SSH" "sudo bash -s" <<'EOF'
 set -euo pipefail
 source /etc/profile.d/vesta.sh
-/usr/local/vesta/bin/v-add-user dockere2e ChangeMe-123! dockere2e@local.test docker-e2e Docker E2E
-/usr/local/vesta/bin/v-add-web-domain dockere2e docker-e2e.local 192.0.2.20 no none no
+/usr/local/vesta/bin/v-add-user dockere2e ChangeMe-123! docker-user@invalid docker-e2e Docker E2E
+/usr/local/vesta/bin/v-add-web-domain dockere2e <test-domain> <staging-host> no none no
 /usr/local/vesta/bin/v-add-docker-container dockere2e /tmp/app.spec
 /usr/local/vesta/bin/v-start-docker-container dockere2e app || true
 /usr/local/vesta/bin/v-update-docker-container-health dockere2e app || true
@@ -94,15 +94,15 @@ ssh "$TARGET_SSH" "sudo bash -s" <<'EOF'
 set -euo pipefail
 source /etc/profile.d/vesta.sh
 /usr/local/vesta/bin/v-list-docker-container dockere2e app json
-/usr/local/vesta/bin/v-list-web-domain dockere2e docker-e2e.local json
+/usr/local/vesta/bin/v-list-web-domain dockere2e <test-domain> json
 /usr/local/vesta/bin/v-update-docker-container-health dockere2e app
 /usr/local/vesta/bin/v-list-docker-container-health dockere2e app json
 /usr/local/vesta/bin/v-update-sys-rrd-docker daily
 /usr/local/vesta/bin/v-list-docker-container-stats dockere2e app 5m json
 /usr/local/vesta/bin/v-list-docker-container-alerts dockere2e app json || true
-grep "DOMAIN='docker-e2e.local'" /usr/local/vesta/data/users/dockere2e/web.conf
+grep "DOMAIN='<test-domain>'" /usr/local/vesta/data/users/dockere2e/web.conf
 grep "NAME='app'" /usr/local/vesta/data/users/dockere2e/docker.conf
-curl -H 'Host: docker-e2e.local' http://192.0.2.20/ -I
+curl -H 'Host: <test-domain>' http://<staging-host>/ -I
 EOF
 
 # Cleanup
@@ -125,7 +125,7 @@ EOF
 - Playwright admin coverage: `PASS`
   Result: admin Docker navigation, owner pivoting, and admin `login as` isolation coverage passed.
 - Routing validation: `PASS`
-  Result: `web.conf` and `docker.conf` persisted the `docker-e2e.local` <-> `app` route relationship, `PROXY='vx-proxy'`, and the final route response returned the container body `ok` after the route-sync reload fix.
+  Result: `web.conf` and `docker.conf` persisted the `<test-domain>` <-> `app` route relationship, `PROXY='vx-proxy'`, and the final route response returned the container body `ok` after the route-sync reload fix.
 - Metrics validation: `PASS`
   Result: `v-list-docker-container-stats dockere2e app 5m json` returned populated `CPU_PCT`, `MEM_MB`, `RX_MBPS`, `TX_MBPS`, and `LATEST` values in the final backend check.
 - Health validation: `PASS`

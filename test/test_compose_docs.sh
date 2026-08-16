@@ -142,7 +142,7 @@ for workflow_command in \
     'v-docker apply app PREVIEW_ID SOURCE_SHA256 CANDIDATE_SHA256 REVISION' \
     'v-docker image-pull app' \
     'v-docker secret-add app database-password' \
-    'v-docker route-add app app.example.com web 8080 http /' \
+    'v-docker route-add app "$APP_DOMAIN" web 8080 http /' \
     'v-docker backup app' \
     'v-docker restore app BACKUP_ID validate' \
     'v-docker rollback-preview app REVISION' \
@@ -306,7 +306,7 @@ do
         || fail "interface contract omits command: $command_name"
 done
 
-for profile_name in standard admin-approved legacy-admin-app; do
+for profile_name in standard admin-approved restricted-compatibility; do
     grep -Fq "$profile_name" "$repo_root/.docs/contracts/compose-policy.md" \
         || fail "policy contract omits profile: $profile_name"
 done
@@ -333,6 +333,11 @@ grep -Fq 'Host mode is rejected for every profile' \
     || fail "networking contract does not reject host mode"
 grep -Fq 'docker-compose-projects.md' "$repo_root/README.md" \
     || fail "README omits the current Compose user guide"
+grep -Fq 'vesta-control-plane-releases.md' "$repo_root/README.md" \
+    || fail "README omits the Vesta control-plane release runbook"
+grep -Fq 'Vesta itself is not a Docker image' \
+    "$repo_root/DOCKER_ORCHESTRATION_DEPLOYMENT.md" \
+    || fail "workload runbook does not distinguish Vesta host-file releases"
 grep -Fq '.docs/contracts/compose-self-service-deployment.md' \
     "$repo_root/AGENTS.md" \
     || fail "AGENTS.md omits self-service contract routing"
@@ -373,6 +378,30 @@ if rg -n -i \
     "$repo_root/docs" \
     "$repo_root/.agents"; then
     fail "active guidance permits obsolete general administrator host mode"
+fi
+
+mapfile -t vesta_markdown < <(
+    rg --files --hidden -g '*.md' -g '!.git/**' "$repo_root"
+)
+if rg -n -i --pcre2 \
+    '\b(?!vesta-vxapp\b)[a-z0-9][a-z0-9_-]*-vxapp\b' \
+    "${vesta_markdown[@]}"; then
+    fail "Vesta documentation contains an application-specific *-vxapp name"
+fi
+private_identity_pattern='syd''local|aster''iskvx|legacy''admin|vx''slave|internal-''voice|voice''app|jack''pridham'
+if rg -n -i "$private_identity_pattern" \
+    "${vesta_markdown[@]}"; then
+    fail "Vesta documentation contains a private ecosystem identity"
+fi
+if rg -n --pcre2 \
+    '(?<![0-9])(?:10\.(?:[0-9]{1,3}\.){2}[0-9]{1,3}|192\.168\.(?:[0-9]{1,3}\.)[0-9]{1,3}|172\.(?:1[6-9]|2[0-9]|3[01])\.(?:[0-9]{1,3}\.)[0-9]{1,3}|192\.0\.2\.[0-9]{1,3}|198\.51\.100\.[0-9]{1,3}|203\.0\.113\.[0-9]{1,3})(?![0-9])' \
+    "${vesta_markdown[@]}"; then
+    fail "Vesta documentation contains a fixed environment endpoint address"
+fi
+if rg -n -i \
+    'development\.example\.com|staging\.example\.com|production\.example\.com|vesta\.example\.com|docker-e2e\.local' \
+    "${vesta_markdown[@]}"; then
+    fail "Vesta documentation contains a fixed environment hostname"
 fi
 if rg -n -i \
     'advanced compose (definitions|updates|add/update).*(admin-only|administrator-only)' \

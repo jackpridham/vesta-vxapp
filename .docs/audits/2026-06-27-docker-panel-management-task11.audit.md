@@ -21,7 +21,7 @@ The companion sanitized snapshot is [.docs/audits/2026-06-27-docker-panel-manage
 1. [EXPLICIT] Add root-level Playwright tooling with `@playwright/test` and `dotenv`, plus the exact scripts `playwright:install`, `playwright:test`, `playwright:test:headed`, `playwright:test:ui`, and `playwright:report`.
 2. [EXPLICIT] Update `.gitignore` so local browser artifacts, auth state, and local env files do not dirty the repo.
 3. [EXPLICIT] Create `.env.playwright.example` with the exact base URL, secret-login, admin, and docker-user variables documented by Task 11.
-4. [EXPLICIT] Create `playwright.config.js` with the `setup`, `chromium-anonymous`, `chromium-admin-authenticated`, and `chromium-docker-user-authenticated` project classes, correct auth-state paths, `ignoreHTTPSErrors: true`, and default base URL `https://192.0.2.20:8083`.
+4. [EXPLICIT] Create `playwright.config.js` with the `setup`, `chromium-anonymous`, `chromium-admin-authenticated`, and `chromium-docker-user-authenticated` project classes, correct auth-state paths, `ignoreHTTPSErrors: true`, and default base URL `https://<staging-host>:8083`.
 5. [EXPLICIT] Create the auth helper and setup spec with the concrete helper functions `getPanelCredentials`, `hasPanelCredentials`, `loginWithPassword`, `openPanelLogin`, `getAuthStatePath`, and the one-run storage-state setup flow for configured roles.
 6. [EXPLICIT] Add the anonymous, admin shell, and non-admin shell smoke specs with the required minimum assertions.
 7. [EXPLICIT] Document env-file usage, optional secret-login, the project matrix, and `npx playwright install-deps chromium` in `tests/playwright/README.md`.

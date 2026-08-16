@@ -16,7 +16,7 @@ for reserved_name in \
 done
 
 for public_name in \
-    jackpridham.com dev.jackpridham.com vxapp.io registry.vxapp.io; do
+    public.example.edu registry.example.edu application.example.edu; do
     ! is_acme_name_reserved "$public_name"
 done
 

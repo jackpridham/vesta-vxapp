@@ -29,21 +29,21 @@ expires="$(date -u -d '+1 hour' +'%Y-%m-%dT%H:%M:%SZ')"
 vx_compose_profile_assignment_add alice public-app admin-approved "$expires"
 
 if vx_compose_profile_require_authorized \
-    alice slave-app slave-vxapp 2>/dev/null; then
-    fail "unassigned slave-vxapp profile was authorized"
+    alice compatibility-app restricted-compatibility 2>/dev/null; then
+    fail "unassigned restricted-compatibility profile was authorized"
 fi
-vx_compose_profile_assignment_add alice slave-app slave-vxapp "$expires"
-vx_compose_profile_require_authorized alice slave-app slave-vxapp \
-    || fail "valid slave-vxapp profile assignment was rejected"
-slave_assignment="$(vx_compose_profile_assignment_path alice slave-app)"
+vx_compose_profile_assignment_add alice compatibility-app restricted-compatibility "$expires"
+vx_compose_profile_require_authorized alice compatibility-app restricted-compatibility \
+    || fail "valid restricted-compatibility profile assignment was rejected"
+compatibility_assignment="$(vx_compose_profile_assignment_path alice compatibility-app)"
 jq -e '
-    .PROFILE == "slave-vxapp"
+    .PROFILE == "restricted-compatibility"
     and .PROFILE_VERSION == 2
     and .ACTOR == "root"
-' "$slave_assignment" >/dev/null \
-    || fail "slave-vxapp assignment omitted authority metadata"
+' "$compatibility_assignment" >/dev/null \
+    || fail "restricted-compatibility assignment omitted authority metadata"
 
-cat >"$test_root/slave-vxapp.compose.yaml" <<'EOF'
+cat >"$test_root/restricted-compatibility.compose.yaml" <<'EOF'
 services:
   app:
     image: alpine:3.20
@@ -67,13 +67,13 @@ services:
         max-file: "3"
 EOF
 vx_compose_prepare_candidate \
-    alice slave-app "$test_root/slave-vxapp.compose.yaml" \
-    "$test_root/slave-candidate" slave-vxapp \
-    || fail "assigned slave-vxapp candidate was rejected"
+    alice compatibility-app "$test_root/restricted-compatibility.compose.yaml" \
+    "$test_root/compatibility-candidate" restricted-compatibility \
+    || fail "assigned restricted-compatibility candidate was rejected"
 if vx_compose_prepare_candidate \
-    alice slave-unassigned "$test_root/slave-vxapp.compose.yaml" \
-    "$test_root/slave-unassigned" slave-vxapp 2>/dev/null; then
-    fail "slave-vxapp candidate was accepted without assignment"
+    alice compatibility-unassigned "$test_root/restricted-compatibility.compose.yaml" \
+    "$test_root/compatibility-unassigned" restricted-compatibility 2>/dev/null; then
+    fail "restricted-compatibility candidate was accepted without assignment"
 fi
 vx_compose_profile_require_authorized alice public-app admin-approved \
     || fail "valid administrator profile assignment was rejected"

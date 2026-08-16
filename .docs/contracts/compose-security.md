@@ -29,7 +29,7 @@ or broad system directory mounts.
 ## Capability allowlists
 
 The standard allowlist is empty. Administrator profiles name exact additions.
-The workload-specific `legacy-admin-app` profile permits only:
+The generic `restricted-compatibility` profile permits only:
 
 `CHOWN`, `DAC_OVERRIDE`, `KILL`, `SETGID`, and `SETUID`.
 
@@ -44,7 +44,7 @@ not weaken `standard`.
 
 ## Read-only-root compatibility boundary
 
-The current `legacy-admin-app` image can run with a read-only root only when four
+A workload assigned `restricted-compatibility` can run with a read-only root only when four
 bounded tmpfs mounts are present and its entrypoint recreates exact Nginx and
 Supervisor runtime directories. Global policy continues to reject tmpfs, and
 the current approved image lacks that initialization. No live profile change

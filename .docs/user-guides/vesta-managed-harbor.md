@@ -3,7 +3,7 @@
 > **Current status — development application delivery accepted.** The generated credential
 > lifecycle and tenant release lane passed a complete managed-Harbor
 > application deployment on 2026-08-11. Production remains deferred. See the
-> [current acceptance record](../validation/2026-08-11-slave-vxapp-managed-harbor-release.md)
+> [current acceptance record](../validation/2026-08-11-managed-harbor-application-release.md)
 > and the preserved
 > [earlier blocked attempts](../validation/2026-08-08-vesta-managed-harbor-development.md).
 > That application record does not claim post-publication publisher
@@ -84,15 +84,15 @@ APP_PROJECT='APP_PROJECT'
 IMAGE_NAME='IMAGE_NAME'
 RELEASE_TAG='RELEASE_TAG'
 
-# DEVELOPMENT-ONLY target. Production remains deferred.
-VESTA_HOST='development.example.com'
+# DEVELOPMENT-ONLY target loaded from protected operator/CI configuration.
+: "${VESTA_HOST:?set the approved development Vesta hostname}"
 
 [[ "$APP_OWNER" != APP_OWNER && "$APP_OWNER" =~ ^[a-z][a-z0-9_-]{0,31}$ ]]
 [[ "$APP_PROJECT" != APP_PROJECT && "$APP_PROJECT" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]]
 [[ "$IMAGE_NAME" != IMAGE_NAME && "$IMAGE_NAME" =~ ^[a-z0-9][a-z0-9._-]{0,127}$ ]]
 [[ "$RELEASE_TAG" != RELEASE_TAG && "$RELEASE_TAG" != latest ]]
 [[ "$RELEASE_TAG" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$ ]]
-[[ "$VESTA_HOST" == 'development.example.com' ]]
+[[ "$VESTA_HOST" =~ ^[A-Za-z0-9][A-Za-z0-9.-]{0,252}$ ]]
 
 # Require explicit acknowledgement before the first network operation.
 read -r -p \
@@ -678,11 +678,12 @@ passed live development acceptance on 2026-08-11; production remains deferred.
 
 ## Related documentation
 
-- [Complete source-to-Vesta deployment runbook](../../DOCKER_ORCHESTRATION_DEPLOYMENT.md)
+- [Vesta control-plane release runbook](vesta-control-plane-releases.md)
+- [Container workload deployment runbook](../../DOCKER_ORCHESTRATION_DEPLOYMENT.md)
 - [Managed Harbor operator runbook](vesta-managed-harbor-operator.md)
 - [Container-orchestration operator guide](../../docs/container-orchestration.md)
 - [Harbor provider contract](../contracts/harbor-provider.md)
-- [Accepted Slave application release](../validation/2026-08-11-slave-vxapp-managed-harbor-release.md)
+- [Accepted generic application release](../validation/2026-08-11-managed-harbor-application-release.md)
 - [Compose tenant shell-access contract](../contracts/compose-shell-access.md)
 - [Compose self-service deployment contract](../contracts/compose-self-service-deployment.md)
 - [Compose project probe contract](../contracts/compose-project-probes.md)

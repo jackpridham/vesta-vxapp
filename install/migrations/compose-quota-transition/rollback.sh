@@ -47,7 +47,7 @@ rollback_user="$rollback_dir/rollback-user.conf"
 rollback_manifest="$rollback_dir/rollback.sha256"
 target_package="$vesta_root/data/packages/$original_package.pkg"
 target_user="$vesta_root/data/users/$owner/user.conf"
-temporary_package="$vesta_root/data/packages/vxslave-compose.pkg"
+temporary_package="$vesta_root/data/packages/compose-transition.pkg"
 
 for path in \
     "$rollback_package" \
@@ -62,14 +62,14 @@ done
     || fail 'rollback bytes failed SHA-256 verification'
 if [[ -e "$temporary_package" && ! -f "$temporary_package" ]] \
     || [[ -L "$temporary_package" ]]; then
-    fail 'temporary vxslave-compose package path is unsafe'
+    fail 'temporary compose-transition package path is unsafe'
 fi
 
 package_temp="$(
-    mktemp "$vesta_root/data/packages/.vxslave-rollback-package.XXXXXX"
+    mktemp "$vesta_root/data/packages/.compose-transition-rollback-package.XXXXXX"
 )"
 user_temp="$(
-    mktemp "$vesta_root/data/users/$owner/.vxslave-rollback-user.XXXXXX"
+    mktemp "$vesta_root/data/users/$owner/.compose-transition-rollback-user.XXXXXX"
 )"
 cp -- "$rollback_package" "$package_temp"
 cp -- "$rollback_user" "$user_temp"
@@ -87,6 +87,6 @@ user_temp=''
 cmp -- "$rollback_package" "$target_package"
 cmp -- "$rollback_user" "$target_user"
 [[ ! -e "$temporary_package" ]] \
-    || fail 'temporary vxslave-compose package was not removed'
+    || fail 'temporary compose-transition package was not removed'
 printf 'Rollback bytes restored for %s using package %s.\n' \
     "$owner" "$original_package"

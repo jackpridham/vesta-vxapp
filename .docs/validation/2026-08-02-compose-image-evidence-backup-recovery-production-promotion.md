@@ -7,9 +7,9 @@ Status: **completed and independently accepted**
 ## Authorized boundary
 
 The user authorized control-plane-only promotion to
-`production.example.com` during the current maintenance window using
+`<production-fqdn>` during the current maintenance window using
 immutable tag `vesta-compose-product-corrections-20260801`, with the protected
-`vxslave` quota migration included. No production backup, image-evidence
+`compatibility` quota migration included. No production backup, image-evidence
 migration, workload restart/recreate, route/proxy/header edit, image pull/build,
 secret/firewall change, or retirement of the stopped external rollback
 authority was authorized or performed.
@@ -52,7 +52,7 @@ The successful transaction completed at `2026-08-01T23:26:17Z`:
 - protected source rollback root:
   `/root/vesta-backups/pre-compose-successor-20260801T232552Z-8dc0dc9c`;
 - protected quota rollback root:
-  `/root/vesta-backups/vxslave-compose-quota-20260801T232552Z`;
+  `/root/vesta-backups/compatibility-compose-quota-20260801T232552Z`;
 - success `evidence.sha256` SHA-256:
   `14ec2d5fd8fbd55a741873f40645d88dab32735fdd83c045ad9e2104ceac1c42`;
 - operation log SHA-256:
@@ -79,7 +79,7 @@ passed 17/17 checks with the same runtime, revision, health, zero-restart,
 rollback-authority, and free-lock state.
 
 - runtime marker: `8dc0dc9c`;
-- `legacyadmin/legacy-admin-app`: revision 4, running and healthy, zero restarts;
+- `compatuser/compatibility-app`: revision 4, running and healthy, zero restarts;
 - current plus revisions `000001`–`000004`: exact production five-field
   evidence bytes and valid revision manifests;
 - managed and stopped external container projections: byte-equal to the
@@ -92,7 +92,7 @@ rollback-authority, and free-lock state.
   remain empty; no BusinessGUID value was read into a report;
 - mount guard: exact candidate unit/drop-in, enabled and active, complete
   root-owned marker authority, protected owner root mounted;
-- quota package: `vxslave-compose`; limits remain exact at
+- quota package: `compatibility-compose`; limits remain exact at
   `1/1/1.000/1024/256/1024/1/1/2`; refreshed storage use is 109 MB;
 - stopped external no-build authority: preserved and exited;
 - production Vesta backup run: no;
@@ -108,18 +108,18 @@ needed. Under the release and project locks:
 
 1. Verify the protected success root and its `evidence.sha256`.
 2. Run the protected quota rollback script with
-   `/root/vesta-backups/vxslave-compose-quota-20260801T232552Z`, then byte-check
-   `rollback.pkg` against `data/packages/vxslave.pkg` and
-   `rollback-user.conf` against `data/users/legacyadmin/user.conf`.
+   `/root/vesta-backups/compatibility-compose-quota-20260801T232552Z`, then byte-check
+   `rollback.pkg` against `data/packages/compatibility.pkg` and
+   `rollback-user.conf` against `data/users/compatuser/user.conf`.
 3. Disable/remove the exact mount-guard unit and Docker drop-in, reload
-   systemd, scoped-unmount `/home/legacyadmin/docker`, restore its recorded
+   systemd, scoped-unmount `/home/compatuser/docker`, restore its recorded
    device/inode/uid/gid/mode authority, and remove only the transaction-created
    legacy marker authority.
 4. Restore `exact-release-files.tar`; remove only paths in protected
    `new-paths.txt`; restore runtime metadata.
 5. Re-run the recorded old-runtime preflight and require revision 4 healthy,
    exact five-field evidence, unchanged proxy/project/source/container
-   authority, old `vxslave` package/user bytes, and ordinary unmounted data
+   authority, old `compatibility` package/user bytes, and ordinary unmounted data
    root before releasing the locks.
 
 The stopped external container remains the separate workload no-build

@@ -666,9 +666,9 @@ shape:
 {
   "MANAGED": true,
   "STATE": "ready",
-  "REGISTRY": "server.example.com:8083",
+  "REGISTRY": "<vesta-host>:8083",
   "NAMESPACE": "vx-appuser",
-  "REPOSITORY": "server.example.com:8083/vx-appuser/app",
+  "REPOSITORY": "<vesta-host>:8083/vx-appuser/app",
   "PUBLISHER_USERNAME": "vxrobot-vx-appuser+publisher",
   "PUBLISHER_ENABLED": true,
   "QUOTA_MB": 40960,

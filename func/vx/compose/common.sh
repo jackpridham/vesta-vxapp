@@ -162,8 +162,8 @@ vx_compose_profile_is_available() {
         admin-approved)
             configured="${VX_DOCKER_PROFILE_ADMIN_APPROVED_ENABLED:-yes}"
             ;;
-        slave-vxapp)
-            configured="${VX_DOCKER_PROFILE_SLAVE_VXAPP_ENABLED:-yes}"
+        restricted-compatibility)
+            configured="${VX_DOCKER_PROFILE_RESTRICTED_COMPATIBILITY_ENABLED:-yes}"
             ;;
     esac
     [[ "$configured" == yes ]] || return 1

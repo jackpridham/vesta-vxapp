@@ -1,9 +1,10 @@
 # Install and Operate Vesta-Managed Harbor
 
-> **Current status — procedure, not deployment authorization.** The managed
-> Harbor implementation and generated credential lifecycle exist, but corrected
-> development-host activation and acceptance are still pending. Production is
-> deferred. Do not use this runbook to activate a production provider until a
+> **Current status — development delivery accepted, not production
+> authorization.** The managed Harbor implementation, generated credential
+> lifecycle, and a generic tenant application release passed development
+> acceptance on 2026-08-11. Production is deferred. Do not use this runbook to
+> activate a production provider until a
 > separate release decision names the target, release, validation evidence, and
 > rollback scope. Harbor provider backup and restore are disabled for the first
 > production release. Recovery-key custody and re-enablement are tracked in
@@ -75,11 +76,11 @@ Before changing a host, record all of the following outside this repository:
   quota observation, cache-only workload scope, and access revocation; and
 - explicit production authorization, if the target is production.
 
-The dated
-[development acceptance record](../validation/2026-08-08-vesta-managed-harbor-development.md)
-is evidence, not standing authorization. Its current incomplete result means a
-new installation must remain development-only until the missing acceptance
-transaction passes.
+The dated [current application acceptance
+record](../validation/2026-08-11-managed-harbor-application-release.md) and
+[earlier failure record](../validation/2026-08-08-vesta-managed-harbor-development.md)
+are evidence, not standing authorization. A new provider installation remains
+development-only until its own complete acceptance transaction passes.
 
 ## 2. Preflight the host
 
@@ -307,9 +308,9 @@ do not bypass it by editing owner JSON or creating projects in Harbor.
 
 ## 6. Run the first-tenant acceptance transaction
 
-The application-delivery portion of this transaction passed for the
-`slave-vxapp` development tenant on 2026-08-11; see the
-[dated acceptance record](../validation/2026-08-11-slave-vxapp-managed-harbor-release.md).
+The application-delivery portion of this transaction passed for a generic
+development tenant on 2026-08-11; see the
+[dated acceptance record](../validation/2026-08-11-managed-harbor-application-release.md).
 That record did not exercise post-publication publisher disablement or provider
 backup, so retain the remaining checks below for a complete provider
 acceptance.
@@ -321,7 +322,8 @@ administrator bootstrap described in the tenant guide. From the tenant
 account, request discovery for that project name:
 
 ```bash
-ssh registry.example.net \
+: "${ACCEPTANCE_SSH_TARGET:?set the approved tenant SSH destination}"
+ssh -- "$ACCEPTANCE_SSH_TARGET" \
   v-docker registry-info myapp json | jq .
 ```
 
@@ -482,6 +484,8 @@ retained rollback evidence. Do not delete `/usr/local/vesta/data/harbor`,
 
 - [Managed Harbor tenant deployment guide](vesta-managed-harbor.md)
 - [Harbor provider contract](../contracts/harbor-provider.md)
-- [Complete source-to-Vesta deployment runbook](../../DOCKER_ORCHESTRATION_DEPLOYMENT.md)
+- [Vesta control-plane release runbook](vesta-control-plane-releases.md)
+- [Container workload deployment runbook](../../DOCKER_ORCHESTRATION_DEPLOYMENT.md)
 - [Container-orchestration architecture and operator guide](../../docs/container-orchestration.md)
-- [Development acceptance evidence](../validation/2026-08-08-vesta-managed-harbor-development.md)
+- [Current application acceptance evidence](../validation/2026-08-11-managed-harbor-application-release.md)
+- [Preserved earlier development evidence](../validation/2026-08-08-vesta-managed-harbor-development.md)

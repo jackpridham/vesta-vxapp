@@ -211,12 +211,12 @@ trap 'rm -rf -- "$handoff_dir"' EXIT HUP INT TERM
 age-keygen -o "$handoff_dir/identity.agekey" >/dev/null
 age-keygen -y "$handoff_dir/identity.agekey" >"$handoff_dir/recipient.txt"
 
-ssh -- APP_OWNER@development.example.com \
+ssh -- APP_OWNER@<development-fqdn> \
   v-docker registry-publisher-rotate \
   <"$handoff_dir/recipient.txt" \
   >"$handoff_dir/publisher-secret.age"
 
-registry_json="$(ssh -- APP_OWNER@development.example.com \
+registry_json="$(ssh -- APP_OWNER@<development-fqdn> \
   v-docker registry-info APP_PROJECT json)"
 registry="$(jq -er '.REGISTRY' <<<"$registry_json")"
 publisher="$(jq -er '.PUBLISHER_USERNAME' <<<"$registry_json")"
@@ -1087,8 +1087,8 @@ no files changed.
 
 - [ ] **Step 1: Enforce DNS and TLS prerequisites**
 
-From the deployment client, require `development.example.com` to resolve to the
-authorized development address `192.0.2.10` and require the panel
+From the deployment client, require `<development-fqdn>` to resolve to the
+authorized development address `<development-host>` and require the panel
 certificate chain and hostname to validate with the system trust store. Do not
 use an IP as TLS identity, `--insecure`, an insecure Docker registry, or a
 permanent hosts-file bypass. If either prerequisite fails, leave the provider
@@ -1096,7 +1096,7 @@ disabled and record the external blocker.
 
 - [ ] **Step 2: Stage one exact successor transaction**
 
-Stage control-plane files to `operator@development.example.com` over the authorized
+Stage control-plane files to `operator@<development-fqdn>` over the authorized
 SSH key, capture exact commit/archive hashes and prior bytes, and create a
 root-owned mode-0700 rollback. Scope is Harbor control plane and disposable
 registry probe state only. Preserve the currently serving tenant container,

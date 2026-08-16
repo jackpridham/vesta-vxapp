@@ -179,7 +179,7 @@ to make shell delivery easier.
 | `test/compose/test-shell-access-concurrency.sh` | Revocation/operation ordering and access-lock tests |
 | `test/compose/test-shell-access-install.sh` | Group, sudoers, installer, package upgrade, idempotence, rollback tests |
 | `test/test_compose_package_form.php` | Package add/edit round-trip for all Compose quota fields |
-| `.docs/validation/2026-08-07-compose-shell-access-development.md` | Exact commit, overlay, host-local acceptance, cleanup, and rollback evidence from `192.0.2.20` |
+| `.docs/validation/2026-08-07-compose-shell-access-development.md` | Exact commit, overlay, host-local acceptance, cleanup, and rollback evidence from `<staging-host>` |
 
 Do not restructure unrelated upstream user/package code. Hooks in existing
 commands should remain thin calls into `shell-access.sh`.
@@ -1448,8 +1448,8 @@ Expected: only
 - [x] **Step 4: Deploy the exact implementation commit to the development server**
 
 This step is authorized only for the development Vesta host
-`operator@192.0.2.20`, reached through
-`builder@192.0.2.30`. Do not connect to, deploy to, restart, or mutate
+`operator@<staging-host>`, reached through
+`builder@<staging-jump-host>`. Do not connect to, deploy to, restart, or mutate
 production. Do not use a hostname alias for the target and do not use
 `rsync --delete`.
 
@@ -1507,14 +1507,14 @@ tar -C "$overlay_root" -czf \
 Transfer through the approved jump host:
 
 ```bash
-scp -o ProxyJump=builder@192.0.2.30 \
+scp -o ProxyJump=builder@<staging-jump-host> \
   "/var/tmp/vesta-shell-access-$release_commit.tar.gz" \
   "/var/tmp/vesta-shell-access-$release_commit.tar.gz.sha256" \
-  operator@192.0.2.20:/var/tmp/
-ssh -J builder@192.0.2.30 operator@192.0.2.20
+  operator@<staging-host>:/var/tmp/
+ssh -J builder@<staging-jump-host> operator@<staging-host>
 ```
 
-On `192.0.2.20`, run `sha256sum -c` from `/var/tmp` against the transferred
+On `<staging-host>`, run `sha256sum -c` from `/var/tmp` against the transferred
 checksum file, extract the archive to a root-owned temporary directory, run
 Bash/PHP syntax checks there, and
 snapshot every destination that will be replaced beneath a root-owned backup
@@ -1536,7 +1536,7 @@ installation, or readiness fails, disable the new sudoers rule first, restore
 only the exact snapshotted files, rerun `visudo` and Docker readiness, and stop
 the acceptance run.
 
-- [ ] **Step 5: Exercise real Docker-enabled Vesta users on `192.0.2.20`**
+- [ ] **Step 5: Exercise real Docker-enabled Vesta users on `<staging-host>`**
 
 Under one root-owned test lock, create disposable Vesta users named
 `vxshalpha`, `vxshbeta`, and `vxshzero`. Create a disposable package named
@@ -1637,7 +1637,7 @@ git commit -m "test(compose): prove tenant shell isolation on development"
   `test/compose/run-production-readiness-limited.sh`; optimized ShellCheck,
   every Compose shell suite, fixture renders, PHP/JavaScript, documentation,
   Playwright discovery, and whitespace checks passed.
-- The exact commit was deployed to `operator@192.0.2.20` through the
+- The exact commit was deployed to `operator@<staging-host>` through the
   required jump host. Overlay checksum, backup, staged syntax/`visudo`, final
   modes, exact installed hashes, reconciliation, Docker readiness, and actual
   rollback behavior are recorded in the development validation document.
@@ -1667,7 +1667,7 @@ git commit -m "test(compose): prove tenant shell isolation on development"
   removes the group only when empty, and leaves Docker projects, images,
   volumes, secrets, and package quota state untouched.
 - [x] Verify the exact implementation commit was deployed and accepted on
-  `operator@192.0.2.20` through `builder@192.0.2.30`, all disposable
+  `operator@<staging-host>` through `builder@<staging-jump-host>`, all disposable
   fixtures were removed, and the pre/post unrelated-container inventory
   matches.
 - [x] Record milestone commit SHAs and staging evidence in this plan.
@@ -1861,7 +1861,7 @@ git commit -m "docs(compose): document tenant Docker shell access"
   raw Docker, arbitrary command, environment, and filesystem attacks fail.
 - [x] The exact remotely recoverable implementation commit passes deployment,
   real-user orchestration, revocation, reconciliation, cleanup, and unchanged
-  unrelated-container checks on `192.0.2.20` through the required jump
+  unrelated-container checks on `<staging-host>` through the required jump
   host; no production system is accessed.
 - [x] Documentation, focused tests, resource-safe readiness, and
   `git diff --check` pass.

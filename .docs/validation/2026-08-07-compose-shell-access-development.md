@@ -3,8 +3,8 @@
 ## Scope and release identity
 
 This record covers the tenant Docker shell-access release on the authorized
-development Vesta host `operator@192.0.2.20`, reached only through
-`builder@192.0.2.30`. Production was not contacted.
+development Vesta host `operator@<staging-host>`, reached only through
+`builder@<staging-jump-host>`. Production was not contacted.
 
 - Exact deployed implementation commit:
   `15c46d0dd8fcfe4f0db4cf8dda27af4f6a18f446`.
@@ -39,7 +39,7 @@ approved it before the successful limited-gate rerun.
 The root-only disposable-container harness passed after its project fixtures
 were completed with the same minimum authoritative files used by the broker
 namespace fixture. A temporary Debian 12 child of the already-present
-`internal-voice-app:20260807-7ad46403a` image added only `sudo` and `acl` and ran
+`compatibility-test-image:20260807-7ad46403a` image added only `sudo` and `acl` and ran
 with `--network none`. It proved real sudo installation, two-user owner and
 profile isolation, raw-command/environment/socket denial, and immediate
 quota/shell/suspension revocation. The child image was removed after the run.
@@ -155,6 +155,6 @@ Docker orchestration readiness: yes
 ```
 
 The unrelated managed container retained the same container ID
-`fa36ad4cc920`, name `vx-voiceapp-pbx-voice-service-1`, image `dea978c924ba`, and
+`fa36ad4cc920`, name `vx-compatuser-compatibility-app-service-1`, image `dea978c924ba`, and
 canonicalized label set across cleanup. No global prune, firewall change,
 production access, or unrelated workload mutation occurred.
