@@ -38,4 +38,14 @@ grep -Eq 'Warning:|Deprecated:|Notice:|Undefined array key' <<<"$cli_output" \
 grep -Fq "isset(\$_SERVER['REMOTE_ADDR'])" "$repo_root/web/inc/main.php" \
     || fail 'normal HTTP remote-address session check is missing'
 
+while IFS= read -r -d '' php_file; do
+    "$php_bin" -r '
+        foreach (token_get_all(file_get_contents($argv[1])) as $token) {
+            if (is_array($token) && $token[0] === T_COALESCE) {
+                exit(1);
+            }
+        }
+    ' "$php_file" || fail "panel PHP uses the PHP 7 null-coalescing operator: $php_file"
+done < <(find "$repo_root/web" -type f -name '*.php' -print0)
+
 printf '%s\n' 'Mail-wrapper PHP compatibility tests passed.'

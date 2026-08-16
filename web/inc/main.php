@@ -16,7 +16,7 @@ require_once(dirname(__FILE__).'/i18n.php');
 
 
 // Saving user IPs to the session for preventing session hijacking
-$user_combined_ip = $_SERVER['REMOTE_ADDR'] ?? '';
+$user_combined_ip = isset($_SERVER['REMOTE_ADDR']) ? $_SERVER['REMOTE_ADDR'] : '';
 
 if(isset($_SERVER['HTTP_CLIENT_IP'])){
     $user_combined_ip .=  '|'. $_SERVER['HTTP_CLIENT_IP'];
