@@ -6,6 +6,7 @@ Current documents:
 - [Repository overview](../README.md)
 - [Host and user migration guide](user-guides/host-user-migration.md)
 - [Host and user migration contract](contracts/host-user-migration.md)
+- [Production host/user migration command release](validation/2026-08-17-production-host-user-migration-release.md)
 - [Operator architecture and runbook](../docs/container-orchestration.md)
 - [Vesta control-plane release runbook](user-guides/vesta-control-plane-releases.md)
 - [Container workload deployment runbook](../DOCKER_ORCHESTRATION_DEPLOYMENT.md)
