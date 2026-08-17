@@ -4,6 +4,8 @@ The Docker control plane is a single-host Vesta-owned Compose orchestrator.
 Current documents:
 
 - [Repository overview](../README.md)
+- [Host and user migration guide](user-guides/host-user-migration.md)
+- [Host and user migration contract](contracts/host-user-migration.md)
 - [Operator architecture and runbook](../docs/container-orchestration.md)
 - [Vesta control-plane release runbook](user-guides/vesta-control-plane-releases.md)
 - [Container workload deployment runbook](../DOCKER_ORCHESTRATION_DEPLOYMENT.md)

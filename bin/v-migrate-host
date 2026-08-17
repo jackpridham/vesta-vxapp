@@ -1,0 +1,53 @@
+#!/bin/bash
+# info: migrate Vesta host configuration and the admin account to another host
+# options: [TARGET] [PORT] [IDENTITY] [FORCE]
+#
+# Installs or updates a target from this Vesta instance without migrating
+# non-admin users. OpenSSH handles password, agent, and private-key prompts.
+
+#----------------------------------------------------------#
+#                    Variable&Function                     #
+#----------------------------------------------------------#
+
+source /etc/profile
+
+target=${1-}
+port=${2-}
+identity=${3-}
+force=${4-no}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/migration/main.sh"
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+if (( $# > 4 )); then
+    check_result "$E_ARGS" "usage: v-migrate-host [TARGET] [PORT] [IDENTITY] [FORCE]"
+fi
+vx_migration_require_root || check_result "$E_FORBIDEN" "root access required"
+[[ "$force" == yes || "$force" == no ]] \
+    || check_result "$E_INVALID" "FORCE must be yes or no"
+[[ -x "$BIN/v-backup-user" ]] \
+    || check_result "$E_NOTEXIST" "v-backup-user is unavailable"
+vx_migration_prompt_connection target port identity \
+    || check_result "$E_INVALID" "invalid SSH connection settings"
+
+vx_migration_confirm \
+    "This will migrate Vesta host configuration and only the admin account to $target. It will not migrate other users, change DNS, or delete source data." \
+    || check_result "$E_FORBIDEN" "migration cancelled"
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+vx_migration_run host admin "$target" "$port" "$identity" "$force" yes
+check_result $? "host migration failed"
+
+#----------------------------------------------------------#
+#                       Vesta                              #
+#----------------------------------------------------------#
+
+log_event "$OK" "$ARGUMENTS"
+exit

@@ -1,0 +1,58 @@
+#!/bin/bash
+# info: migrate one complete Vesta user to a provisioned Vesta host
+# options: USER [TARGET] [PORT] [IDENTITY] [NORMALIZE]
+#
+# Creates and transfers a native Vesta backup containing the user's domains,
+# databases, files, mail, cron, user directories, and managed Docker state.
+
+#----------------------------------------------------------#
+#                    Variable&Function                     #
+#----------------------------------------------------------#
+
+source /etc/profile
+
+user=${1-}
+target=${2-}
+port=${3-}
+identity=${4-}
+normalize=${5-yes}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/migration/main.sh"
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+check_args 1 "$#" 'USER [TARGET] [PORT] [IDENTITY] [NORMALIZE]'
+if (( $# > 5 )); then
+    check_result "$E_ARGS" "usage: v-migrate-user USER [TARGET] [PORT] [IDENTITY] [NORMALIZE]"
+fi
+vx_migration_require_root || check_result "$E_FORBIDEN" "root access required"
+is_format_valid user
+is_object_valid user USER "$user"
+is_object_unsuspended user USER "$user"
+[[ "$user" != admin ]] \
+    || check_result "$E_FORBIDEN" "admin is migrated only by v-migrate-host"
+[[ "$normalize" == yes || "$normalize" == no ]] \
+    || check_result "$E_INVALID" "NORMALIZE must be yes or no"
+vx_migration_prompt_connection target port identity \
+    || check_result "$E_INVALID" "invalid SSH connection settings"
+
+vx_migration_confirm \
+    "This will copy user $user and all native Vesta backup components to $target. It will not change DNS delegation or delete the source user." \
+    || check_result "$E_FORBIDEN" "migration cancelled"
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+vx_migration_run user "$user" "$target" "$port" "$identity" no "$normalize"
+check_result $? "user migration failed"
+
+#----------------------------------------------------------#
+#                       Vesta                              #
+#----------------------------------------------------------#
+
+log_event "$OK" "$ARGUMENTS"
+exit
