@@ -52,18 +52,26 @@ projects according to the native backup contract. The target must already be
 provisioned with Vesta and must not contain that user. Native restore remains
 responsible for rejecting domain or database conflicts.
 
-After restore, Vesta rebuilds the user, optionally normalizes restored DNS to
-target authority, refreshes counters, and reconciles managed runtime state.
-The source user remains intact.
+After restore, Vesta rebuilds the user. With `NORMALIZE=yes`, the migration
+selects the first target Vesta IP assigned to the user (using its NAT address
+when configured), explicitly assigns every restored web and DNS domain to it,
+regenerates web/proxy/DNS configuration, reloads the services, and verifies
+the persisted domains all use that address. The integrity-protected user
+payload records the source web IP set; normalization also fails if one of
+those source addresses remains in Vesta web authority or rendered web config.
+Counters and managed runtime state are then reconciled. The source user
+remains intact. `NORMALIZE=no` preserves restored authority for an operator-
+managed cutover.
 
 ## Archive and mutation safety
 
 Migration stages use root-only temporary directories. Outer archives and
-every payload member have SHA-256 manifests. The receiver rejects checksum
-mismatch, unsupported schema, absolute or traversal paths, outer links and
-special files, unexpected payload sets, install-root escape, invalid native
-backup names, OS mismatch, target user collision, and unexpected target
-state before applying data.
+every payload member have SHA-256 manifests. User payload schema 2 includes
+the source web-IP set used by target-authority verification. The receiver
+rejects checksum mismatch, unsupported schema, absolute or traversal paths,
+outer links and special files, unexpected payload sets, install-root escape,
+invalid native backup names, OS mismatch, target user collision, and
+unexpected target state before applying data.
 
 Migration never deletes source data, changes public DNS delegation, performs
 global Docker cleanup, transfers raw Docker daemon state, or copies SSH,

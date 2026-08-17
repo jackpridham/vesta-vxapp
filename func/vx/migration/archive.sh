@@ -30,11 +30,12 @@ vx_migration_write_metadata() {
     local destination=$1
     local mode=$2
     local username=${3-}
+    local schema=${4-1}
     local source_major
     source_major=$(vx_migration_debian_major) || return 1
 
     {
-        printf 'SCHEMA=1\n'
+        printf 'SCHEMA=%s\n' "$schema"
         printf 'MODE=%s\n' "$mode"
         printf 'USER=%s\n' "$username"
         printf 'SOURCE_DEBIAN_MAJOR=%s\n' "$source_major"
@@ -71,17 +72,22 @@ vx_migration_create_user_bundle() {
     local username=$1
     local stage=$2
     local payload="$stage/payload"
-    local backup_name archive
+    local backup_name archive web_domains
 
     mkdir -p "$payload"
     chmod 0700 "$payload"
-    vx_migration_write_metadata "$payload/metadata.conf" user "$username"
+    vx_migration_write_metadata "$payload/metadata.conf" user "$username" 2
+    web_domains=$("$VESTA/bin/v-list-web-domains" "$username" plain) \
+        || return 1
+    printf '%s\n' "$web_domains" \
+        | awk -F '\t' 'NF >= 2 && $2 != "" {print $2}' \
+        | LC_ALL=C sort -u >"$payload/source-web-ips"
     backup_name=$(vx_migration_create_native_user_backup "$username" "$payload") \
         || return 1
     mv -- "$payload/$backup_name" "$payload/user-backup.tar"
     printf '%s\n' "$backup_name" >"$payload/backup-name"
-    (cd "$payload" && sha256sum metadata.conf backup-name user-backup.tar \
-        >SHA256SUMS)
+    (cd "$payload" && sha256sum metadata.conf backup-name source-web-ips \
+        user-backup.tar >SHA256SUMS)
     archive="$stage/vesta-user-$username-$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
     tar -C "$payload" -czf "$archive" .
     (cd "$(dirname "$archive")" && sha256sum "$(basename "$archive")") \

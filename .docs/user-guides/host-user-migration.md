@@ -55,9 +55,11 @@ Provision the target Vesta host first, then run:
 /usr/local/vesta/bin/v-migrate-user customer debian@new-host.example 22 - yes
 ```
 
-The last argument controls DNS normalization. Use `yes` when moving the user
-to the target's IP and nameservers; use `no` when preserving the source DNS
-records for a separately managed cutover.
+The last argument controls target-authority normalization. Use `yes` to force
+every restored web and DNS domain onto the target user's first Vesta-assigned
+IP (or its configured NAT address), regenerate and reload web/proxy/DNS
+configuration, update nameservers, and verify source web IPs are absent. Use
+`no` when preserving restored authority for a separately managed cutover.
 
 The command restores the native Vesta account backup, including sites,
 databases, files, mail, cron jobs, user directories, and Vesta-managed Docker

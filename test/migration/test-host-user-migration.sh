@@ -79,28 +79,53 @@ calls="$fixture/receiver-calls"
 printf "PACKAGE='default'\n" >"$fake_payload/native/vesta/user.conf"
 tar -C "$fake_payload/native" -cf "$fake_payload/user-backup.tar" .
 printf 'alice.2026-08-17_12-00-00.tar\n' >"$fake_payload/backup-name"
-printf 'SCHEMA=1\nMODE=user\nUSER=alice\nSOURCE_DEBIAN_MAJOR=%s\nCREATED_AT=2026-08-17T00:00:00Z\n' \
+printf '192.0.2.10\n' >"$fake_payload/source-web-ips"
+printf 'SCHEMA=2\nMODE=user\nUSER=alice\nSOURCE_DEBIAN_MAJOR=%s\nCREATED_AT=2026-08-17T00:00:00Z\n' \
     "$(cut -d. -f1 </etc/debian_version)" >"$fake_payload/metadata.conf"
-(cd "$fake_payload" && sha256sum metadata.conf backup-name user-backup.tar \
-    >SHA256SUMS)
+(cd "$fake_payload" && sha256sum metadata.conf backup-name source-web-ips \
+    user-backup.tar >SHA256SUMS)
 receiver_archive="$fixture/receiver-user.tar.gz"
 tar -C "$fake_payload" -czf "$receiver_archive" .
 (cd "$fixture" && sha256sum "$(basename "$receiver_archive")") \
     >"$receiver_archive.sha256"
 
 for fake_command in v-restore-user v-rebuild-user v-normalize-restored-user \
-    v-update-user-counters v-update-sys-ip-counters; do
+    v-rebuild-web-domains v-rebuild-dns-domains v-restart-web \
+    v-restart-proxy v-restart-dns v-update-user-counters \
+    v-update-sys-ip-counters; do
     cat >"$fake_vesta/bin/$fake_command" <<EOF
 #!/usr/bin/env bash
 printf '%s %s\n' '$fake_command' "\$*" >>'$calls'
 EOF
     chmod 0755 "$fake_vesta/bin/$fake_command"
 done
+web_ip_state="$fixture/web-ip"
+dns_ip_state="$fixture/dns-ip"
+printf '192.0.2.10\n' >"$web_ip_state"
+printf '192.0.2.10\n' >"$dns_ip_state"
+cat >"$fake_vesta/bin/v-list-user-ips" <<'EOF'
+#!/usr/bin/env bash
+printf '192.0.2.20\tadmin\tshared\ttarget\t198.51.100.20\n'
+EOF
+cat >"$fake_vesta/bin/v-list-web-domains" <<EOF
+#!/usr/bin/env bash
+printf 'example.test\\t%s\\n' "\$(<"$web_ip_state")"
+EOF
 cat >"$fake_vesta/bin/v-list-dns-domains" <<EOF
 #!/usr/bin/env bash
-printf 'example.test\n'
+printf 'example.test\\t%s\\n' "\$(<"$dns_ip_state")"
 EOF
-chmod 0755 "$fake_vesta/bin/v-list-dns-domains"
+cat >"$fake_vesta/bin/v-change-web-domain-ip" <<EOF
+#!/usr/bin/env bash
+printf '%s %s\\n' v-change-web-domain-ip "\$*" >>'$calls'
+printf '%s\\n' "\$3" >'$web_ip_state'
+EOF
+cat >"$fake_vesta/bin/v-change-dns-domain-ip" <<EOF
+#!/usr/bin/env bash
+printf '%s %s\\n' v-change-dns-domain-ip "\$*" >>'$calls'
+printf '%s\\n' "\$3" >'$dns_ip_state'
+EOF
+chmod 0755 "$fake_vesta/bin/"*
 
 VESTA="$fake_vesta" "$repo_root/func/vx/migration/receive.sh" user \
     "$receiver_archive" "$receiver_archive.sha256" no yes >/dev/null
@@ -114,6 +139,20 @@ grep -Fq 'v-rebuild-user alice no' "$calls" \
     || fail 'receiver did not rebuild restored user'
 grep -Fq 'v-normalize-restored-user alice' "$calls" \
     || fail 'receiver did not normalize restored user'
+grep -Fq 'v-change-web-domain-ip alice example.test 198.51.100.20 no' "$calls" \
+    || fail 'receiver did not force restored web authority to target NAT IP'
+grep -Fq 'v-change-dns-domain-ip alice example.test 198.51.100.20 no' "$calls" \
+    || fail 'receiver did not force restored DNS authority to target NAT IP'
+grep -Fq 'v-rebuild-web-domains alice no' "$calls" \
+    || fail 'receiver did not regenerate rendered web configuration'
+
+: >"$calls"
+printf '192.0.2.10\n' >"$web_ip_state"
+printf '192.0.2.10\n' >"$dns_ip_state"
+VESTA="$fake_vesta" "$repo_root/func/vx/migration/receive.sh" user \
+    "$receiver_archive" "$receiver_archive.sha256" no no >/dev/null
+! grep -Eq 'v-change-(web|dns)-domain-ip' "$calls" \
+    || fail 'NORMALIZE=no changed restored web or DNS authority'
 
 cp "$receiver_archive.sha256" "$fixture/bad.sha256"
 sed -i 's/^[a-f0-9]/z/' "$fixture/bad.sha256"

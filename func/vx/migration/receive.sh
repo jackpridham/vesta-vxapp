@@ -114,6 +114,87 @@ receiver_assert_no_web_restore_errors() {
     fi
 }
 
+receiver_target_user_ip() {
+    local username=$1
+    local target_ip
+    target_ip=$("$VESTA/bin/v-list-user-ips" "$username" plain \
+        | awk -F '\t' 'NR == 1 {print ($5 != "" && $5 != "no") ? $5 : $1}')
+    [[ "$target_ip" =~ ^[0-9A-Fa-f:.]+$ ]] \
+        || receiver_fail "target user has no valid Vesta-assigned IP"
+    printf '%s\n' "$target_ip"
+}
+
+receiver_assert_source_web_ips_absent() {
+    local username=$1
+    local source_ips=$2
+    local target_ip=$3
+    local source_ip
+    while IFS= read -r source_ip; do
+        [[ -z "$source_ip" || "$source_ip" == "$target_ip" ]] && continue
+        [[ "$source_ip" =~ ^[0-9A-Fa-f:.]+$ ]] \
+            || receiver_fail "invalid source web IP metadata"
+        if grep -Fq -- "IP='$source_ip'" \
+            "$VESTA/data/users/$username/web.conf" 2>/dev/null; then
+            receiver_fail "source IP remains in restored web authority"
+        fi
+        if find "/home/$username/conf/web" -type f -name '*.conf' \
+            -exec grep -Fq -- "$source_ip" {} \; -print -quit 2>/dev/null \
+            | grep -q .; then
+            receiver_fail "source IP remains in rendered web configuration"
+        fi
+    done <"$source_ips"
+}
+
+receiver_normalize_user_authority() {
+    local username=$1
+    local source_ips=$2
+    local target_ip domain current_ip
+    local web_domains dns_domains
+    web_domains=$("$VESTA/bin/v-list-web-domains" "$username" plain 2>/dev/null)
+    dns_domains=$("$VESTA/bin/v-list-dns-domains" "$username" plain 2>/dev/null)
+    [[ -n "$web_domains" || -n "$dns_domains" ]] || return 0
+    target_ip=$(receiver_target_user_ip "$username")
+
+    if [[ -n "$dns_domains" ]]; then
+        "$VESTA/bin/v-normalize-restored-user" "$username"
+    fi
+    while IFS=$'\t' read -r domain current_ip _; do
+        [[ -n "$domain" ]] || continue
+        if [[ "$current_ip" != "$target_ip" ]]; then
+            "$VESTA/bin/v-change-web-domain-ip" \
+                "$username" "$domain" "$target_ip" no
+        fi
+    done <<<"$web_domains"
+    while IFS=$'\t' read -r domain current_ip _; do
+        [[ -n "$domain" ]] || continue
+        if [[ "$current_ip" != "$target_ip" ]]; then
+            "$VESTA/bin/v-change-dns-domain-ip" \
+                "$username" "$domain" "$target_ip" no
+        fi
+    done <<<"$dns_domains"
+
+    if [[ -n "$web_domains" ]]; then
+        "$VESTA/bin/v-rebuild-web-domains" "$username" no
+        while IFS=$'\t' read -r domain current_ip _; do
+            [[ -z "$domain" || "$current_ip" == "$target_ip" ]] \
+                || receiver_fail "restored web domain did not retain target IP"
+        done < <("$VESTA/bin/v-list-web-domains" "$username" plain)
+        receiver_assert_source_web_ips_absent \
+            "$username" "$source_ips" "$target_ip"
+        "$VESTA/bin/v-restart-web" now
+        "$VESTA/bin/v-restart-proxy" now
+    fi
+    if [[ -n "$dns_domains" ]]; then
+        "$VESTA/bin/v-rebuild-dns-domains" "$username" no
+        while IFS=$'\t' read -r domain current_ip _; do
+            [[ -z "$domain" || "$current_ip" == "$target_ip" ]] \
+                || receiver_fail "restored DNS domain did not retain target IP"
+        done < <("$VESTA/bin/v-list-dns-domains" "$username" plain)
+        "$VESTA/bin/v-restart-dns" now
+    fi
+    echo "Normalized restored web and DNS authority to target IP $target_ip."
+}
+
 receiver_restore_native_user() {
     local username=$1
     local payload=$2
@@ -129,9 +210,9 @@ receiver_restore_native_user() {
             "$VESTA/bin/v-restore-user" "$username" "$stored_name")
     receiver_assert_no_web_restore_errors "$username"
     "$VESTA/bin/v-rebuild-user" "$username" no
-    if [[ "$normalize" == yes \
-        && -n "$("$VESTA/bin/v-list-dns-domains" "$username" plain 2>/dev/null)" ]]; then
-        "$VESTA/bin/v-normalize-restored-user" "$username"
+    if [[ "$normalize" == yes ]]; then
+        receiver_normalize_user_authority \
+            "$username" "$payload/source-web-ips"
     fi
     "$VESTA/bin/v-update-user-counters" "$username"
     "$VESTA/bin/v-update-sys-ip-counters"
@@ -301,15 +382,23 @@ source_major=$(receiver_metadata_value "$work_root/payload/metadata.conf" SOURCE
     || receiver_fail "invalid source OS metadata"
 target_major=$(cut -d. -f1 </etc/debian_version 2>/dev/null) \
     || receiver_fail "target must run Debian"
-[[ "$schema" == 1 && "$archive_mode" == "$mode" ]] \
-    || receiver_fail "unsupported migration schema"
+[[ "$archive_mode" == "$mode" ]] || receiver_fail "migration mode mismatch"
+if [[ "$mode" == user ]]; then
+    [[ "$schema" == 2 ]] || receiver_fail "unsupported user migration schema"
+else
+    [[ "$schema" == 1 ]] || receiver_fail "unsupported host migration schema"
+fi
 [[ "$source_major" == "$target_major" ]] \
     || receiver_fail "source and target Debian major versions differ"
 
 if [[ "$mode" == user ]]; then
-    expected_files=$'backup-name\nmetadata.conf\nuser-backup.tar'
+    expected_files=$'backup-name\nmetadata.conf\nsource-web-ips\nuser-backup.tar'
     receiver_verify_payload "$work_root/payload" "$expected_files" \
         || receiver_fail "user payload manifest verification failed"
+    if grep -Ev '^[0-9A-Fa-f:.]+$' \
+        "$work_root/payload/source-web-ips" | grep -q .; then
+        receiver_fail "invalid source web IP metadata"
+    fi
     [[ "$username" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ && "$username" != admin ]] \
         || receiver_fail "invalid or forbidden migration user"
     [[ -x "$VESTA/bin/v-restore-user" ]] \
