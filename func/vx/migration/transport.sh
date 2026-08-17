@@ -2,7 +2,7 @@
 
 vx_migration_validate_target() {
     local target=${1-}
-    [[ "$target" =~ ^root@([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?)$ ]]
+    [[ "$target" =~ ^[a-z_][a-z0-9_-]*@([A-Za-z0-9]([A-Za-z0-9.-]*[A-Za-z0-9])?)$ ]]
 }
 
 vx_migration_validate_port() {
@@ -17,7 +17,7 @@ vx_migration_validate_identity() {
 
 vx_migration_target_is_local() {
     local target=$1
-    local host=${target#root@}
+    local host=${target#*@}
     local address local_address
     case "$host" in
         localhost|localhost.localdomain|127.*|"$(hostname)"|"$(hostname -f 2>/dev/null)")
@@ -41,7 +41,7 @@ vx_migration_prompt_connection() {
     local -n identity_ref=$identity_name
 
     if [[ -z "$target_ref" ]]; then
-        read -r -p "Target SSH host (root@hostname): " target_ref
+        read -r -p "Target SSH host (user@hostname): " target_ref
     fi
     if [[ -z "$port_ref" ]]; then
         read -r -p "Target SSH port [22]: " port_ref
@@ -53,7 +53,7 @@ vx_migration_prompt_connection() {
     fi
 
     vx_migration_validate_target "$target_ref" || {
-        echo "Error: target must use the form root@hostname" >&2
+        echo "Error: target must use the form user@hostname" >&2
         return 2
     }
     vx_migration_validate_port "$port_ref" || {
@@ -104,6 +104,18 @@ vx_migration_transport_open() {
     /usr/bin/ssh "${VX_MIGRATION_SSH_OPTIONS[@]}" -MNf "$target"
     VX_MIGRATION_CONTROL_TARGET=$target
     VX_MIGRATION_CONTROL_PATH=$control_path
+
+    local remote_uid
+    remote_uid=$(vx_migration_transport_exec id -u) || return 1
+    if [[ "$remote_uid" == 0 ]]; then
+        VX_MIGRATION_REMOTE_SUDO=no
+    elif [[ "$remote_uid" =~ ^[0-9]+$ ]] \
+        && vx_migration_transport_exec sudo -n true; then
+        VX_MIGRATION_REMOTE_SUDO=yes
+    else
+        echo "Error: target SSH account must be root or have non-interactive sudo" >&2
+        return 1
+    fi
 }
 
 vx_migration_transport_exec() {
@@ -112,6 +124,14 @@ vx_migration_transport_exec() {
     # shellcheck disable=SC2029
     /usr/bin/ssh "${VX_MIGRATION_SSH_OPTIONS[@]}" \
         "$VX_MIGRATION_CONTROL_TARGET" "$@"
+}
+
+vx_migration_transport_exec_root() {
+    if [[ "${VX_MIGRATION_REMOTE_SUDO:-no}" == yes ]]; then
+        vx_migration_transport_exec sudo -n -- "$@"
+    else
+        vx_migration_transport_exec "$@"
+    fi
 }
 
 vx_migration_transport_copy() {

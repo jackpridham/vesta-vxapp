@@ -17,7 +17,7 @@ for the password directly; Vesta does not read or retain it. For key
 authentication, provide an absolute private-key path:
 
 ```bash
-/usr/local/vesta/bin/v-migrate-host root@new-host.example 22 /root/.ssh/migration
+/usr/local/vesta/bin/v-migrate-host debian@new-host.example 22 /root/.ssh/migration
 ```
 
 The first connection may ask you to confirm the target host key. Verify its
@@ -26,7 +26,7 @@ fingerprint through a separate trusted channel before accepting it.
 ## Migrating host configuration
 
 ```bash
-/usr/local/vesta/bin/v-migrate-host root@new-host.example 22 - no
+/usr/local/vesta/bin/v-migrate-host debian@new-host.example 22 - no
 ```
 
 On a clean target, the transferred installer provisions the matching Vesta
@@ -39,7 +39,7 @@ final argument. The command still refuses a target containing any non-admin
 Vesta user:
 
 ```bash
-/usr/local/vesta/bin/v-migrate-host root@new-host.example 22 - yes
+/usr/local/vesta/bin/v-migrate-host debian@new-host.example 22 - yes
 ```
 
 The source is retained. Host migration does not copy source IP/firewall,
@@ -52,7 +52,7 @@ and skipped.
 Provision the target Vesta host first, then run:
 
 ```bash
-/usr/local/vesta/bin/v-migrate-user customer root@new-host.example 22 - yes
+/usr/local/vesta/bin/v-migrate-user customer debian@new-host.example 22 - yes
 ```
 
 The last argument controls DNS normalization. Use `yes` when moving the user

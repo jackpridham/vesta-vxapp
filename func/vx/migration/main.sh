@@ -50,7 +50,7 @@ vx_migration_run() {
     vx_migration_transport_open "$target" "$port" "$identity" "$control_dir" \
         || return 1
     remote_dir=$(vx_migration_transport_exec \
-        'umask 077; id -u | grep -qx 0 && mktemp -d /var/tmp/vesta-migration.XXXXXX') \
+        'umask 077; mktemp -d /var/tmp/vesta-migration.XXXXXX') \
         || return 1
     [[ "$remote_dir" =~ ^/var/tmp/vesta-migration\.[A-Za-z0-9]+$ ]] || {
         echo "Error: target returned an invalid staging path" >&2
@@ -75,28 +75,28 @@ vx_migration_run() {
         return 1
     }
     if [[ "$mode" == user ]]; then
-        vx_migration_transport_exec \
+        vx_migration_transport_exec_root \
             'test -x /usr/local/vesta/bin/v-restore-user' || {
             echo "Error: user migration target must already have Vesta installed" >&2
             return 1
         }
-        vx_migration_transport_exec \
+        vx_migration_transport_exec_root \
             "test ! -d /usr/local/vesta/data/users/$username" || {
             echo "Error: target Vesta user already exists" >&2
             return 1
         }
-    elif vx_migration_transport_exec \
+    elif vx_migration_transport_exec_root \
         'test -x /usr/local/vesta/bin/v-list-users'; then
         [[ "$force" == yes ]] || {
             echo "Error: Vesta is already installed on target; FORCE=yes is required" >&2
             return 1
         }
-        if vx_migration_transport_exec \
+        if vx_migration_transport_exec_root \
             'find /usr/local/vesta/data/users -mindepth 1 -maxdepth 1 -type d ! -name admin -print -quit | grep -q .'; then
             echo "Error: target contains non-admin Vesta users" >&2
             return 1
         fi
-    elif ! vx_migration_transport_exec \
+    elif ! vx_migration_transport_exec_root \
         'test ! -e /usr/local/vesta && ! id -u admin >/dev/null 2>&1'; then
         echo "Error: target is not clean enough for unattended Vesta installation" >&2
         return 1
@@ -129,7 +129,7 @@ vx_migration_run() {
         "$remote_dir/$(basename "$archive").sha256" || return 1
 
     echo "Applying migration on $target..."
-    vx_migration_transport_exec /bin/bash "$remote_dir/receive.sh" \
+    vx_migration_transport_exec_root /bin/bash "$remote_dir/receive.sh" \
         "$mode" "$remote_dir/$(basename "$archive")" \
         "$remote_dir/$(basename "$archive").sha256" "$force" "$normalize"
     local result=$?

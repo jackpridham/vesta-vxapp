@@ -26,8 +26,8 @@ source "$repo_root/func/vx/migration/archive.sh"
 
 vx_migration_validate_target root@example.test \
     || fail 'valid SSH target rejected'
-! vx_migration_validate_target operator@example.test \
-    || fail 'non-root SSH target accepted'
+vx_migration_validate_target operator@example.test \
+    || fail 'valid sudo-capable SSH target rejected'
 ! vx_migration_validate_target 'root@example.test;id' \
     || fail 'shell metacharacter accepted in target'
 vx_migration_validate_port 22 || fail 'valid SSH port rejected'
@@ -104,6 +104,10 @@ chmod 0755 "$fake_vesta/bin/v-list-dns-domains"
 
 VESTA="$fake_vesta" "$repo_root/func/vx/migration/receive.sh" user \
     "$receiver_archive" "$receiver_archive.sha256" no yes >/dev/null
+grep -Fq 'export VESTA' "$repo_root/func/vx/migration/receive.sh" \
+    || fail 'receiver does not export the Vesta runtime path'
+grep -Fq "chmod 0711 \"\$work_root\"" "$repo_root/func/vx/migration/receive.sh" \
+    || fail 'receiver work root does not allow user-scoped archive traversal'
 grep -Fq 'v-restore-user alice alice.2026-08-17_12-00-00.tar' "$calls" \
     || fail 'receiver did not invoke native user restore'
 grep -Fq 'v-rebuild-user alice no' "$calls" \

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-set -o pipefail
+set -Eeuo pipefail
 umask 077
 VESTA=${VESTA:-/usr/local/vesta}
+export VESTA
 
 mode=${1-}
 archive=${2-}
@@ -105,6 +106,14 @@ receiver_available_packages_install() {
     fi
 }
 
+receiver_assert_no_web_restore_errors() {
+    local username=$1
+    if find "/home/$username/web" -type f -name restore_errors.log \
+        -size +0c -print -quit 2>/dev/null | grep -q .; then
+        receiver_fail "native Vesta restore reported website extraction errors"
+    fi
+}
+
 receiver_restore_native_user() {
     local username=$1
     local payload=$2
@@ -115,8 +124,10 @@ receiver_restore_native_user() {
     backup_path="$payload/$stored_name"
     cp -- "$payload/user-backup.tar" "$backup_path"
     chmod 0600 "$backup_path"
-    OVERRIDE_BACKUP_PATH="$payload" BACKUP_TEMP="$work_root" \
-        "$VESTA/bin/v-restore-user" "$username" "$stored_name"
+    (umask 022
+        OVERRIDE_BACKUP_PATH="$payload" BACKUP_TEMP="$work_root" \
+            "$VESTA/bin/v-restore-user" "$username" "$stored_name")
+    receiver_assert_no_web_restore_errors "$username"
     "$VESTA/bin/v-rebuild-user" "$username" no
     if [[ "$normalize" == yes \
         && -n "$("$VESTA/bin/v-list-dns-domains" "$username" plain 2>/dev/null)" ]]; then
@@ -135,8 +146,10 @@ receiver_restore_admin() {
     backup_path="$payload/$stored_name"
     cp -- "$payload/admin-backup.tar" "$backup_path"
     chmod 0600 "$backup_path"
-    OVERRIDE_BACKUP_PATH="$payload" BACKUP_TEMP="$work_root" \
-        "$VESTA/bin/v-restore-user" admin "$stored_name"
+    (umask 022
+        OVERRIDE_BACKUP_PATH="$payload" BACKUP_TEMP="$work_root" \
+            "$VESTA/bin/v-restore-user" admin "$stored_name")
+    receiver_assert_no_web_restore_errors admin
 
     admin_conf="$work_root/admin-user.conf"
     tar -xOf "$payload/admin-backup.tar" ./vesta/user.conf >"$admin_conf"
@@ -273,6 +286,8 @@ receiver_outer_archive_safe "$archive" \
 
 work_root=$(mktemp -d /var/tmp/vesta-migration-receive.XXXXXX) \
     || receiver_fail "cannot create target work directory"
+chmod 0711 "$work_root" \
+    || receiver_fail "cannot make target work directory traversable"
 mkdir -p "$work_root/payload"
 tar -C "$work_root/payload" -xzf "$archive"
 

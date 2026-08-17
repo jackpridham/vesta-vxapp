@@ -9,7 +9,8 @@ v-migrate-host [TARGET] [PORT] [IDENTITY] [FORCE]
 v-migrate-user USER [TARGET] [PORT] [IDENTITY] [NORMALIZE]
 ```
 
-`TARGET` is `root@hostname`. Missing connection values are prompted for.
+`TARGET` is `user@hostname`. The account must be root or have non-interactive
+sudo access. Missing connection values are prompted for.
 `IDENTITY` is a regular private-key path or `-` to let OpenSSH use its agent
 and interactive authentication. Vesta never accepts, reads, stores, logs, or
 places an SSH password in argv or environment variables.
