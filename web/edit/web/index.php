@@ -29,6 +29,13 @@ unset($output);
 // Parse domain
 $v_username = $user;
 $v_domain = $_GET['domain'];
+$v_cloudflare_managed = false;
+exec (VESTA_CMD."v-list-vx-cloudflare-web-domain-status ".$v_username." ".escapeshellarg($v_domain), $output, $return_var);
+$v_cloudflare_status = trim(implode("\n", $output));
+if (($return_var == 0) && (($v_cloudflare_status === 'managed') || ($v_cloudflare_status === 'degraded'))) {
+    $v_cloudflare_managed = true;
+}
+unset($output);
 $v_ip = $data[$v_domain]['IP'];
 $v_template = $data[$v_domain]['TPL'];
 $v_aliases = str_replace(',', "\n", $data[$v_domain]['ALIAS']);
@@ -349,7 +356,7 @@ if (!empty($_POST['save'])) {
     }
 
     // Change SSL certificate
-    if (( $v_letsencrypt == 'no' ) && (empty($_POST['v_letsencrypt'])) && ( $v_ssl == 'yes' ) && (!empty($_POST['v_ssl'])) && (empty($_SESSION['error_msg']))) {
+    if ((!$v_cloudflare_managed) && ( $v_letsencrypt == 'no' ) && (empty($_POST['v_letsencrypt'])) && ( $v_ssl == 'yes' ) && (!empty($_POST['v_ssl'])) && (empty($_SESSION['error_msg']))) {
         if (( $v_ssl_crt != str_replace("\r\n", "\n",  $_POST['v_ssl_crt'])) || ( $v_ssl_key != str_replace("\r\n", "\n",  $_POST['v_ssl_key'])) || ( $v_ssl_ca != str_replace("\r\n", "\n",  $_POST['v_ssl_ca']))) {
             exec ('mktemp -d', $mktemp_output, $return_var);
             $tmpdir = $mktemp_output[0];
@@ -407,7 +414,7 @@ if (!empty($_POST['save'])) {
     }
 
     // Delete Lets Encrypt support
-    if (( $v_letsencrypt == 'yes' ) && (empty($_POST['v_letsencrypt'])) && (empty($_SESSION['error_msg']))) {
+    if ((!$v_cloudflare_managed) && ( $v_letsencrypt == 'yes' ) && (empty($_POST['v_letsencrypt'])) && (empty($_SESSION['error_msg']))) {
         exec (VESTA_CMD."v-delete-letsencrypt-domain ".$user." ".$v_domain." no", $output, $return_var);
         check_return_code($return_var,$output);
         unset($output);
@@ -422,7 +429,7 @@ if (!empty($_POST['save'])) {
     }
 
     // Delete SSL certificate
-    if (( $v_ssl == 'yes' ) && (empty($_POST['v_ssl'])) && (empty($_SESSION['error_msg']))) {
+    if ((!$v_cloudflare_managed) && ( $v_ssl == 'yes' ) && (empty($_POST['v_ssl'])) && (empty($_SESSION['error_msg']))) {
         exec (VESTA_CMD."v-delete-web-domain-ssl ".$v_username." ".$v_domain." no", $output, $return_var);
         check_return_code($return_var,$output);
         unset($output);
@@ -435,7 +442,7 @@ if (!empty($_POST['save'])) {
     }
 
     // Add Lets Encrypt support
-    if ((!empty($_POST['v_ssl'])) && ( $v_letsencrypt == 'no' ) && (!empty($_POST['v_letsencrypt'])) && empty($_SESSION['error_msg'])) {
+    if ((!$v_cloudflare_managed) && (!empty($_POST['v_ssl'])) && ( $v_letsencrypt == 'no' ) && (!empty($_POST['v_letsencrypt'])) && empty($_SESSION['error_msg'])) {
         $l_aliases = str_replace("\n", ',', $v_aliases);
         exec (VESTA_CMD."v-add-letsencrypt-domain ".$user." ".$v_domain." ".escapeshellarg($l_aliases)." no", $output, $return_var);
         check_return_code($return_var,$output);
@@ -451,7 +458,7 @@ if (!empty($_POST['save'])) {
      }
 
      // Add SSL certificate
-     if (( $v_ssl == 'no' ) && (!empty($_POST['v_ssl']))  && (empty($v_letsencrypt_deleted)) && (empty($_SESSION['error_msg']))) {
+     if ((!$v_cloudflare_managed) && ( $v_ssl == 'no' ) && (!empty($_POST['v_ssl']))  && (empty($v_letsencrypt_deleted)) && (empty($_SESSION['error_msg']))) {
         if (empty($_POST['v_ssl_crt'])) $errors[] = 'ssl certificate';
         if (empty($_POST['v_ssl_key'])) $errors[] = 'ssl key';
         if (empty($_POST['v_ssl_home'])) $errors[] = 'ssl home';

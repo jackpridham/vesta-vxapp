@@ -18,6 +18,17 @@ $web_domains = json_decode(implode('', $output), true);
 $web_domains = is_array($web_domains) ? $web_domains : array();
 unset($output);
 
+// Only exact VX-owned managed websites may receive Cloudflare aliases. This
+// keeps caller-created lookalike hostnames out of the selection surface.
+foreach (array_keys($web_domains) as $listed_domain) {
+    exec (VESTA_CMD."v-list-vx-cloudflare-web-domain-status ".escapeshellarg($user)." ".escapeshellarg($listed_domain), $output, $return_var);
+    $managed_status = trim(implode("\n", $output));
+    unset($output);
+    if (($return_var != 0) || ($managed_status !== 'managed')) {
+        unset($web_domains[$listed_domain]);
+    }
+}
+
 // Check POST request
 if (!empty($_POST['ok'])) {
 

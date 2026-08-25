@@ -34,10 +34,18 @@ is_object_valid web DOMAIN "$domain"
 #                       Action                             #
 #----------------------------------------------------------#
 
-vx_cf_origin_cleanup "$user" "$domain" \
-    || check_result "$E_CONNECT" "${VX_CF_STATUS:-provider_error}"
 vx_cf_cleanup "$user" "$domain" \
     || check_result "$E_CONNECT" "${VX_CF_STATUS:-provider_error}"
+record_cleanup_status=$VX_CF_STATUS
+vx_cf_origin_cleanup "$user" "$domain" \
+    || check_result "$E_CONNECT" "${VX_CF_STATUS:-provider_error}"
+certificate_cleanup_status=$VX_CF_STATUS
+if [[ "$record_cleanup_status" == deleted \
+    || "$certificate_cleanup_status" == deleted ]]; then
+    VX_CF_STATUS=deleted
+else
+    VX_CF_STATUS=unchanged
+fi
 vx_cf_emit_status "$VX_CF_STATUS" "$format"
 
 

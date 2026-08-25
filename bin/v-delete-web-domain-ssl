@@ -18,6 +18,7 @@ restart=$3
 # Includes
 source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
+source $VESTA/func/vx/cloudflare/main.sh
 source $VESTA/conf/vesta.conf
 
 # Additional argument formatting
@@ -38,6 +39,17 @@ is_object_unsuspended 'user' 'USER' "$user"
 is_object_valid 'web' 'DOMAIN' "$domain"
 is_object_unsuspended 'web' 'DOMAIN' "$domain"
 is_object_value_exist 'web' 'DOMAIN' "$domain" '$SSL'
+vx_cf_record_authority_path=$(vx_cf_record_path "$user" "$domain")
+vx_cf_certificate_authority_path=$(vx_cf_certificate_path "$user" "$domain")
+if { vx_cf_metadata_exists "$user" "$domain" \
+        || vx_cf_certificate_metadata_exists "$user" "$domain" \
+        || [ -e "$vx_cf_record_authority_path" ] \
+        || [ -L "$vx_cf_record_authority_path" ] \
+        || [ -e "$vx_cf_certificate_authority_path" ] \
+        || [ -L "$vx_cf_certificate_authority_path" ]; } \
+    && [ "${VX_CLOUDFLARE_INTERNAL_ORIGIN_SSL:-}" != 1 ]; then
+    check_result "$E_FORBIDEN" 'managed web domains use VX Origin SSL'
+fi
 
 
 #----------------------------------------------------------#

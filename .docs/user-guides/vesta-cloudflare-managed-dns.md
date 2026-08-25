@@ -16,7 +16,9 @@ certificate deletion.
   not replace or rename the technical hostname.
 - The **Add Cloudflare Domain** action in the DNS area attaches a domain that
   is already configured in its authoritative DNS to an existing Vesta
-  website. It does not edit that custom domain's DNS.
+  website. It does not edit that custom domain's DNS, but it verifies the
+  exact record, proxy state, edge-certificate coverage, and zone TLS mode
+  before accepting the alias.
 - Only the generated technical hostname is created, reconciled, and deleted
   through the configured Cloudflare zone.
 - Certificate private keys and CSRs are generated on the Vesta host. Cloudflare
@@ -28,14 +30,20 @@ certificate deletion.
   hostnames use Cloudflare.
 
 Cloudflare documents bearer API tokens as its preferred authentication method.
-The token needs Zone Read, DNS Read/Edit, and SSL and Certificates Edit for the
-configured zone and for every custom-alias zone it will certify. The
+The token needs Zone Read, Zone Settings Read/Write, DNS Read/Edit, and SSL and
+Certificates Read/Edit for the configured zone and for every custom-alias zone
+it will certify. The
 integration uses the documented
 [DNS record API](https://developers.cloudflare.com/api/resources/dns/subresources/records/)
 and [Origin CA API](https://developers.cloudflare.com/api/resources/origin_ca_certificates/).
-Custom aliases must already be proxied through Cloudflare and belong to zones
-accessible to this token; otherwise the alias operation rolls back without
-publishing a Full (strict)-broken hostname.
+Custom aliases must already belong to zones accessible to this token and have
+an exact proxied `A` record pointing to the website's Vesta/NAT ingress address
+or a proxied `CNAME` pointing to its generated technical hostname. An active
+edge certificate must cover the exact alias. Otherwise the alias operation
+rolls back without publishing a Full (strict)-broken hostname. Vesta enforces
+and reads back `strict` mode for the configured and alias zones; because this
+is a zone-wide Cloudflare setting, every other origin in those zones must also
+serve a valid certificate.
 
 ## Configure credentials
 
@@ -52,8 +60,12 @@ sudo /usr/local/vesta/bin/v-configure-vx-cloudflare
 
 The command requests the API token with terminal echo disabled, then requests
 the zone ID and account email. It validates access to the exact zone and the
-Origin CA service before atomically replacing the existing configuration. A
-failed validation does not replace working credentials.
+Origin CA service, enforces and reads back Full (strict), and requires active
+edge-certificate coverage for generated first-level hostnames before atomically
+replacing the existing configuration. A failed validation does not replace
+working credentials. A different zone cannot replace the configured zone while
+managed record or certificate metadata still exists; same-zone token rotation
+is supported.
 
 For automation, place the three exact assignments in a regular, root-owned
 mode-`0600` file and pass only its path:
@@ -103,7 +115,9 @@ Machine output:
 sudo /usr/local/vesta/bin/v-list-vx-cloudflare-status json
 ```
 
-Status output is value-free. It reports stable states such as `ready`,
+Status output is value-free. `ready` requires exact zone access, Origin CA
+read access, Full (strict) readback, and active edge-certificate coverage for
+generated hostnames. It reports stable states such as `ready`,
 `not_configured`, `provider_disabled`, `unauthorized`, `rate_limited`,
 `timeout`, and `malformed_response`; it never prints the configured zone,
 address, credential, record identity, or raw Cloudflare response.
@@ -125,10 +139,20 @@ hostname and aliases, and returns the generated public hostname. If DNS or
 certificate setup fails, the new website, exact provider record, and any issued
 certificate are compensated automatically.
 
-Adding or removing a Vesta web alias automatically rotates that site's Origin
-CA certificate before the final web/proxy restart. The previous certificate is
-revoked only after the replacement is installed. An issuance failure restores
-the previous alias and certificate state.
+Adding or removing a Vesta web alias automatically validates its Cloudflare
+zone/DNS/proxy/edge/strict prerequisites and rotates that site's Origin CA
+certificate before the final web/proxy restart. The previous certificate is
+revoked only after the replacement is installed and its exact ID remains
+durable until revocation is confirmed. An issuance or installation failure
+restores the previous alias and certificate state. Manual certificate,
+Let's Encrypt, and SSL removal commands are refused for managed sites.
+
+Changing a managed website's Vesta IP automatically reconciles its exact
+Cloudflare A record. If provider reconciliation fails, the native IP and
+provider state are compensated to the previous value rather than reporting a
+successful stale change. Product panel and authenticated API creation use the
+managed allocator; low-level native create commands remain compatible for
+root-owned restore/import workflows.
 
 Existing automation that already owns a Vesta technical domain can request an
 idempotent reconciliation without choosing provider values:
@@ -176,9 +200,11 @@ After nonsecret code deployment, the protected acceptance sequence is:
 3. Create one disposable panel website with a custom alias omitted.
 4. Verify the returned hostname's Cloudflare A record, public resolution, and
    HTTPS response through Cloudflare Full (strict), with no 526 response.
-5. Attach an already-configured proxied alias and verify its certificate SAN
-   and HTTPS response.
-6. Delete the website and verify the exact record is absent and the exact
+5. Attach an already-configured proxied alias whose zone is accessible to the
+   token; verify strict readback, its certificate SAN, and HTTPS response.
+6. Change the disposable site's Vesta IP and verify the exact Cloudflare A
+   record follows it, then restore the original IP.
+7. Delete the website and verify the exact record is absent and the exact
    Origin CA certificate is revoked.
 
 Acceptance evidence must record only stable statuses and pass/fail results;

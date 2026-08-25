@@ -35,6 +35,7 @@ is_object_valid 'user' 'USER' "$user"
 # Starting delete loop
 for domain in $(search_objects 'web' 'SUSPENDED' "no" 'DOMAIN'); do
     $BIN/v-delete-web-domain "$user" "$domain" 'no'
+    check_result $? "web domain deletion failed"
 done
 
 

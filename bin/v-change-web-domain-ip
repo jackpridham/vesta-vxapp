@@ -20,6 +20,7 @@ restart=$4
 source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
 source $VESTA/func/ip.sh
+source $VESTA/func/vx/cloudflare/main.sh
 source $VESTA/conf/vesta.conf
 
 # Additional argument formatting
@@ -41,6 +42,33 @@ is_object_valid 'web' 'DOMAIN' "$domain"
 is_object_unsuspended 'web' 'DOMAIN' "$domain"
 is_ip_valid "$ip" "$user"
 
+# A metadata file is exact mutation authority for this USER+DOMAIN. Validate
+# that authority before touching local state; generated-name shape alone does
+# not make an otherwise native website provider-managed.
+vx_cf_managed_ip_change=no
+vx_cf_record_authority_path=$(vx_cf_record_path "$user" "$domain")
+vx_cf_certificate_authority_path=$(vx_cf_certificate_path "$user" "$domain")
+if vx_cf_metadata_exists "$user" "$domain"; then
+    vx_cf_load_config \
+        || check_result "$E_CONNECT" "${VX_CF_STATUS:-not_configured}"
+    vx_cf_load_metadata "$user" "$domain" \
+        || check_result "$E_CONNECT" "${VX_CF_STATUS:-state_error}"
+    [[ "$VX_CF_META_USER" == "$user" \
+        && "$VX_CF_META_DOMAIN" == "$domain" \
+        && "$VX_CF_META_ZONE_ID" == "$VX_CF_ZONE_ID" ]] \
+        || check_result "$E_FORBIDEN" 'managed web domain ownership does not match'
+    vx_cf_managed_domain_matches_zone "$domain" "$VX_CF_ZONE_NAME" \
+        || check_result "$E_FORBIDEN" 'managed web domain zone does not match'
+    vx_cf_managed_ip_change=yes
+elif [ -e "$vx_cf_record_authority_path" ] \
+    || [ -L "$vx_cf_record_authority_path" ]; then
+    check_result "$E_CONNECT" 'managed web domain record metadata is invalid'
+elif vx_cf_certificate_metadata_exists "$user" "$domain" \
+    || [ -e "$vx_cf_certificate_authority_path" ] \
+    || [ -L "$vx_cf_certificate_authority_path" ]; then
+    check_result "$E_CONNECT" 'managed web domain record metadata is missing'
+fi
+
 
 #----------------------------------------------------------#
 #                       Action                             #
@@ -48,8 +76,11 @@ is_ip_valid "$ip" "$user"
 
 # Preparing variables for vhost replace
 get_domain_values 'web'
+old_ip=$IP
 old=$(get_real_ip $IP)
 new=$(get_real_ip $ip)
+old_real_ip=$old
+new_real_ip=$new
 
 # Replacing vhost
 replace_web_config "$WEB_SYSTEM" "$TPL.tpl"
@@ -83,6 +114,50 @@ check_result $? "WEB restart failed" >/dev/null
 
 $BIN/v-restart-proxy $restart
 check_result $? "Proxy restart failed" >/dev/null
+
+# Reconcile only exact metadata-owned sites. Primary DNS readback is followed
+# by the site's Origin/provider preflight so alias routing, edge coverage, and
+# strict TLS must all accept the new IP before the command succeeds.
+provider_status=''
+if [ "$vx_cf_managed_ip_change" = yes ]; then
+    if ! vx_cf_reconcile "$user" "$domain"; then
+        provider_status=${VX_CF_STATUS:-provider_error}
+    elif ! vx_cf_origin_reconcile "$user" "$domain" "$restart"; then
+        provider_status=${VX_CF_STATUS:-provider_error}
+    fi
+fi
+
+# Any managed-provider failure restores native IP/counters/vhosts and then
+# reconciles the exact primary record back to that restored source of truth.
+if [ -n "$provider_status" ]; then
+    rollback_failed=no
+
+    old=$new_real_ip
+    new=$old_real_ip
+    replace_web_config "$WEB_SYSTEM" "$TPL.tpl"
+    if [ "$SSL" = 'yes' ]; then
+        replace_web_config "$WEB_SYSTEM" "$TPL.stpl"
+    fi
+    if [ ! -z "$PROXY_SYSTEM" ] && [ ! -z "$PROXY" ]; then
+        replace_web_config "$PROXY_SYSTEM" "$PROXY.tpl"
+        if [ "$SSL" = 'yes' ]; then
+            replace_web_config "$PROXY_SYSTEM" "$PROXY.stpl"
+        fi
+    fi
+
+    increase_ip_value "$old_real_ip"
+    decrease_ip_value "$new_real_ip"
+    update_object_value 'web' 'DOMAIN' "$domain" '$IP' "$old_ip"
+
+    $BIN/v-restart-web $restart >/dev/null 2>&1 || rollback_failed=yes
+    $BIN/v-restart-proxy $restart >/dev/null 2>&1 || rollback_failed=yes
+    vx_cf_reconcile "$user" "$domain" >/dev/null 2>&1 \
+        || rollback_failed=yes
+
+    [ "$rollback_failed" = no ] \
+        || check_result "$E_CONNECT" 'managed web domain IP rollback failed'
+    check_result "$E_CONNECT" "$provider_status"
+fi
 
 # Logging
 log_history "changed web domain $domain ip to $3"

@@ -16,6 +16,16 @@ if (!empty($_POST['ok'])) {
         exit();
     }
 
+    // Managed websites always receive Vesta-owned Origin CA SSL during the
+    // allocator transaction. Ignore legacy/manual certificate fields even if
+    // a caller crafts them into the POST body.
+    $_POST['v_ssl'] = '';
+    $_POST['v_letsencrypt'] = '';
+    $_POST['v_ssl_crt'] = '';
+    $_POST['v_ssl_key'] = '';
+    $_POST['v_ssl_ca'] = '';
+    $_POST['v_ssl_home'] = 'same';
+
     // Check for empty fields
     if (empty($_POST['v_ip'])) $errors[] = __('ip');
     if ((!empty($_POST['v_ssl'])) && (empty($_POST['v_ssl_crt']))&& (empty($_POST['v_letsencrypt']))) $errors[] = __('ssl certificate');

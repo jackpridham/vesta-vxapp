@@ -80,6 +80,58 @@ if (isset($_POST['user']) || isset($_POST['hash'])) {
         exit;
     }
 
+    // Product-level website creation follows the VX managed provider. The
+    // legacy API argument remains accepted for compatibility, but it is never
+    // allowed to choose the primary hostname in Cloudflare-managed mode.
+    $managed_cmdquery = '';
+    $requested_cmd = (isset($_POST['cmd']) && !is_array($_POST['cmd']))
+        ? $_POST['cmd']
+        : '';
+    if (($requested_cmd === 'v-add-web-domain') || ($requested_cmd === 'v-add-domain')) {
+        exec(VESTA_CMD.'v-list-sys-config json', $provider_output, $provider_return_var);
+        $provider_config = json_decode(implode('', $provider_output), true);
+        unset($provider_output);
+        if (($provider_return_var !== 0) || (!is_array($provider_config))
+            || (!isset($provider_config['config']['VX_MANAGED_DNS_PROVIDER']))) {
+            echo 'Error: unable to determine managed DNS provider';
+            exit;
+        }
+
+        if ($provider_config['config']['VX_MANAGED_DNS_PROVIDER'] === 'cloudflare-managed') {
+            foreach (array('arg1', 'arg2', 'arg3', 'arg4', 'arg5', 'arg6', 'arg7', 'arg8', 'arg9') as $argument_name) {
+                if (isset($_POST[$argument_name]) && is_array($_POST[$argument_name])) {
+                    echo 'Error: invalid managed website argument';
+                    exit;
+                }
+            }
+            $managed_user = isset($_POST['arg1']) ? (string) $_POST['arg1'] : '';
+            if ($requested_cmd === 'v-add-web-domain') {
+                $managed_ip = isset($_POST['arg3']) ? (string) $_POST['arg3'] : '';
+                $managed_restart = !empty($_POST['arg4']) ? (string) $_POST['arg4'] : 'yes';
+                $managed_aliases = !empty($_POST['arg5']) ? (string) $_POST['arg5'] : 'none';
+                $managed_proxy_ext = !empty($_POST['arg6']) ? (string) $_POST['arg6'] : 'none';
+            } else {
+                $managed_ip = isset($_POST['arg3']) ? (string) $_POST['arg3'] : '';
+                $managed_restart = !empty($_POST['arg4']) ? (string) $_POST['arg4'] : 'yes';
+                $managed_aliases = 'none';
+                $managed_proxy_ext = 'none';
+            }
+            $managed_cmdquery = VESTA_CMD.'v-add-vx-managed-web-domain '
+                .escapeshellarg($managed_user).' '
+                .escapeshellarg($managed_ip).' '
+                .escapeshellarg($managed_restart).' '
+                .escapeshellarg($managed_aliases).' '
+                .escapeshellarg($managed_proxy_ext);
+            if ($requested_cmd === 'v-add-web-domain') {
+                foreach (array('arg7', 'arg8', 'arg9') as $argument_name) {
+                    if (!empty($_POST[$argument_name])) {
+                        $managed_cmdquery .= ' '.escapeshellarg((string) $_POST[$argument_name]);
+                    }
+                }
+            }
+        }
+    }
+
     // Prepare arguments
     if (isset($_POST['cmd'])) $cmd = escapeshellarg($_POST['cmd']);
     if (isset($_POST['arg1'])) $arg1 = escapeshellarg($_POST['arg1']);
@@ -93,25 +145,29 @@ if (isset($_POST['user']) || isset($_POST['hash'])) {
     if (isset($_POST['arg9'])) $arg9 = escapeshellarg($_POST['arg9']);
 
     // Build query
-    $cmdquery = VESTA_CMD.$cmd." ";
-    if(!empty($arg1)){
-         $cmdquery = $cmdquery.$arg1." "; }
-    if(!empty($arg2)){
-         $cmdquery = $cmdquery.$arg2." "; }
-    if(!empty($arg3)){
-         $cmdquery = $cmdquery.$arg3." "; }
-    if(!empty($arg4)){
-         $cmdquery = $cmdquery.$arg4." "; }
-    if(!empty($arg5)){
-         $cmdquery = $cmdquery.$arg5." "; }
-    if(!empty($arg6)){
-         $cmdquery = $cmdquery.$arg6." "; }
-    if(!empty($arg7)){
-         $cmdquery = $cmdquery.$arg7." "; }
-    if(!empty($arg8)){
-         $cmdquery = $cmdquery.$arg8." "; }
-    if(!empty($arg9)){
-         $cmdquery = $cmdquery.$arg9; }
+    if (!empty($managed_cmdquery)) {
+        $cmdquery = $managed_cmdquery;
+    } else {
+        $cmdquery = VESTA_CMD.$cmd." ";
+        if(!empty($arg1)){
+             $cmdquery = $cmdquery.$arg1." "; }
+        if(!empty($arg2)){
+             $cmdquery = $cmdquery.$arg2." "; }
+        if(!empty($arg3)){
+             $cmdquery = $cmdquery.$arg3." "; }
+        if(!empty($arg4)){
+             $cmdquery = $cmdquery.$arg4." "; }
+        if(!empty($arg5)){
+             $cmdquery = $cmdquery.$arg5." "; }
+        if(!empty($arg6)){
+             $cmdquery = $cmdquery.$arg6." "; }
+        if(!empty($arg7)){
+             $cmdquery = $cmdquery.$arg7." "; }
+        if(!empty($arg8)){
+             $cmdquery = $cmdquery.$arg8." "; }
+        if(!empty($arg9)){
+             $cmdquery = $cmdquery.$arg9; }
+    }
 
     // Check command
     if ($cmd == "'v-make-tmp-file'") {

@@ -51,7 +51,7 @@
                         <tr>
                             <td>
                                 <textarea data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false" size="20" class="vst-textinput" name="v_aliases" id="v_aliases"><?=htmlentities(trim($v_aliases, "'"))?></textarea>
-                                <div class="vst-text" style="padding-top: 6px; color: #555;"><?php print __('Enter custom domains separated by spaces or new lines. Vesta generates the primary hostname.');?></div>
+                                <div class="vst-text" style="padding-top: 6px; color: #555;"><?php print __('Enter custom domains separated by spaces or new lines. Vesta generates the primary hostname. Each custom domain must already have an accessible proxied Cloudflare A record to the selected Vesta address.');?></div>
                             </td>
                         </tr>
                         <tr>
@@ -179,77 +179,8 @@
                         <?php echo ""; }?>
                         <tr>
                             <td class="step-top vst-text">
-                                <label><input type="checkbox" size="20" class="vst-checkbox" name="v_ssl" <?php if($v_ssl == 'yes' || $v_ssl == 'on') echo "checked=yes" ?> onclick="javascript:elementHideShow('ssltable');"> <?php print __('SSL Support');?></label>
-                            </td>
-                        </tr>
-                        <tr>
-                            <td>
-                                <table style="display:<?php if (empty($v_ssl)) { echo 'none';} else {echo 'block';}?>;" id="ssltable">
-                                    <!--
-                                    <tr>
-                                      <td class="step-left input-label vst-text">
-                                          <label><input type="checkbox" size="20" class="vst-checkbox" name="v_letsencrypt" <?php if($v_letsencrypt == 'yes' || $v_letsencrypt == 'on') echo "checked=yes" ?> onclick="App.Actions.WEB.toggle_letsencrypt(this)"> <?php print __('Lets Encrypt Support');?></label>
-                                      </td>
-                                  </tr>
-                                  <tr>
-                                      <td class="vst-text input-label lets-encrypt-note step-left" >
-                                          <?= __('Your certificate will be automatically issued in 5 minutes')?>
-                                      </td>
-                                  </tr>
-                                  -->
-                                  <tr>
-                                      <td class="vst-text input-label step-left" >
-                                          <span style="color: gray;"><?= __('You can add LetsEncrypt after adding domain, just EDIT this domain later')?></span>
-                                      </td>
-                                  </tr>
-                                  <tr>
-                                        <td class="vst-text input-label step-left">
-                                            <?php print __('SSL Home Directory');?>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td class="step-left">
-                                            <select class="vst-list" name="v_ssl_home">
-                                                <option value='same' <?php if ($v_ssl_home == 'same') echo "selected";?>>
-                                                     public_html
-                                                </option>
-                                                <option value='single' <?php if ($v_ssl_home == 'single') echo "selected";?>>
-                                                    public_shtml
-                                                </option>
-                                            </select>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td class="vst-text input-label step-left">
-                                          <?php print __('SSL Certificate');?>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td class="step-left">
-                                            <textarea data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false" size="20" class="vst-textinput" name="v_ssl_crt"><?=htmlentities(trim($v_ssl_crt, "'"))?></textarea>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td class="vst-text input-label step-left">
-                                            <?php print __('SSL Key');?>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td class="step-left">
-                                            <textarea data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false" size="20" class="vst-textinput" name="v_ssl_key"><?=htmlentities(trim($v_ssl_key, "'"))?></textarea>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td class="vst-text input-label step-left">
-                                            <?php print __('SSL Certificate Authority / Intermediate');?> <span class="optional">(<?php print __('optional');?>)</span>
-                                        </td>
-                                    </tr>
-                                    <tr>
-                                        <td class="step-left">
-                                            <textarea data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false" size="20" class="vst-textinput" name="v_ssl_ca"><?=htmlentities(trim($v_ssl_ca, "'"))?></textarea>
-                                        </td>
-                                    </tr>
-                                </table>
+                                <?php print __('SSL Support');?>: <b><?php print __('Cloudflare Origin CA — managed automatically');?></b>
+                                <div class="vst-text" style="padding-top: 6px; color: #555;"><?php print __('Vesta issues and installs the certificate for the generated hostname and every custom-domain alias during creation.');?></div>
                             </td>
                         </tr>
                         <tr>

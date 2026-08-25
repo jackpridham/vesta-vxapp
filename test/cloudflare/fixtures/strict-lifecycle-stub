@@ -1,0 +1,252 @@
+#!/bin/bash
+
+stub_dir=$(cd "$(dirname "$0")" && pwd)
+
+if [[ "${1:-}" == --config ]]; then
+    [[ $# -eq 2 && -f "$2" ]] || exit 97
+    curl_config=$2
+    stub_root=${curl_config%/runtime/*}
+    scenario_file="$stub_root/stub-scenario"
+    state_file="$stub_root/stub-record.conf"
+    call_log="$stub_root/stub-calls.log"
+    scenario=normal
+    [[ -f "$scenario_file" ]] && IFS= read -r scenario <"$scenario_file"
+
+    config_value() {
+        local key=$1
+        /usr/bin/sed -n "s/^${key} = \"\(.*\)\"$/\1/p" "$curl_config" \
+            | /usr/bin/head -n1
+    }
+
+    url=$(config_value url)
+    method=$(config_value request)
+    output=$(config_value output)
+    body=$(config_value data-binary)
+    body=${body#@}
+    token=$(/usr/bin/sed -n \
+        's/^header = "Authorization: Bearer \(.*\)"$/\1/p' "$curl_config")
+
+    while IFS='=' read -r _ value; do
+        [[ "$value" != "$token" ]] || exit 96
+    done < <(/usr/bin/env)
+
+    configured_zone=0123456789abcdef0123456789abcdef
+    alias_zone=fedcba9876543210fedcba9876543210
+    noedge_zone=11111111111111111111111111111111
+
+    if [[ "$url" == https://api.cloudflare.com/client/v4/zones/*/settings/ssl ]]; then
+        zone_id=${url#*'/zones/'}
+        zone_id=${zone_id%%/*}
+        setting_file="$stub_root/stub-zone-$zone_id-ssl"
+        if [[ "$method" == PATCH ]]; then
+            [[ "$(/usr/bin/jq -r '.value // empty' "$body")" == strict ]] || exit 95
+            printf 'strict\n' >"$setting_file"
+            printf 'ssl-patch %s strict\n' "$zone_id" >>"$call_log"
+            printf '{"success":true,"result":{"id":"ssl","value":"strict"}}' >"$output"
+            printf 200
+            exit
+        fi
+        [[ "$method" == GET ]] || exit 94
+        setting=full
+        [[ ! -f "$setting_file" ]] || IFS= read -r setting <"$setting_file"
+        printf 'ssl-get %s %s\n' "$zone_id" "$setting" >>"$call_log"
+        printf '{"success":true,"result":{"id":"ssl","value":"%s"}}' \
+            "$setting" >"$output"
+        printf 200
+        exit
+    fi
+
+    if [[ "$url" == https://api.cloudflare.com/client/v4/zones/*/ssl/certificate_packs* ]]; then
+        zone_id=${url#*'/zones/'}
+        zone_id=${zone_id%%/*}
+        printf 'edge-list %s\n' "$zone_id" >>"$call_log"
+        hosts='[]'
+        if [[ "$scenario" != edge_missing ]]; then
+            case "$zone_id" in
+                "$configured_zone") hosts='["managed.example.test","*.managed.example.test"]' ;;
+                "$alias_zone") hosts='["example.test","*.example.test"]' ;;
+            esac
+        fi
+        if [[ "$hosts" == '[]' ]]; then
+            printf '{"success":true,"result":[],"result_info":{"page":1,"total_pages":1}}' \
+                >"$output"
+        else
+            /usr/bin/jq -cn --argjson hosts "$hosts" \
+                '{success:true,result:[{id:"edge-pack",status:"active",hosts:$hosts,
+                  certificates:[{id:"edge-cert",status:"active",hosts:$hosts}]}],
+                  result_info:{page:1,total_pages:1}}' >"$output"
+        fi
+        printf 200
+        exit
+    fi
+
+    if [[ "$url" == https://api.cloudflare.com/client/v4/zones\?* ]]; then
+        candidate=${url#*name=}
+        candidate=${candidate%%&*}
+        printf 'zone-discover %s\n' "$candidate" >>"$call_log"
+        case "$candidate" in
+            managed.example.test)
+                zone_id=$configured_zone
+                ;;
+            example.test)
+                zone_id=$alias_zone
+                ;;
+            noedge.test)
+                zone_id=$noedge_zone
+                ;;
+            *)
+                printf '{"success":true,"result":[]}' >"$output"
+                printf 200
+                exit
+                ;;
+        esac
+        printf '{"success":true,"result":[{"id":"%s","name":"%s","status":"active"}]}' \
+            "$zone_id" "$candidate" >"$output"
+        printf 200
+        exit
+    fi
+
+    if [[ "$method" == GET && "$url" == https://api.cloudflare.com/client/v4/zones/*/dns_records\?name=* ]]; then
+        zone_id=${url#*'/zones/'}
+        zone_id=${zone_id%%/*}
+        alias_name=${url#*name=}
+        alias_name=${alias_name%%&*}
+        if [[ "$zone_id" != "$configured_zone" || "$alias_name" != s-* ]]; then
+            technical_domain=$(/usr/bin/sed -n 's/^name=//p' "$state_file" \
+                | /usr/bin/head -n1)
+            ingress=$(/usr/bin/sed -n 's/^address=//p' "$state_file" \
+                | /usr/bin/head -n1)
+            proxied=true
+            content=$technical_domain
+            record_type=CNAME
+            case "$alias_name" in
+                unproxied.*) proxied=false ;;
+                wrongtarget.*) content=wrong.example.test ;;
+                a-record.*) record_type=A; content=$ingress ;;
+            esac
+            if [[ "$scenario" == alias_route_drift \
+                && "$alias_name" == custom.example.test ]]; then
+                proxied=false
+            fi
+            printf 'alias-dns %s %s %s\n' "$zone_id" "$alias_name" "$record_type" \
+                >>"$call_log"
+            printf '{"success":true,"result":[{"id":"cccccccccccccccccccccccccccccccc",' \
+                >"$output"
+            printf '"name":"%s","type":"%s","content":"%s","ttl":1,"proxied":%s}]}' \
+                "$alias_name" "$record_type" "$content" "$proxied" >>"$output"
+            printf 200
+            exit
+        fi
+    fi
+
+    if [[ "$url" == https://api.cloudflare.com/client/v4/certificates/* \
+        && "$method" == DELETE \
+        && ( "$scenario" == old_revoke_failure \
+            || "$scenario" == native_install_revoke_failure ) \
+        && ! -f "$stub_root/stub-revoke-failed-once" ]]; then
+        : >"$stub_root/stub-revoke-failed-once"
+        certificate_id=${url##*/}
+        printf 'origin-delete-failed %s\n' "$certificate_id" >>"$call_log"
+        printf '{"success":false,"errors":[]}' >"$output"
+        printf 503
+        exit
+    fi
+
+    exec "$stub_dir/curl-stub" --config "$curl_config"
+fi
+
+command_name=${0##*/}
+user=$1
+domain=$2
+web_conf="$VESTA/data/users/$user/web.conf"
+cloudflare_root="$VESTA/data/vx/cloudflare"
+call_log="$cloudflare_root/native-calls.log"
+home_root=$(/usr/bin/sed -n "s/^HOMEDIR='\([^']*\)'$/\1/p" \
+    "$VESTA/conf/vesta.conf" | /usr/bin/head -n1)
+ssl_web_root="$home_root/$user/conf/web"
+scenario=normal
+[[ ! -f "$cloudflare_root/stub-scenario" ]] \
+    || IFS= read -r scenario <"$cloudflare_root/stub-scenario"
+
+case "$command_name" in
+    v-add-web-domain)
+        ip=${3:-192.0.2.10}
+        aliases=${5:-none}
+        [[ -z "$ip" ]] && ip=192.0.2.10
+        [[ "$aliases" == none ]] && aliases=''
+        printf "DOMAIN='%s' IP='%s' ALIAS='%s' SSL='no' SUSPENDED='no'\n" \
+            "$domain" "$ip" "$aliases" >>"$web_conf"
+        printf 'native-add %s %s\n' "$domain" "$aliases" >>"$call_log"
+        [[ ! -f "$cloudflare_root/native-add-fail" ]] || exit 1
+        ;;
+    v-delete-web-domain)
+        /usr/bin/sed -i "/^DOMAIN='$domain' /d" "$web_conf"
+        /usr/bin/rm -f -- "$VESTA/data/users/$user/ssl/$domain."{crt,key,ca,pem}
+        /usr/bin/rm -f -- "$ssl_web_root/ssl.$domain."{crt,key,ca,pem}
+        printf 'native-delete %s\n' "$domain" >>"$call_log"
+        ;;
+    v-add-web-domain-alias)
+        alias_name=$3
+        current_alias=$(/usr/bin/sed -n \
+            "/^DOMAIN='$domain' /s/.* ALIAS='\([^']*\)'.*/\1/p" "$web_conf")
+        [[ -z "$current_alias" ]] && updated_alias=$alias_name \
+            || updated_alias="$current_alias,$alias_name"
+        /usr/bin/sed -i "/^DOMAIN='$domain' /s/ ALIAS='[^']*'/ ALIAS='$updated_alias'/" \
+            "$web_conf"
+        printf 'native-alias %s %s\n' "$domain" "$alias_name" >>"$call_log"
+        if [[ "${VX_CF_STUB_SKIP_ALIAS_SSL:-no}" != yes \
+            && -f "$cloudflare_root/records/$user/$domain.conf" ]] \
+            && ! VESTA="$VESTA" "$VESTA/bin/v-reconcile-vx-cloudflare-origin-ssl" \
+                "$user" "$domain" no >/dev/null 2>&1; then
+            /usr/bin/sed -i "/^DOMAIN='$domain' /s/ ALIAS='[^']*'/ ALIAS='$current_alias'/" \
+                "$web_conf"
+            exit 1
+        fi
+        ;;
+    v-delete-web-domain-alias)
+        alias_name=$3
+        current_alias=$(/usr/bin/sed -n \
+            "/^DOMAIN='$domain' /s/.* ALIAS='\([^']*\)'.*/\1/p" "$web_conf")
+        updated_alias=$(printf '%s\n' "$current_alias" | /usr/bin/tr ',' '\n' \
+            | /usr/bin/grep -Fxv "$alias_name" | /usr/bin/paste -sd, - || :)
+        /usr/bin/sed -i "/^DOMAIN='$domain' /s/ ALIAS='[^']*'/ ALIAS='$updated_alias'/" \
+            "$web_conf"
+        printf 'native-unalias %s %s\n' "$domain" "$alias_name" >>"$call_log"
+        ;;
+    v-add-web-domain-ssl|v-change-web-domain-sslcert)
+        [[ "${VX_CLOUDFLARE_INTERNAL_ORIGIN_SSL:-}" == 1 ]] || exit 93
+        ssl_dir=$3
+        /usr/bin/mkdir -p "$VESTA/data/users/$user/ssl" "$ssl_web_root"
+        /usr/bin/cp -f -- "$ssl_dir/$domain.crt" \
+            "$VESTA/data/users/$user/ssl/$domain.crt"
+        /usr/bin/cp -f -- "$ssl_dir/$domain.key" \
+            "$VESTA/data/users/$user/ssl/$domain.key"
+        /usr/bin/cp -f -- "$ssl_dir/$domain.ca" \
+            "$VESTA/data/users/$user/ssl/$domain.ca"
+        /usr/bin/cp -f -- "$ssl_dir/$domain.crt" \
+            "$VESTA/data/users/$user/ssl/$domain.pem"
+        [[ "$command_name" == v-change-web-domain-sslcert ]] \
+            || printf '\n' >>"$VESTA/data/users/$user/ssl/$domain.pem"
+        /usr/bin/cat "$ssl_dir/$domain.ca" >>"$VESTA/data/users/$user/ssl/$domain.pem"
+        for extension in crt key ca pem; do
+            /usr/bin/cp -f -- "$VESTA/data/users/$user/ssl/$domain.$extension" \
+                "$ssl_web_root/ssl.$domain.$extension"
+        done
+        /usr/bin/sed -i "/^DOMAIN='$domain' /s/ SSL='[^']*'/ SSL='yes'/" "$web_conf"
+        printf 'native-ssl %s %s internal=1\n' "$command_name" "$domain" >>"$call_log"
+        if [[ ( "$scenario" == native_install_failure \
+                || "$scenario" == native_install_revoke_failure ) \
+            && ! -f "$cloudflare_root/stub-native-install-failed-once" ]]; then
+            : >"$cloudflare_root/stub-native-install-failed-once"
+            exit 1
+        fi
+        ;;
+    v-delete-web-domain-ssl)
+        [[ "${VX_CLOUDFLARE_INTERNAL_ORIGIN_SSL:-}" == 1 ]] || exit 93
+        /usr/bin/rm -f -- "$VESTA/data/users/$user/ssl/$domain."{crt,key,ca,pem}
+        /usr/bin/rm -f -- "$ssl_web_root/ssl.$domain."{crt,key,ca,pem}
+        /usr/bin/sed -i "/^DOMAIN='$domain' /s/ SSL='[^']*'/ SSL='no'/" "$web_conf"
+        printf 'native-ssl-delete %s internal=1\n' "$domain" >>"$call_log"
+        ;;
+    *) exit 92 ;;
+esac

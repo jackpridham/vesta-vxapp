@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `$milestone-driven-implementation`. This is one integrated product milestone so implementation can run continuously and the user-requested single combined audit happens only after the complete feature is deployed without credentials.
 
-**Goal:** Make every website created through the Vesta panel receive an immutable Vesta-generated `s-<10 lowercase hex>.<configured-zone>` primary hostname, reconcile its exact Cloudflare A record, retain custom domains as aliases, automatically install a certificate valid for the primary and aliases under Cloudflare Full (strict), and delete the owned record and certificate with the website.
+**Goal:** Make every website created through the Vesta product panel or authenticated API receive an immutable Vesta-generated `s-<10 lowercase hex>.<configured-zone>` primary hostname, reconcile its exact Cloudflare A record, retain custom domains as aliases, automatically install a certificate valid for the primary and aliases under Cloudflare Full (strict), and delete the owned record and certificate with the website.
 
-**Architecture:** Keep upstream myVesta commands compatible and put provider authority in `func/vx/cloudflare/` plus thin `v-*` adapters. A root-owned atomic configuration stores the scoped token, zone ID, account email, and API-derived zone name; a separate `VX_MANAGED_DNS_PROVIDER` setting selects Cloudflare without misrepresenting the installed BIND service in `DNS_SYSTEM`. Per-domain root-owned metadata records the exact Cloudflare record and Origin CA certificate IDs used for bounded deletion. Vesta generates each private key and CSR locally, asks Cloudflare only to sign the exact Vesta primary/alias SAN set, and installs the result through native Vesta SSL commands.
+**Architecture:** Keep upstream myVesta restore/import commands compatible and put provider authority in `func/vx/cloudflare/` plus thin `v-*` adapters. A root-owned atomic configuration stores the scoped token, zone ID, account email, and API-derived zone name; a separate `VX_MANAGED_DNS_PROVIDER` setting selects Cloudflare without misrepresenting the installed BIND service in `DNS_SYSTEM`. Per-domain root-owned metadata records the exact Cloudflare record, active Origin CA certificate, and any pending revocations used for bounded cleanup. Vesta generates each private key and CSR locally, asks Cloudflare only to sign the exact Vesta primary/alias SAN set, installs it through guarded native Vesta SSL commands, and restores the prior served certificate transactionally if rotation fails.
 
 **Tech Stack:** Bash, curl, jq, Vesta state files, PHP panel pages/templates, deterministic shell/PHP tests.
 
@@ -13,16 +13,19 @@
 ## Locked scope
 
 - Vesta alone generates the ten-hex label. No create command or web request accepts a generated label or technical hostname.
-- `v-add-web-domain` remains compatible for restore/migration/upstream internals. The panel and Vortex consumers use `v-add-vx-managed-web-domain`, whose signature has no `DOMAIN` argument.
+- `v-add-web-domain` remains compatible for root-owned restore/migration/upstream internals. The panel and authenticated Vesta API route product creation through `v-add-vx-managed-web-domain`, whose signature has no `DOMAIN` argument and ignores any caller-supplied primary-domain field.
 - Cloudflare automation manages only one A record in one configured zone. TTL is Cloudflare Auto (`1`) and proxying is enabled.
 - The web domain's Vesta IP/NAT state supplies the A-record target; callers cannot supply provider address, zone, record type, TTL, proxy policy, token, or record ID.
-- Custom domains are Vesta aliases. The DNS-page action attaches an already-configured external domain as an alias and does not alter that external domain's DNS.
+- Custom domains are Vesta aliases. The DNS-page action attaches an already-configured external domain as an alias and does not alter that external domain's DNS. Before attachment, Vesta requires a token-accessible Cloudflare zone, an exact proxied A record to the selected Vesta ingress or proxied CNAME to the technical hostname, active edge-certificate coverage, and Full (strict) readback.
 - Managed create issues one 5475-day Cloudflare Origin CA RSA certificate containing the generated hostname and complete current alias set. Alias add/remove rotates that certificate automatically; callers cannot supply hostnames, certificate material, or a certificate ID.
-- Alias zones must already be proxied through Cloudflare and be accessible to the configured token with SSL and Certificates Edit. Certificate failure rolls alias/native creation back instead of publishing a Full (strict)-broken site.
+- Configured and alias zones must be accessible to the token for the required zone, DNS, settings, and certificate operations. Configuration enforces Full (strict) with readback, and certificate or alias-preflight failure rolls native state back instead of publishing a broken site.
 - `DNS_SYSTEM` continues to identify the installed local DNS service. `VX_MANAGED_DNS_PROVIDER=cloudflare-managed` is the Vortex provider authority shown as “Cloudflare managed” in Server → Configure → DNS.
 - Token, zone ID, account email, ingress address, record ID, provider response, and authorization headers never appear in argv, environment, UI, logs, history, or command output.
 - Configuration and mutations are serialized with a provider lock. Configuration and record metadata are root-owned, non-symlink, mode `0600`; their parent directories are mode `0700`.
-- Website deletion first verifies and revokes the exact owned Origin CA certificate and deletes the exact owned Cloudflare record, then removes metadata and continues the normal Vesta deletion. Custom-alias DNS is never deleted.
+- Website deletion first verifies and revokes the exact active and pending owned Origin CA certificate IDs and deletes the exact owned Cloudflare record, then removes metadata and continues the normal Vesta deletion. Custom-alias DNS is never deleted. Bulk/user deletion stops if a protected child cannot be cleaned up.
+- Managed IP changes reconcile the exact Cloudflare A record and compensate the local Vesta change if provider convergence fails.
+- Manual SSL, certificate, and Let's Encrypt mutation surfaces fail closed for managed or degraded sites; only the narrowly scoped internal Origin CA capability may install or restore their certificate material.
+- Changing the configured primary zone is rejected while managed record or certificate metadata exists; same-zone token rotation remains supported.
 - Live Cloudflare acceptance reuses the already-protected `vx cf` configuration through Vesta's mode-`0600` config-file input; credentials are never copied into Git, argv, logs, or acceptance output.
 
 ## Files and responsibilities
@@ -35,13 +38,19 @@
 - Create `bin/v-reconcile-vx-cloudflare-web-domain`: bounded `USER DOMAIN [FORMAT]` compatibility adapter.
 - Create `bin/v-delete-vx-cloudflare-web-domain`: exact owned-record cleanup adapter.
 - Create `bin/v-add-vx-cloudflare-web-alias`: attach an already configured custom domain as a Vesta alias.
+- Create `bin/v-list-vx-cloudflare-web-domain-status`: expose only the bounded `managed`, `degraded`, or `unmanaged` lifecycle state used by panel guards.
 - Create `bin/v-reconcile-vx-cloudflare-origin-ssl` and `bin/v-delete-vx-cloudflare-origin-ssl`: issue/install the exact Vesta-derived SAN certificate and revoke its exact stored ID.
 - Create `func/vx/cloudflare/origin-ca-rsa.pem` and `func/vx/cloudflare/web-hooks.sh`: ship the official Cloudflare Origin CA RSA root and keep native alias changes thin while rotating or rolling back certificates.
-- Modify `bin/v-add-web-domain-alias` and `bin/v-delete-web-domain-alias`: invoke the VX certificate hook only for managed sites.
+- Modify `bin/v-add-web-domain-alias` and `bin/v-delete-web-domain-alias`: invoke the VX certificate hook only for managed sites and compensate alias state when rotation fails.
+- Modify `bin/v-change-web-domain-ip`: reconcile the exact managed A record and restore local/provider state on failure.
+- Modify native SSL and Let's Encrypt adapters: reject external mutation for managed or degraded domains while accepting only the internal Vortex Origin CA installation capability.
+- Modify `bin/v-delete-web-domains`: stop bulk/user deletion when any protected child cleanup fails.
 - Modify `bin/v-list-sys-config`: expose only the bounded nonsecret managed-provider enum to the existing server form.
 - Modify `bin/v-delete-web-domain`: thin managed-record cleanup hook before destructive local deletion.
 - Modify `bin/v-change-web-domain-name`: reject rename of Vesta-managed technical hostnames.
 - Modify `web/add/web/index.php` and `web/templates/admin/add_web.html`: remove caller primary-domain input, make custom domains the visible alias input, and consume the generated hostname returned by the Vortex command.
+- Modify `web/api/index.php`: route authenticated product creation through the Vesta allocator while preserving low-level restore/import compatibility.
+- Modify `web/edit/web/index.php` and the admin/user edit templates: hide and reject manual certificate or Let's Encrypt changes for managed/degraded domains.
 - Create `web/add/vx-cloudflare-domain/index.php` and `web/templates/admin/add_vx_cloudflare_domain.html`: admin-only CSRF-protected external-domain alias form.
 - Modify `web/templates/admin/list_dns.html`: add the requested adjacent Cloudflare-domain button.
 - Modify `web/edit/server/index.php` and `web/templates/admin/edit_server.html`: provider selector and sanitized configuration state/instructions.
@@ -54,7 +63,7 @@
 
 ### Task 1: Provider authority and exact record lifecycle
 
-- [ ] **Step 1: Add a failing provider-stub test**
+- [x] **Step 1: Add a failing provider-stub test**
 
 The test creates a synthetic Vesta root and fixed curl stub. It asserts `not_configured`, atomic mode-`0600` configuration, value-free output, create/no-op/update/readback, duplicate rejection, malformed/401/403/429/timeout failures, and exact idempotent deletion. It also inspects captured process arguments and environment to prove protected values are absent.
 
@@ -62,7 +71,7 @@ Run: `bash test/cloudflare/test-cloudflare-managed-domains.sh`
 
 Expected before implementation: `FAIL: missing Cloudflare helper or command`.
 
-- [ ] **Step 2: Implement the minimal provider helper and adapters**
+- [x] **Step 2: Implement the minimal provider helper and adapters**
 
 Public contracts:
 
@@ -76,7 +85,7 @@ v-delete-vx-cloudflare-web-domain USER DOMAIN [json]
 
 Provider transport uses a temporary mode-`0600` curl config containing URL, method, headers, body-file path, output path, and timeouts. Runtime argv is only `/usr/bin/curl --config <temporary-path>` under an empty environment. JSON responses remain in bounded temporary files and only stable codes such as `ready`, `not_configured`, `unauthorized`, `rate_limited`, `timeout`, `malformed_response`, `ambiguous_record`, `created`, `unchanged`, `updated`, and `deleted` leave the helper.
 
-- [ ] **Step 3: Run the focused provider test**
+- [x] **Step 3: Run the focused provider test**
 
 Run: `bash test/cloudflare/test-cloudflare-managed-domains.sh`
 
@@ -84,11 +93,11 @@ Expected: all provider and lifecycle assertions pass without a network request.
 
 ### Task 2: Vesta-owned website identity and cleanup
 
-- [ ] **Step 1: Extend the failing lifecycle fixture**
+- [x] **Step 1: Extend the failing lifecycle fixture**
 
 Assert two generated labels match `^s-[a-f0-9]{10}$`, differ, contain no user/alias material, and are never accepted as input. Assert aliases are passed to native web creation, collisions retry, a successful create has exact record metadata, rename is rejected, and native deletion removes the exact record before the local domain.
 
-- [ ] **Step 2: Implement the managed creation surface and thin hooks**
+- [x] **Step 2: Implement the managed creation surface and thin hooks**
 
 Public create contract:
 
@@ -98,7 +107,7 @@ v-add-vx-managed-web-domain USER [IP] [RESTART] [ALIASES] [PROXY_EXTENSIONS] [na
 
 It reads the configured zone name, makes five random bytes with `/dev/urandom`, encodes ten lowercase hex characters, performs bounded Vesta/provider collision checks, calls `v-add-web-domain`, reconciles/readbacks Cloudflare, and emits only the resulting technical hostname. The generic native create contract remains unchanged.
 
-- [ ] **Step 3: Re-run the focused lifecycle test**
+- [x] **Step 3: Re-run the focused lifecycle test**
 
 Run: `bash test/cloudflare/test-cloudflare-managed-domains.sh`
 
@@ -106,7 +115,7 @@ Expected: generated identity, aliases, immutable rename, and create/delete order
 
 ### Task 3: Panel delivery
 
-- [ ] **Step 1: Add a failing PHP source-contract test**
+- [x] **Step 1: Add a failing PHP source-contract test**
 
 Assertions require the web controller to call `v-add-vx-managed-web-domain` without `v_domain`, require the template to have no editable/posted primary-domain input, require the alias form to preserve CSRF and `escapeshellarg`, require admin authorization, require the DNS toolbar link, and require the server provider selector to call only `v-change-vx-dns-provider`.
 
@@ -114,11 +123,11 @@ Run: `php test/test_cloudflare_web_ui.php`
 
 Expected before implementation: `FAIL` on the missing Vortex panel surfaces.
 
-- [ ] **Step 2: Implement the thin PHP/template integration**
+- [x] **Step 2: Implement the thin PHP/template integration**
 
 The add-web page treats custom domains as aliases, obtains the generated hostname from the successful command response, and then uses that server result for existing FTP/SSL/stats flows. The new DNS toolbar form attaches an already-configured custom hostname to a selected owned web domain. Server configuration displays local versus Cloudflare-managed provider mode and only a configured/not-configured credential status.
 
-- [ ] **Step 3: Run focused UI tests and syntax checks**
+- [x] **Step 3: Run focused UI tests and syntax checks**
 
 Run:
 
@@ -133,21 +142,26 @@ Expected: tests pass and every file reports `No syntax errors detected`.
 
 ### Task 4: Documentation, issue, deployment checkpoint, and the single audit
 
-- [ ] **Step 1: Document the operator workflow and update issue #5**
+- [x] **Step 1: Document the operator workflow and update issue #5**
 
-The guide records the least-privilege token (Zone Read and DNS Read/Edit for one zone), secure interactive/config-file setup, provider selection, health, create/delete semantics, recovery, and rotation. Issue #5 receives this locked implementation plan and explicitly notes that api-vxapp #145 must consume the Vesta allocator before claiming Vesta-owned API Site generation.
+The guide records the least-privilege token (Zone Read, Zone Settings Read/Write, DNS Read/Edit, and SSL and Certificates Read/Edit for the configured and alias zones), secure interactive/config-file setup, provider selection, health, create/delete semantics, recovery, and rotation. Issue #5 receives this locked implementation plan and explicitly notes that api-vxapp #145 must consume the Vesta allocator before claiming Vesta-owned API Site generation.
 
-- [ ] **Step 2: Run the one integrated validation/audit loop**
+- [x] **Step 2: Run the one integrated validation/audit loop**
 
 Run exactly once after implementation:
 
 ```bash
-bash -n func/vx/cloudflare/main.sh func/vx/cloudflare/web-hooks.sh bin/v-configure-vx-cloudflare bin/v-list-vx-cloudflare-status bin/v-change-vx-dns-provider bin/v-add-vx-managed-web-domain bin/v-reconcile-vx-cloudflare-web-domain bin/v-delete-vx-cloudflare-web-domain bin/v-add-vx-cloudflare-web-alias bin/v-reconcile-vx-cloudflare-origin-ssl bin/v-delete-vx-cloudflare-origin-ssl bin/v-add-web-domain-alias bin/v-delete-web-domain-alias bin/v-delete-web-domain bin/v-change-web-domain-name
+bash -n func/vx/cloudflare/main.sh func/vx/cloudflare/web-hooks.sh bin/v-configure-vx-cloudflare bin/v-list-vx-cloudflare-status bin/v-change-vx-dns-provider bin/v-add-vx-managed-web-domain bin/v-reconcile-vx-cloudflare-web-domain bin/v-delete-vx-cloudflare-web-domain bin/v-add-vx-cloudflare-web-alias bin/v-list-vx-cloudflare-web-domain-status bin/v-reconcile-vx-cloudflare-origin-ssl bin/v-delete-vx-cloudflare-origin-ssl bin/v-add-web-domain-alias bin/v-delete-web-domain-alias bin/v-add-letsencrypt-domain bin/v-delete-letsencrypt-domain bin/v-add-web-domain-ssl bin/v-change-web-domain-sslcert bin/v-delete-web-domain-ssl bin/v-change-web-domain-ip bin/v-delete-web-domains bin/v-delete-web-domain bin/v-change-web-domain-name
 bash test/cloudflare/test-cloudflare-managed-domains.sh
+bash test/cloudflare/test-cloudflare-native-lifecycle.sh
 php test/test_cloudflare_web_ui.php
+php test/test_web_proxy_form.php
+bash test/test_web_domain_proxy.sh
 php -l web/add/web/index.php
 php -l web/add/vx-cloudflare-domain/index.php
 php -l web/edit/server/index.php
+php -l web/edit/web/index.php
+php -l web/api/index.php
 git diff --check
 ```
 
@@ -183,7 +197,7 @@ Read the current protected credentials through the existing `vx cf` configuratio
 
 ## Non-goals
 
-- General-purpose Cloudflare DNS CRUD, record backup, cache purge, multiple-zone management, or customer-zone discovery.
+- General-purpose Cloudflare DNS CRUD, record backup, cache purge, or persisting/managing custom-alias zones beyond bounded validation and strict-mode enforcement.
 - Copying the broad `vortex-scripts` command surface or its argv-visible authorization header pattern.
 - Mutating DNS for custom aliases that the operator says are already configured.
 - Replacing BIND/named service lifecycle or changing restore/migration compatibility commands.

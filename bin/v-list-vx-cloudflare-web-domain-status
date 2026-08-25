@@ -1,0 +1,78 @@
+#!/bin/bash
+# info: list whether a web domain has exact Vortex Cloudflare ownership
+# options: USER DOMAIN
+
+
+#----------------------------------------------------------#
+#                    Variable&Function                     #
+#----------------------------------------------------------#
+
+user=$1
+domain=$2
+domain_idn=$2
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/domain.sh"
+source "$VESTA/func/vx/cloudflare/main.sh"
+source "$VESTA/conf/vesta.conf"
+
+format_domain
+format_domain_idn
+
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+check_args 2 "$#" 'USER DOMAIN'
+[[ $# -eq 2 ]] || check_result "$E_ARGS" 'invalid arguments'
+is_format_valid user domain
+is_object_valid user USER "$user"
+is_object_valid web DOMAIN "$domain"
+
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+record_metadata=no
+certificate_metadata=no
+record_metadata_path=$(vx_cf_record_path "$user" "$domain")
+certificate_metadata_path=$(vx_cf_certificate_path "$user" "$domain")
+if vx_cf_metadata_exists "$user" "$domain" \
+    || [ -e "$record_metadata_path" ] || [ -L "$record_metadata_path" ]; then
+    record_metadata=yes
+fi
+if vx_cf_certificate_metadata_exists "$user" "$domain" \
+    || [ -e "$certificate_metadata_path" ] \
+    || [ -L "$certificate_metadata_path" ]; then
+    certificate_metadata=yes
+fi
+
+status=unmanaged
+if [ "$record_metadata" = yes ] || [ "$certificate_metadata" = yes ]; then
+    status=degraded
+fi
+if [ "$record_metadata" = yes ] && [ "$certificate_metadata" = yes ] \
+    && vx_cf_load_config >/dev/null 2>&1 \
+    && vx_cf_exact_web_row "$user" "$domain" >/dev/null 2>&1 \
+    && vx_cf_load_metadata "$user" "$domain" >/dev/null 2>&1 \
+    && vx_cf_load_certificate_metadata "$user" "$domain" >/dev/null 2>&1 \
+    && [[ "$VX_CF_META_USER" == "$user" \
+        && "$VX_CF_META_DOMAIN" == "$domain" \
+        && "$VX_CF_CERT_META_USER" == "$user" \
+        && "$VX_CF_CERT_META_DOMAIN" == "$domain" \
+        && "$VX_CF_META_ZONE_ID" == "$VX_CF_ZONE_ID" \
+        && "$VX_CF_CERT_META_ZONE_ID" == "$VX_CF_ZONE_ID" ]] \
+    && vx_cf_managed_domain_matches_zone "$domain" "$VX_CF_ZONE_NAME" \
+    && [[ ",$VX_CF_CERT_META_HOSTNAMES," == *",$domain,"* ]]; then
+    status=managed
+fi
+printf '%s\n' "$status"
+
+
+#----------------------------------------------------------#
+#                       Vesta                              #
+#----------------------------------------------------------#
+
+exit

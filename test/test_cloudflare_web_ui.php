@@ -48,6 +48,10 @@ $dns_template = read_cloudflare_ui_source($root.'/web/templates/admin/list_dns.h
 $server_controller = read_cloudflare_ui_source($root.'/web/edit/server/index.php');
 $server_template = read_cloudflare_ui_source($root.'/web/templates/admin/edit_server.html');
 $system_config_command = read_cloudflare_ui_source($root.'/bin/v-list-sys-config');
+$edit_web_controller = read_cloudflare_ui_source($root.'/web/edit/web/index.php');
+$edit_web_admin_template = read_cloudflare_ui_source($root.'/web/templates/admin/edit_web.html');
+$edit_web_user_template = read_cloudflare_ui_source($root.'/web/templates/user/edit_web.html');
+$web_api_controller = read_cloudflare_ui_source($root.'/web/api/index.php');
 
 assert_cloudflare_ui_contains($add_web_controller, "(!isset(\$_POST['token']))", 'managed web creation lost its CSRF token presence check');
 assert_cloudflare_ui_contains($add_web_controller, "(\$_SESSION['token'] != \$_POST['token'])", 'managed web creation lost its CSRF token comparison');
@@ -75,12 +79,20 @@ if (strpos($add_web_template, 'name="v_aliases"') > strpos($add_web_template, "_
 }
 assert_cloudflare_ui_not_contains($add_web_template, 'name="v_dns"', 'managed add form still exposes legacy DNS support');
 assert_cloudflare_ui_not_contains($add_web_template, 'name="v_mail"', 'managed add form still exposes incoherent mail support');
+foreach (array('name="v_ssl"', 'name="v_letsencrypt"', 'name="v_ssl_crt"', 'name="v_ssl_key"', 'name="v_ssl_ca"') as $manual_ssl_field) {
+    assert_cloudflare_ui_not_contains($add_web_template, $manual_ssl_field, 'managed add form exposes manual SSL field '.$manual_ssl_field);
+}
+assert_cloudflare_ui_contains($add_web_template, 'Cloudflare Origin CA — managed automatically', 'managed add form does not explain automatic SSL');
+assert_cloudflare_ui_contains($add_web_controller, "\$_POST['v_ssl'] = '';", 'managed add controller does not discard crafted manual SSL input');
+assert_cloudflare_ui_contains($add_web_controller, "\$_POST['v_letsencrypt'] = '';", 'managed add controller does not discard crafted Lets Encrypt input');
 
 assert_cloudflare_ui_contains($alias_controller, "if (\$_SESSION['user'] != 'admin')", 'Cloudflare alias form is not admin-only');
 assert_cloudflare_ui_contains($alias_controller, "(!isset(\$_POST['token']))", 'Cloudflare alias form lost its CSRF token presence check');
 assert_cloudflare_ui_contains($alias_controller, "(\$_SESSION['token'] != \$_POST['token'])", 'Cloudflare alias form lost its CSRF token comparison');
 assert_cloudflare_ui_contains($alias_controller, 'v-list-web-domains ".escapeshellarg($user)', 'Cloudflare alias form does not list domains for the resolved owner safely');
 assert_cloudflare_ui_contains($alias_controller, 'array_key_exists($v_web_domain, $web_domains)', 'Cloudflare alias form does not enforce website ownership');
+assert_cloudflare_ui_contains($alias_controller, 'v-list-vx-cloudflare-web-domain-status ', 'Cloudflare alias form does not filter for exact managed ownership');
+assert_cloudflare_ui_contains($alias_controller, '$managed_status !== \'managed\'', 'Cloudflare alias form accepts non-managed lookalike websites');
 assert_cloudflare_ui_contains(
     $alias_controller,
     'v-add-vx-cloudflare-web-alias ".escapeshellarg($user)." ".escapeshellarg($v_web_domain)." ".escapeshellarg($v_cloudflare_domain)',
@@ -113,6 +125,34 @@ foreach (array('API token', 'Zone ID', 'Account email', 'Authorization:') as $pr
     assert_cloudflare_ui_not_contains($server_template, $protected_label, 'server template exposes protected Cloudflare detail: '.$protected_label);
 }
 
+assert_cloudflare_ui_contains($edit_web_controller, 'v-list-vx-cloudflare-web-domain-status ', 'web edit does not resolve exact managed-domain ownership');
+assert_cloudflare_ui_contains($edit_web_controller, "\$v_cloudflare_status === 'managed'", 'web edit does not recognize exact managed status');
+assert_cloudflare_ui_contains($edit_web_controller, "\$v_cloudflare_status === 'degraded'", 'web edit does not fail closed for degraded managed metadata');
+foreach (array(
+    "v-change-web-domain-sslcert",
+    "v-delete-letsencrypt-domain",
+    "v-delete-web-domain-ssl",
+    "v-add-letsencrypt-domain",
+    "v-add-web-domain-ssl"
+) as $ssl_mutation) {
+    $mutation_position = strpos($edit_web_controller, $ssl_mutation, strpos($edit_web_controller, '// Change SSL certificate'));
+    if ($mutation_position === false) {
+        fail_cloudflare_ui_test('missing expected native SSL mutation path: '.$ssl_mutation);
+    }
+}
+assert_cloudflare_ui_contains($edit_web_controller, 'if ((!$v_cloudflare_managed)', 'managed SSL mutation paths are not controller-gated');
+foreach (array($edit_web_admin_template, $edit_web_user_template) as $edit_template) {
+    assert_cloudflare_ui_contains($edit_template, 'if (!empty($v_cloudflare_managed))', 'managed SSL template branch is missing');
+    assert_cloudflare_ui_contains($edit_template, 'Cloudflare Origin CA — managed automatically', 'managed SSL ownership is not shown');
+    assert_cloudflare_ui_contains($edit_template, 'Manual replacement and Lets Encrypt are disabled', 'managed SSL controls are not explained');
+}
+
+assert_cloudflare_ui_contains($web_api_controller, "\$requested_cmd === 'v-add-web-domain'", 'web API does not identify native website creation');
+assert_cloudflare_ui_contains($web_api_controller, "VX_MANAGED_DNS_PROVIDER'] === 'cloudflare-managed'", 'web API does not gate managed creation on provider mode');
+assert_cloudflare_ui_contains($web_api_controller, "VESTA_CMD.'v-add-vx-managed-web-domain '", 'web API does not delegate to the server-owned allocator');
+assert_cloudflare_ui_contains($web_api_controller, ".escapeshellarg(\$managed_user).' '", 'web API managed owner is not shell escaped');
+assert_cloudflare_ui_contains($web_api_controller, ".escapeshellarg(\$managed_ip).' '", 'web API managed IP is not shell escaped');
+assert_cloudflare_ui_contains($web_api_controller, "\$managed_ip = isset(\$_POST['arg3'])", 'web API did not discard the caller primary-domain argument');
 if (!empty($failures)) {
     foreach ($failures as $failure) {
         fwrite(STDERR, "FAIL: ".$failure."\n");

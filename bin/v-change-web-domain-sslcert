@@ -20,6 +20,7 @@ restart=$4
 # Includes
 source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
+source $VESTA/func/vx/cloudflare/main.sh
 source $VESTA/conf/vesta.conf
 
 # Additional argument formatting
@@ -40,6 +41,17 @@ is_object_unsuspended 'user' 'USER' "$user"
 is_object_valid 'web' 'DOMAIN' "$domain"
 is_object_unsuspended 'web' 'DOMAIN' "$domain"
 is_object_value_exist 'web' 'DOMAIN' "$domain" '$SSL'
+vx_cf_record_authority_path=$(vx_cf_record_path "$user" "$domain")
+vx_cf_certificate_authority_path=$(vx_cf_certificate_path "$user" "$domain")
+if { vx_cf_metadata_exists "$user" "$domain" \
+        || vx_cf_certificate_metadata_exists "$user" "$domain" \
+        || [ -e "$vx_cf_record_authority_path" ] \
+        || [ -L "$vx_cf_record_authority_path" ] \
+        || [ -e "$vx_cf_certificate_authority_path" ] \
+        || [ -L "$vx_cf_certificate_authority_path" ]; } \
+    && [ "${VX_CLOUDFLARE_INTERNAL_ORIGIN_SSL:-}" != 1 ]; then
+    check_result "$E_FORBIDEN" 'managed web domains use VX Origin SSL'
+fi
 is_web_domain_cert_valid
 
 
@@ -47,27 +59,102 @@ is_web_domain_cert_valid
 #                       Action                             #
 #----------------------------------------------------------#
 
-# Deleting old certificate
-tmpdir=$(mktemp -p $HOMEDIR/$user/web/$domain/private -d)
-rm -f $HOMEDIR/$user/conf/web/ssl.$domain.*
-mv $USER_DATA/ssl/$domain.* $tmpdir
-chown -R $user:$user $tmpdir
+# Stage a complete replacement before moving any live file. Keep the existing
+# private backup behavior, but include both canonical and rendered copies so a
+# failed copy or service restart can restore the exact pre-change files.
+ssl_data_dir="$USER_DATA/ssl"
+ssl_web_dir="$HOMEDIR/$user/conf/web"
+tmpdir=$(mktemp -p "$HOMEDIR/$user/web/$domain/private" -d) \
+    || check_result "$E_UPDATE" 'SSL certificate staging failed'
+stage_dir="$tmpdir/stage"
+backup_data_dir="$tmpdir/data"
+backup_web_dir="$tmpdir/web"
+mkdir -p "$stage_dir" "$backup_data_dir" "$backup_web_dir" \
+    || check_result "$E_UPDATE" 'SSL certificate staging failed'
+ssl_files_touched=no
 
-# Adding new certificate to user data directory
-cp -f $ssl_dir/$domain.crt $USER_DATA/ssl/$domain.crt
-cp -f $ssl_dir/$domain.key $USER_DATA/ssl/$domain.key
-cp -f $ssl_dir/$domain.crt $USER_DATA/ssl/$domain.pem
+restore_ssl_certificate_files() {
+    local restore_result=0
+
+    rm -f "$ssl_data_dir/$domain.ca" "$ssl_data_dir/$domain.crt" \
+        "$ssl_data_dir/$domain.key" "$ssl_data_dir/$domain.pem" \
+        "$ssl_web_dir/ssl.$domain.ca" "$ssl_web_dir/ssl.$domain.crt" \
+        "$ssl_web_dir/ssl.$domain.key" "$ssl_web_dir/ssl.$domain.pem" \
+        || restore_result=1
+    cp -a "$backup_data_dir/." "$ssl_data_dir/" || restore_result=1
+    cp -a "$backup_web_dir/." "$ssl_web_dir/" || restore_result=1
+    return "$restore_result"
+}
+
+abort_ssl_certificate_change() {
+    local result=$1 message=$2
+
+    if [ "$ssl_files_touched" = yes ] \
+        && ! restore_ssl_certificate_files; then
+        chown -R "$user:$user" "$tmpdir" >/dev/null 2>&1 || :
+        check_result "$E_UPDATE" 'SSL certificate rollback failed'
+    fi
+    rm -rf "$stage_dir"
+    chown -R "$user:$user" "$tmpdir" >/dev/null 2>&1 || :
+    check_result "$result" "$message"
+}
+
+cp -f -- "$ssl_dir/$domain.crt" "$stage_dir/$domain.crt" \
+    || abort_ssl_certificate_change "$E_UPDATE" 'SSL certificate staging failed'
+cp -f -- "$ssl_dir/$domain.key" "$stage_dir/$domain.key" \
+    || abort_ssl_certificate_change "$E_UPDATE" 'SSL certificate staging failed'
+cp -f -- "$ssl_dir/$domain.crt" "$stage_dir/$domain.pem" \
+    || abort_ssl_certificate_change "$E_UPDATE" 'SSL certificate staging failed'
 if [ -e "$ssl_dir/$domain.ca" ]; then
-    cp -f $ssl_dir/$domain.ca $USER_DATA/ssl/$domain.ca
-    cat $USER_DATA/ssl/$domain.ca >> $USER_DATA/ssl/$domain.pem
+    cp -f -- "$ssl_dir/$domain.ca" "$stage_dir/$domain.ca" \
+        || abort_ssl_certificate_change "$E_UPDATE" 'SSL certificate staging failed'
+    cat "$stage_dir/$domain.ca" >>"$stage_dir/$domain.pem" \
+        || abort_ssl_certificate_change "$E_UPDATE" 'SSL certificate staging failed'
 fi
+chmod 660 "$stage_dir/$domain."* \
+    || abort_ssl_certificate_change "$E_UPDATE" 'SSL certificate staging failed'
 
-# Adding new certificate to user dir
-cp -f $USER_DATA/ssl/$domain.crt $HOMEDIR/$user/conf/web/ssl.$domain.crt
-cp -f $USER_DATA/ssl/$domain.key $HOMEDIR/$user/conf/web/ssl.$domain.key
-cp -f $USER_DATA/ssl/$domain.pem $HOMEDIR/$user/conf/web/ssl.$domain.pem
-if [ -e "$USER_DATA/ssl/$domain.ca" ]; then
-    cp -f $USER_DATA/ssl/$domain.ca $HOMEDIR/$user/conf/web/ssl.$domain.ca
+shopt -s nullglob
+ssl_data_files=("$ssl_data_dir/$domain."*)
+ssl_web_files=("$ssl_web_dir/ssl.$domain."*)
+shopt -u nullglob
+if (( ${#ssl_data_files[@]} > 0 )); then
+    cp -a -- "${ssl_data_files[@]}" "$backup_data_dir/" \
+        || abort_ssl_certificate_change "$E_UPDATE" 'SSL certificate backup failed'
+fi
+if (( ${#ssl_web_files[@]} > 0 )); then
+    cp -a -- "${ssl_web_files[@]}" "$backup_web_dir/" \
+        || abort_ssl_certificate_change "$E_UPDATE" 'SSL certificate backup failed'
+fi
+ssl_files_touched=yes
+rm -f "$ssl_data_dir/$domain.ca" "$ssl_data_dir/$domain.crt" \
+    "$ssl_data_dir/$domain.key" "$ssl_data_dir/$domain.pem" \
+    "$ssl_web_dir/ssl.$domain.ca" "$ssl_web_dir/ssl.$domain.crt" \
+    "$ssl_web_dir/ssl.$domain.key" "$ssl_web_dir/ssl.$domain.pem" \
+    || abort_ssl_certificate_change "$E_UPDATE" 'SSL certificate install failed'
+
+cp -f -- "$stage_dir/$domain.crt" "$ssl_data_dir/$domain.crt" \
+    || abort_ssl_certificate_change "$E_UPDATE" 'SSL certificate install failed'
+cp -f -- "$stage_dir/$domain.key" "$ssl_data_dir/$domain.key" \
+    || abort_ssl_certificate_change "$E_UPDATE" 'SSL certificate install failed'
+cp -f -- "$stage_dir/$domain.pem" "$ssl_data_dir/$domain.pem" \
+    || abort_ssl_certificate_change "$E_UPDATE" 'SSL certificate install failed'
+if [ -e "$stage_dir/$domain.ca" ]; then
+    cp -f -- "$stage_dir/$domain.ca" "$ssl_data_dir/$domain.ca" \
+        || abort_ssl_certificate_change "$E_UPDATE" 'SSL certificate install failed'
+fi
+chmod 660 "$ssl_data_dir/$domain."* \
+    || abort_ssl_certificate_change "$E_UPDATE" 'SSL certificate install failed'
+
+cp -f -- "$ssl_data_dir/$domain.crt" "$ssl_web_dir/ssl.$domain.crt" \
+    || abort_ssl_certificate_change "$E_UPDATE" 'SSL certificate install failed'
+cp -f -- "$ssl_data_dir/$domain.key" "$ssl_web_dir/ssl.$domain.key" \
+    || abort_ssl_certificate_change "$E_UPDATE" 'SSL certificate install failed'
+cp -f -- "$ssl_data_dir/$domain.pem" "$ssl_web_dir/ssl.$domain.pem" \
+    || abort_ssl_certificate_change "$E_UPDATE" 'SSL certificate install failed'
+if [ -e "$ssl_data_dir/$domain.ca" ]; then
+    cp -f -- "$ssl_data_dir/$domain.ca" "$ssl_web_dir/ssl.$domain.ca" \
+        || abort_ssl_certificate_change "$E_UPDATE" 'SSL certificate install failed'
 fi
 
 
@@ -77,10 +164,41 @@ fi
 
 # Restarting web server
 $BIN/v-restart-web $restart
-check_result $? "Web restart failed" >/dev/null
+restart_result=$?
+if [ "$restart_result" -ne 0 ]; then
+    restore_ssl_certificate_files \
+        || check_result "$E_UPDATE" 'SSL certificate rollback failed'
+    rollback_restart_failed=no
+    $BIN/v-restart-web $restart >/dev/null 2>&1 \
+        || rollback_restart_failed=yes
+    $BIN/v-restart-proxy $restart >/dev/null 2>&1 \
+        || rollback_restart_failed=yes
+    rm -rf "$stage_dir"
+    chown -R "$user:$user" "$tmpdir" >/dev/null 2>&1 || :
+    [ "$rollback_restart_failed" = no ] \
+        || check_result "$E_RESTART" 'SSL certificate rollback restart failed'
+    check_result "$restart_result" "Web restart failed" >/dev/null
+fi
 
 $BIN/v-restart-proxy $restart
-check_result $? "Proxy restart failed" >/dev/null
+restart_result=$?
+if [ "$restart_result" -ne 0 ]; then
+    restore_ssl_certificate_files \
+        || check_result "$E_UPDATE" 'SSL certificate rollback failed'
+    rollback_restart_failed=no
+    $BIN/v-restart-web $restart >/dev/null 2>&1 \
+        || rollback_restart_failed=yes
+    $BIN/v-restart-proxy $restart >/dev/null 2>&1 \
+        || rollback_restart_failed=yes
+    rm -rf "$stage_dir"
+    chown -R "$user:$user" "$tmpdir" >/dev/null 2>&1 || :
+    [ "$rollback_restart_failed" = no ] \
+        || check_result "$E_RESTART" 'SSL certificate rollback restart failed'
+    check_result "$restart_result" "Proxy restart failed" >/dev/null
+fi
+
+rm -rf "$stage_dir"
+chown -R "$user:$user" "$tmpdir" >/dev/null 2>&1 || :
 
 # Logging
 log_history "changed ssl certificate for $domain"

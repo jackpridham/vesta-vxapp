@@ -1,0 +1,142 @@
+#!/bin/bash
+
+vx_cf_record_path() {
+    printf '%s/data/vx/cloudflare/records/%s/%s.conf\n' \
+        "$VESTA" "$1" "$2"
+}
+
+vx_cf_certificate_path() {
+    printf '%s/data/vx/cloudflare/certificates/%s/%s.conf\n' \
+        "$VESTA" "$1" "$2"
+}
+
+vx_cf_metadata_exists() {
+    [ -f "$(vx_cf_record_path "$1" "$2")" ]
+}
+
+vx_cf_certificate_metadata_exists() {
+    [ -f "$(vx_cf_certificate_path "$1" "$2")" ]
+}
+
+vx_cf_load_config() {
+    [ ! -f "$VESTA/data/vx/cloudflare/config-invalid" ] \
+        || { VX_CF_STATUS=invalid_config; return 1; }
+    VX_CF_ZONE_ID=0123456789abcdef0123456789abcdef
+    VX_CF_ZONE_NAME=managed.example.test
+}
+
+vx_cf_metadata_value() {
+    /usr/bin/sed -n "s/^$2='\([^']*\)'$/\1/p" "$1"
+}
+
+vx_cf_load_metadata() {
+    local path
+    path=$(vx_cf_record_path "$1" "$2")
+    [ -f "$path" ] || { VX_CF_STATUS=state_error; return 1; }
+    /usr/bin/grep -Fxq "VALID='yes'" "$path" \
+        || { VX_CF_STATUS=state_error; return 1; }
+    VX_CF_META_USER=$(vx_cf_metadata_value "$path" USER)
+    VX_CF_META_DOMAIN=$(vx_cf_metadata_value "$path" DOMAIN)
+    VX_CF_META_ZONE_ID=$(vx_cf_metadata_value "$path" ZONE_ID)
+}
+
+vx_cf_load_certificate_metadata() {
+    local path
+    path=$(vx_cf_certificate_path "$1" "$2")
+    [ -f "$path" ] || { VX_CF_STATUS=state_error; return 1; }
+    /usr/bin/grep -Fxq "VALID='yes'" "$path" \
+        || { VX_CF_STATUS=state_error; return 1; }
+    VX_CF_CERT_META_USER=$(vx_cf_metadata_value "$path" USER)
+    VX_CF_CERT_META_DOMAIN=$(vx_cf_metadata_value "$path" DOMAIN)
+    VX_CF_CERT_META_ZONE_ID=$(vx_cf_metadata_value "$path" ZONE_ID)
+    VX_CF_CERT_META_HOSTNAMES=$(vx_cf_metadata_value "$path" HOSTNAMES)
+}
+
+vx_cf_managed_domain_matches_zone() {
+    local domain=$1 zone=$2 label
+    [[ "$domain" == *."$zone" ]] || return 1
+    label=${domain%."$zone"}
+    [[ "$label" =~ ^s-[a-f0-9]{10}$ ]]
+}
+
+vx_cf_exact_web_row() {
+    local count
+    count=$(/usr/bin/grep -Fc "DOMAIN='$2'" \
+        "$VESTA/data/users/$1/web.conf")
+    [ "$count" -eq 1 ]
+}
+
+vx_cf_reconcile() {
+    local current_ip
+    current_ip=$(/usr/bin/sed -n \
+        "/^DOMAIN='$2' /s/.* IP='\([^']*\)'.*/\1/p" \
+        "$VESTA/data/users/$1/web.conf")
+    printf 'reconcile %s %s\n' "$2" "$current_ip" \
+        >>"$VESTA/native-lifecycle.log"
+    if [ -f "$VESTA/data/vx/cloudflare/reconcile-fail-once" ]; then
+        /usr/bin/rm -f -- "$VESTA/data/vx/cloudflare/reconcile-fail-once"
+        VX_CF_STATUS=timeout
+        return 1
+    fi
+    VX_CF_STATUS=updated
+}
+
+vx_cf_origin_reconcile() {
+    local current_ip
+    current_ip=$(/usr/bin/sed -n \
+        "/^DOMAIN='$2' /s/.* IP='\([^']*\)'.*/\1/p" \
+        "$VESTA/data/users/$1/web.conf")
+    printf 'origin-reconcile %s %s\n' "$2" "$current_ip" \
+        >>"$VESTA/native-lifecycle.log"
+    if [ -f "$VESTA/data/vx/cloudflare/origin-reconcile-fail-once" ]; then
+        /usr/bin/rm -f -- \
+            "$VESTA/data/vx/cloudflare/origin-reconcile-fail-once"
+        VX_CF_STATUS=strict_not_enabled
+        return 1
+    fi
+    VX_CF_STATUS=ssl_unchanged
+}
+
+vx_cf_cleanup() {
+    local path
+    path=$(vx_cf_record_path "$1" "$2")
+    printf 'cleanup-primary %s\n' "$2" >>"$VESTA/native-lifecycle.log"
+    if [ -f "$VESTA/data/vx/cloudflare/primary-cleanup-fail-once" ]; then
+        /usr/bin/rm -f -- \
+            "$VESTA/data/vx/cloudflare/primary-cleanup-fail-once"
+        VX_CF_STATUS=timeout
+        return 1
+    fi
+    if [ -f "$path" ]; then
+        /usr/bin/rm -f -- "$path"
+        VX_CF_STATUS=deleted
+    else
+        VX_CF_STATUS=unchanged
+    fi
+}
+
+vx_cf_origin_cleanup() {
+    local path
+    path=$(vx_cf_certificate_path "$1" "$2")
+    printf 'cleanup-origin %s\n' "$2" >>"$VESTA/native-lifecycle.log"
+    if [ -f "$VESTA/data/vx/cloudflare/origin-cleanup-fail-once" ]; then
+        /usr/bin/rm -f -- \
+            "$VESTA/data/vx/cloudflare/origin-cleanup-fail-once"
+        VX_CF_STATUS=timeout
+        return 1
+    fi
+    if [ -f "$path" ]; then
+        /usr/bin/rm -f -- "$path"
+        VX_CF_STATUS=deleted
+    else
+        VX_CF_STATUS=unchanged
+    fi
+}
+
+vx_cf_emit_status() {
+    if [ "${2:-human}" = json ]; then
+        printf '{"status":"%s"}\n' "$1"
+    else
+        printf '%s\n' "$1"
+    fi
+}

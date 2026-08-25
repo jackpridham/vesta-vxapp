@@ -4,7 +4,7 @@ set -u
 repo_root=$(cd "$(dirname "$0")/../.." && pwd)
 work_root=$(/usr/bin/mktemp -d)
 vesta_root="$work_root/vesta"
-stub_curl="$repo_root/test/cloudflare/fixtures/curl-stub"
+strict_stub="$repo_root/test/cloudflare/fixtures/strict-lifecycle-stub"
 
 cleanup() {
     [[ "${VX_CLOUDFLARE_KEEP_TEST_ROOT:-no}" != yes ]] || {
@@ -27,11 +27,12 @@ assert_eq() {
 
 run_vesta() {
     VESTA="$vesta_root" VX_CLOUDFLARE_TEST_MODE=yes \
-        VX_CLOUDFLARE_TEST_CURL="$stub_curl" "$@"
+        VX_CLOUDFLARE_TEST_CURL="$strict_stub" "$@"
 }
 
 /usr/bin/mkdir -p "$vesta_root/bin" "$vesta_root/conf" \
-    "$vesta_root/data/users/alice" "$vesta_root/data/ips" "$vesta_root/log"
+    "$vesta_root/data/users/alice" "$vesta_root/data/ips" "$vesta_root/log" \
+    "$vesta_root/home/alice/conf/web"
 /usr/bin/ln -s "$repo_root/func" "$vesta_root/func"
 for command in v-configure-vx-cloudflare v-list-vx-cloudflare-status \
     v-change-vx-dns-provider v-add-vx-managed-web-domain \
@@ -42,13 +43,13 @@ for command in v-configure-vx-cloudflare v-list-vx-cloudflare-status \
 done
 for command in v-add-web-domain v-delete-web-domain v-add-web-domain-alias \
     v-delete-web-domain-alias v-add-web-domain-ssl \
-    v-change-web-domain-sslcert; do
-    /usr/bin/ln -s "$repo_root/test/cloudflare/fixtures/native-web-stub" \
+    v-change-web-domain-sslcert v-delete-web-domain-ssl; do
+    /usr/bin/ln -s "$strict_stub" \
         "$vesta_root/bin/$command"
 done
 
-printf "DNS_SYSTEM='bind9'\nVX_MANAGED_DNS_PROVIDER='local'\nWEB_SYSTEM='nginx'\n" \
-    >"$vesta_root/conf/vesta.conf"
+printf "DNS_SYSTEM='bind9'\nVX_MANAGED_DNS_PROVIDER='local'\nWEB_SYSTEM='nginx'\nHOMEDIR='%s'\n" \
+    "$vesta_root/home" >"$vesta_root/conf/vesta.conf"
 printf "SUSPENDED='no' WEB_DOMAINS='unlimited' WEB_ALIASES='unlimited'\n" \
     >"$vesta_root/data/users/alice/user.conf"
 : >"$vesta_root/data/users/alice/web.conf"
@@ -72,6 +73,16 @@ printf "API_TOKEN='fixture_token_12345678901234567890'\n" >"$input"
 printf "ZONE_ID='0123456789abcdef0123456789abcdef'\n" >>"$input"
 printf "ACCOUNT_EMAIL='operator@example.test'\n" >>"$input"
 /usr/bin/chmod 0600 "$input"
+printf 'edge_missing\n' >"$cloudflare_root/stub-scenario"
+if missing_edge_config=$(run_vesta "$vesta_root/bin/v-configure-vx-cloudflare" \
+    --config-file "$input"); then
+    fail 'configuration accepted a zone without primary edge coverage'
+fi
+assert_eq "$missing_edge_config" 'Error: edge_certificate_missing' \
+    'primary edge preflight failure is not stable'
+[[ ! -e "$cloudflare_root/config.conf" ]] \
+    || fail 'failed edge preflight replaced Cloudflare configuration'
+: >"$cloudflare_root/stub-scenario"
 configure_output=$(run_vesta "$vesta_root/bin/v-configure-vx-cloudflare" \
     --config-file "$input") || fail 'configuration failed'
 assert_eq "$configure_output" ready 'configuration output is not value-free'
@@ -81,13 +92,32 @@ config="$vesta_root/data/vx/cloudflare/config.conf"
     || fail 'configuration mode is not 0600'
 [[ "$(/usr/bin/stat -c '%a' "${config%/*}")" == 700 ]] \
     || fail 'configuration parent mode is not 0700'
+strict_state="$cloudflare_root/stub-zone-0123456789abcdef0123456789abcdef-ssl"
+assert_eq "$(<"$strict_state")" strict 'configuration did not enforce Full (strict)'
+/usr/bin/grep -q '^ssl-patch 0123456789abcdef0123456789abcdef strict$' \
+    "$cloudflare_root/stub-calls.log" \
+    || fail 'strict setting PATCH was not sent through protected transport'
+patch_count_before=$(/usr/bin/grep -c '^ssl-patch ' "$cloudflare_root/stub-calls.log")
 status=$(run_vesta "$vesta_root/bin/v-list-vx-cloudflare-status")
 assert_eq "$status" ready 'configured status is not ready'
 json_status=$(run_vesta "$vesta_root/bin/v-list-vx-cloudflare-status" json)
 assert_eq "$json_status" '{"status":"ready"}' 'JSON status is not stable'
+patch_count_after=$(/usr/bin/grep -c '^ssl-patch ' "$cloudflare_root/stub-calls.log")
+assert_eq "$patch_count_after" "$patch_count_before" \
+    'read-only status performed a mutating strict probe'
+/usr/bin/grep -q '^origin-list$' "$cloudflare_root/stub-calls.log" \
+    || fail 'status omitted the Origin CA read preflight'
+/usr/bin/grep -q '^edge-list 0123456789abcdef0123456789abcdef$' \
+    "$cloudflare_root/stub-calls.log" \
+    || fail 'status omitted primary edge certificate coverage'
+
+printf 'full\n' >"$strict_state"
+status=$(run_vesta "$vesta_root/bin/v-list-vx-cloudflare-status")
+assert_eq "$status" strict_not_enabled 'status accepted non-strict zone mode'
 
 run_vesta "$vesta_root/bin/v-change-vx-dns-provider" cloudflare-managed \
     || fail 'provider selection failed'
+assert_eq "$(<"$strict_state")" strict 'provider enable did not restore Full (strict)'
 /usr/bin/grep -q "^DNS_SYSTEM='bind9'$" "$vesta_root/conf/vesta.conf" \
     || fail 'DNS_SYSTEM was changed'
 
@@ -111,6 +141,34 @@ first_certificate_id=$(/usr/bin/sed -n \
 /usr/bin/grep -q "native-ssl .* $domain_one" \
     "$vesta_root/data/vx/cloudflare/native-calls.log" \
     || fail 'Origin certificate did not use native Vesta SSL installation'
+/usr/bin/grep -q "native-ssl .* $domain_one internal=1$" \
+    "$vesta_root/data/vx/cloudflare/native-calls.log" \
+    || fail 'Origin SSL install omitted the exact internal capability'
+
+other_zone_input="$work_root/cloudflare-other-zone.input"
+printf "API_TOKEN='fixture_other_token_12345678901234567890'\n" >"$other_zone_input"
+printf "ZONE_ID='11111111111111111111111111111111'\n" >>"$other_zone_input"
+printf "ACCOUNT_EMAIL='operator@example.test'\n" >>"$other_zone_input"
+/usr/bin/chmod 0600 "$other_zone_input"
+if zone_rotation=$(run_vesta "$vesta_root/bin/v-configure-vx-cloudflare" \
+    --config-file "$other_zone_input"); then
+    fail 'configuration stranded metadata under a different zone'
+fi
+assert_eq "$zone_rotation" 'Error: managed_zone_in_use' \
+    'cross-zone configuration guard is not stable'
+/usr/bin/grep -q "^ZONE_ID='0123456789abcdef0123456789abcdef'$" "$config" \
+    || fail 'rejected cross-zone configuration changed authority'
+
+rotated_input="$work_root/cloudflare-rotated.input"
+printf "API_TOKEN='fixture_rotated_token_12345678901234567890'\n" >"$rotated_input"
+printf "ZONE_ID='0123456789abcdef0123456789abcdef'\n" >>"$rotated_input"
+printf "ACCOUNT_EMAIL='operator@example.test'\n" >>"$rotated_input"
+/usr/bin/chmod 0600 "$rotated_input"
+rotated_output=$(run_vesta "$vesta_root/bin/v-configure-vx-cloudflare" \
+    --config-file "$rotated_input") || fail 'same-zone token rotation failed'
+assert_eq "$rotated_output" ready 'same-zone token rotation status is wrong'
+/usr/bin/grep -q "^API_TOKEN='fixture_rotated_token_12345678901234567890'$" "$config" \
+    || fail 'same-zone token rotation was not persisted'
 
 reconcile=$(run_vesta "$vesta_root/bin/v-reconcile-vx-cloudflare-web-domain" \
     alice "$domain_one") || fail 'no-op reconcile failed'
@@ -121,6 +179,30 @@ assert_eq "$reconcile" unchanged 'no-op reconcile was not unchanged'
 reconcile=$(run_vesta "$vesta_root/bin/v-reconcile-vx-cloudflare-web-domain" \
     alice "$domain_one") || fail 'drift reconcile failed'
 assert_eq "$reconcile" updated 'drift reconcile was not updated'
+
+# Metadata is exact provider identity. A provider-side rename must update that
+# ID in place, never create a replacement based only on a desired-name lookup.
+/usr/bin/sed -i 's/^name=.*/name=provider-renamed.managed.example.test/' \
+    "$cloudflare_root/stub-record.conf"
+printf 'dns-rename-reconcile-start\n' >>"$cloudflare_root/stub-calls.log"
+dns_creates_before=$(/usr/bin/grep -c '^create ' "$cloudflare_root/stub-calls.log")
+dns_updates_before=$(/usr/bin/grep -c '^update$' "$cloudflare_root/stub-calls.log")
+reconcile=$(run_vesta "$vesta_root/bin/v-reconcile-vx-cloudflare-web-domain" \
+    alice "$domain_one") || fail 'provider-side DNS rename reconcile failed'
+assert_eq "$reconcile" updated 'provider-side DNS rename was not updated in place'
+first_rename_call=$(/usr/bin/sed -n \
+    '/^dns-rename-reconcile-start$/ { n; p; q; }' \
+    "$cloudflare_root/stub-calls.log")
+assert_eq "$first_rename_call" read \
+    'DNS reconcile did not validate the exact metadata ID first'
+dns_creates_after=$(/usr/bin/grep -c '^create ' "$cloudflare_root/stub-calls.log")
+dns_updates_after=$(/usr/bin/grep -c '^update$' "$cloudflare_root/stub-calls.log")
+assert_eq "$dns_creates_after" "$dns_creates_before" \
+    'provider-side DNS rename created a replacement record'
+assert_eq "$dns_updates_after" "$((dns_updates_before + 1))" \
+    'provider-side DNS rename did not update the exact record ID'
+assert_eq "$(/usr/bin/sed -n 's/^name=//p' "$cloudflare_root/stub-record.conf")" \
+    "$domain_one" 'provider-side DNS rename was not healed'
 
 before_domains=$(/usr/bin/wc -l <"$vesta_root/data/users/alice/web.conf")
 : >"$vesta_root/data/vx/cloudflare/native-add-fail"
@@ -163,6 +245,36 @@ fi
 printf 'id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nname=%s\naddress=192.0.2.21\n' \
     "$domain_one" >"$vesta_root/data/vx/cloudflare/stub-record.conf"
 
+origin_creates_before=$(/usr/bin/grep -c '^origin-create ' \
+    "$cloudflare_root/stub-calls.log")
+if unproxied_alias=$(run_vesta "$vesta_root/bin/v-add-vx-cloudflare-web-alias" \
+    alice "$domain_one" unproxied.example.test); then
+    fail 'unproxied custom alias was certified'
+fi
+assert_eq "$unproxied_alias" 'Error: native_alias_failed' \
+    'unproxied alias failure is not stable'
+! /usr/bin/grep -q "ALIAS='[^']*unproxied.example.test" \
+    "$vesta_root/data/users/alice/web.conf" \
+    || fail 'unproxied alias remained in native state'
+origin_creates_after=$(/usr/bin/grep -c '^origin-create ' \
+    "$cloudflare_root/stub-calls.log")
+assert_eq "$origin_creates_after" "$origin_creates_before" \
+    'unproxied alias reached Origin certificate issuance'
+
+if uncovered_alias=$(run_vesta "$vesta_root/bin/v-add-vx-cloudflare-web-alias" \
+    alice "$domain_one" edge.noedge.test); then
+    fail 'custom alias without active edge coverage was certified'
+fi
+assert_eq "$uncovered_alias" 'Error: native_alias_failed' \
+    'alias edge coverage failure is not stable'
+! /usr/bin/grep -q "ALIAS='[^']*edge.noedge.test" \
+    "$vesta_root/data/users/alice/web.conf" \
+    || fail 'uncovered alias remained in native state'
+origin_creates_after=$(/usr/bin/grep -c '^origin-create ' \
+    "$cloudflare_root/stub-calls.log")
+assert_eq "$origin_creates_after" "$origin_creates_before" \
+    'uncovered alias reached Origin certificate issuance'
+
 run_vesta "$vesta_root/bin/v-add-vx-cloudflare-web-alias" alice "$domain_one" \
     custom.example.test || fail 'custom alias delegation failed'
 /usr/bin/grep -q "native-alias $domain_one custom.example.test" \
@@ -179,6 +291,245 @@ second_certificate_id=$(/usr/bin/sed -n \
 /usr/bin/grep -q "origin-delete $first_certificate_id" \
     "$vesta_root/data/vx/cloudflare/stub-calls.log" \
     || fail 'superseded Origin certificate was not revoked'
+/usr/bin/grep -q \
+    '^alias-dns fedcba9876543210fedcba9876543210 custom.example.test CNAME$' \
+    "$cloudflare_root/stub-calls.log" \
+    || fail 'custom alias exact DNS/CNAME preflight was omitted'
+/usr/bin/grep -q '^edge-list fedcba9876543210fedcba9876543210$' \
+    "$cloudflare_root/stub-calls.log" \
+    || fail 'custom alias active edge coverage was omitted'
+/usr/bin/grep -q \
+    '^ssl-patch fedcba9876543210fedcba9876543210 strict$' \
+    "$cloudflare_root/stub-calls.log" \
+    || fail 'custom alias zone did not enforce Full (strict)'
+
+origin_creates_before=$(/usr/bin/grep -c '^origin-create ' \
+    "$cloudflare_root/stub-calls.log")
+printf 'alias_route_drift\n' >"$cloudflare_root/stub-scenario"
+if unhealthy_route=$(run_vesta \
+    "$vesta_root/bin/v-reconcile-vx-cloudflare-origin-ssl" alice "$domain_one" no); then
+    fail 'healthy certificate shortcut bypassed alias route preflight'
+fi
+assert_eq "$unhealthy_route" 'Error: alias_dns_mismatch' \
+    'healthy certificate route failure is not stable'
+assert_eq "$(/usr/bin/sed -n \
+    "s/^CERTIFICATE_ID='\([^']*\)'$/\1/p" "$certificate_metadata")" \
+    "$second_certificate_id" 'failed route preflight changed certificate authority'
+origin_creates_after=$(/usr/bin/grep -c '^origin-create ' \
+    "$cloudflare_root/stub-calls.log")
+assert_eq "$origin_creates_after" "$origin_creates_before" \
+    'failed route preflight reached Origin certificate issuance'
+: >"$cloudflare_root/stub-scenario"
+
+primary_edge_before=$(/usr/bin/grep -c \
+    '^edge-list 0123456789abcdef0123456789abcdef$' \
+    "$cloudflare_root/stub-calls.log")
+alias_edge_before=$(/usr/bin/grep -c \
+    '^edge-list fedcba9876543210fedcba9876543210$' \
+    "$cloudflare_root/stub-calls.log")
+primary_strict_before=$(/usr/bin/grep -c \
+    '^ssl-patch 0123456789abcdef0123456789abcdef strict$' \
+    "$cloudflare_root/stub-calls.log")
+alias_strict_before=$(/usr/bin/grep -c \
+    '^ssl-patch fedcba9876543210fedcba9876543210 strict$' \
+    "$cloudflare_root/stub-calls.log")
+alias_dns_before=$(/usr/bin/grep -c \
+    '^alias-dns fedcba9876543210fedcba9876543210 custom.example.test CNAME$' \
+    "$cloudflare_root/stub-calls.log")
+healthy_reconcile=$(run_vesta \
+    "$vesta_root/bin/v-reconcile-vx-cloudflare-origin-ssl" alice "$domain_one" no) \
+    || fail 'healthy Origin reconcile failed after provider preflight'
+assert_eq "$healthy_reconcile" ssl_unchanged \
+    'healthy Origin reconcile did not reuse the current certificate'
+assert_eq "$(/usr/bin/grep -c \
+    '^edge-list 0123456789abcdef0123456789abcdef$' \
+    "$cloudflare_root/stub-calls.log")" "$((primary_edge_before + 1))" \
+    'healthy shortcut omitted primary edge preflight'
+assert_eq "$(/usr/bin/grep -c \
+    '^edge-list fedcba9876543210fedcba9876543210$' \
+    "$cloudflare_root/stub-calls.log")" "$((alias_edge_before + 1))" \
+    'healthy shortcut omitted alias edge preflight'
+assert_eq "$(/usr/bin/grep -c \
+    '^ssl-patch 0123456789abcdef0123456789abcdef strict$' \
+    "$cloudflare_root/stub-calls.log")" "$((primary_strict_before + 1))" \
+    'healthy shortcut omitted configured-zone strict enforcement'
+assert_eq "$(/usr/bin/grep -c \
+    '^ssl-patch fedcba9876543210fedcba9876543210 strict$' \
+    "$cloudflare_root/stub-calls.log")" "$((alias_strict_before + 1))" \
+    'healthy shortcut omitted alias-zone strict enforcement'
+assert_eq "$(/usr/bin/grep -c \
+    '^alias-dns fedcba9876543210fedcba9876543210 custom.example.test CNAME$' \
+    "$cloudflare_root/stub-calls.log")" "$((alias_dns_before + 1))" \
+    'healthy shortcut omitted exact alias DNS preflight'
+
+ssl_root="$vesta_root/data/users/alice/ssl"
+rendered_ssl_root="$vesta_root/home/alice/conf/web"
+printf 'corrupt-rendered-private-key\n' \
+    >"$rendered_ssl_root/ssl.$domain_one.key"
+drift_reconcile=$(run_vesta \
+    "$vesta_root/bin/v-reconcile-vx-cloudflare-origin-ssl" alice "$domain_one" no) \
+    || fail 'rendered certificate drift did not self-heal'
+assert_eq "$drift_reconcile" ssl_ready \
+    'rendered certificate drift reconcile status is wrong'
+drift_certificate_id=$(/usr/bin/sed -n \
+    "s/^CERTIFICATE_ID='\([^']*\)'$/\1/p" "$certificate_metadata")
+[[ "$drift_certificate_id" != "$second_certificate_id" ]] \
+    || fail 'rendered certificate drift reused stale provider authority'
+/usr/bin/openssl x509 -in "$ssl_root/$domain_one.crt" -pubkey -noout 2>/dev/null \
+    | /usr/bin/openssl pkey -pubin -outform DER 2>/dev/null \
+    | /usr/bin/sha256sum | /usr/bin/cut -d ' ' -f1 \
+    >"$work_root/installed-cert-key.digest"
+/usr/bin/openssl pkey -in "$ssl_root/$domain_one.key" -pubout -outform DER \
+    2>/dev/null | /usr/bin/sha256sum | /usr/bin/cut -d ' ' -f1 \
+    >"$work_root/installed-private-key.digest"
+/usr/bin/cmp -s "$work_root/installed-cert-key.digest" \
+    "$work_root/installed-private-key.digest" \
+    || fail 'drift self-heal installed a mismatched certificate/key pair'
+/usr/bin/grep -q "origin-delete $second_certificate_id" \
+    "$cloudflare_root/stub-calls.log" \
+    || fail 'drift self-heal did not revoke superseded exact authority'
+for extension in crt key ca pem; do
+    /usr/bin/cmp -s "$ssl_root/$domain_one.$extension" \
+        "$rendered_ssl_root/ssl.$domain_one.$extension" \
+        || fail "rendered $extension did not match canonical SSL state"
+done
+/usr/bin/cat "$ssl_root/$domain_one.crt" "$ssl_root/$domain_one.ca" \
+    >"$work_root/expected-origin.pem"
+/usr/bin/cmp -s "$work_root/expected-origin.pem" "$ssl_root/$domain_one.pem" \
+    || fail 'canonical PEM is not exact CRT+CA'
+
+printf 'corrupt-canonical-pem\n' >"$ssl_root/$domain_one.pem"
+/usr/bin/cp -f -- "$ssl_root/$domain_one.pem" \
+    "$rendered_ssl_root/ssl.$domain_one.pem"
+pem_drift_reconcile=$(run_vesta \
+    "$vesta_root/bin/v-reconcile-vx-cloudflare-origin-ssl" alice "$domain_one" no) \
+    || fail 'canonical PEM drift did not self-heal'
+assert_eq "$pem_drift_reconcile" ssl_ready \
+    'canonical PEM drift reconcile status is wrong'
+pem_certificate_id=$(/usr/bin/sed -n \
+    "s/^CERTIFICATE_ID='\([^']*\)'$/\1/p" "$certificate_metadata")
+[[ "$pem_certificate_id" != "$drift_certificate_id" ]] \
+    || fail 'canonical PEM drift reused stale provider authority'
+/usr/bin/grep -q "origin-delete $drift_certificate_id" \
+    "$cloudflare_root/stub-calls.log" \
+    || fail 'canonical PEM drift did not revoke superseded exact authority'
+/usr/bin/cat "$ssl_root/$domain_one.crt" "$ssl_root/$domain_one.ca" \
+    >"$work_root/expected-origin.pem"
+/usr/bin/cmp -s "$work_root/expected-origin.pem" "$ssl_root/$domain_one.pem" \
+    || fail 'canonical PEM drift did not restore exact CRT+CA'
+for extension in crt key ca pem; do
+    /usr/bin/cmp -s "$ssl_root/$domain_one.$extension" \
+        "$rendered_ssl_root/ssl.$domain_one.$extension" \
+        || fail "PEM drift left rendered $extension stale"
+done
+
+old_native_hashes=$(/usr/bin/sha256sum \
+    "$ssl_root/$domain_one."{crt,key,ca,pem} \
+    "$rendered_ssl_root/ssl.$domain_one."{crt,key,ca,pem})
+old_transaction_id=$pem_certificate_id
+/usr/bin/rm -f -- "$cloudflare_root/stub-native-install-failed-once"
+/usr/bin/rm -f -- "$cloudflare_root/stub-revoke-failed-once"
+printf 'native_install_revoke_failure\n' >"$cloudflare_root/stub-scenario"
+if native_install_failure=$(run_vesta \
+    "$vesta_root/bin/v-add-vx-cloudflare-web-alias" alice "$domain_one" \
+    restore.example.test); then
+    fail 'partial native Origin SSL install unexpectedly succeeded'
+fi
+assert_eq "$native_install_failure" 'Error: native_alias_failed' \
+    'partial native install failure is not stable'
+: >"$cloudflare_root/stub-scenario"
+new_native_hashes=$(/usr/bin/sha256sum \
+    "$ssl_root/$domain_one."{crt,key,ca,pem} \
+    "$rendered_ssl_root/ssl.$domain_one."{crt,key,ca,pem})
+assert_eq "$new_native_hashes" "$old_native_hashes" \
+    'partial native install did not restore exact SSL state'
+restored_metadata_id=$(/usr/bin/sed -n \
+    "s/^CERTIFICATE_ID='\([^']*\)'$/\1/p" "$certificate_metadata")
+assert_eq "$restored_metadata_id" "$old_transaction_id" \
+    'partial native install did not restore certificate metadata'
+! /usr/bin/grep -q "ALIAS='[^']*restore.example.test" \
+    "$vesta_root/data/users/alice/web.conf" \
+    || fail 'partial native install left the alias attached'
+failed_install_id=$(/usr/bin/grep '^origin-create ' "$cloudflare_root/stub-calls.log" \
+    | /usr/bin/tail -n1 | /usr/bin/cut -d ' ' -f2)
+rollback_pending_ids=$(/usr/bin/sed -n \
+    "s/^PENDING_REVOKE_IDS='\([^']*\)'$/\1/p" "$certificate_metadata")
+assert_eq "$rollback_pending_ids" "$failed_install_id" \
+    'failed rollback revoke lost durable new certificate authority'
+/usr/bin/grep -q "origin-delete-failed $failed_install_id" \
+    "$cloudflare_root/stub-calls.log" \
+    || fail 'fixture did not exercise the post-rollback revoke failure'
+rollback_retry=$(run_vesta \
+    "$vesta_root/bin/v-reconcile-vx-cloudflare-origin-ssl" alice "$domain_one" no) \
+    || fail 'post-rollback pending certificate cleanup did not retry'
+assert_eq "$rollback_retry" ssl_unchanged \
+    'post-rollback pending cleanup replaced healthy restored SSL'
+rollback_pending_ids=$(/usr/bin/sed -n \
+    "s/^PENDING_REVOKE_IDS='\([^']*\)'$/\1/p" "$certificate_metadata")
+assert_eq "$rollback_pending_ids" '' \
+    'successful post-rollback pending cleanup was not cleared'
+/usr/bin/grep -q "origin-delete $failed_install_id" \
+    "$cloudflare_root/stub-calls.log" \
+    || fail 'post-rollback retry did not revoke the exact pending ID'
+
+/usr/bin/rm -f -- "$cloudflare_root/stub-revoke-failed-once"
+printf 'old_revoke_failure\n' >"$cloudflare_root/stub-scenario"
+run_vesta "$vesta_root/bin/v-add-vx-cloudflare-web-alias" alice "$domain_one" \
+    a-record.example.test || fail 'replacement failed when old revoke was transient'
+: >"$cloudflare_root/stub-scenario"
+pending_certificate_id=$(/usr/bin/sed -n \
+    "s/^CERTIFICATE_ID='\([^']*\)'$/\1/p" "$certificate_metadata")
+[[ "$pending_certificate_id" != "$old_transaction_id" ]] \
+    || fail 'replacement did not install after transient old revoke failure'
+pending_revoke_ids=$(/usr/bin/sed -n \
+    "s/^PENDING_REVOKE_IDS='\([^']*\)'$/\1/p" "$certificate_metadata")
+assert_eq "$pending_revoke_ids" "$old_transaction_id" \
+    'failed superseded revoke did not preserve exact durable authority'
+/usr/bin/grep -q "origin-delete-failed $old_transaction_id" \
+    "$cloudflare_root/stub-calls.log" \
+    || fail 'fixture did not exercise the superseded revoke failure'
+/usr/bin/grep -q \
+    '^alias-dns fedcba9876543210fedcba9876543210 a-record.example.test A$' \
+    "$cloudflare_root/stub-calls.log" \
+    || fail 'custom alias exact DNS/A ingress preflight was omitted'
+pending_retry=$(run_vesta \
+    "$vesta_root/bin/v-reconcile-vx-cloudflare-origin-ssl" alice "$domain_one" no) \
+    || fail 'future reconcile did not retry pending certificate cleanup'
+assert_eq "$pending_retry" ssl_unchanged \
+    'pending revoke retry changed a healthy current certificate'
+pending_revoke_ids=$(/usr/bin/sed -n \
+    "s/^PENDING_REVOKE_IDS='\([^']*\)'$/\1/p" "$certificate_metadata")
+assert_eq "$pending_revoke_ids" '' 'successful pending revoke was not cleared'
+/usr/bin/grep -q "origin-delete $old_transaction_id" \
+    "$cloudflare_root/stub-calls.log" \
+    || fail 'future reconcile did not revoke the pending exact ID'
+second_certificate_id=$pending_certificate_id
+
+metadata_snapshot="$work_root/certificate-metadata.snapshot"
+/usr/bin/cp -- "$certificate_metadata" "$metadata_snapshot"
+/usr/bin/rm -f -- "$certificate_metadata"
+/usr/bin/ln -s /dev/null "$certificate_metadata"
+old_native_hashes=$(/usr/bin/sha256sum "$ssl_root/$domain_one."{crt,key,ca,pem})
+if certificate_metadata_failure=$(run_vesta \
+    "$vesta_root/bin/v-add-vx-cloudflare-web-alias" alice "$domain_one" \
+    metadatafail.example.test); then
+    fail 'certificate metadata failure unexpectedly installed a replacement'
+fi
+assert_eq "$certificate_metadata_failure" 'Error: native_alias_failed' \
+    'certificate metadata failure is not stable'
+/usr/bin/unlink "$certificate_metadata"
+/usr/bin/mv -- "$metadata_snapshot" "$certificate_metadata"
+new_native_hashes=$(/usr/bin/sha256sum "$ssl_root/$domain_one."{crt,key,ca,pem})
+assert_eq "$new_native_hashes" "$old_native_hashes" \
+    'certificate metadata failure changed native SSL state'
+metadata_failure_id=$(/usr/bin/grep '^origin-create ' "$cloudflare_root/stub-calls.log" \
+    | /usr/bin/tail -n1 | /usr/bin/cut -d ' ' -f2)
+/usr/bin/grep -q "origin-delete $metadata_failure_id" \
+    "$cloudflare_root/stub-calls.log" \
+    || fail 'certificate metadata failure did not revoke the uninstalled new ID'
+! /usr/bin/grep -q "ALIAS='[^']*metadatafail.example.test" \
+    "$vesta_root/data/users/alice/web.conf" \
+    || fail 'certificate metadata failure left the alias attached'
 
 printf 'origin_failure\n' >"$vesta_root/data/vx/cloudflare/stub-scenario"
 if alias_failure=$(run_vesta "$vesta_root/bin/v-add-vx-cloudflare-web-alias" \
@@ -207,6 +558,10 @@ latest_created_id=$(/usr/bin/grep '^origin-create ' \
     || fail 'mismatched issued certificate was not compensated'
 : >"$vesta_root/data/vx/cloudflare/stub-scenario"
 
+already_revoked_pending_id=99999999999999999999999999999999999999999999999
+/usr/bin/sed -i \
+    "s/^PENDING_REVOKE_IDS=''$/PENDING_REVOKE_IDS='$already_revoked_pending_id'/" \
+    "$certificate_metadata"
 delete_status=$(run_vesta "$vesta_root/bin/v-delete-vx-cloudflare-web-domain" \
     alice "$domain_one") || fail 'exact deletion failed'
 assert_eq "$delete_status" deleted 'delete status is incorrect'
@@ -217,12 +572,34 @@ assert_eq "$delete_status" deleted 'delete status is incorrect'
 /usr/bin/grep -q "origin-delete $second_certificate_id" \
     "$vesta_root/data/vx/cloudflare/stub-calls.log" \
     || fail 'current exact Origin certificate was not revoked on deletion'
+/usr/bin/grep -q "origin-get $already_revoked_pending_id" \
+    "$cloudflare_root/stub-calls.log" \
+    || fail 'delete did not retry idempotent pending certificate cleanup'
 /usr/bin/grep -q '^delete$' "$vesta_root/data/vx/cloudflare/stub-calls.log" \
     || fail 'exact provider deletion was not called'
 
 delete_status=$(run_vesta "$vesta_root/bin/v-delete-vx-cloudflare-web-domain" \
     alice "$domain_one") || fail 'idempotent deletion failed'
 assert_eq "$delete_status" unchanged 'idempotent deletion is not unchanged'
+
+revoked_domain=$(run_vesta "$vesta_root/bin/v-add-vx-managed-web-domain" alice \
+    192.0.2.10 no none) || fail 'already-revoked cleanup fixture create failed'
+revoked_metadata="$cloudflare_root/certificates/alice/$revoked_domain.conf"
+revoked_certificate_id=$(/usr/bin/sed -n \
+    "s/^CERTIFICATE_ID='\([^']*\)'$/\1/p" "$revoked_metadata")
+/usr/bin/rm -f -- \
+    "$cloudflare_root/stub-certificates/$revoked_certificate_id.json" \
+    "$cloudflare_root/stub-certificates/$revoked_certificate_id.pem" \
+    "$cloudflare_root/stub-certificates/$revoked_certificate_id.csr"
+revoked_delete=$(run_vesta "$vesta_root/bin/v-delete-vx-cloudflare-web-domain" \
+    alice "$revoked_domain") || fail 'already-revoked certificate cleanup failed'
+assert_eq "$revoked_delete" deleted 'already-revoked cleanup status is wrong'
+[[ ! -e "$revoked_metadata" ]] \
+    || fail 'already-revoked certificate metadata remained after cleanup'
+revoked_delete=$(run_vesta "$vesta_root/bin/v-delete-vx-cloudflare-web-domain" \
+    alice "$revoked_domain") || fail 'already-revoked cleanup was not idempotent'
+assert_eq "$revoked_delete" unchanged \
+    'already-revoked second cleanup was not unchanged'
 
 before_domains=$(/usr/bin/wc -l <"$vesta_root/data/users/alice/web.conf")
 printf 'metadata_failure\n' >"$vesta_root/data/vx/cloudflare/stub-scenario"

@@ -1,0 +1,111 @@
+#!/bin/bash
+
+BIN="$VESTA/bin"
+USER_DATA="$VESTA/data/users/$user"
+HOMEDIR="$VX_CLOUDFLARE_TEST_HOME"
+ARGUMENTS='test'
+OK=0
+E_ARGS=1
+E_INVALID=2
+E_NOTEXIST=3
+E_FORBIDEN=10
+E_CONNECT=15
+E_UPDATE=19
+E_RESTART=20
+
+check_result() {
+    local result=$1
+    [ "$result" -eq 0 ] && return 0
+    printf 'Error: %s\n' "$2"
+    exit "$result"
+}
+
+check_args() {
+    [ "$2" -ge "$1" ] || check_result "$E_ARGS" "$3"
+}
+
+is_format_valid() { :; }
+is_system_enabled() { :; }
+is_object_unsuspended() { :; }
+is_object_value_empty() { :; }
+is_object_value_exist() { :; }
+is_web_domain_cert_valid() { :; }
+is_ip_valid() { :; }
+format_domain() { :; }
+format_domain_idn() { :; }
+prepare_web_domain_values() { :; }
+log_history() { :; }
+log_event() { :; }
+
+is_object_valid() {
+    case "$1" in
+        user)
+            [ -d "$VESTA/data/users/$3" ] \
+                || check_result "$E_NOTEXIST" 'user not found'
+            ;;
+        web)
+            /usr/bin/grep -Fq "DOMAIN='$3'" "$USER_DATA/web.conf" \
+                || check_result "$E_NOTEXIST" 'web domain not found'
+            ;;
+    esac
+}
+
+get_domain_values() {
+    local row
+    row=$(/usr/bin/grep -F "DOMAIN='$domain'" "$USER_DATA/$1.conf")
+    eval "$row"
+}
+
+get_real_ip() {
+    printf '%s\n' "$1"
+}
+
+replace_web_config() {
+    printf 'replace %s %s %s %s\n' "$domain" "$1" "$old" "$new" \
+        >>"$VESTA/native-lifecycle.log"
+}
+
+add_web_config() {
+    printf 'add-config %s %s\n' "$1" "$2" \
+        >>"$VESTA/native-lifecycle.log"
+}
+
+del_web_config() {
+    printf 'delete-config %s %s\n' "$1" "$2" \
+        >>"$VESTA/native-lifecycle.log"
+}
+
+increase_ip_value() {
+    printf 'increase-ip %s\n' "$1" >>"$VESTA/native-lifecycle.log"
+}
+
+decrease_ip_value() {
+    printf 'decrease-ip %s\n' "$1" >>"$VESTA/native-lifecycle.log"
+}
+
+increase_user_value() { :; }
+decrease_user_value() { :; }
+
+update_object_value() {
+    local key=${4#\$} value=$5 row
+    row=$(/usr/bin/grep -nF "$2='$3'" "$USER_DATA/$1.conf" \
+        | /usr/bin/head -n1 | /usr/bin/cut -d: -f1)
+    [ -n "$row" ] || return 1
+    /usr/bin/sed -i "$row s/${key}='[^']*'/${key}='$value'/" \
+        "$USER_DATA/$1.conf"
+}
+
+add_object_key() { :; }
+reset_web_counter() { :; }
+
+search_objects() {
+    local row
+    while IFS= read -r row; do
+        [[ "$row" == *"$2='$3'"* ]] || continue
+        if [[ "$row" =~ DOMAIN=\'([^\']+)\' ]]; then
+            printf '%s\n' "${BASH_REMATCH[1]}"
+        fi
+    done <"$USER_DATA/$1.conf"
+}
+
+is_acme_name_reserved() { return 1; }

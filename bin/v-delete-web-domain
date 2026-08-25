@@ -48,14 +48,15 @@ is_object_unsuspended 'web' 'DOMAIN' "$domain"
 #                       Action                             #
 #----------------------------------------------------------#
 
-# Revoke only exact provider identities owned by this Vesta web domain. Any
-# verification/provider failure aborts before native website state is touched.
-if vx_cf_certificate_metadata_exists "$user" "$domain"; then
-    vx_cf_origin_cleanup "$user" "$domain" >/dev/null \
-        || check_result "$E_CONNECT" "${VX_CF_STATUS:-provider_error}"
-fi
+# Delete and confirm the exact primary DNS identity before revoking its Origin
+# certificate. Any provider failure aborts before native website state is
+# touched; a retry safely resumes whichever exact cleanup remains.
 if vx_cf_metadata_exists "$user" "$domain"; then
     vx_cf_cleanup "$user" "$domain" >/dev/null \
+        || check_result "$E_CONNECT" "${VX_CF_STATUS:-provider_error}"
+fi
+if vx_cf_certificate_metadata_exists "$user" "$domain"; then
+    vx_cf_origin_cleanup "$user" "$domain" >/dev/null \
         || check_result "$E_CONNECT" "${VX_CF_STATUS:-provider_error}"
 fi
 
