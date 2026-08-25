@@ -466,7 +466,7 @@ vx_cf_migration_manifest_write() {
     while IFS= read -r -d '' path; do
         relative=${path#"$artifact/"}
         case "$relative" in
-            manifest.sha256|mapping.json|results.tsv|recovery.conf)
+            manifest.sha256|mapping.json|results.tsv|recovery.conf|rollback-admission.tsv)
                 continue
                 ;;
         esac
@@ -495,6 +495,7 @@ vx_cf_migration_manifest_verify() {
             && "$relative" != mapping.json \
             && "$relative" != results.tsv \
             && "$relative" != recovery.conf \
+            && "$relative" != rollback-admission.tsv \
             && "$relative" != recovery/* \
             && -z "${listed[$relative]+x}" ]] || return 1
         path="$artifact/$relative"
@@ -511,7 +512,7 @@ vx_cf_migration_manifest_verify() {
     while IFS= read -r -d '' path; do
         relative=${path#"$artifact/"}
         case "$relative" in
-            manifest.sha256|mapping.json|results.tsv|recovery.conf) ;;
+            manifest.sha256|mapping.json|results.tsv|recovery.conf|rollback-admission.tsv) ;;
             *) vx_cf_migration_mutable_recovery_path "$relative" \
                 || [[ -n "${listed[$relative]+x}" ]] || return 1 ;;
         esac
@@ -645,7 +646,10 @@ vx_cf_migration_artifact_validate() {
     vx_cf_migration_manifest_verify "$artifact" || return 1
     vx_cf_migration_secure_file "$artifact/mapping.json" || return 1
     vx_cf_migration_results_validate "$artifact" || return 1
-    vx_cf_migration_recovery_load "$artifact"
+    vx_cf_migration_recovery_load "$artifact" || return 1
+    [[ ! -e "$artifact/rollback-admission.tsv" \
+        && ! -L "$artifact/rollback-admission.tsv" ]] \
+        || vx_cf_migration_rollback_admission_validate "$artifact"
 }
 
 vx_cf_migration_exact_row() {
@@ -1134,6 +1138,7 @@ vx_cf_migration_prepare_build() {
         | vx_cf_migration_atomic_write "$stage/manifest.sha256" || return 1
     vx_cf_migration_manifest_verify "$stage" || return 1
     vx_cf_migration_results_initialize "$stage" || return 1
+    vx_cf_migration_rollback_admission_write "$stage" || return 1
     vx_cf_migration_artifact_validate "$stage" || return 1
     vx_cf_migration_live_matches_plan "$stage" || {
         VX_CF_MIGRATION_STATUS=drift
@@ -2437,6 +2442,7 @@ vx_cf_migration_apply_item_locked() {
         && [[ "$VX_CF_MIGRATION_SOURCE_ROW" == "$target_row" ]] || return 1
     vx_cf_migration_results_set "$artifact" "$item" renamed '' '' "$target" \
         || return 1
+    vx_cf_migration_rollback_admission_refresh "$artifact" || return 1
 
     VX_CF_MIGRATION_ACTIVE_ARTIFACT=$artifact
     VX_CF_MIGRATION_ACTIVE_ITEM=$item
@@ -2473,7 +2479,8 @@ vx_cf_migration_apply_item_locked() {
     vx_cf_migration_results_set "$artifact" "$item" provisioned \
         "$VX_CF_MIGRATION_ITEM_RECORD_ID" \
         "$VX_CF_MIGRATION_ITEM_CERTIFICATE_ID" "$target" || return 1
-    vx_cf_migration_reconcile_user_owned_counters "$artifact" "$user"
+    vx_cf_migration_reconcile_user_owned_counters "$artifact" "$user" \
+        && vx_cf_migration_rollback_admission_refresh "$artifact"
 }
 
 vx_cf_migration_verify_and_finish_locked() {
@@ -2512,6 +2519,197 @@ vx_cf_migration_scope_matches() {
     /usr/bin/cmp -s "$temporary" "$artifact/scope-users.tsv" && result=0
     /usr/bin/rm -f -- "$temporary"
     return "$result"
+}
+
+vx_cf_migration_expected_web_scope_matches() {
+    local artifact=$1 user temporary item row_user source target hostnames address
+    local retain state original target_row target_ssl live details expected
+
+    while IFS= read -r user || [[ -n "$user" ]]; do
+        [[ -n "$user" ]] || continue
+        temporary=$(/usr/bin/mktemp "$(vx_cf_migration_root)/.rollback-web.XXXXXX") \
+            || return 1
+        vx_cf_secure_path "$temporary" 0600 || {
+            /usr/bin/rm -f -- "$temporary"
+            return 1
+        }
+        /usr/bin/cp -- "$artifact/snapshots/users/$user/web.conf" "$temporary" \
+            || { /usr/bin/rm -f -- "$temporary"; return 1; }
+        while IFS=$'\t' read -r item row_user source target hostnames address \
+            retain; do
+            [[ "$item" != ITEM && "$row_user" == "$user" ]] || continue
+            vx_cf_migration_row_from_file \
+                "$artifact/snapshots/users/$user/web.conf" "$source" \
+                || { /usr/bin/rm -f -- "$temporary"; return 1; }
+            original=$VX_CF_MIGRATION_SOURCE_ROW
+            vx_cf_migration_target_row "$source" "$target" "$original" \
+                || { /usr/bin/rm -f -- "$temporary"; return 1; }
+            target_row=$VX_CF_MIGRATION_TARGET_ROW
+            vx_cf_migration_row_replace "$target_row" SSL yes \
+                || { /usr/bin/rm -f -- "$temporary"; return 1; }
+            target_ssl=$VX_CF_MIGRATION_ROW
+            vx_cf_migration_results_get "$artifact" "$item" \
+                || { /usr/bin/rm -f -- "$temporary"; return 1; }
+            state=$VX_CF_MIGRATION_ITEM_STATE
+            live=''
+            if vx_cf_migration_exact_row "$user" "$source"; then
+                live=$VX_CF_MIGRATION_SOURCE_ROW
+            elif vx_cf_migration_exact_row "$user" "$target"; then
+                live=$VX_CF_MIGRATION_SOURCE_ROW
+            fi
+            case "$state" in
+                pending|rolled_back)
+                    [[ "$live" == "$original" ]] \
+                        || { /usr/bin/rm -f -- "$temporary"; return 1; }
+                    ;;
+                renamed|record_ready)
+                    [[ "$live" == "$target_row" ]] \
+                        || { /usr/bin/rm -f -- "$temporary"; return 1; }
+                    ;;
+                provisioned|applied)
+                    [[ "$live" == "$target_ssl" ]] \
+                        || { /usr/bin/rm -f -- "$temporary"; return 1; }
+                    ;;
+                renaming)
+                    [[ "$live" == "$original" || "$live" == "$target_row" ]] \
+                        || { /usr/bin/rm -f -- "$temporary"; return 1; }
+                    ;;
+                rolling_back|recovery_required)
+                    [[ "$live" == "$original" || "$live" == "$target_row" \
+                        || "$live" == "$target_ssl" ]] \
+                        || { /usr/bin/rm -f -- "$temporary"; return 1; }
+                    ;;
+                *)
+                    /usr/bin/rm -f -- "$temporary"
+                    return 1
+                    ;;
+            esac
+            if [[ "$live" != "$original" ]]; then
+                vx_cf_migration_replace_exact_row "$temporary" "$original" "$live" \
+                    || { /usr/bin/rm -f -- "$temporary"; return 1; }
+            fi
+        done <"$artifact/plan.tsv"
+        /usr/bin/cmp -s -- "$temporary" "$VESTA/data/users/$user/web.conf" \
+            || { /usr/bin/rm -f -- "$temporary"; return 1; }
+        /usr/bin/rm -f -- "$temporary"
+        vx_cf_migration_user_metadata "$artifact" "$user" WEB || return 1
+        [[ "$VX_CF_MIGRATION_USER_STATE" == present ]] || return 1
+        details=$(/usr/bin/stat -c '%a:%u:%g' \
+            "$VESTA/data/users/$user/web.conf") || return 1
+        expected="$VX_CF_MIGRATION_USER_MODE:$VX_CF_MIGRATION_USER_UID:$VX_CF_MIGRATION_USER_GID"
+        [[ "$details" == "$expected" ]] || return 1
+    done <"$artifact/scope-users.tsv"
+    return 0
+}
+
+vx_cf_migration_rollback_admission_validate() {
+    local artifact=$1 file line schema plan manifest
+    local user web rendered_kind rendered count=0 scope_count
+    local -A seen=()
+
+    file="$artifact/rollback-admission.tsv"
+    vx_cf_migration_secure_file "$file" || return 1
+    IFS= read -r line <"$file" || return 1
+    vx_cf_migration_validate_row "$line" || return 1
+    vx_cf_migration_row_value "$line" SCHEMA || return 1
+    schema=$VX_CF_MIGRATION_ROW_VALUE
+    vx_cf_migration_row_value "$line" PLAN_SHA256 || return 1
+    plan=$VX_CF_MIGRATION_ROW_VALUE
+    vx_cf_migration_row_value "$line" MANIFEST_SHA256 || return 1
+    manifest=$VX_CF_MIGRATION_ROW_VALUE
+    [[ "$schema" == "$VX_CF_MIGRATION_SCHEMA" \
+        && "$plan" == "$VX_CF_MIGRATION_PLAN_SHA" \
+        && "$manifest" == "$VX_CF_MIGRATION_MANIFEST_SHA" ]] || return 1
+    IFS=$'\t' read -r user web rendered_kind rendered \
+        < <(/usr/bin/sed -n '2p' "$file") || return 1
+    [[ "$user" == USER && "$web" == WEB_FINGERPRINT \
+        && "$rendered_kind" == RENDERED_KIND \
+        && "$rendered" == RENDERED_FINGERPRINT ]] || return 1
+    /usr/bin/awk -F '\t' 'NR > 1 && NF != 4 { exit 1 }' "$file" || return 1
+    while IFS=$'\t' read -r user web rendered_kind rendered; do
+        vx_cf_migration_valid_user "$user" \
+            && [[ -z "${seen[$user]+x}" \
+                && "$web" =~ ^[a-f0-9]{64}$ \
+                && "$rendered_kind" =~ ^(directory|missing)$ \
+                && ( "$rendered_kind" == directory \
+                    && "$rendered" =~ ^[a-f0-9]{64}$ \
+                    || "$rendered_kind" == missing && "$rendered" == - ) ]] \
+            || return 1
+        /usr/bin/grep -Fqx -- "$user" "$artifact/scope-users.tsv" || return 1
+        seen[$user]=1
+        ((count++))
+    done < <(/usr/bin/tail -n +3 "$file")
+    scope_count=$(/usr/bin/awk 'NF { count++ } END { print count + 0 }' \
+        "$artifact/scope-users.tsv") || return 1
+    (( count == scope_count ))
+}
+
+vx_cf_migration_rollback_admission_write() {
+    local artifact=$1 root temporary user web kind fingerprint rendered result=1
+
+    root=$(vx_cf_migration_root)
+    vx_cf_migration_secure_directory "$root" || return 1
+    temporary=$(/usr/bin/mktemp "$root/.rollback-admission.XXXXXX") || return 1
+    vx_cf_secure_path "$temporary" 0600 || {
+        /usr/bin/rm -f -- "$temporary"
+        return 1
+    }
+    {
+        printf "SCHEMA='%s' PLAN_SHA256='%s' MANIFEST_SHA256='%s'\n" \
+            "$VX_CF_MIGRATION_SCHEMA" "$VX_CF_MIGRATION_PLAN_SHA" \
+            "$VX_CF_MIGRATION_MANIFEST_SHA"
+        printf 'USER\tWEB_FINGERPRINT\tRENDERED_KIND\tRENDERED_FINGERPRINT\n'
+    } >"$temporary" || { /usr/bin/rm -f -- "$temporary"; return 1; }
+    vx_cf_migration_homedir || { /usr/bin/rm -f -- "$temporary"; return 1; }
+    while IFS= read -r user || [[ -n "$user" ]]; do
+        [[ -n "$user" ]] || continue
+        IFS=$'\t' read -r kind web < <(vx_cf_migration_path_fingerprint \
+            "$VESTA/data/users/$user/web.conf") \
+            || { /usr/bin/rm -f -- "$temporary"; return 1; }
+        [[ "$kind" == file && "$web" =~ ^[a-f0-9]{64}$ ]] \
+            || { /usr/bin/rm -f -- "$temporary"; return 1; }
+        rendered="$VX_CF_MIGRATION_HOME/$user/conf/web"
+        IFS=$'\t' read -r kind fingerprint \
+            < <(vx_cf_migration_path_fingerprint "$rendered") \
+            || { /usr/bin/rm -f -- "$temporary"; return 1; }
+        [[ "$kind" == directory || "$kind" == missing ]] \
+            || { /usr/bin/rm -f -- "$temporary"; return 1; }
+        printf '%s\t%s\t%s\t%s\n' "$user" "$web" "$kind" "$fingerprint" \
+            >>"$temporary" \
+            || { /usr/bin/rm -f -- "$temporary"; return 1; }
+    done <"$artifact/scope-users.tsv"
+    if vx_cf_migration_atomic_write "$artifact/rollback-admission.tsv" \
+        <"$temporary" \
+        && vx_cf_migration_rollback_admission_validate "$artifact"; then
+        result=0
+    fi
+    /usr/bin/rm -f -- "$temporary"
+    return "$result"
+}
+
+vx_cf_migration_rollback_admission_matches() {
+    local artifact=$1 user expected_web expected_kind expected_rendered
+    local kind actual rendered
+
+    vx_cf_migration_rollback_admission_validate "$artifact" \
+        && vx_cf_migration_homedir || return 1
+    while IFS=$'\t' read -r user expected_web expected_kind expected_rendered; do
+        IFS=$'\t' read -r kind actual < <(vx_cf_migration_path_fingerprint \
+            "$VESTA/data/users/$user/web.conf") || return 1
+        [[ "$kind" == file && "$actual" == "$expected_web" ]] || return 1
+        rendered="$VX_CF_MIGRATION_HOME/$user/conf/web"
+        IFS=$'\t' read -r kind actual \
+            < <(vx_cf_migration_path_fingerprint "$rendered") || return 1
+        [[ "$kind" == "$expected_kind" \
+            && "$actual" == "$expected_rendered" ]] || return 1
+    done < <(/usr/bin/tail -n +3 "$artifact/rollback-admission.tsv")
+}
+
+vx_cf_migration_rollback_admission_refresh() {
+    local artifact=$1
+
+    vx_cf_migration_expected_web_scope_matches "$artifact" \
+        && vx_cf_migration_rollback_admission_write "$artifact"
 }
 
 vx_cf_migration_applied_matches_locked() {
@@ -2863,6 +3061,7 @@ vx_cf_migration_restore_failed_item_locked() {
         || return 1
     vx_cf_migration_mapping_update "$artifact" "$target" failed restored \
         || return 1
+    vx_cf_migration_rollback_admission_refresh "$artifact" || return 1
     vx_cf_migration_context_clear "$artifact" "$item"
 }
 
@@ -2884,7 +3083,8 @@ vx_cf_migration_apply_locked() {
     }
     vx_cf_migration_state_counts "$artifact" || return 12
     if (( VX_CF_MIGRATION_COUNT_APPLIED == VX_CF_MIGRATION_PENDING )); then
-        vx_cf_migration_applied_matches_locked "$artifact" || {
+        vx_cf_migration_applied_matches_locked "$artifact" \
+            && vx_cf_migration_rollback_admission_matches "$artifact" || {
             VX_CF_MIGRATION_STATUS=recovery_required
             vx_cf_migration_recovery_set "$artifact" recovery_required \
                 "$((VX_CF_MIGRATION_FAILED + 1))" || :
@@ -2920,6 +3120,8 @@ vx_cf_migration_apply_locked() {
             == "$VX_CF_MIGRATION_VESTA_SHA" ]] \
             && vx_cf_migration_scope_matches "$artifact" \
             && vx_cf_migration_user_conf_scope_matches "$artifact" \
+            && vx_cf_migration_expected_web_scope_matches "$artifact" \
+            && vx_cf_migration_rollback_admission_matches "$artifact" \
             && vx_cf_status_locked && [[ "$VX_CF_STATUS" == ready ]] || {
                 VX_CF_MIGRATION_STATUS=drift
                 return 7
@@ -3002,6 +3204,10 @@ vx_cf_migration_apply_locked() {
                 vx_cf_migration_results_set "$artifact" "$item" applied \
                     "$VX_CF_MIGRATION_ITEM_RECORD_ID" \
                     "$VX_CF_MIGRATION_ITEM_CERTIFICATE_ID" "$target" \
+                    || item_failed=1
+            fi
+            if (( item_failed == 0 )); then
+                vx_cf_migration_rollback_admission_refresh "$artifact" \
                     || item_failed=1
             fi
         fi
@@ -3204,6 +3410,11 @@ vx_cf_migration_rollback_locked() {
         VX_CF_MIGRATION_STATUS=drift
         return 7
     }
+    vx_cf_migration_expected_web_scope_matches "$artifact" \
+        && vx_cf_migration_rollback_admission_matches "$artifact" || {
+            VX_CF_MIGRATION_STATUS=drift
+            return 7
+        }
     if ! vx_cf_migration_cleanup_provider_preflight_locked; then
         VX_CF_MIGRATION_STATUS=provider_not_ready
         return 15

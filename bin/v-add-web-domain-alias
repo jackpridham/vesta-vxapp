@@ -43,6 +43,8 @@ is_object_valid 'user' 'USER' "$user"
 is_object_unsuspended 'user' 'USER' "$user"
 is_object_valid 'web' 'DOMAIN' "$domain"
 is_object_unsuspended 'web' 'DOMAIN' "$domain"
+vx_cf_native_web_authority_preflight "$user" "$domain" \
+    || check_result "$E_CONNECT" "${VX_CF_STATUS:-state_error}"
 is_domain_new 'web' "$aliases"
 is_package_full 'WEB_ALIASES'
 

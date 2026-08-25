@@ -1603,6 +1603,46 @@ vx_cf_certificate_metadata_exists() {
     [[ -f "$path" && ! -L "$path" ]]
 }
 
+# Native web lifecycle commands may proceed without Cloudflare only when both
+# exact authority paths are absent. If either path exists, require the complete
+# owned record/certificate pair before any native state is changed.
+vx_cf_native_web_authority_preflight() {
+    local user=$1 domain=$2 record_path certificate_path
+    local record_present=no certificate_present=no
+
+    VX_CF_WEB_AUTHORITY_STATE=unmanaged
+    vx_cf_valid_user "$user" && vx_cf_valid_domain "$domain" \
+        || { VX_CF_STATUS=invalid_domain; return 1; }
+    record_path=$(vx_cf_record_path "$user" "$domain")
+    certificate_path=$(vx_cf_certificate_path "$user" "$domain")
+    [[ -e "$record_path" || -L "$record_path" ]] && record_present=yes
+    [[ -e "$certificate_path" || -L "$certificate_path" ]] \
+        && certificate_present=yes
+    if [[ "$record_present" == no && "$certificate_present" == no ]]; then
+        return 0
+    fi
+    [[ "$record_present" == yes && "$certificate_present" == yes ]] \
+        && vx_cf_metadata_exists "$user" "$domain" \
+        && vx_cf_certificate_metadata_exists "$user" "$domain" \
+        || { VX_CF_STATUS=ownership_mismatch; return 1; }
+    vx_cf_load_config || return 1
+    vx_cf_exact_web_row "$user" "$domain" || return 1
+    vx_cf_load_metadata "$user" "$domain" || return 1
+    vx_cf_load_certificate_metadata "$user" "$domain" || return 1
+    [[ "$VX_CF_META_USER" == "$user" \
+        && "$VX_CF_META_DOMAIN" == "$domain" \
+        && "$VX_CF_CERT_META_USER" == "$user" \
+        && "$VX_CF_CERT_META_DOMAIN" == "$domain" \
+        && "$VX_CF_META_ZONE_ID" == "$VX_CF_ZONE_ID" \
+        && "$VX_CF_CERT_META_ZONE_ID" == "$VX_CF_ZONE_ID" ]] \
+        || { VX_CF_STATUS=ownership_mismatch; return 1; }
+    vx_cf_managed_domain_matches_zone "$domain" "$VX_CF_ZONE_NAME" \
+        || { VX_CF_STATUS=ownership_mismatch; return 1; }
+    [[ ",$VX_CF_CERT_META_HOSTNAMES," == *",$domain,"* ]] \
+        || { VX_CF_STATUS=certificate_drift; return 1; }
+    VX_CF_WEB_AUTHORITY_STATE=managed
+}
+
 vx_cf_valid_certificate_id() {
     [[ "$1" =~ ^[A-Za-z0-9_-]{1,64}$ ]]
 }
@@ -2476,6 +2516,40 @@ vx_cf_origin_cleanup_locked() {
 
 vx_cf_origin_cleanup() {
     vx_cf_with_lock vx_cf_origin_cleanup_locked "$1" "$2"
+}
+
+vx_cf_native_web_cleanup_locked() {
+    local user=$1 domain=$2 record_id address
+    local record_status certificate_status failure
+
+    vx_cf_native_web_authority_preflight "$user" "$domain" || return 1
+    if [[ "$VX_CF_WEB_AUTHORITY_STATE" == unmanaged ]]; then
+        VX_CF_STATUS=unchanged
+        return 0
+    fi
+    record_id=$VX_CF_META_RECORD_ID
+    address=$VX_CF_META_ADDRESS
+    vx_cf_cleanup_locked "$user" "$domain" || return 1
+    record_status=$VX_CF_STATUS
+    if ! vx_cf_origin_cleanup_locked "$user" "$domain"; then
+        failure=${VX_CF_STATUS:-provider_error}
+        # Primary deletion is already confirmed, but retain the complete exact
+        # authority pair until Origin cleanup can be retried successfully.
+        vx_cf_write_metadata "$user" "$domain" "$record_id" "$address" \
+            || return 1
+        VX_CF_STATUS=$failure
+        return 1
+    fi
+    certificate_status=$VX_CF_STATUS
+    if [[ "$record_status" == deleted || "$certificate_status" == deleted ]]; then
+        VX_CF_STATUS=deleted
+    else
+        VX_CF_STATUS=unchanged
+    fi
+}
+
+vx_cf_native_web_cleanup() {
+    vx_cf_with_lock vx_cf_native_web_cleanup_locked "$1" "$2"
 }
 
 vx_cf_generated_label() {

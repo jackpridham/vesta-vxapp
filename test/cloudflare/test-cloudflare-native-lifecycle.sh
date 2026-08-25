@@ -59,6 +59,76 @@ expect_failure() {
         || fail "$description (expected exit $expected, got $result: $(<"$work_root/failure.out"))"
 }
 
+setup_degraded_authority() {
+    local scenario=$1 record_path certificate_path symlink_target
+
+    clear_metadata
+    record_path="$vesta_root/data/vx/cloudflare/records/alice/$domain.conf"
+    certificate_path="$vesta_root/data/vx/cloudflare/certificates/alice/$domain.conf"
+    case "$scenario" in
+        record-only)
+            write_record_metadata
+            ;;
+        certificate-only)
+            write_certificate_metadata
+            ;;
+        malformed)
+            write_record_metadata
+            write_certificate_metadata
+            printf "BROKEN='yes'\n" >"$record_path"
+            ;;
+        symlink)
+            write_record_metadata
+            write_certificate_metadata
+            symlink_target="$work_root/degraded-record-metadata"
+            /usr/bin/rm -f -- "$symlink_target"
+            /usr/bin/mv -- "$record_path" "$symlink_target"
+            /usr/bin/ln -s "$symlink_target" "$record_path"
+            ;;
+        *)
+            fail "unknown degraded authority fixture: $scenario"
+            ;;
+    esac
+}
+
+assert_degraded_lifecycle_blocked() {
+    local operation=$1 scenario=$2 snapshot="$work_root/web-before"
+    local -a command
+
+    reset_domain no no
+    if [[ "$operation" == delete-alias ]]; then
+        /usr/bin/sed -i \
+            "s/ ALIAS=''/ ALIAS='custom.example.test'/" \
+            "$vesta_root/data/users/alice/web.conf"
+    fi
+    setup_degraded_authority "$scenario"
+    /usr/bin/cp -- "$vesta_root/data/users/alice/web.conf" "$snapshot"
+    : >"$vesta_root/native-lifecycle.log"
+    case "$operation" in
+        delete)
+            command=(run_vesta "$repo_root/bin/v-delete-web-domain" \
+                alice "$domain" no)
+            ;;
+        add-alias)
+            command=(run_vesta "$repo_root/bin/v-add-web-domain-alias" \
+                alice "$domain" custom.example.test no)
+            ;;
+        delete-alias)
+            command=(run_vesta "$repo_root/bin/v-delete-web-domain-alias" \
+                alice "$domain" custom.example.test no)
+            ;;
+        *)
+            fail "unknown lifecycle operation: $operation"
+            ;;
+    esac
+    expect_failure 15 \
+        "$operation accepted $scenario Cloudflare authority" "${command[@]}"
+    /usr/bin/cmp -s "$snapshot" "$vesta_root/data/users/alice/web.conf" \
+        || fail "$operation mutated native state for $scenario authority"
+    [[ ! -s "$vesta_root/native-lifecycle.log" ]] \
+        || fail "$operation reached mutation for $scenario authority"
+}
+
 write_record_metadata() {
     local metadata="$vesta_root/data/vx/cloudflare/records/alice/$domain.conf"
     local metadata_zone=${1:-$zone_id}
@@ -126,6 +196,8 @@ install_old_certificate_files() {
     "$vesta_root/func/main.sh"
 /usr/bin/ln -s "$repo_root/test/cloudflare/fixtures/native-lifecycle-cloudflare-stub" \
     "$vesta_root/func/vx/cloudflare/main.sh"
+/usr/bin/ln -s "$repo_root/func/vx/cloudflare/web-hooks.sh" \
+    "$vesta_root/func/vx/cloudflare/web-hooks.sh"
 : >"$vesta_root/func/domain.sh"
 : >"$vesta_root/func/ip.sh"
 
@@ -133,7 +205,8 @@ for command in v-change-web-domain-ip v-delete-web-domains \
     v-add-vx-cloudflare-web-alias v-change-web-domain-sslcert \
     v-add-web-domain-ssl v-delete-web-domain-ssl v-add-letsencrypt-domain \
     v-delete-letsencrypt-domain v-list-vx-cloudflare-web-domain-status \
-    v-delete-vx-cloudflare-web-domain; do
+    v-delete-vx-cloudflare-web-domain \
+    v-reconcile-vx-cloudflare-origin-ssl; do
     /usr/bin/ln -s "$repo_root/bin/$command" "$vesta_root/bin/$command"
 done
 
@@ -211,6 +284,7 @@ expect_failure 10 'unowned generated alias target was accepted' run_vesta \
 [[ ! -s "$vesta_root/native-lifecycle.log" ]] \
     || fail 'unowned alias target reached the native alias command'
 write_record_metadata
+write_certificate_metadata
 run_vesta "$vesta_root/bin/v-add-vx-cloudflare-web-alias" alice "$domain" \
     custom.example.test no >/dev/null \
     || fail 'exact metadata-owned alias target was rejected'
@@ -384,6 +458,35 @@ expect_failure 10 'managed LetsEncrypt delete was accepted with internal capabil
     run_vesta_internal_ssl "$vesta_root/bin/v-delete-letsencrypt-domain" \
     alice "$domain" no
 
+# Native deletion and both generic alias paths fail before any native/provider
+# mutation whenever either exact authority path is degraded.
+for authority_scenario in record-only certificate-only malformed symlink; do
+    for lifecycle_operation in delete add-alias delete-alias; do
+        assert_degraded_lifecycle_blocked \
+            "$lifecycle_operation" "$authority_scenario"
+    done
+done
+
+# A complete exact pair retains the ordinary generic alias lifecycle.
+reset_domain no no
+clear_metadata
+write_record_metadata
+write_certificate_metadata
+run_vesta "$repo_root/bin/v-add-web-domain-alias" alice "$domain" \
+    custom.example.test no >/dev/null \
+    || fail 'exact managed generic alias addition failed'
+assert_file_contains "$vesta_root/data/users/alice/web.conf" \
+    "ALIAS='custom.example.test'" \
+    'exact managed generic alias addition did not update native state'
+assert_file_contains "$vesta_root/native-lifecycle.log" \
+    "origin-reconcile $domain" \
+    'exact managed generic alias addition omitted Origin reconciliation'
+run_vesta "$repo_root/bin/v-delete-web-domain-alias" alice "$domain" \
+    custom.example.test no >/dev/null \
+    || fail 'exact managed generic alias deletion failed'
+assert_file_contains "$vesta_root/data/users/alice/web.conf" "ALIAS=''" \
+    'exact managed generic alias deletion did not update native state'
+
 # Both managed deletion entry points confirm the exact primary DNS deletion
 # before Origin certificate revocation. A later Origin failure leaves native
 # state and certificate authority intact for an idempotent retry.
@@ -411,8 +514,8 @@ expect_failure 15 'native Origin cleanup failure did not propagate' run_vesta \
 assert_file_order "$vesta_root/native-lifecycle.log" \
     "cleanup-primary $domain" "cleanup-origin $domain" \
     'native failure path revoked Origin before primary DNS readback'
-[[ ! -e "$vesta_root/data/vx/cloudflare/records/alice/$domain.conf" ]] \
-    || fail 'confirmed primary metadata remained after its deletion'
+[[ -f "$vesta_root/data/vx/cloudflare/records/alice/$domain.conf" ]] \
+    || fail 'Origin failure did not retain complete deletion retry authority'
 [[ -f "$vesta_root/data/vx/cloudflare/certificates/alice/$domain.conf" ]] \
     || fail 'failed Origin cleanup lost exact certificate authority'
 assert_file_contains "$vesta_root/data/users/alice/web.conf" "DOMAIN='$domain'" \
@@ -420,9 +523,9 @@ assert_file_contains "$vesta_root/data/users/alice/web.conf" "DOMAIN='$domain'" 
 : >"$vesta_root/native-lifecycle.log"
 run_vesta "$repo_root/bin/v-delete-web-domain" alice "$domain" no \
     >/dev/null || fail 'native managed deletion retry failed'
-if /usr/bin/grep -Fq 'cleanup-primary ' "$vesta_root/native-lifecycle.log"; then
-    fail 'native retry repeated an already confirmed primary deletion'
-fi
+assert_file_order "$vesta_root/native-lifecycle.log" \
+    "cleanup-primary $domain" "cleanup-origin $domain" \
+    'native retry did not revalidate primary deletion before Origin cleanup'
 assert_file_contains "$vesta_root/native-lifecycle.log" \
     "cleanup-origin $domain" 'native retry did not resume Origin cleanup'
 

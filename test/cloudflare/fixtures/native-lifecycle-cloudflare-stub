@@ -11,11 +11,15 @@ vx_cf_certificate_path() {
 }
 
 vx_cf_metadata_exists() {
-    [ -f "$(vx_cf_record_path "$1" "$2")" ]
+    local path
+    path=$(vx_cf_record_path "$1" "$2")
+    [ -f "$path" ] && [ ! -L "$path" ]
 }
 
 vx_cf_certificate_metadata_exists() {
-    [ -f "$(vx_cf_certificate_path "$1" "$2")" ]
+    local path
+    path=$(vx_cf_certificate_path "$1" "$2")
+    [ -f "$path" ] && [ ! -L "$path" ]
 }
 
 vx_cf_load_config() {
@@ -64,6 +68,43 @@ vx_cf_exact_web_row() {
     count=$(/usr/bin/grep -Fc "DOMAIN='$2'" \
         "$VESTA/data/users/$1/web.conf")
     [ "$count" -eq 1 ]
+}
+
+vx_cf_native_web_authority_preflight() {
+    local user=$1 domain=$2 record_path certificate_path
+    local record_present=no certificate_present=no
+
+    VX_CF_WEB_AUTHORITY_STATE=unmanaged
+    record_path=$(vx_cf_record_path "$user" "$domain")
+    certificate_path=$(vx_cf_certificate_path "$user" "$domain")
+    if [ -e "$record_path" ] || [ -L "$record_path" ]; then
+        record_present=yes
+    fi
+    if [ -e "$certificate_path" ] || [ -L "$certificate_path" ]; then
+        certificate_present=yes
+    fi
+    if [ "$record_present" = no ] && [ "$certificate_present" = no ]; then
+        return 0
+    fi
+    [ "$record_present" = yes ] && [ "$certificate_present" = yes ] \
+        && vx_cf_metadata_exists "$user" "$domain" \
+        && vx_cf_certificate_metadata_exists "$user" "$domain" \
+        || { VX_CF_STATUS=ownership_mismatch; return 1; }
+    vx_cf_load_config || return 1
+    vx_cf_exact_web_row "$user" "$domain" \
+        || { VX_CF_STATUS=web_domain_not_found; return 1; }
+    vx_cf_load_metadata "$user" "$domain" || return 1
+    vx_cf_load_certificate_metadata "$user" "$domain" || return 1
+    [ "$VX_CF_META_USER" = "$user" ] \
+        && [ "$VX_CF_META_DOMAIN" = "$domain" ] \
+        && [ "$VX_CF_CERT_META_USER" = "$user" ] \
+        && [ "$VX_CF_CERT_META_DOMAIN" = "$domain" ] \
+        && [ "$VX_CF_META_ZONE_ID" = "$VX_CF_ZONE_ID" ] \
+        && [ "$VX_CF_CERT_META_ZONE_ID" = "$VX_CF_ZONE_ID" ] \
+        && vx_cf_managed_domain_matches_zone "$domain" "$VX_CF_ZONE_NAME" \
+        && [[ ",$VX_CF_CERT_META_HOSTNAMES," == *",$domain,"* ]] \
+        || { VX_CF_STATUS=ownership_mismatch; return 1; }
+    VX_CF_WEB_AUTHORITY_STATE=managed
 }
 
 vx_cf_reconcile() {
@@ -131,6 +172,27 @@ vx_cf_origin_cleanup() {
     else
         VX_CF_STATUS=unchanged
     fi
+}
+
+vx_cf_native_web_cleanup() {
+    local user=$1 domain=$2 record_path record_snapshot failure
+
+    vx_cf_native_web_authority_preflight "$user" "$domain" || return 1
+    if [ "$VX_CF_WEB_AUTHORITY_STATE" = unmanaged ]; then
+        VX_CF_STATUS=unchanged
+        return 0
+    fi
+    record_path=$(vx_cf_record_path "$user" "$domain")
+    record_snapshot=$(<"$record_path")
+    vx_cf_cleanup "$user" "$domain" || return 1
+    if ! vx_cf_origin_cleanup "$user" "$domain"; then
+        failure=${VX_CF_STATUS:-provider_error}
+        /usr/bin/mkdir -p "${record_path%/*}" || return 1
+        printf '%s\n' "$record_snapshot" >"$record_path" || return 1
+        VX_CF_STATUS=$failure
+        return 1
+    fi
+    VX_CF_STATUS=deleted
 }
 
 vx_cf_emit_status() {

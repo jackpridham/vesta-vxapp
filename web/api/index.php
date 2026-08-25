@@ -81,8 +81,9 @@ if (isset($_POST['user']) || isset($_POST['hash'])) {
     }
 
     // Product-level website creation follows the VX managed provider. The
-    // legacy API argument remains accepted for compatibility, but it is never
-    // allowed to choose the primary hostname in Cloudflare-managed mode.
+    // legacy API argument remains accepted for compatibility, but it never
+    // chooses the primary hostname; creation fails closed until that provider
+    // is active.
     $managed_cmdquery = '';
     $requested_cmd = (isset($_POST['cmd']) && !is_array($_POST['cmd']))
         ? $_POST['cmd']
@@ -97,36 +98,38 @@ if (isset($_POST['user']) || isset($_POST['hash'])) {
             exit;
         }
 
-        if ($provider_config['config']['VX_MANAGED_DNS_PROVIDER'] === 'cloudflare-managed') {
-            foreach (array('arg1', 'arg2', 'arg3', 'arg4', 'arg5', 'arg6', 'arg7', 'arg8', 'arg9') as $argument_name) {
-                if (isset($_POST[$argument_name]) && is_array($_POST[$argument_name])) {
-                    echo 'Error: invalid managed website argument';
-                    exit;
-                }
+        if ($provider_config['config']['VX_MANAGED_DNS_PROVIDER'] !== 'cloudflare-managed') {
+            echo 'Error: managed DNS provider is not ready';
+            exit;
+        }
+        foreach (array('arg1', 'arg2', 'arg3', 'arg4', 'arg5', 'arg6', 'arg7', 'arg8', 'arg9') as $argument_name) {
+            if (isset($_POST[$argument_name]) && is_array($_POST[$argument_name])) {
+                echo 'Error: invalid managed website argument';
+                exit;
             }
-            $managed_user = isset($_POST['arg1']) ? (string) $_POST['arg1'] : '';
-            if ($requested_cmd === 'v-add-web-domain') {
-                $managed_ip = isset($_POST['arg3']) ? (string) $_POST['arg3'] : '';
-                $managed_restart = !empty($_POST['arg4']) ? (string) $_POST['arg4'] : 'yes';
-                $managed_aliases = !empty($_POST['arg5']) ? (string) $_POST['arg5'] : 'none';
-                $managed_proxy_ext = !empty($_POST['arg6']) ? (string) $_POST['arg6'] : 'none';
-            } else {
-                $managed_ip = isset($_POST['arg3']) ? (string) $_POST['arg3'] : '';
-                $managed_restart = !empty($_POST['arg4']) ? (string) $_POST['arg4'] : 'yes';
-                $managed_aliases = 'none';
-                $managed_proxy_ext = 'none';
-            }
-            $managed_cmdquery = VESTA_CMD.'v-add-vx-managed-web-domain '
-                .escapeshellarg($managed_user).' '
-                .escapeshellarg($managed_ip).' '
-                .escapeshellarg($managed_restart).' '
-                .escapeshellarg($managed_aliases).' '
-                .escapeshellarg($managed_proxy_ext);
-            if ($requested_cmd === 'v-add-web-domain') {
-                foreach (array('arg7', 'arg8', 'arg9') as $argument_name) {
-                    if (!empty($_POST[$argument_name])) {
-                        $managed_cmdquery .= ' '.escapeshellarg((string) $_POST[$argument_name]);
-                    }
+        }
+        $managed_user = isset($_POST['arg1']) ? (string) $_POST['arg1'] : '';
+        if ($requested_cmd === 'v-add-web-domain') {
+            $managed_ip = isset($_POST['arg3']) ? (string) $_POST['arg3'] : '';
+            $managed_restart = !empty($_POST['arg4']) ? (string) $_POST['arg4'] : 'yes';
+            $managed_aliases = !empty($_POST['arg5']) ? (string) $_POST['arg5'] : 'none';
+            $managed_proxy_ext = !empty($_POST['arg6']) ? (string) $_POST['arg6'] : 'none';
+        } else {
+            $managed_ip = isset($_POST['arg3']) ? (string) $_POST['arg3'] : '';
+            $managed_restart = !empty($_POST['arg4']) ? (string) $_POST['arg4'] : 'yes';
+            $managed_aliases = 'none';
+            $managed_proxy_ext = 'none';
+        }
+        $managed_cmdquery = VESTA_CMD.'v-add-vx-managed-web-domain '
+            .escapeshellarg($managed_user).' '
+            .escapeshellarg($managed_ip).' '
+            .escapeshellarg($managed_restart).' '
+            .escapeshellarg($managed_aliases).' '
+            .escapeshellarg($managed_proxy_ext);
+        if ($requested_cmd === 'v-add-web-domain') {
+            foreach (array('arg7', 'arg8', 'arg9') as $argument_name) {
+                if (!empty($_POST[$argument_name])) {
+                    $managed_cmdquery .= ' '.escapeshellarg((string) $_POST[$argument_name]);
                 }
             }
         }

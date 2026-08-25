@@ -29,10 +29,13 @@ is_system_enabled() { :; }
 is_object_unsuspended() { :; }
 is_object_value_empty() { :; }
 is_object_value_exist() { :; }
+is_domain_new() { :; }
+is_package_full() { :; }
 is_web_domain_cert_valid() { :; }
 is_ip_valid() { :; }
 format_domain() { :; }
 format_domain_idn() { :; }
+format_aliases() { :; }
 prepare_web_domain_values() { :; }
 log_history() { :; }
 log_event() { :; }

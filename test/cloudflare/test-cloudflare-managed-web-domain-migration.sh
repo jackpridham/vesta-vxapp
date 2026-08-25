@@ -500,7 +500,7 @@ mutations_before=$(provider_mutation_count)
 calls_before=$(/usr/bin/wc -l <"$cloudflare_root/stub-calls.log")
 prepare_output=$(run_migration \
     "$vesta_root/install/migrations/cloudflare-managed-web-domains/prepare.sh" \
-    "$plan" --user alice --json) || fail 'migration prepare failed'
+    "$plan" --json) || fail 'migration prepare failed'
 assert_sanitized_json "$prepare_output" prepared 1 0 0 0
 assert_native_matches_snapshot "$native_snapshot"
 mutations_after=$(provider_mutation_count)
@@ -683,6 +683,87 @@ assert_eq "$(native_mutation_count)" "$native_before" \
 assert_eq "$(/usr/bin/sha256sum "$vesta_root/data/users/alice/web.conf" \
     | /usr/bin/cut -d ' ' -f1)" "$web_sha_before" \
     'idempotent apply changed authoritative web state'
+
+skipped_web="$vesta_root/data/users/$empty_user/web.conf"
+/usr/bin/cp -a -- "$skipped_web" "$work_root/skipped-web-before-drift.conf"
+printf "DOMAIN='unrelated.example.test' ALIAS='' SSL='no' LETSENCRYPT='no'\n" \
+    >>"$skipped_web"
+/usr/bin/cp -a -- "$skipped_web" "$work_root/skipped-web-with-drift.conf"
+mutations_before=$(provider_mutation_count)
+native_before=$(native_mutation_count)
+artifact_before=$(artifact_fingerprint "$artifact") \
+    || fail 'skipped-user drift artifact fingerprint failed'
+if rollback_output=$(run_migration \
+    "$vesta_root/install/migrations/cloudflare-managed-web-domains/rollback.sh" \
+    "$plan" --json); then
+    fail 'migration rollback accepted unrelated skipped-user web state'
+fi
+assert_sanitized_json "$rollback_output" drift 0 1 0 1
+assert_eq "$(provider_mutation_count)" "$mutations_before" \
+    'skipped-user web drift reached a provider mutation'
+assert_eq "$(native_mutation_count)" "$native_before" \
+    'skipped-user web drift reached a native mutation'
+/usr/bin/cmp -s -- "$work_root/skipped-web-with-drift.conf" "$skipped_web" \
+    || fail 'rejected rollback overwrote skipped-user web state'
+assert_eq "$(artifact_fingerprint "$artifact")" "$artifact_before" \
+    'skipped-user drift rejection mutated the protected plan'
+/usr/bin/cp -a -- "$work_root/skipped-web-before-drift.conf" "$skipped_web"
+
+/usr/bin/cp -a -- "$vesta_root/data/users/alice/web.conf" \
+    "$work_root/web-before-template-proxy-drift.conf"
+drifted_applied_row=${applied_row/"TPL='PHP-FPM-82'"/"TPL='default'"}
+drifted_applied_row=${drifted_applied_row/"PROXY='hosting'"/"PROXY='drift'"}
+[[ "$drifted_applied_row" != "$applied_row" ]] \
+    || fail 'template/proxy rollback drift fixture did not change'
+printf '%s\n' "$drifted_applied_row" \
+    >"$vesta_root/data/users/alice/web.conf"
+/usr/bin/cp -a -- "$vesta_root/data/users/alice/web.conf" \
+    "$work_root/web-with-template-proxy-drift.conf"
+mutations_before=$(provider_mutation_count)
+native_before=$(native_mutation_count)
+artifact_before=$(artifact_fingerprint "$artifact") \
+    || fail 'template/proxy drift artifact fingerprint failed'
+if rollback_output=$(run_migration \
+    "$vesta_root/install/migrations/cloudflare-managed-web-domains/rollback.sh" \
+    "$plan" --json); then
+    fail 'migration rollback accepted template/proxy web drift'
+fi
+assert_sanitized_json "$rollback_output" drift 0 1 0 1
+assert_eq "$(provider_mutation_count)" "$mutations_before" \
+    'template/proxy drift reached a provider mutation'
+assert_eq "$(native_mutation_count)" "$native_before" \
+    'template/proxy drift reached a native mutation'
+/usr/bin/cmp -s -- "$work_root/web-with-template-proxy-drift.conf" \
+    "$vesta_root/data/users/alice/web.conf" \
+    || fail 'rejected rollback overwrote template/proxy web drift'
+assert_eq "$(artifact_fingerprint "$artifact")" "$artifact_before" \
+    'template/proxy drift rejection mutated the protected plan'
+/usr/bin/cp -a -- "$work_root/web-before-template-proxy-drift.conf" \
+    "$vesta_root/data/users/alice/web.conf"
+
+rendered_drift="$home_root/alice/conf/web/$generated_domain.nginx.conf"
+/usr/bin/cp -a -- "$rendered_drift" "$work_root/rendered-before-drift.conf"
+printf 'operator rendered change\n' >>"$rendered_drift"
+/usr/bin/cp -a -- "$rendered_drift" "$work_root/rendered-with-drift.conf"
+mutations_before=$(provider_mutation_count)
+native_before=$(native_mutation_count)
+artifact_before=$(artifact_fingerprint "$artifact") \
+    || fail 'rendered drift artifact fingerprint failed'
+if rollback_output=$(run_migration \
+    "$vesta_root/install/migrations/cloudflare-managed-web-domains/rollback.sh" \
+    "$plan" --json); then
+    fail 'migration rollback accepted unrelated rendered web drift'
+fi
+assert_sanitized_json "$rollback_output" drift 0 1 0 1
+assert_eq "$(provider_mutation_count)" "$mutations_before" \
+    'rendered web drift reached a provider mutation'
+assert_eq "$(native_mutation_count)" "$native_before" \
+    'rendered web drift reached a native mutation'
+/usr/bin/cmp -s -- "$work_root/rendered-with-drift.conf" "$rendered_drift" \
+    || fail 'rejected rollback overwrote rendered web drift'
+assert_eq "$(artifact_fingerprint "$artifact")" "$artifact_before" \
+    'rendered drift rejection mutated the protected plan'
+/usr/bin/cp -a -- "$work_root/rendered-before-drift.conf" "$rendered_drift"
 
 printf 'access appended while managed\n' >>"$log_root/$generated_domain.log"
 printf 'bytes appended while managed\n' >>"$log_root/$generated_domain.bytes"

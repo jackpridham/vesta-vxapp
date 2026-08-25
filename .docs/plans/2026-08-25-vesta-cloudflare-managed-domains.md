@@ -13,7 +13,7 @@
 ## Locked scope
 
 - Vesta alone generates the ten-hex label. No create command or web request accepts a generated label or technical hostname.
-- `v-add-web-domain` remains compatible for root-owned restore/migration/upstream internals. The panel and authenticated Vesta API route product creation through `v-add-vx-managed-web-domain`, whose signature has no `DOMAIN` argument and ignores any caller-supplied primary-domain field.
+- `v-add-web-domain` remains compatible for root-owned restore/migration/upstream internals. The panel and authenticated Vesta API route product creation through `v-add-vx-managed-web-domain`, whose signature has no `DOMAIN` argument and ignores any caller-supplied primary-domain field. Authenticated API creation fails before native mutation unless the provider is exactly `cloudflare-managed`; it never falls through to caller-owned primary-domain creation.
 - Cloudflare automation manages only one A record in one configured zone. TTL is Cloudflare Auto (`1`) and proxying is enabled.
 - The web domain's Vesta IP/NAT state supplies the A-record target; callers cannot supply provider address, zone, record type, TTL, proxy policy, token, or record ID.
 - Custom domains are Vesta aliases. The DNS-page action attaches an already-configured external domain as an alias and does not alter that external domain's DNS. Before attachment, Vesta requires a token-accessible Cloudflare zone, an exact proxied A record to the selected Vesta ingress or proxied CNAME to the technical hostname, active edge-certificate coverage, and Full (strict) readback.
@@ -23,6 +23,7 @@
 - Token, zone ID, account email, ingress address, record ID, provider response, and authorization headers never appear in argv, environment, UI, logs, history, or command output.
 - Configuration and mutations are serialized with a provider lock. Configuration and record metadata are root-owned, non-symlink, mode `0600`; their parent directories are mode `0700`.
 - Website deletion first verifies and revokes the exact active and pending owned Origin CA certificate IDs and deletes the exact owned Cloudflare record, then removes metadata and continues the normal Vesta deletion. Custom-alias DNS is never deleted. Bulk/user deletion stops if a protected child cannot be cleaned up.
+- Native alias and website-delete paths treat either Cloudflare authority path as protected. Missing, partial, malformed, symlinked, mismatched-zone, or otherwise degraded record/certificate metadata fails closed before native mutation; coordinated cleanup retains the complete exact authority needed for a safe retry until both owned provider objects are confirmed absent.
 - Managed IP changes reconcile the exact Cloudflare A record and compensate the local Vesta change if provider convergence fails.
 - Manual SSL, certificate, and Let's Encrypt mutation surfaces fail closed for managed or degraded sites; only the narrowly scoped internal Origin CA capability may install or restore their certificate material.
 - Changing the configured primary zone is rejected while managed record or certificate metadata exists; same-zone token rotation remains supported.
@@ -167,26 +168,33 @@ git diff --check
 
 One independent reviewer checks the complete diff for specification, secret safety, exact deletion authority, and regressions. Any numbered blocker is fixed once and rechecked only against that blocker.
 
-- [ ] **Step 3: Commit and deploy the implementation**
+- [x] **Step 3: Commit and deploy the implementation**
 
-Commit the coherent feature, follow `.docs/user-guides/vesta-control-plane-releases.md`, install only the changed root-owned files on the approved development target, and prove file modes, PHP/Bash syntax, panel route availability, and sanitized status.
+The coherent feature was committed and installed as root-owned files on the approved development target, `debian@192.168.200.100`. Exact deployed hashes and modes, PHP/Bash syntax, panel routes, service health, and sanitized provider status were verified. No production host was changed.
 
-- [ ] **Step 4: Configure and run protected live acceptance**
+- [x] **Step 4: Configure and run protected live acceptance**
 
-Read the current protected credentials through the existing `vx cf` configuration surface, stream the three assignments over SSH into a temporary root-owned mode-`0600` input file, configure Vesta, select Cloudflare-managed mode, create and delete one disposable site, prove API readback, public DNS, and HTTPS through Full (strict), and record only sanitized acceptance evidence.
+Protected credentials were transferred through the existing `vx cf` configuration surface into a temporary root-owned mode-`0600` input, then removed. Development acceptance proved provider/API readback, exact proxied records, generated and alias HTTPS through Full (strict), migration apply/rollback, normal deletion, and exact provider cleanup without recording protected values.
 
 ## Acceptance checklist
 
-- [ ] Every panel-created site has a Vesta-generated immutable `s-<10 hex>.<zone>` primary hostname.
-- [ ] No caller can provide the generated label/hostname to the managed create surface.
-- [ ] Custom domains are aliases; the DNS-area action attaches an already configured external domain without mutating its DNS.
-- [ ] Managed create and alias mutation automatically install a certificate whose SANs exactly cover the generated hostname and all current aliases, so Cloudflare Full (strict) succeeds.
-- [ ] Private keys remain on Vesta; superseded/deleted exact Origin CA certificate IDs are revoked.
-- [ ] Technical A-record create/no-op/update/readback and exact idempotent deletion work.
-- [ ] Website deletion cannot leave a known owned record behind or delete any broader record set.
-- [ ] Provider selection is visible in Server → Configure → DNS while installed `DNS_SYSTEM` remains intact.
-- [ ] Credentials and provider values never leak through argv, environment, output, logs, UI, test evidence, or Git.
-- [ ] Stubbed validation, syntax checks, one combined audit, commit, protected configuration, and target acceptance complete without exposing credentials.
+- [x] Every panel-created site has a Vesta-generated immutable `s-<10 hex>.<zone>` primary hostname.
+- [x] No caller can provide the generated label/hostname to the managed create surface.
+- [x] Custom domains are aliases; the DNS-area action attaches an already configured external domain without mutating its DNS.
+- [x] Managed create and alias mutation automatically install a certificate whose SANs exactly cover the generated hostname and all current aliases, so Cloudflare Full (strict) succeeds.
+- [x] Private keys remain on Vesta; superseded/deleted exact Origin CA certificate IDs are revoked.
+- [x] Technical A-record create/no-op/update/readback and exact idempotent deletion work.
+- [x] Website deletion cannot leave a known owned record behind or delete any broader record set.
+- [x] Provider selection is visible in Server → Configure → DNS while installed `DNS_SYSTEM` remains intact.
+- [x] Credentials and provider values never leak through argv, environment, output, logs, UI, test evidence, or Git.
+- [x] Stubbed validation, syntax checks, one combined audit, one targeted remediation, commit, protected configuration, and target acceptance completed without exposing credentials.
+
+Development acceptance produced only bounded evidence: three disposable sites,
+two aliases, six HTTPS checks, two migrations, two deletions, and exact provider
+cleanup passed. All five Cloudflare suites, focused panel/proxy regressions, the
+limited production-readiness launcher, syntax checks, and diff checks passed on
+the owner repository. This is development evidence for `vesta-vxapp`; no
+production deployment occurred.
 
 ## Explicit migration milestone for existing websites
 
@@ -206,6 +214,10 @@ only after the configured provider reports exactly `ready`.
 - [x] `rollback.sh PLAN [--json]` reverses only transaction-owned authority and
   restores exact pre-migration website state. Failed verification remains in
   durable root-only `recovery_required` state.
+- [x] A protected plan-bound rollback-admission artifact fingerprints the whole
+  scoped authoritative `web.conf` and rendered web tree at each stable state.
+  Apply and rollback reject unrelated row, template/proxy, or rendered-tree
+  drift before provider or native mutation instead of overwriting it.
 - [x] A focused migration fixture proves dry-run non-mutation, suspended and
   multi-alias/proxy preservation, unique Vesta-owned allocation, all failure
   compensation boundaries, exact cleanup authority, idempotency, deletion
@@ -220,7 +232,10 @@ only after the configured provider reports exactly `ready`.
 - Owner: this Vesta repository owns hostname allocation, Cloudflare configuration, record lifecycle, panel creation, and external-domain alias attachment.
 - Consumer: downstream issue #139 must call the Vesta allocator/reconcile contract without receiving Cloudflare credentials or choosing the generated hostname.
 - Contract correction: downstream issue #145 currently allocates `s-<32 hex>` inside the consumer API. It must be revised before API-created Sites can claim the Vesta-owned `s-<10 hex>` contract requested here; this implementation does not silently mutate that separate repository.
-- Full production proof remains in downstream issue #227 after this owner implementation passes protected live acceptance.
+- The owner implementation has passed protected development acceptance only.
+  Downstream `api-vxapp` issues #139, #140, #142, #145, and #227 remain separate
+  consumer/release dependencies; none is satisfied by this repository's dev
+  deployment, and no production deployment is claimed.
 
 ## Non-goals
 

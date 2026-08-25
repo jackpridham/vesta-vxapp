@@ -30,16 +30,10 @@ is_format_valid aliases
 is_object_valid user USER "$user"
 is_object_unsuspended user USER "$user"
 is_object_valid web DOMAIN "$domain"
-vx_cf_load_config || check_result "$E_CONNECT" "${VX_CF_STATUS:-not_configured}"
-vx_cf_managed_domain_matches_zone "$domain" "$VX_CF_ZONE_NAME" \
-    || check_result "$E_FORBIDEN" 'target is not a managed web domain'
-vx_cf_metadata_exists "$user" "$domain" \
+vx_cf_native_web_authority_preflight "$user" "$domain" \
+    || check_result "$E_FORBIDEN" 'native_alias_failed'
+[[ "$VX_CF_WEB_AUTHORITY_STATE" == managed ]] \
     || check_result "$E_FORBIDEN" 'target is not an owned managed web domain'
-vx_cf_load_metadata "$user" "$domain" \
-    || check_result "$E_FORBIDEN" 'target managed-domain metadata is invalid'
-[[ "$VX_CF_META_USER" == "$user" && "$VX_CF_META_DOMAIN" == "$domain" \
-    && "$VX_CF_META_ZONE_ID" == "$VX_CF_ZONE_ID" ]] \
-    || check_result "$E_FORBIDEN" 'target managed-domain ownership does not match'
 vx_cf_managed_domain_matches_zone "$custom_domain" "$VX_CF_ZONE_NAME" \
     && check_result "$E_FORBIDEN" 'managed technical domains cannot be aliases'
 

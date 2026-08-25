@@ -313,6 +313,7 @@ domain_one=$(run_vesta "$vesta_root/bin/v-add-vx-managed-web-domain" alice \
     || fail 'record metadata mode is not 0600'
 certificate_metadata="$vesta_root/data/vx/cloudflare/certificates/alice/$domain_one.conf"
 [[ -f "$certificate_metadata" ]] || fail 'certificate metadata is missing'
+record_metadata="$vesta_root/data/vx/cloudflare/records/alice/$domain_one.conf"
 first_certificate_id=$(/usr/bin/sed -n \
     "s/^CERTIFICATE_ID='\([^']*\)'$/\1/p" "$certificate_metadata")
 [[ "$first_certificate_id" =~ ^[A-Za-z0-9_-]{1,64}$ ]] \
@@ -326,6 +327,39 @@ first_certificate_id=$(/usr/bin/sed -n \
 /usr/bin/grep -q "native-ssl .* $domain_one internal=1$" \
     "$vesta_root/data/vx/cloudflare/native-calls.log" \
     || fail 'Origin SSL install omitted the exact internal capability'
+
+authority_status() {
+    VESTA="$vesta_root" /bin/bash -c '
+        source "$VESTA/func/vx/cloudflare/main.sh"
+        source "$VESTA/conf/vesta.conf"
+        if vx_cf_native_web_authority_preflight "$1" "$2"; then
+            printf "%s\n" "$VX_CF_WEB_AUTHORITY_STATE"
+        else
+            printf "blocked:%s\n" "${VX_CF_STATUS:-state_error}"
+        fi
+    ' _ alice "$domain_one"
+}
+
+assert_eq "$(authority_status)" managed \
+    'exact authority pair failed native lifecycle preflight'
+authority_snapshot="$work_root/authority.snapshot"
+/usr/bin/mv -- "$certificate_metadata" "$authority_snapshot"
+assert_eq "$(authority_status)" blocked:ownership_mismatch \
+    'record-only authority did not fail closed'
+/usr/bin/mv -- "$authority_snapshot" "$certificate_metadata"
+/usr/bin/mv -- "$record_metadata" "$authority_snapshot"
+printf "BROKEN='yes'\n" >"$record_metadata"
+/usr/bin/chmod 0600 "$record_metadata"
+assert_eq "$(authority_status)" blocked:state_error \
+    'malformed authority did not fail closed'
+/usr/bin/rm -f -- "$record_metadata"
+/usr/bin/mv -- "$authority_snapshot" "$record_metadata"
+/usr/bin/mv -- "$record_metadata" "$authority_snapshot"
+/usr/bin/ln -s "$authority_snapshot" "$record_metadata"
+assert_eq "$(authority_status)" blocked:ownership_mismatch \
+    'symlink authority did not fail closed'
+/usr/bin/unlink "$record_metadata"
+/usr/bin/mv -- "$authority_snapshot" "$record_metadata"
 
 other_zone_input="$work_root/cloudflare-other-zone.input"
 printf "API_TOKEN='fixture_other_token_12345678901234567890'\n" >"$other_zone_input"
@@ -692,6 +726,10 @@ metadata_snapshot="$work_root/certificate-metadata.snapshot"
 /usr/bin/rm -f -- "$certificate_metadata"
 /usr/bin/ln -s /dev/null "$certificate_metadata"
 old_native_hashes=$(/usr/bin/sha256sum "$ssl_root/$domain_one."{crt,key,ca,pem})
+metadata_failure_origin_creates=$(/usr/bin/grep -c '^origin-create ' \
+    "$cloudflare_root/stub-calls.log")
+metadata_failure_native_calls=$(/usr/bin/wc -l \
+    <"$cloudflare_root/native-calls.log")
 if certificate_metadata_failure=$(run_vesta \
     "$vesta_root/bin/v-add-vx-cloudflare-web-alias" alice "$domain_one" \
     metadatafail.example.test); then
@@ -704,11 +742,12 @@ assert_eq "$certificate_metadata_failure" 'Error: native_alias_failed' \
 new_native_hashes=$(/usr/bin/sha256sum "$ssl_root/$domain_one."{crt,key,ca,pem})
 assert_eq "$new_native_hashes" "$old_native_hashes" \
     'certificate metadata failure changed native SSL state'
-metadata_failure_id=$(/usr/bin/grep '^origin-create ' "$cloudflare_root/stub-calls.log" \
-    | /usr/bin/tail -n1 | /usr/bin/cut -d ' ' -f2)
-/usr/bin/grep -q "origin-delete $metadata_failure_id" \
-    "$cloudflare_root/stub-calls.log" \
-    || fail 'certificate metadata failure did not revoke the uninstalled new ID'
+assert_eq "$(/usr/bin/grep -c '^origin-create ' \
+    "$cloudflare_root/stub-calls.log")" "$metadata_failure_origin_creates" \
+    'unsafe certificate authority reached Origin issuance'
+assert_eq "$(/usr/bin/wc -l <"$cloudflare_root/native-calls.log")" \
+    "$metadata_failure_native_calls" \
+    'unsafe certificate authority reached native alias mutation'
 ! /usr/bin/grep -q "ALIAS='[^']*metadatafail.example.test" \
     "$vesta_root/data/users/alice/web.conf" \
     || fail 'certificate metadata failure left the alias attached'
@@ -833,7 +872,7 @@ if /usr/bin/grep -R -F 'fixture_token_12345678901234567890' \
     fail 'protected token leaked to logs or user state'
 fi
 
-/usr/bin/grep -n 'vx_cf_cleanup.*"\$user".*"\$domain"' \
+/usr/bin/grep -n 'vx_cf_native_web_cleanup.*"\$user".*"\$domain"' \
     "$repo_root/bin/v-delete-web-domain" >/dev/null \
     || fail 'native deletion cleanup hook is missing'
 /usr/bin/grep -n 'managed web domains cannot be renamed' \

@@ -43,22 +43,21 @@ is_object_unsuspended 'user' 'USER' "$user"
 is_object_valid 'web' 'DOMAIN' "$domain"
 is_object_unsuspended 'web' 'DOMAIN' "$domain"
 
+# Any Cloudflare authority path makes this a managed lifecycle. Require the
+# complete exact pair before deleting provider or native website state.
+vx_cf_native_web_authority_preflight "$user" "$domain" \
+    || check_result "$E_CONNECT" "${VX_CF_STATUS:-state_error}"
+
 
 #----------------------------------------------------------#
 #                       Action                             #
 #----------------------------------------------------------#
 
 # Delete and confirm the exact primary DNS identity before revoking its Origin
-# certificate. Any provider failure aborts before native website state is
-# touched; a retry safely resumes whichever exact cleanup remains.
-if vx_cf_metadata_exists "$user" "$domain"; then
-    vx_cf_cleanup "$user" "$domain" >/dev/null \
-        || check_result "$E_CONNECT" "${VX_CF_STATUS:-provider_error}"
-fi
-if vx_cf_certificate_metadata_exists "$user" "$domain"; then
-    vx_cf_origin_cleanup "$user" "$domain" >/dev/null \
-        || check_result "$E_CONNECT" "${VX_CF_STATUS:-provider_error}"
-fi
+# certificate. The VX transaction retains complete retry authority until both
+# provider identities are confirmed removed.
+vx_cf_native_web_cleanup "$user" "$domain" >/dev/null \
+    || check_result "$E_CONNECT" "${VX_CF_STATUS:-provider_error}"
 
 # Deleting web backend
 if [ ! -z "$WEB_BACKEND" ]; then

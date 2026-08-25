@@ -148,7 +148,8 @@ foreach (array($edit_web_admin_template, $edit_web_user_template) as $edit_templ
 }
 
 assert_cloudflare_ui_contains($web_api_controller, "\$requested_cmd === 'v-add-web-domain'", 'web API does not identify native website creation');
-assert_cloudflare_ui_contains($web_api_controller, "VX_MANAGED_DNS_PROVIDER'] === 'cloudflare-managed'", 'web API does not gate managed creation on provider mode');
+assert_cloudflare_ui_contains($web_api_controller, "VX_MANAGED_DNS_PROVIDER'] !== 'cloudflare-managed'", 'web API does not fail closed outside managed provider mode');
+assert_cloudflare_ui_contains($web_api_controller, 'Error: managed DNS provider is not ready', 'web API permits native product creation when the managed provider is unavailable');
 assert_cloudflare_ui_contains($web_api_controller, "VESTA_CMD.'v-add-vx-managed-web-domain '", 'web API does not delegate to the server-owned allocator');
 assert_cloudflare_ui_contains($web_api_controller, ".escapeshellarg(\$managed_user).' '", 'web API managed owner is not shell escaped');
 assert_cloudflare_ui_contains($web_api_controller, ".escapeshellarg(\$managed_ip).' '", 'web API managed IP is not shell escaped');

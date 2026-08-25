@@ -147,12 +147,22 @@ durable until revocation is confirmed. An issuance or installation failure
 restores the previous alias and certificate state. Manual certificate,
 Let's Encrypt, and SSL removal commands are refused for managed sites.
 
+Native alias and website-delete commands also fail closed when either managed
+record or certificate metadata path exists but the complete exact authority
+pair cannot be validated. This includes partial, malformed, symlinked,
+mismatched-zone, and otherwise degraded metadata. Native website state is not
+changed in that condition. During deletion, Vesta retains enough exact record
+and certificate authority for a bounded retry until both owned Cloudflare
+objects are confirmed absent; custom-domain DNS remains untouched.
+
 Changing a managed website's Vesta IP automatically reconciles its exact
 Cloudflare A record. If provider reconciliation fails, the native IP and
 provider state are compensated to the previous value rather than reporting a
 successful stale change. Product panel and authenticated API creation use the
-managed allocator; low-level native create commands remain compatible for
-root-owned restore/import workflows.
+managed allocator. Authenticated API creation is rejected before native
+mutation unless the provider is exactly `cloudflare-managed`; it never falls
+through to a caller-supplied primary domain. Low-level native create commands
+remain compatible for root-owned restore/import workflows.
 
 Existing automation that already owns a Vesta technical domain can request an
 idempotent reconciliation without choosing provider values:
@@ -209,6 +219,14 @@ files. Human and JSON command output contains counts and bounded states only.
 The protected `mapping.json` is the downstream issue #140 handoff and must not be
 copied into tickets, logs, or ordinary command output.
 
+The plan also carries a protected, plan-bound rollback-admission artifact. It
+fingerprints each scoped user's complete authoritative `web.conf` and rendered
+web configuration tree, including websites that the plan classifies and skips.
+The fingerprints are refreshed only after a stable migration or compensation
+state. This prevents rollback or an idempotent apply from replacing unrelated
+domain rows, template/proxy changes, or rendered-file changes made after the
+last admitted state.
+
 After a root operator has reviewed and approved that exact plan, apply it:
 
 ```bash
@@ -243,13 +261,16 @@ are idempotent. A site that cannot be proven restored remains in protected
 `recovery_required` state; retain the migration directory and resolve that
 state before deleting or replacing the artifact.
 
-Do not change scoped Vesta user-account state between apply and rollback.
-Rollback validates every unrelated `user.conf` value and the exact
-migration-owned `U_WEB_SSL` and `U_WEB_ALIASES` deltas before it mutates
-provider or native state; unexpected changes fail closed as `drift`. External
-custom-domain edge health is not required to undo a plan, but the configured
-provider must remain in Cloudflare-managed mode with enough API access to
-verify and remove the exact migration-owned record and Origin certificate.
+Do not change scoped Vesta user-account, authoritative website, or rendered web
+state between apply and rollback. Rollback validates every unrelated
+`user.conf` value, the entire scoped `web.conf`, the complete rendered tree,
+and the exact migration-owned `U_WEB_SSL` and `U_WEB_ALIASES` deltas before it
+mutates provider or native state. Unexpected row, `TPL`/`PROXY`, rendered-file,
+counter, or ownership changes fail closed as `drift`; the operator's live
+change remains byte-for-byte intact. External custom-domain edge health is not
+required to undo a plan, but the configured provider must remain in
+Cloudflare-managed mode with enough API access to verify and remove the exact
+migration-owned record and Origin certificate.
 
 ## Recovery and rotation
 
@@ -267,9 +288,24 @@ verify and remove the exact migration-owned record and Origin certificate.
   the same Vesta delete command. Do not delete the Vesta data directory or
   metadata file directly.
 
-## First live acceptance
+## Validated development acceptance
 
-After nonsecret code deployment, the protected acceptance sequence is:
+Protected live acceptance completed on the approved development host
+`192.168.200.100`. Bounded evidence recorded three disposable sites, two
+aliases, six successful HTTPS checks, two migrations, two normal deletions,
+and exact provider cleanup. It proved generated-host and alias HTTPS through
+Cloudflare Full (strict), migration apply and rollback, and deletion of only
+Vesta-owned record/certificate authority. All five focused Cloudflare suites,
+the panel/proxy regressions, syntax checks, diff checks, and the repository's
+limited production-readiness launcher passed. No credential, provider ID,
+protected mapping, private key, or raw response was included in the evidence.
+
+This is `vesta-vxapp` owner-repository development acceptance. It is not a
+production deployment, and it does not close the separate `api-vxapp` work in
+issues #139, #140, #142, #145, or #227.
+
+For a future authorized environment, repeat this protected sequence after
+nonsecret code deployment:
 
 1. Configure the scoped token and exact zone.
 2. Select **Cloudflare managed** and require health `ready`.

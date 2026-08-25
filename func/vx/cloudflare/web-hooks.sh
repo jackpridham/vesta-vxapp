@@ -24,12 +24,16 @@ vx_cf_rebuild_alias_configs() {
 vx_cf_reconcile_alias_change() {
     local previous_alias=$1 direction=$2 restart=${3:-yes} failure
 
-    vx_cf_metadata_exists "$user" "$domain" || return 0
-    if VESTA="$VESTA" "$BIN/v-reconcile-vx-cloudflare-origin-ssl" \
+    if ! vx_cf_native_web_authority_preflight "$user" "$domain"; then
+        failure=${VX_CF_STATUS:-state_error}
+    elif [[ "$VX_CF_WEB_AUTHORITY_STATE" == unmanaged ]]; then
+        return 0
+    elif VESTA="$VESTA" "$BIN/v-reconcile-vx-cloudflare-origin-ssl" \
         "$user" "$domain" no >/dev/null 2>&1; then
         return 0
+    else
+        failure=certificate_error
     fi
-    failure=certificate_error
 
     # Restore persisted and rendered alias authority before returning failure.
     ALIAS=$previous_alias
