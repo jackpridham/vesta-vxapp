@@ -639,9 +639,11 @@ vx_cf_migration_exact_row() {
 }
 
 vx_cf_migration_filesystem_write() {
-    local plan_file=$1 item user source target hostnames_digest address retain_source_ssl
+    local plan_file=$1 include_docroot_metadata=${2:-yes}
+    local item user source target hostnames_digest address retain_source_ssl
     local row kind digest path ftp_line component extension link_target logs_kind
 
+    [[ "$include_docroot_metadata" =~ ^(yes|no)$ ]] || return 1
     vx_cf_migration_homedir || return 1
     vx_cf_migration_log_root || return 1
     printf 'ITEM\tCOMPONENT\tKIND\tDIGEST_OR_VALUE\n'
@@ -655,34 +657,36 @@ vx_cf_migration_filesystem_write() {
             || return 1
         [[ "$kind" == directory ]] || return 1
         printf '%s\tdocroot\t%s\t%s\n' "$item" "$kind" "$digest"
-        printf '%s\tdocroot.root\tmetadata\t%s\n' "$item" \
-            "$(/usr/bin/stat -c '%a:%u:%g' "$path")"
-        path="$VX_CF_MIGRATION_HOME/$user/web/$source/logs"
-        if [[ -d "$path" && ! -L "$path" ]]; then
-            logs_kind=metadata
-            printf '%s\tdocroot.logs\tmetadata\t%s\n' "$item" \
+        if [[ "$include_docroot_metadata" == yes ]]; then
+            printf '%s\tdocroot.root\tmetadata\t%s\n' "$item" \
                 "$(/usr/bin/stat -c '%a:%u:%g' "$path")"
-        elif [[ ! -e "$path" && ! -L "$path" ]]; then
-            logs_kind=missing
-            printf '%s\tdocroot.logs\tmissing\t-\n' "$item"
-        else
-            return 1
-        fi
-        for extension in log error.log; do
-            path="$VX_CF_MIGRATION_HOME/$user/web/$source/logs/$source.$extension"
-            if [[ "$logs_kind" == metadata && -L "$path" ]]; then
-                link_target=$(/usr/bin/readlink -- "$path") || return 1
-                [[ "$link_target" \
-                    == "$VX_CF_MIGRATION_LOG_ROOT/$source.$extension" ]] \
-                    || return 1
-                printf '%s\tdocroot.log-link.%s\tlink\t%s\n' "$item" \
-                    "$extension" "$(/usr/bin/stat -c '%a:%u:%g' "$path")"
+            path="$VX_CF_MIGRATION_HOME/$user/web/$source/logs"
+            if [[ -d "$path" && ! -L "$path" ]]; then
+                logs_kind=metadata
+                printf '%s\tdocroot.logs\tmetadata\t%s\n' "$item" \
+                    "$(/usr/bin/stat -c '%a:%u:%g' "$path")"
+            elif [[ ! -e "$path" && ! -L "$path" ]]; then
+                logs_kind=missing
+                printf '%s\tdocroot.logs\tmissing\t-\n' "$item"
             else
-                [[ ! -e "$path" ]] || return 1
-                printf '%s\tdocroot.log-link.%s\tmissing\t-\n' \
-                    "$item" "$extension"
+                return 1
             fi
-        done
+            for extension in log error.log; do
+                path="$VX_CF_MIGRATION_HOME/$user/web/$source/logs/$source.$extension"
+                if [[ "$logs_kind" == metadata && -L "$path" ]]; then
+                    link_target=$(/usr/bin/readlink -- "$path") || return 1
+                    [[ "$link_target" \
+                        == "$VX_CF_MIGRATION_LOG_ROOT/$source.$extension" ]] \
+                        || return 1
+                    printf '%s\tdocroot.log-link.%s\tlink\t%s\n' "$item" \
+                        "$extension" "$(/usr/bin/stat -c '%a:%u:%g' "$path")"
+                else
+                    [[ ! -e "$path" ]] || return 1
+                    printf '%s\tdocroot.log-link.%s\tmissing\t-\n' \
+                        "$item" "$extension"
+                fi
+            done
+        fi
         for component in log error bytes; do
             case "$component" in
                 log) path="$VX_CF_MIGRATION_LOG_ROOT/$source.log" ;;
@@ -809,6 +813,7 @@ vx_cf_migration_snapshot_ssl() {
 
 vx_cf_migration_live_matches_plan() {
     local artifact=$1 snapshot user temporary users_now result=1
+    local item_count metadata_count include_docroot_metadata
 
     [[ "$(vx_cf_migration_sha256 "$(vx_cf_config_path)")" \
         == "$VX_CF_MIGRATION_CONFIG_SHA" \
@@ -850,7 +855,21 @@ vx_cf_migration_live_matches_plan() {
         /usr/bin/rm -f -- "$temporary"
         return 1
     }
-    if vx_cf_migration_filesystem_write "$artifact/plan.tsv" >"$temporary" \
+    item_count=$(/usr/bin/awk -F '\t' 'NR > 1 { count++ } END { print count + 0 }' \
+        "$artifact/plan.tsv") || return 1
+    metadata_count=$(/usr/bin/awk -F '\t' \
+        '$2 == "docroot.root" { count++ } END { print count + 0 }' \
+        "$artifact/filesystem.tsv") || return 1
+    if (( metadata_count == item_count )); then
+        include_docroot_metadata=yes
+    elif (( metadata_count == 0 )); then
+        include_docroot_metadata=no
+    else
+        /usr/bin/rm -f -- "$temporary"
+        return 1
+    fi
+    if vx_cf_migration_filesystem_write "$artifact/plan.tsv" \
+        "$include_docroot_metadata" >"$temporary" \
         && /usr/bin/cmp -s -- "$temporary" "$artifact/filesystem.tsv"; then
         result=0
     fi
