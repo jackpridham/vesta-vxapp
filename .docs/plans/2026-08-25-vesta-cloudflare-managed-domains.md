@@ -23,7 +23,7 @@
 - Token, zone ID, account email, ingress address, record ID, provider response, and authorization headers never appear in argv, environment, UI, logs, history, or command output.
 - Configuration and mutations are serialized with a provider lock. Configuration and record metadata are root-owned, non-symlink, mode `0600`; their parent directories are mode `0700`.
 - Website deletion first verifies and revokes the exact owned Origin CA certificate and deletes the exact owned Cloudflare record, then removes metadata and continues the normal Vesta deletion. Custom-alias DNS is never deleted.
-- Live Cloudflare acceptance remains intentionally pending until the operator supplies the token, zone ID, and account email after nonsecret deployment.
+- Live Cloudflare acceptance reuses the already-protected `vx cf` configuration through Vesta's mode-`0600` config-file input; credentials are never copied into Git, argv, logs, or acceptance output.
 
 ## Files and responsibilities
 
@@ -153,13 +153,13 @@ git diff --check
 
 One independent reviewer checks the complete diff for specification, secret safety, exact deletion authority, and regressions. Any numbered blocker is fixed once and rechecked only against that blocker.
 
-- [ ] **Step 3: Commit and deploy the nonsecret implementation**
+- [ ] **Step 3: Commit and deploy the implementation**
 
-Commit the coherent feature, follow `.docs/user-guides/vesta-control-plane-releases.md`, install only the changed root-owned files on `debian@192.168.100.100`, and prove file modes, PHP/Bash syntax, panel route availability, and sanitized `not_configured` status. Do not enter or transmit real credentials during this step.
+Commit the coherent feature, follow `.docs/user-guides/vesta-control-plane-releases.md`, install only the changed root-owned files on `debian@192.168.100.100`, and prove file modes, PHP/Bash syntax, panel route availability, and sanitized status.
 
-- [ ] **Step 4: Stop at the protected live-acceptance boundary**
+- [ ] **Step 4: Configure and run protected live acceptance**
 
-Request the Cloudflare API token, zone ID, and account email. After they are supplied, configure through protected input, select Cloudflare-managed mode, create and delete one disposable site, prove API readback and public DNS, and record only sanitized acceptance evidence.
+Read the current protected credentials through the existing `vx cf` configuration surface, stream the three assignments over SSH into a temporary root-owned mode-`0600` input file, configure Vesta, select Cloudflare-managed mode, create and delete one disposable site, prove API readback, public DNS, and HTTPS through Full (strict), and record only sanitized acceptance evidence.
 
 ## Acceptance checklist
 
@@ -172,7 +172,7 @@ Request the Cloudflare API token, zone ID, and account email. After they are sup
 - [ ] Website deletion cannot leave a known owned record behind or delete any broader record set.
 - [ ] Provider selection is visible in Server → Configure → DNS while installed `DNS_SYSTEM` remains intact.
 - [ ] Credentials and provider values never leak through argv, environment, output, logs, UI, test evidence, or Git.
-- [ ] Stubbed validation, syntax checks, one combined audit, commit, and nonsecret target deployment complete before requesting real credentials.
+- [ ] Stubbed validation, syntax checks, one combined audit, commit, protected configuration, and target acceptance complete without exposing credentials.
 
 ## Cross-repository dependency
 
