@@ -144,7 +144,7 @@ Expected: tests pass and every file reports `No syntax errors detected`.
 
 - [x] **Step 1: Document the operator workflow and update issue #5**
 
-The guide records the least-privilege token (Zone Read, Zone Settings Read/Write, DNS Read/Edit, and SSL and Certificates Read/Edit for the configured and alias zones), secure interactive/config-file setup, provider selection, health, create/delete semantics, recovery, and rotation. Issue #5 receives this locked implementation plan and explicitly notes that api-vxapp #145 must consume the Vesta allocator before claiming Vesta-owned API Site generation.
+The guide records the least-privilege token (Zone Read, Zone Settings Read/Write, DNS Read/Edit, and SSL and Certificates Read/Edit for the configured and alias zones), secure interactive/config-file setup, provider selection, health, create/delete semantics, recovery, and rotation. Issue #5 receives this locked implementation plan and explicitly notes that downstream consumer issue #145 must consume the Vesta allocator before claiming Vesta-owned API Site generation.
 
 - [x] **Step 2: Run the one integrated validation/audit loop**
 
@@ -169,7 +169,7 @@ One independent reviewer checks the complete diff for specification, secret safe
 
 - [ ] **Step 3: Commit and deploy the implementation**
 
-Commit the coherent feature, follow `.docs/user-guides/vesta-control-plane-releases.md`, install only the changed root-owned files on `debian@192.168.100.100`, and prove file modes, PHP/Bash syntax, panel route availability, and sanitized status.
+Commit the coherent feature, follow `.docs/user-guides/vesta-control-plane-releases.md`, install only the changed root-owned files on the approved development target, and prove file modes, PHP/Bash syntax, panel route availability, and sanitized status.
 
 - [ ] **Step 4: Configure and run protected live acceptance**
 
@@ -202,7 +202,7 @@ only after the configured provider reports exactly `ready`.
 - [x] `apply.sh PLAN [--json]` binds to that exact inventory, allocates all
   technical names internally, migrates each website in place, creates only its
   technical A record, installs and verifies its exact Origin CA SAN set, and
-  records the protected api-vxapp #140 mapping.
+  records the protected downstream issue #140 mapping.
 - [x] `rollback.sh PLAN [--json]` reverses only transaction-owned authority and
   restores exact pre-migration website state. Failed verification remains in
   durable root-only `recovery_required` state.
@@ -217,10 +217,10 @@ only after the configured provider reports exactly `ready`.
 
 ## Cross-repository dependency
 
-- Owner: `jackpridham/vesta-vxapp` owns hostname allocation, Cloudflare configuration, record lifecycle, panel creation, and external-domain alias attachment.
-- Consumer: [api-vxapp#139](https://github.com/jackpridham/api-vxapp/issues/139) must call the Vesta allocator/reconcile contract without receiving Cloudflare credentials or choosing the generated hostname.
-- Contract correction: [api-vxapp#145](https://github.com/jackpridham/api-vxapp/issues/145) currently allocates `s-<32 hex>` inside api-vxapp. It must be revised before API-created Sites can claim the Vesta-owned `s-<10 hex>` contract requested here; this implementation does not silently mutate that separate repository.
-- Full production proof remains in [api-vxapp#227](https://github.com/jackpridham/api-vxapp/issues/227) after this owner implementation passes protected live acceptance.
+- Owner: this Vesta repository owns hostname allocation, Cloudflare configuration, record lifecycle, panel creation, and external-domain alias attachment.
+- Consumer: downstream issue #139 must call the Vesta allocator/reconcile contract without receiving Cloudflare credentials or choosing the generated hostname.
+- Contract correction: downstream issue #145 currently allocates `s-<32 hex>` inside the consumer API. It must be revised before API-created Sites can claim the Vesta-owned `s-<10 hex>` contract requested here; this implementation does not silently mutate that separate repository.
+- Full production proof remains in downstream issue #227 after this owner implementation passes protected live acceptance.
 
 ## Non-goals
 

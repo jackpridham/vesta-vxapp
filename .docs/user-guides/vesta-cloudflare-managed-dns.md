@@ -206,7 +206,7 @@ and mapping handoff are stored below
 `/usr/local/vesta/data/vx/cloudflare/migrations/<plan-name>/`. The directory is
 root-owned mode `0700`; protected files are regular, non-symlink mode `0600`
 files. Human and JSON command output contains counts and bounded states only.
-The protected `mapping.json` is the api-vxapp issue #140 handoff and must not be
+The protected `mapping.json` is the downstream issue #140 handoff and must not be
 copied into tickets, logs, or ordinary command output.
 
 After a root operator has reviewed and approved that exact plan, apply it:
