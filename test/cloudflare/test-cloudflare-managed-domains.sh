@@ -121,6 +121,188 @@ assert_eq "$(<"$strict_state")" strict 'provider enable did not restore Full (st
 /usr/bin/grep -q "^DNS_SYSTEM='bind9'$" "$vesta_root/conf/vesta.conf" \
     || fail 'DNS_SYSTEM was changed'
 
+before_domains=$(/usr/bin/wc -l <"$vesta_root/data/users/alice/web.conf")
+printf 'non_a_collision\n' >"$cloudflare_root/stub-scenario"
+if non_a_collision=$(run_vesta "$vesta_root/bin/v-add-vx-managed-web-domain" \
+    alice 192.0.2.10 no none); then
+    fail 'allocator accepted an occupied non-A Cloudflare hostname'
+fi
+assert_eq "$non_a_collision" 'Error: collision_limit' \
+    'non-A provider collision did not exhaust bounded allocation'
+after_domains=$(/usr/bin/wc -l <"$vesta_root/data/users/alice/web.conf")
+assert_eq "$after_domains" "$before_domains" \
+    'non-A provider collision reached native website creation'
+: >"$cloudflare_root/stub-scenario"
+
+migration_source=migration.example.test
+migration_target=s-3333333333.managed.example.test
+printf "DOMAIN='%s' IP='192.0.2.10' ALIAS='a-record.example.test' SSL='no' SUSPENDED='no'\n" \
+    "$migration_source" >>"$vesta_root/data/users/alice/web.conf"
+alias_strict_state="$cloudflare_root/stub-zone-fedcba9876543210fedcba9876543210-ssl"
+printf 'strict\n' >"$alias_strict_state"
+patch_count_before=$(/usr/bin/grep -c '^ssl-patch ' "$cloudflare_root/stub-calls.log")
+migration_preflight=$(
+    VESTA="$vesta_root" VX_CLOUDFLARE_TEST_MODE=yes \
+        VX_CLOUDFLARE_TEST_CURL="$strict_stub" /bin/bash -c '
+            BIN="$VESTA/bin"
+            source "$VESTA/func/vx/cloudflare/main.sh"
+            source "$VESTA/conf/vesta.conf"
+            vx_cf_lock_acquire || exit 91
+            vx_cf_migration_preflight_locked "$1" "$2" "$3" || exit 92
+            printf "%s|%s|%s\n" "$VX_CF_STATUS" \
+                "$VX_CF_MIGRATION_HOSTNAMES_CSV" "$VX_CF_WEB_ADDRESS"
+            vx_cf_lock_release || exit 93
+        ' _ alice "$migration_source" "$migration_target"
+) || fail 'GET-only migration preflight failed'
+assert_eq "$migration_preflight" \
+    'ready|a-record.example.test,migration.example.test,s-3333333333.managed.example.test|192.0.2.20' \
+    'migration preflight did not derive the exact hypothetical final state'
+patch_count_after=$(/usr/bin/grep -c '^ssl-patch ' "$cloudflare_root/stub-calls.log")
+assert_eq "$patch_count_after" "$patch_count_before" \
+    'migration preflight mutated a zone strict setting'
+/usr/bin/sed -i "/^DOMAIN='$migration_source' /d" \
+    "$vesta_root/data/users/alice/web.conf"
+
+observed_target=s-4444444444.managed.example.test
+observed_record_id_file="$work_root/observed-record-id"
+observed_certificate_id_file="$work_root/observed-certificate-id"
+printf "DOMAIN='%s' IP='192.0.2.10' ALIAS='%s,a-record.example.test' SSL='no' SUSPENDED='no'\n" \
+    "$observed_target" "$migration_source" \
+    >>"$vesta_root/data/users/alice/web.conf"
+observer_apply_status=$(
+    VESTA="$vesta_root" VX_CLOUDFLARE_TEST_MODE=yes \
+        VX_CLOUDFLARE_TEST_CURL="$strict_stub" \
+        VX_CLOUDFLARE_INTERNAL_MIGRATION=1 \
+        VX_CF_TEST_RECORD_OBSERVER="$observed_record_id_file" \
+        VX_CF_TEST_CERTIFICATE_OBSERVER="$observed_certificate_id_file" \
+        /bin/bash -c '
+            BIN="$VESTA/bin"
+            source "$VESTA/func/vx/cloudflare/main.sh"
+            source "$VESTA/conf/vesta.conf"
+            vx_cf_migration_observe_record_id() {
+                (umask 077; printf "%s\n" "$1" >"$VX_CF_TEST_RECORD_OBSERVER")
+            }
+            vx_cf_migration_observe_certificate_id() {
+                (umask 077; printf "%s\n" "$1" >"$VX_CF_TEST_CERTIFICATE_OBSERVER")
+            }
+            vx_cf_lock_acquire || exit 91
+            vx_cf_reconcile_locked "$1" "$2" || exit 92
+            vx_cf_origin_reconcile_locked "$1" "$2" no || exit 93
+            result=$VX_CF_STATUS
+            vx_cf_lock_release || exit 94
+            printf "%s\n" "$result"
+        ' _ alice "$observed_target"
+) || fail 'same-shell migration observers rejected a managed apply'
+assert_eq "$observer_apply_status" ssl_ready \
+    'observer-backed Origin apply returned the wrong status'
+[[ "$(<"$observed_record_id_file")" =~ ^[a-f0-9]{32}$ ]] \
+    || fail 'record observer did not receive the exact created ID'
+[[ "$(<"$observed_certificate_id_file")" =~ ^[A-Za-z0-9_-]{1,64}$ ]] \
+    || fail 'certificate observer did not receive the exact created ID'
+[[ "$(/usr/bin/stat -c '%a' "$observed_record_id_file")" == 600 \
+    && "$(/usr/bin/stat -c '%a' "$observed_certificate_id_file")" == 600 ]] \
+    || fail 'fixture observers did not protect captured IDs'
+/usr/bin/grep -q "^native-ssl-migration $observed_target$" \
+    "$cloudflare_root/native-calls.log" \
+    || fail 'internal Origin child omitted the parent migration capability'
+
+mutation_count_before=$(/usr/bin/grep -Ec \
+    '^(create |update$|delete$|origin-create |origin-delete |ssl-patch )' \
+    "$cloudflare_root/stub-calls.log" || :)
+managed_verify=$(
+    VESTA="$vesta_root" VX_CLOUDFLARE_TEST_MODE=yes \
+        VX_CLOUDFLARE_TEST_CURL="$strict_stub" /bin/bash -c '
+            BIN="$VESTA/bin"
+            source "$VESTA/func/vx/cloudflare/main.sh"
+            source "$VESTA/conf/vesta.conf"
+            vx_cf_lock_acquire || exit 91
+            vx_cf_verify_managed_site_locked "$1" "$2" || exit 92
+            printf "%s\n" "$VX_CF_STATUS"
+            vx_cf_lock_release || exit 93
+        ' _ alice "$observed_target"
+) || fail 'read-only exact managed-site verification failed'
+assert_eq "$managed_verify" managed \
+    'exact managed-site verification returned the wrong status'
+mutation_count_after=$(/usr/bin/grep -Ec \
+    '^(create |update$|delete$|origin-create |origin-delete |ssl-patch )' \
+    "$cloudflare_root/stub-calls.log" || :)
+assert_eq "$mutation_count_after" "$mutation_count_before" \
+    'managed-site verification performed a provider mutation'
+
+VESTA="$vesta_root" VX_CLOUDFLARE_TEST_MODE=yes \
+    VX_CLOUDFLARE_TEST_CURL="$strict_stub" /bin/bash -c '
+        BIN="$VESTA/bin"
+        source "$VESTA/func/vx/cloudflare/main.sh"
+        source "$VESTA/conf/vesta.conf"
+        vx_cf_lock_acquire || exit 91
+        vx_cf_cleanup_locked "$1" "$2" || exit 92
+        vx_cf_origin_cleanup_locked "$1" "$2" || exit 93
+        vx_cf_lock_release || exit 94
+    ' _ alice "$observed_target" \
+    || fail 'observer-backed managed fixture cleanup failed'
+/usr/bin/sed -i "/^DOMAIN='$observed_target' /d" \
+    "$vesta_root/data/users/alice/web.conf"
+/usr/bin/rm -f -- "$vesta_root/data/users/alice/ssl/$observed_target."{crt,key,ca,pem} \
+    "$vesta_root/home/alice/conf/web/ssl.$observed_target."{crt,key,ca,pem}
+
+observer_failure_target=s-5555555555.managed.example.test
+printf "DOMAIN='%s' IP='192.0.2.10' ALIAS='' SSL='no' SUSPENDED='no'\n" \
+    "$observer_failure_target" >>"$vesta_root/data/users/alice/web.conf"
+record_observer_failure=$(
+    VESTA="$vesta_root" VX_CLOUDFLARE_TEST_MODE=yes \
+        VX_CLOUDFLARE_TEST_CURL="$strict_stub" /bin/bash -c '
+            BIN="$VESTA/bin"
+            source "$VESTA/func/vx/cloudflare/main.sh"
+            source "$VESTA/conf/vesta.conf"
+            vx_cf_migration_observe_record_id() { return 1; }
+            vx_cf_lock_acquire || exit 91
+            if vx_cf_reconcile_locked "$1" "$2"; then exit 92; fi
+            result=$VX_CF_STATUS
+            vx_cf_lock_release || exit 93
+            printf "%s\n" "$result"
+        ' _ alice "$observer_failure_target"
+) || fail 'record observer failure harness failed'
+assert_eq "$record_observer_failure" state_error \
+    'record observer failure did not return state_error'
+[[ ! -s "$cloudflare_root/stub-record.conf" \
+    && ! -e "$cloudflare_root/records/alice/$observer_failure_target.conf" ]] \
+    || fail 'record observer failure was not exactly compensated'
+
+origin_creates_before=$(/usr/bin/grep -c '^origin-create ' \
+    "$cloudflare_root/stub-calls.log")
+certificate_observer_failure=$(
+    VESTA="$vesta_root" VX_CLOUDFLARE_TEST_MODE=yes \
+        VX_CLOUDFLARE_TEST_CURL="$strict_stub" /bin/bash -c '
+            BIN="$VESTA/bin"
+            source "$VESTA/func/vx/cloudflare/main.sh"
+            source "$VESTA/conf/vesta.conf"
+            vx_cf_migration_observe_certificate_id() { return 1; }
+            vx_cf_lock_acquire || exit 91
+            vx_cf_reconcile_locked "$1" "$2" || exit 92
+            if vx_cf_origin_reconcile_locked "$1" "$2" no; then exit 93; fi
+            result=$VX_CF_STATUS
+            vx_cf_cleanup_locked "$1" "$2" || exit 94
+            vx_cf_lock_release || exit 95
+            printf "%s\n" "$result"
+        ' _ alice "$observer_failure_target"
+) || fail 'certificate observer failure harness failed'
+assert_eq "$certificate_observer_failure" state_error \
+    'certificate observer failure did not return state_error'
+origin_creates_after=$(/usr/bin/grep -c '^origin-create ' \
+    "$cloudflare_root/stub-calls.log")
+assert_eq "$origin_creates_after" "$((origin_creates_before + 1))" \
+    'certificate observer failure did not reach ID parsing'
+failed_observer_certificate_id=$(/usr/bin/grep '^origin-create ' \
+    "$cloudflare_root/stub-calls.log" | /usr/bin/tail -n1 \
+    | /usr/bin/cut -d ' ' -f2)
+/usr/bin/grep -q "^origin-delete $failed_observer_certificate_id$" \
+    "$cloudflare_root/stub-calls.log" \
+    || fail 'certificate observer failure did not revoke the exact new ID'
+[[ ! -e "$cloudflare_root/certificates/alice/$observer_failure_target.conf" ]] \
+    || fail 'certificate observer failure created certificate metadata'
+/usr/bin/sed -i "/^DOMAIN='$observer_failure_target' /d" \
+    "$vesta_root/data/users/alice/web.conf"
+
 domain_one=$(run_vesta "$vesta_root/bin/v-add-vx-managed-web-domain" alice \
     192.0.2.10 no none) || fail 'managed create failed'
 [[ "$domain_one" =~ ^s-[a-f0-9]{10}\.managed\.example\.test$ ]] \

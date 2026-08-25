@@ -152,7 +152,13 @@ case "$method:$api_path" in
         lookup_name=${api_path#*name=}
         lookup_name=${lookup_name%%&*}
         printf 'lookup %s\n' "$lookup_name" >>"$call_log"
-        if [[ "$scenario" == duplicate ]]; then
+        if [[ "$scenario" == non_a_collision ]]; then
+            printf '{"success":true,"result":[{"id":"33333333333333333333333333333333",' \
+                >"$output"
+            printf '"name":"%s","type":"CNAME","content":"occupied.example.test",' \
+                "$lookup_name" >>"$output"
+            printf '"ttl":1,"proxied":true}]}' >>"$output"
+        elif [[ "$scenario" == duplicate ]]; then
             printf '{"success":true,"result":[' >"$output"
             record_id=11111111111111111111111111111111 record_name=$lookup_name record_address=192.0.2.20
             record_json >>"$output"

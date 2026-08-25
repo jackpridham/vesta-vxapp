@@ -175,6 +175,80 @@ hostname set, certificate ID, or provider value:
 sudo /usr/local/vesta/bin/v-reconcile-vx-cloudflare-origin-ssl USER DOMAIN
 ```
 
+## Migrate existing websites
+
+Existing native Vesta websites are migrated only through the explicit operator
+migration in `install/migrations/cloudflare-managed-web-domains/`. Packaging,
+`postinst`, RPM installation, and ordinary Vesta updates never invoke it. Run
+it only after Cloudflare-managed mode is selected and
+`v-list-vx-cloudflare-status` prints exactly `ready`.
+
+Choose a bounded plan name and prepare a protected inventory. Preparation
+performs provider GET/readback checks and writes a root-only plan, but does not
+change Vesta website authority, rendered configuration, services, DNS records,
+or certificates:
+
+```bash
+sudo /usr/local/vesta/install/migrations/cloudflare-managed-web-domains/prepare.sh \
+  legacy-web-20260825
+```
+
+For a staged run, add one Vesta user filter. The default always inventories
+every configured website, including suspended users and domains:
+
+```bash
+sudo /usr/local/vesta/install/migrations/cloudflare-managed-web-domains/prepare.sh \
+  legacy-web-20260825-alice --user alice
+```
+
+The immutable plan, exact pre-migration snapshots, results, recovery journal,
+and mapping handoff are stored below
+`/usr/local/vesta/data/vx/cloudflare/migrations/<plan-name>/`. The directory is
+root-owned mode `0700`; protected files are regular, non-symlink mode `0600`
+files. Human and JSON command output contains counts and bounded states only.
+The protected `mapping.json` is the api-vxapp issue #140 handoff and must not be
+copied into tickets, logs, or ordinary command output.
+
+After a root operator has reviewed and approved that exact plan, apply it:
+
+```bash
+sudo /usr/local/vesta/install/migrations/cloudflare-managed-web-domains/apply.sh \
+  legacy-web-20260825
+```
+
+Apply rejects configuration, inventory, alias-routing, filesystem, or plan
+drift before mutation. Each website is a separate transaction: the existing
+primary becomes an alias, prior aliases remain, and a newly allocated
+`s-<10 hex>.<zone>` hostname becomes the immutable primary without creating a
+new document tree. Vesta then creates only that technical hostname's proxied A
+record, installs the exact Origin CA certificate, rebuilds once, and verifies
+the complete managed state, including the authoritative row and rendered web,
+proxy, statistics, and backend files. Custom-domain DNS is read and validated
+but never created, edited, or deleted.
+
+To reverse that exact plan, use the explicit plan-bound rollback:
+
+```bash
+sudo /usr/local/vesta/install/migrations/cloudflare-managed-web-domains/rollback.sh \
+  legacy-web-20260825
+```
+
+Rollback restores the snapshotted primary, aliases, SSL and rendered material,
+proxy/native state, counters, suspension, FTP relationships, and filesystem
+identity. It removes only the exact migration-owned technical A record and
+Origin CA certificate authority. Repeated apply and rollback calls are
+idempotent. A site that cannot be proven restored remains in protected
+`recovery_required` state; retain the migration directory and resolve that
+state before deleting or replacing the artifact.
+
+Do not change scoped Vesta user-account state between apply and rollback.
+Rollback validates every unrelated `user.conf` value and the exact
+migration-owned `U_WEB_SSL` delta before it mutates provider or native state;
+unexpected changes fail closed as `drift`. External custom-domain edge health
+is not required to undo a plan, but the configured provider must remain in
+Cloudflare-managed mode with enough API access to verify and remove the exact
+migration-owned record and Origin certificate.
+
 ## Recovery and rotation
 
 - Retry `v-reconcile-vx-cloudflare-web-domain USER DOMAIN` after a transient

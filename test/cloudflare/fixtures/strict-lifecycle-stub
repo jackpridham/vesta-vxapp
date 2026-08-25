@@ -116,13 +116,14 @@ if [[ "${1:-}" == --config ]]; then
                 | /usr/bin/head -n1)
             ingress=$(/usr/bin/sed -n 's/^address=//p' "$state_file" \
                 | /usr/bin/head -n1)
+            [[ -n "$ingress" ]] || ingress=192.0.2.20
             proxied=true
             content=$technical_domain
             record_type=CNAME
             case "$alias_name" in
                 unproxied.*) proxied=false ;;
                 wrongtarget.*) content=wrong.example.test ;;
-                a-record.*) record_type=A; content=$ingress ;;
+                a-record.*|migration.*) record_type=A; content=$ingress ;;
             esac
             if [[ "$scenario" == alias_route_drift \
                 && "$alias_name" == custom.example.test ]]; then
@@ -234,6 +235,9 @@ case "$command_name" in
         done
         /usr/bin/sed -i "/^DOMAIN='$domain' /s/ SSL='[^']*'/ SSL='yes'/" "$web_conf"
         printf 'native-ssl %s %s internal=1\n' "$command_name" "$domain" >>"$call_log"
+        if [[ "${VX_CLOUDFLARE_INTERNAL_MIGRATION:-}" == 1 ]]; then
+            printf 'native-ssl-migration %s\n' "$domain" >>"$call_log"
+        fi
         if [[ ( "$scenario" == native_install_failure \
                 || "$scenario" == native_install_revoke_failure ) \
             && ! -f "$cloudflare_root/stub-native-install-failed-once" ]]; then

@@ -500,6 +500,38 @@ vx_cf_lookup_record() {
     /usr/bin/rm -f -- "$response"
 }
 
+vx_cf_lookup_any_record() {
+    local domain=$1 response count
+
+    vx_cf_valid_domain "$domain" || { VX_CF_STATUS=invalid_domain; return 1; }
+    response=$(vx_cf_new_response_file) || { VX_CF_STATUS=state_error; return 1; }
+    if ! vx_cf_transport GET "dns_records?name=$domain&per_page=100" "$response"; then
+        /usr/bin/rm -f -- "$response"
+        return 1
+    fi
+    if ! vx_cf_response_success "$response" \
+        || ! /usr/bin/jq -e --arg name "$domain" '
+            (.result | type == "array") and
+            all(.result[]?;
+                (type == "object") and
+                (.id | type == "string") and
+                (.id | test("^[a-f0-9]{32}$")) and
+                (.name | type == "string") and
+                ((.name | ascii_downcase) == $name) and
+                (.type | type == "string") and (.type | length > 0))
+        ' "$response" >/dev/null 2>&1; then
+        /usr/bin/rm -f -- "$response"
+        [[ -n "${VX_CF_STATUS:-}" ]] || VX_CF_STATUS=malformed_response
+        return 1
+    fi
+    count=$(/usr/bin/jq -r '.result | length' "$response" 2>/dev/null)
+    /usr/bin/rm -f -- "$response"
+    [[ "$count" =~ ^[0-9]+$ ]] \
+        || { VX_CF_STATUS=malformed_response; return 1; }
+    VX_CF_ANY_RECORD_FOUND=no
+    (( count == 0 )) || VX_CF_ANY_RECORD_FOUND=yes
+}
+
 vx_cf_get_record() {
     local record_id=$1 response
 
@@ -535,6 +567,8 @@ vx_cf_get_record() {
 
 vx_cf_mutate_record() {
     local method=$1 api_path=$2 domain=$3 address=$4 body response expected_id=${5:-}
+    local created_record_id observer_status
+    local saved_name saved_type saved_address saved_ttl saved_proxied
 
     body=$(/usr/bin/mktemp "$(vx_cf_runtime_root)/.body.XXXXXX") \
         || { VX_CF_STATUS=state_error; return 1; }
@@ -572,6 +606,39 @@ vx_cf_mutate_record() {
     VX_CF_RECORD_TTL=$(/usr/bin/jq -r '.result.ttl // empty' "$response")
     VX_CF_RECORD_PROXIED=$(/usr/bin/jq -r '.result.proxied // empty' "$response")
     /usr/bin/rm -f -- "$response"
+    if [[ "$method" == POST ]]; then
+        created_record_id=$VX_CF_RECORD_ID
+        [[ "$created_record_id" =~ ^[a-f0-9]{32}$ ]] \
+            || { VX_CF_STATUS=malformed_response; return 1; }
+        if declare -F vx_cf_migration_observe_record_id >/dev/null 2>&1; then
+            saved_name=$VX_CF_RECORD_NAME
+            saved_type=$VX_CF_RECORD_TYPE
+            saved_address=$VX_CF_RECORD_ADDRESS
+            saved_ttl=$VX_CF_RECORD_TTL
+            saved_proxied=$VX_CF_RECORD_PROXIED
+            if ! vx_cf_migration_observe_record_id "$created_record_id"; then
+                observer_status=state_error
+                VX_CF_RECORD_ID=$created_record_id
+                VX_CF_RECORD_NAME=$saved_name
+                VX_CF_RECORD_TYPE=$saved_type
+                VX_CF_RECORD_ADDRESS=$saved_address
+                VX_CF_RECORD_TTL=$saved_ttl
+                VX_CF_RECORD_PROXIED=$saved_proxied
+                if ! vx_cf_compensate_created_record_locked \
+                    "$domain" "$address" "$created_record_id"; then
+                    return 1
+                fi
+                VX_CF_STATUS=$observer_status
+                return 1
+            fi
+            VX_CF_RECORD_ID=$created_record_id
+            VX_CF_RECORD_NAME=$saved_name
+            VX_CF_RECORD_TYPE=$saved_type
+            VX_CF_RECORD_ADDRESS=$saved_address
+            VX_CF_RECORD_TTL=$saved_ttl
+            VX_CF_RECORD_PROXIED=$saved_proxied
+        fi
+    fi
     [[ "$VX_CF_RECORD_ID" =~ ^[a-f0-9]{32}$ \
         && ( -z "$expected_id" || "$VX_CF_RECORD_ID" == "$expected_id" ) \
         && "$VX_CF_RECORD_NAME" == "$domain" \
@@ -1003,6 +1070,166 @@ vx_cf_certificate_provider_preflight() {
             strict_zones["$zone_id"]=yes
         fi
     done
+}
+
+vx_cf_certificate_provider_readback() {
+    local primary=$1 ingress=$2 hostname zone_id
+    local -A strict_zones=()
+    shift 2
+
+    vx_cf_valid_domain "$primary" && vx_cf_valid_ipv4 "$ingress" \
+        && (( $# >= 1 && $# <= 200 )) \
+        || { VX_CF_STATUS=state_error; return 1; }
+    vx_cf_zone_ssl_readback "$VX_CF_ZONE_ID" || return 1
+    strict_zones["$VX_CF_ZONE_ID"]=yes
+    vx_cf_edge_hostname_preflight "$VX_CF_ZONE_ID" "$primary" || return 1
+    for hostname in "$@"; do
+        vx_cf_valid_certificate_hostname "$hostname" \
+            || { VX_CF_STATUS=invalid_alias; return 1; }
+        [[ "$hostname" == "$primary" ]] && continue
+        [[ "$hostname" != \*.* ]] \
+            || { VX_CF_STATUS=invalid_alias; return 1; }
+        vx_cf_discover_zone_for_hostname "$hostname" || return 1
+        zone_id=$VX_CF_DISCOVERED_ZONE_ID
+        vx_cf_alias_dns_preflight "$zone_id" "$hostname" \
+            "$ingress" "$primary" || return 1
+        vx_cf_edge_hostname_preflight "$zone_id" "$hostname" || return 1
+        if [[ -z "${strict_zones[$zone_id]:-}" ]]; then
+            vx_cf_zone_ssl_readback "$zone_id" || return 1
+            strict_zones["$zone_id"]=yes
+        fi
+    done
+}
+
+vx_cf_collect_migration_hostnames() {
+    local user=$1 source=$2 target=$3 row aliases hostname
+    local -a names=()
+
+    vx_cf_exact_web_row "$user" "$source" || return 1
+    row=$VX_CF_WEB_ROW
+    [[ "$row" =~ (^|[[:space:]])ALIAS=\'([^\']*)\'([[:space:]]|$) ]] \
+        || { VX_CF_STATUS=state_error; return 1; }
+    aliases=${BASH_REMATCH[2]}
+    names+=("$target" "$source")
+    if [[ -n "$aliases" ]]; then
+        local IFS=,
+        read -r -a VX_CF_MIGRATION_ALIAS_NAMES <<<"$aliases"
+        names+=("${VX_CF_MIGRATION_ALIAS_NAMES[@]}")
+    fi
+    mapfile -t VX_CF_MIGRATION_HOSTNAMES < <(
+        printf '%s\n' "${names[@]}" | /usr/bin/tr '[:upper:]' '[:lower:]' \
+            | LC_ALL=C /usr/bin/sort -u
+    )
+    (( ${#VX_CF_MIGRATION_HOSTNAMES[@]} >= 2 \
+        && ${#VX_CF_MIGRATION_HOSTNAMES[@]} <= 200 )) \
+        || { VX_CF_STATUS=invalid_alias; return 1; }
+    for hostname in "${VX_CF_MIGRATION_HOSTNAMES[@]}"; do
+        vx_cf_valid_certificate_hostname "$hostname" \
+            || { VX_CF_STATUS=invalid_alias; return 1; }
+    done
+    VX_CF_MIGRATION_HOSTNAMES_CSV=$(IFS=,; \
+        printf '%s' "${VX_CF_MIGRATION_HOSTNAMES[*]}")
+    VX_CF_MIGRATION_HOSTNAMES_DIGEST=$(printf '%s\n' \
+        "${VX_CF_MIGRATION_HOSTNAMES[@]}" | vx_cf_hostname_digest) \
+        || { VX_CF_STATUS=state_error; return 1; }
+}
+
+vx_cf_migration_preflight_locked() {
+    local user=$1 source=$2 target=$3 path
+
+    vx_cf_valid_user "$user" && vx_cf_valid_domain "$source" \
+        && vx_cf_valid_domain "$target" \
+        || { VX_CF_STATUS=invalid_domain; return 1; }
+    vx_cf_provider_mode || { VX_CF_STATUS=state_error; return 1; }
+    [[ "$VX_CF_PROVIDER_MODE" == cloudflare-managed ]] \
+        || { VX_CF_STATUS=provider_disabled; return 1; }
+    vx_cf_load_config || return 1
+    vx_cf_managed_domain_matches_zone "$target" "$VX_CF_ZONE_NAME" \
+        || { VX_CF_STATUS=invalid_domain; return 1; }
+    [[ "$source" != "$target" ]] \
+        || { VX_CF_STATUS=invalid_domain; return 1; }
+    vx_cf_exact_web_row "$user" "$source" || return 1
+
+    for path in "$(vx_cf_record_path "$user" "$source")" \
+        "$(vx_cf_certificate_path "$user" "$source")"; do
+        [[ ! -e "$path" && ! -L "$path" ]] \
+            || { VX_CF_STATUS=ownership_mismatch; return 1; }
+    done
+    vx_cf_local_domain_exists "$target" \
+        && { VX_CF_STATUS=target_in_use; return 1; }
+    for path in "$(vx_cf_record_path "$user" "$target")" \
+        "$(vx_cf_certificate_path "$user" "$target")"; do
+        [[ ! -e "$path" && ! -L "$path" ]] \
+            || { VX_CF_STATUS=target_in_use; return 1; }
+    done
+    vx_cf_lookup_any_record "$target" || return 1
+    [[ "$VX_CF_ANY_RECORD_FOUND" == no ]] \
+        || { VX_CF_STATUS=target_record_exists; return 1; }
+
+    vx_cf_web_address "$user" "$source" || return 1
+    vx_cf_collect_migration_hostnames "$user" "$source" "$target" || return 1
+    vx_cf_certificate_provider_readback "$target" "$VX_CF_WEB_ADDRESS" \
+        "${VX_CF_MIGRATION_HOSTNAMES[@]}" || return 1
+    VX_CF_STATUS=ready
+}
+
+vx_cf_verify_managed_site_locked() {
+    local user=$1 target=$2 record_path certificate_path
+
+    vx_cf_valid_user "$user" && vx_cf_valid_domain "$target" \
+        || { VX_CF_STATUS=invalid_domain; return 1; }
+    vx_cf_provider_mode || { VX_CF_STATUS=state_error; return 1; }
+    [[ "$VX_CF_PROVIDER_MODE" == cloudflare-managed ]] \
+        || { VX_CF_STATUS=provider_disabled; return 1; }
+    vx_cf_load_config || return 1
+    vx_cf_managed_domain_matches_zone "$target" "$VX_CF_ZONE_NAME" \
+        || { VX_CF_STATUS=invalid_domain; return 1; }
+    vx_cf_web_address "$user" "$target" || return 1
+
+    record_path=$(vx_cf_record_path "$user" "$target")
+    [[ -e "$record_path" || -L "$record_path" ]] \
+        || { VX_CF_STATUS=ownership_mismatch; return 1; }
+    vx_cf_load_metadata "$user" "$target" || return 1
+    [[ "$VX_CF_META_USER" == "$user" \
+        && "$VX_CF_META_DOMAIN" == "$target" \
+        && "$VX_CF_META_ZONE_ID" == "$VX_CF_ZONE_ID" ]] \
+        || { VX_CF_STATUS=ownership_mismatch; return 1; }
+    [[ "$VX_CF_META_ADDRESS" == "$VX_CF_WEB_ADDRESS" ]] \
+        || { VX_CF_STATUS=readback_mismatch; return 1; }
+    vx_cf_get_record "$VX_CF_META_RECORD_ID" || return 1
+    [[ "$VX_CF_RECORD_NAME" == "$target" \
+        && "$VX_CF_RECORD_TYPE" == A \
+        && "$VX_CF_RECORD_ADDRESS" == "$VX_CF_WEB_ADDRESS" \
+        && "$VX_CF_RECORD_TTL" == 1 \
+        && "$VX_CF_RECORD_PROXIED" == true ]] \
+        || { VX_CF_STATUS=readback_mismatch; return 1; }
+
+    vx_cf_collect_certificate_hostnames "$user" "$target" || return 1
+    vx_cf_certificate_provider_readback "$target" "$VX_CF_WEB_ADDRESS" \
+        "${VX_CF_CERT_HOSTNAMES[@]}" || return 1
+    certificate_path=$(vx_cf_certificate_path "$user" "$target")
+    [[ -e "$certificate_path" || -L "$certificate_path" ]] \
+        || { VX_CF_STATUS=ownership_mismatch; return 1; }
+    vx_cf_load_certificate_metadata "$user" "$target" || return 1
+    [[ "$VX_CF_CERT_META_USER" == "$user" \
+        && "$VX_CF_CERT_META_DOMAIN" == "$target" \
+        && "$VX_CF_CERT_META_ZONE_ID" == "$VX_CF_ZONE_ID" ]] \
+        || { VX_CF_STATUS=ownership_mismatch; return 1; }
+    [[ "$VX_CF_CERT_META_HOSTNAMES" == "$VX_CF_CERT_HOSTNAMES_CSV" \
+        && "$VX_CF_CERT_META_DIGEST" == "$VX_CF_CERT_HOSTNAMES_DIGEST" ]] \
+        || { VX_CF_STATUS=certificate_drift; return 1; }
+    [[ -z "$VX_CF_CERT_META_PENDING_IDS" ]] \
+        || { VX_CF_STATUS=certificate_cleanup_pending; return 1; }
+    vx_cf_origin_get_certificate "$VX_CF_CERT_META_ID" || return 1
+    [[ "$VX_CF_ORIGIN_CERTIFICATE_ID" == "$VX_CF_CERT_META_ID" \
+        && "$VX_CF_ORIGIN_HOSTNAMES_DIGEST" == "$VX_CF_CERT_META_DIGEST" ]] \
+        || { VX_CF_STATUS=ownership_mismatch; return 1; }
+    [[ "$VX_CF_ORIGIN_REVOKED" == no ]] \
+        || { VX_CF_STATUS=certificate_drift; return 1; }
+    vx_cf_installed_certificate_health "$user" "$target" \
+        "$VX_CF_CERT_META_DIGEST" \
+        "$VX_CF_ORIGIN_CERTIFICATE_FINGERPRINT" || return 1
+    VX_CF_STATUS=managed
 }
 
 vx_cf_assert_zone_rotation_safe() {
@@ -1677,6 +1904,7 @@ vx_cf_origin_compensate_new_certificate() {
 vx_cf_origin_create_certificate() {
     local domain=$1 stage=$2 key csr crt ca body response san hostname
     local certificate_id expected_names actual_names cert_key_digest private_key_digest
+    local observed_certificate_id
 
     key="$stage/$domain.key"
     csr="$stage/$domain.csr"
@@ -1721,6 +1949,15 @@ vx_cf_origin_create_certificate() {
         VX_CF_STATUS=malformed_response
         return 1
     fi
+    observed_certificate_id=$certificate_id
+    if declare -F vx_cf_migration_observe_certificate_id >/dev/null 2>&1 \
+        && ! vx_cf_migration_observe_certificate_id "$observed_certificate_id"; then
+        certificate_id=$observed_certificate_id
+        /usr/bin/rm -f -- "$response"
+        vx_cf_origin_compensate_new_certificate "$certificate_id" state_error
+        return
+    fi
+    certificate_id=$observed_certificate_id
     if ! /usr/bin/jq -e '(.result | type == "object") and
             (.result.hostnames | type == "array") and
             (.result.certificate | type == "string")' "$response" \
@@ -1889,24 +2126,36 @@ vx_cf_native_ssl_matches_snapshot() {
     done
 }
 
+vx_cf_run_internal_origin_ssl() {
+    local command=$1
+    shift
+
+    if [[ "${VX_CLOUDFLARE_INTERNAL_MIGRATION:-}" == 1 ]]; then
+        VX_CLOUDFLARE_INTERNAL_ORIGIN_SSL=1 \
+            VX_CLOUDFLARE_INTERNAL_MIGRATION=1 VESTA="$VESTA" \
+            "$command" "$@" >/dev/null 2>&1
+    else
+        VX_CLOUDFLARE_INTERNAL_ORIGIN_SSL=1 VESTA="$VESTA" \
+            "$command" "$@" >/dev/null 2>&1
+    fi
+}
+
 vx_cf_restore_native_ssl() {
     local user=$1 domain=$2 snapshot=$3 restart=${4:-yes} command
 
     [[ "$VX_CF_SNAPSHOT_RESTORABLE" == yes ]] || return 1
     if [[ "$VX_CF_SNAPSHOT_SSL" == yes ]]; then
         command="$BIN/v-change-web-domain-sslcert"
-        VX_CLOUDFLARE_INTERNAL_ORIGIN_SSL=1 VESTA="$VESTA" \
-            "$command" "$user" "$domain" "$snapshot" "$restart" \
-            >/dev/null 2>&1 || return 1
+        vx_cf_run_internal_origin_ssl "$command" "$user" "$domain" \
+            "$snapshot" "$restart" || return 1
         if [[ -f "$snapshot/$domain.pem" && ! -L "$snapshot/$domain.pem" ]]; then
             /usr/bin/cp -f -- "$snapshot/$domain.pem" \
                 "$VESTA/data/users/$user/ssl/$domain.pem" || return 1
         fi
     else
         command="$BIN/v-delete-web-domain-ssl"
-        VX_CLOUDFLARE_INTERNAL_ORIGIN_SSL=1 VESTA="$VESTA" \
-            "$command" "$user" "$domain" "$restart" \
-            >/dev/null 2>&1 || return 1
+        vx_cf_run_internal_origin_ssl "$command" "$user" "$domain" \
+            "$restart" || return 1
     fi
     vx_cf_native_ssl_matches_snapshot "$user" "$domain" "$snapshot"
 }
@@ -2007,15 +2256,13 @@ vx_cf_install_origin_certificate() {
         || { VX_CF_STATUS=state_error; return 1; }
     if [[ "$ssl" == yes ]]; then
         command="$BIN/v-change-web-domain-sslcert"
-        VX_CLOUDFLARE_INTERNAL_ORIGIN_SSL=1 VESTA="$VESTA" \
-            "$command" "$user" "$domain" "$stage" "$restart" \
-            >/dev/null 2>&1 \
+        vx_cf_run_internal_origin_ssl "$command" "$user" "$domain" \
+            "$stage" "$restart" \
             || { VX_CF_STATUS=certificate_install_failed; return 1; }
     else
         command="$BIN/v-add-web-domain-ssl"
-        VX_CLOUDFLARE_INTERNAL_ORIGIN_SSL=1 VESTA="$VESTA" \
-            "$command" "$user" "$domain" "$stage" same "$restart" \
-            >/dev/null 2>&1 \
+        vx_cf_run_internal_origin_ssl "$command" "$user" "$domain" \
+            "$stage" same "$restart" \
             || { VX_CF_STATUS=certificate_install_failed; return 1; }
     fi
     vx_cf_rendered_ssl_paths "$user" "$domain" \
@@ -2250,8 +2497,8 @@ vx_cf_allocate_domain_locked() {
         label=$(vx_cf_generated_label) || { VX_CF_STATUS=state_error; return 1; }
         candidate="$label.$VX_CF_ZONE_NAME"
         vx_cf_local_domain_exists "$candidate" && continue
-        vx_cf_lookup_record "$candidate" || return 1
-        [[ "$VX_CF_RECORD_FOUND" == yes ]] && continue
+        vx_cf_lookup_any_record "$candidate" || return 1
+        [[ "$VX_CF_ANY_RECORD_FOUND" == yes ]] && continue
         VX_CF_ALLOCATED_DOMAIN=$candidate
         VX_CF_STATUS=allocated
         return 0

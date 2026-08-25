@@ -188,6 +188,33 @@ Read the current protected credentials through the existing `vx cf` configuratio
 - [ ] Credentials and provider values never leak through argv, environment, output, logs, UI, test evidence, or Git.
 - [ ] Stubbed validation, syntax checks, one combined audit, commit, protected configuration, and target acceptance complete without exposing credentials.
 
+## Explicit migration milestone for existing websites
+
+This migration is deliberately separate from package installation and the
+normal website-create path. It lives under
+`install/migrations/cloudflare-managed-web-domains/` and is invoked manually
+only after the configured provider reports exactly `ready`.
+
+- [x] `prepare.sh PLAN [--user USER] [--json]` creates a protected immutable
+  inventory and exact rollback snapshots without changing Vesta or provider
+  state. The default scope includes every authoritative web-domain row,
+  including suspended users and domains.
+- [x] `apply.sh PLAN [--json]` binds to that exact inventory, allocates all
+  technical names internally, migrates each website in place, creates only its
+  technical A record, installs and verifies its exact Origin CA SAN set, and
+  records the protected api-vxapp #140 mapping.
+- [x] `rollback.sh PLAN [--json]` reverses only transaction-owned authority and
+  restores exact pre-migration website state. Failed verification remains in
+  durable root-only `recovery_required` state.
+- [x] A focused migration fixture proves dry-run non-mutation, suspended and
+  multi-alias/proxy preservation, unique Vesta-owned allocation, all failure
+  compensation boundaries, exact cleanup authority, idempotency, deletion
+  after migration, drift rejection, and secret-safe output/process surfaces.
+- [x] The complete migration and existing Cloudflare/native/proxy regression
+  suites pass one combined review and at most one targeted remediation before
+  the implementation is committed. No live `apply.sh` occurs without a
+  separately confirmed online host, configured credentials, and approved plan.
+
 ## Cross-repository dependency
 
 - Owner: `jackpridham/vesta-vxapp` owns hostname allocation, Cloudflare configuration, record lifecycle, panel creation, and external-domain alias attachment.
