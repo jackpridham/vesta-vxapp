@@ -1386,15 +1386,20 @@ vx_cf_migration_queue_remove_exact() {
 }
 
 vx_cf_migration_cleanup_stale_identity() {
-    local user=$1 domain=$2 row=$3 rendered web_system proxy_system proxy stats tpl
-    local extension path expected_link version pool
+    local user=$1 domain=$2 row=$3 live_domain=$4 rendered logs
+    local web_system proxy_system proxy stats tpl extension path expected_link
+    local version pool
     local -a paths=()
 
     vx_cf_valid_domain "$domain" && vx_cf_migration_valid_user "$user" \
+        && vx_cf_valid_domain "$live_domain" \
         && vx_cf_migration_validate_web_row "$row" || return 1
-    vx_cf_migration_homedir && vx_cf_migration_etc_root || return 1
+    vx_cf_migration_homedir && vx_cf_migration_log_root \
+        && vx_cf_migration_etc_root || return 1
     rendered="$VX_CF_MIGRATION_HOME/$user/conf/web"
+    logs="$VX_CF_MIGRATION_HOME/$user/web/$live_domain/logs"
     [[ -d "$rendered" && ! -L "$rendered" ]] || return 1
+    [[ -d "$logs" && ! -L "$logs" ]] || return 1
     web_system=${WEB_SYSTEM:-}
     proxy_system=${PROXY_SYSTEM:-}
     [[ "$web_system" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ ]] || return 1
@@ -1432,6 +1437,17 @@ vx_cf_migration_cleanup_stale_identity() {
     fi
     for path in "${paths[@]}"; do
         vx_cf_migration_remove_exact_file "$path" || return 1
+    done
+    for extension in log error.log; do
+        path="$logs/$domain.$extension"
+        expected_link="$VX_CF_MIGRATION_LOG_ROOT/$domain.$extension"
+        if [[ -L "$path" ]]; then
+            [[ "$(/usr/bin/readlink -- "$path")" == "$expected_link" ]] \
+                || return 1
+            /usr/bin/rm -f -- "$path" || return 1
+        else
+            [[ ! -e "$path" ]] || return 1
+        fi
     done
     if [[ "$stats" == awstats ]]; then
         path="$VX_CF_MIGRATION_ETC_ROOT/awstats/$stats.$domain.conf"
@@ -2009,7 +2025,7 @@ vx_cf_migration_restore_all_locked() {
         vx_cf_migration_row_from_file "$artifact/snapshots/users/$user/web.conf" \
             "$source" || return 1
         vx_cf_migration_cleanup_stale_identity "$user" "$target" \
-            "$VX_CF_MIGRATION_SOURCE_ROW" || return 1
+            "$VX_CF_MIGRATION_SOURCE_ROW" "$source" || return 1
     done <"$artifact/plan.tsv"
     while IFS= read -r user; do
         [[ -n "$user" ]] || continue
@@ -2480,7 +2496,7 @@ vx_cf_migration_restore_failed_item_locked() {
     vx_cf_migration_row_from_file "$artifact/snapshots/users/$user/web.conf" \
         "$source" || return 1
     vx_cf_migration_cleanup_stale_identity "$user" "$target" \
-        "$VX_CF_MIGRATION_SOURCE_ROW" || return 1
+        "$VX_CF_MIGRATION_SOURCE_ROW" "$source" || return 1
     vx_cf_migration_context_restore "$artifact" "$item" "$user" || return 1
     VESTA="$VESTA" "$VESTA/bin/v-restart-web" yes >/dev/null 2>&1 \
         && VESTA="$VESTA" "$VESTA/bin/v-restart-proxy" yes >/dev/null 2>&1 \
@@ -2597,7 +2613,7 @@ vx_cf_migration_apply_locked() {
             "$artifact/snapshots/users/$user/web.conf" "$source"; then
             item_failed=1
         elif ! vx_cf_migration_cleanup_stale_identity "$user" "$source" \
-            "$VX_CF_MIGRATION_SOURCE_ROW"; then
+            "$VX_CF_MIGRATION_SOURCE_ROW" "$target"; then
             item_failed=1
         elif ! VESTA="$VESTA" "$VESTA/bin/v-restart-web" yes \
             >/dev/null 2>&1 \

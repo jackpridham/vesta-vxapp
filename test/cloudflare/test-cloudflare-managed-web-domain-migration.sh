@@ -255,6 +255,7 @@ lifecycle_stub="$work_root/migration-native-stub"
     printf '%s\n' "    [[ \"\${VX_CLOUDFLARE_INTERNAL_MIGRATION:-}\" == 1 ]] || exit 93"
     printf '%s\n' '    source "$VESTA/conf/vesta.conf"'
     printf '%s\n' '    rendered="$HOMEDIR/$1/conf/web"'
+    printf 'log_root=%q\n' "$log_root"
     printf '%s\n' '    etc_root=${VX_CLOUDFLARE_MIGRATION_ETC_ROOT:-$VESTA/data/vx/cloudflare/test-etc}'
     printf '%s\n' '    while IFS= read -r row || [[ -n "$row" ]]; do'
     printf '%s\n' '        domain=$(/usr/bin/sed -n "s/^DOMAIN='\''\([^'\'']*\)'\''.*/\1/p" <<<"$row")'
@@ -263,6 +264,9 @@ lifecycle_stub="$work_root/migration-native-stub"
     printf '%s\n' '        stats=$(/usr/bin/sed -n "s/.* STATS='\''\([^'\'']*\)'\''.*/\1/p" <<<"$row")'
     printf '%s\n' '        tpl=$(/usr/bin/sed -n "s/.* TPL='\''\([^'\'']*\)'\''.*/\1/p" <<<"$row")'
     printf '%s\n' '        [[ -n "$domain" ]] || exit 95'
+    printf '%s\n' '        /usr/bin/mkdir -p -- "$HOMEDIR/$1/web/$domain/logs"'
+    printf '%s\n' '        /usr/bin/ln -f -s -- "$log_root/$domain.log" "$HOMEDIR/$1/web/$domain/logs/$domain.log"'
+    printf '%s\n' '        /usr/bin/ln -f -s -- "$log_root/$domain.error.log" "$HOMEDIR/$1/web/$domain/logs/$domain.error.log"'
     printf '%s\n' '        /usr/bin/mkdir -p -- "$rendered"'
     printf '%s\n' '        printf "web vhost\n" >"$rendered/$domain.$WEB_SYSTEM.conf"'
     printf '%s\n' '        if [[ "$ssl" == yes ]]; then'
@@ -324,6 +328,11 @@ printf 'rendered source configuration\n' \
 printf 'access log\n' >"$log_root/$source_domain.log"
 printf 'error log\n' >"$log_root/$source_domain.error.log"
 printf '321\n' >"$log_root/$source_domain.bytes"
+/usr/bin/mkdir -p "$home_root/alice/web/$source_domain/logs"
+/usr/bin/ln -s "$log_root/$source_domain.log" \
+    "$home_root/alice/web/$source_domain/logs/$source_domain.log"
+/usr/bin/ln -s "$log_root/$source_domain.error.log" \
+    "$home_root/alice/web/$source_domain/logs/$source_domain.error.log"
 for ssl_suffix in crt key ca pem; do
     printf 'retained source %s\n' "$ssl_suffix" \
         >"$vesta_root/data/users/alice/ssl/$source_domain.$ssl_suffix"
@@ -580,6 +589,11 @@ assert_file_contains "$vesta_root/data/users/alice/web.conf" \
 [[ -d "$home_root/alice/web/$generated_domain" \
     && ! -e "$home_root/alice/web/$source_domain" ]] \
     || fail 'migration apply did not move the domain document root'
+[[ ! -e "$home_root/alice/web/$generated_domain/logs/$source_domain.log" \
+    && ! -L "$home_root/alice/web/$generated_domain/logs/$source_domain.log" \
+    && ! -e "$home_root/alice/web/$generated_domain/logs/$source_domain.error.log" \
+    && ! -L "$home_root/alice/web/$generated_domain/logs/$source_domain.error.log" ]] \
+    || fail 'migration apply retained stale primary log links'
 for log_suffix in log error.log bytes; do
     [[ -f "$log_root/$generated_domain.$log_suffix" \
         && ! -e "$log_root/$source_domain.$log_suffix" ]] \
