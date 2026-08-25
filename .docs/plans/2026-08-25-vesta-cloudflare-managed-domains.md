@@ -170,7 +170,7 @@ One independent reviewer checks the complete diff for specification, secret safe
 
 - [x] **Step 3: Commit and deploy the implementation**
 
-The coherent feature was committed and installed as root-owned files on the approved development target, `debian@192.168.200.100`. Exact deployed hashes and modes, PHP/Bash syntax, panel routes, service health, and sanitized provider status were verified. No production host was changed.
+The coherent feature was committed and installed as root-owned files on the approved development target. Exact deployed hashes and modes, PHP/Bash syntax, panel routes, service health, and sanitized provider status were verified. No production host was changed.
 
 - [x] **Step 4: Configure and run protected live acceptance**
 
@@ -233,7 +233,7 @@ only after the configured provider reports exactly `ready`.
 - Consumer: downstream issue #139 must call the Vesta allocator/reconcile contract without receiving Cloudflare credentials or choosing the generated hostname.
 - Contract correction: downstream issue #145 currently allocates `s-<32 hex>` inside the consumer API. It must be revised before API-created Sites can claim the Vesta-owned `s-<10 hex>` contract requested here; this implementation does not silently mutate that separate repository.
 - The owner implementation has passed protected development acceptance only.
-  Downstream `api-vxapp` issues #139, #140, #142, #145, and #227 remain separate
+  Downstream API issues #139, #140, #142, #145, and #227 remain separate
   consumer/release dependencies; none is satisfied by this repository's dev
   deployment, and no production deployment is claimed.
 

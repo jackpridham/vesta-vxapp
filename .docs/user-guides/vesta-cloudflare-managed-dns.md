@@ -290,8 +290,8 @@ migration-owned record and Origin certificate.
 
 ## Validated development acceptance
 
-Protected live acceptance completed on the approved development host
-`192.168.200.100`. Bounded evidence recorded three disposable sites, two
+Protected live acceptance completed on the approved development host. Bounded
+evidence recorded three disposable sites, two
 aliases, six successful HTTPS checks, two migrations, two normal deletions,
 and exact provider cleanup. It proved generated-host and alias HTTPS through
 Cloudflare Full (strict), migration apply and rollback, and deletion of only
@@ -301,7 +301,7 @@ limited production-readiness launcher passed. No credential, provider ID,
 protected mapping, private key, or raw response was included in the evidence.
 
 This is `vesta-vxapp` owner-repository development acceptance. It is not a
-production deployment, and it does not close the separate `api-vxapp` work in
+production deployment, and it does not close the separate downstream API work in
 issues #139, #140, #142, #145, or #227.
 
 For a future authorized environment, repeat this protected sequence after
