@@ -267,6 +267,7 @@ lifecycle_stub="$work_root/migration-native-stub"
     printf '%s\n' '        /usr/bin/mkdir -p -- "$HOMEDIR/$1/web/$domain/logs"'
     printf '%s\n' '        /usr/bin/ln -f -s -- "$log_root/$domain.log" "$HOMEDIR/$1/web/$domain/logs/$domain.log"'
     printf '%s\n' '        /usr/bin/ln -f -s -- "$log_root/$domain.error.log" "$HOMEDIR/$1/web/$domain/logs/$domain.error.log"'
+    printf '%s\n' '        /usr/bin/chmod 0551 "$HOMEDIR/$1/web/$domain"'
     printf '%s\n' '        /usr/bin/mkdir -p -- "$rendered"'
     printf '%s\n' '        printf "web vhost\n" >"$rendered/$domain.$WEB_SYSTEM.conf"'
     printf '%s\n' '        if [[ "$ssl" == yes ]]; then'
@@ -333,6 +334,7 @@ printf '321\n' >"$log_root/$source_domain.bytes"
     "$home_root/alice/web/$source_domain/logs/$source_domain.log"
 /usr/bin/ln -s "$log_root/$source_domain.error.log" \
     "$home_root/alice/web/$source_domain/logs/$source_domain.error.log"
+/usr/bin/chmod 0751 "$home_root/alice/web/$source_domain"
 for ssl_suffix in crt key ca pem; do
     printf 'retained source %s\n' "$ssl_suffix" \
         >"$vesta_root/data/users/alice/ssl/$source_domain.$ssl_suffix"
@@ -594,6 +596,9 @@ assert_file_contains "$vesta_root/data/users/alice/web.conf" \
     && ! -e "$home_root/alice/web/$generated_domain/logs/$source_domain.error.log" \
     && ! -L "$home_root/alice/web/$generated_domain/logs/$source_domain.error.log" ]] \
     || fail 'migration apply retained stale primary log links'
+assert_eq "$([ -d "$home_root/alice/web/$generated_domain" ] \
+    && /usr/bin/stat -c '%a' "$home_root/alice/web/$generated_domain")" 751 \
+    'migration apply changed the website-root mode during rebuild'
 for log_suffix in log error.log bytes; do
     [[ -f "$log_root/$generated_domain.$log_suffix" \
         && ! -e "$log_root/$source_domain.$log_suffix" ]] \

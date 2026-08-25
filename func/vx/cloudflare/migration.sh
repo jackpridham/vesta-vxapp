@@ -640,7 +640,7 @@ vx_cf_migration_exact_row() {
 
 vx_cf_migration_filesystem_write() {
     local plan_file=$1 item user source target hostnames_digest address retain_source_ssl
-    local row kind digest path ftp_line component
+    local row kind digest path ftp_line component extension link_target logs_kind
 
     vx_cf_migration_homedir || return 1
     vx_cf_migration_log_root || return 1
@@ -655,6 +655,34 @@ vx_cf_migration_filesystem_write() {
             || return 1
         [[ "$kind" == directory ]] || return 1
         printf '%s\tdocroot\t%s\t%s\n' "$item" "$kind" "$digest"
+        printf '%s\tdocroot.root\tmetadata\t%s\n' "$item" \
+            "$(/usr/bin/stat -c '%a:%u:%g' "$path")"
+        path="$VX_CF_MIGRATION_HOME/$user/web/$source/logs"
+        if [[ -d "$path" && ! -L "$path" ]]; then
+            logs_kind=metadata
+            printf '%s\tdocroot.logs\tmetadata\t%s\n' "$item" \
+                "$(/usr/bin/stat -c '%a:%u:%g' "$path")"
+        elif [[ ! -e "$path" && ! -L "$path" ]]; then
+            logs_kind=missing
+            printf '%s\tdocroot.logs\tmissing\t-\n' "$item"
+        else
+            return 1
+        fi
+        for extension in log error.log; do
+            path="$VX_CF_MIGRATION_HOME/$user/web/$source/logs/$source.$extension"
+            if [[ "$logs_kind" == metadata && -L "$path" ]]; then
+                link_target=$(/usr/bin/readlink -- "$path") || return 1
+                [[ "$link_target" \
+                    == "$VX_CF_MIGRATION_LOG_ROOT/$source.$extension" ]] \
+                    || return 1
+                printf '%s\tdocroot.log-link.%s\tlink\t%s\n' "$item" \
+                    "$extension" "$(/usr/bin/stat -c '%a:%u:%g' "$path")"
+            else
+                [[ ! -e "$path" ]] || return 1
+                printf '%s\tdocroot.log-link.%s\tmissing\t-\n' \
+                    "$item" "$extension"
+            fi
+        done
         for component in log error bytes; do
             case "$component" in
                 log) path="$VX_CF_MIGRATION_LOG_ROOT/$source.log" ;;
@@ -1474,6 +1502,90 @@ vx_cf_migration_cleanup_stale_identity() {
     fi
 }
 
+vx_cf_migration_restore_docroot_metadata() {
+    local artifact=$1 item=$2 user=$3 live_domain=$4 root logs
+    local extension path expected_link kind value mode uid gid
+    local logs_kind logs_mode logs_uid logs_gid
+
+    vx_cf_migration_valid_user "$user" && vx_cf_valid_domain "$live_domain" \
+        && vx_cf_migration_homedir && vx_cf_migration_log_root || return 1
+    root="$VX_CF_MIGRATION_HOME/$user/web/$live_domain"
+    logs="$root/logs"
+    [[ -d "$root" && ! -L "$root" ]] || return 1
+    vx_cf_migration_filesystem_component "$artifact" "$item" docroot.root \
+        || return 1
+    kind=$VX_CF_MIGRATION_COMPONENT_KIND
+    value=$VX_CF_MIGRATION_COMPONENT_VALUE
+    [[ "$kind" == metadata \
+        && "$value" =~ ^([0-7]{3,4}):([0-9]+):([0-9]+)$ ]] || return 1
+    mode=${BASH_REMATCH[1]}
+    uid=${BASH_REMATCH[2]}
+    gid=${BASH_REMATCH[3]}
+    /usr/bin/chmod "$mode" "$root" || return 1
+    (( EUID != 0 )) || /usr/bin/chown "$uid:$gid" "$root" || return 1
+    [[ "$(/usr/bin/stat -c '%a:%u:%g' "$root")" == "$mode:$uid:$gid" ]] \
+        || return 1
+    vx_cf_migration_filesystem_component "$artifact" "$item" docroot.logs \
+        || return 1
+    logs_kind=$VX_CF_MIGRATION_COMPONENT_KIND
+    value=$VX_CF_MIGRATION_COMPONENT_VALUE
+    if [[ "$logs_kind" == metadata ]]; then
+        [[ "$value" =~ ^([0-7]{3,4}):([0-9]+):([0-9]+)$ ]] \
+            || return 1
+        logs_mode=${BASH_REMATCH[1]}
+        logs_uid=${BASH_REMATCH[2]}
+        logs_gid=${BASH_REMATCH[3]}
+        [[ -d "$logs" && ! -L "$logs" ]] || return 1
+    elif [[ "$logs_kind" == missing && "$value" == - ]]; then
+        [[ (! -e "$logs" && ! -L "$logs") || (-d "$logs" && ! -L "$logs") ]] \
+            || return 1
+    else
+        return 1
+    fi
+    for extension in log error.log; do
+        path="$logs/$live_domain.$extension"
+        expected_link="$VX_CF_MIGRATION_LOG_ROOT/$live_domain.$extension"
+        vx_cf_migration_filesystem_component "$artifact" "$item" \
+            "docroot.log-link.$extension" || return 1
+        kind=$VX_CF_MIGRATION_COMPONENT_KIND
+        value=$VX_CF_MIGRATION_COMPONENT_VALUE
+        if [[ "$kind" == link ]]; then
+            [[ "$logs_kind" == metadata ]] || return 1
+            [[ "$value" =~ ^([0-7]{3,4}):([0-9]+):([0-9]+)$ ]] \
+                || return 1
+            mode=${BASH_REMATCH[1]}
+            uid=${BASH_REMATCH[2]}
+            gid=${BASH_REMATCH[3]}
+            [[ -L "$path" \
+                && "$(/usr/bin/readlink -- "$path")" == "$expected_link" ]] \
+                || return 1
+            (( EUID != 0 )) || /usr/bin/chown -h "$uid:$gid" "$path" \
+                || return 1
+            [[ "$(/usr/bin/stat -c '%a:%u:%g' "$path")" \
+                == "$mode:$uid:$gid" ]] || return 1
+        elif [[ "$kind" == missing && "$value" == - ]]; then
+            if [[ -L "$path" ]]; then
+                [[ "$(/usr/bin/readlink -- "$path")" == "$expected_link" ]] \
+                    || return 1
+                /usr/bin/rm -f -- "$path" || return 1
+            else
+                [[ ! -e "$path" ]] || return 1
+            fi
+        else
+            return 1
+        fi
+    done
+    if [[ "$logs_kind" == metadata ]]; then
+        /usr/bin/chmod "$logs_mode" "$logs" || return 1
+        (( EUID != 0 )) || /usr/bin/chown "$logs_uid:$logs_gid" "$logs" \
+            || return 1
+        [[ "$(/usr/bin/stat -c '%a:%u:%g' "$logs")" \
+            == "$logs_mode:$logs_uid:$logs_gid" ]] || return 1
+    elif [[ -d "$logs" && ! -L "$logs" ]]; then
+        /usr/bin/rmdir -- "$logs" || return 1
+    fi
+}
+
 vx_cf_migration_ftp_one() {
     local ftp_user=$1 old_prefix=$2 new_prefix=$3 entry home desired temporary
 
@@ -2026,6 +2138,8 @@ vx_cf_migration_restore_all_locked() {
             "$source" || return 1
         vx_cf_migration_cleanup_stale_identity "$user" "$target" \
             "$VX_CF_MIGRATION_SOURCE_ROW" "$source" || return 1
+        vx_cf_migration_restore_docroot_metadata "$artifact" "$item" \
+            "$user" "$source" || return 1
     done <"$artifact/plan.tsv"
     while IFS= read -r user; do
         [[ -n "$user" ]] || continue
@@ -2497,6 +2611,8 @@ vx_cf_migration_restore_failed_item_locked() {
         "$source" || return 1
     vx_cf_migration_cleanup_stale_identity "$user" "$target" \
         "$VX_CF_MIGRATION_SOURCE_ROW" "$source" || return 1
+    vx_cf_migration_restore_docroot_metadata "$artifact" "$item" "$user" \
+        "$source" || return 1
     vx_cf_migration_context_restore "$artifact" "$item" "$user" || return 1
     VESTA="$VESTA" "$VESTA/bin/v-restart-web" yes >/dev/null 2>&1 \
         && VESTA="$VESTA" "$VESTA/bin/v-restart-proxy" yes >/dev/null 2>&1 \
@@ -2614,6 +2730,9 @@ vx_cf_migration_apply_locked() {
             item_failed=1
         elif ! vx_cf_migration_cleanup_stale_identity "$user" "$source" \
             "$VX_CF_MIGRATION_SOURCE_ROW" "$target"; then
+            item_failed=1
+        elif ! vx_cf_migration_restore_docroot_metadata "$artifact" "$item" \
+            "$user" "$target"; then
             item_failed=1
         elif ! VESTA="$VESTA" "$VESTA/bin/v-restart-web" yes \
             >/dev/null 2>&1 \
