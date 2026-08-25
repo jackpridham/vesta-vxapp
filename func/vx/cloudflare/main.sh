@@ -997,7 +997,7 @@ vx_cf_certificate_metadata_exists() {
 }
 
 vx_cf_valid_certificate_id() {
-    [[ "$1" =~ ^[A-Za-z0-9_-]{1,32}$ ]]
+    [[ "$1" =~ ^[A-Za-z0-9_-]{1,64}$ ]]
 }
 
 vx_cf_valid_certificate_hostname() {
@@ -1213,7 +1213,7 @@ vx_cf_origin_get_certificate() {
 }
 
 vx_cf_origin_revoke_certificate() {
-    local certificate_id=$1 response returned_id
+    local certificate_id=$1 response returned_id revoked_at
 
     response=$(vx_cf_new_response_file) || { VX_CF_STATUS=state_error; return 1; }
     if ! vx_cf_origin_transport DELETE "/$certificate_id" "$response"; then
@@ -1225,9 +1225,12 @@ vx_cf_origin_revoke_certificate() {
         return 1
     fi
     returned_id=$(/usr/bin/jq -r '.result.id // empty' "$response")
+    revoked_at=$(/usr/bin/jq -r '.result.revoked_at // empty' "$response")
     /usr/bin/rm -f -- "$response"
-    [[ "$returned_id" == "$certificate_id" ]] \
+    [[ "$returned_id" == "$certificate_id" \
+        && "$revoked_at" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T ]] \
         || { VX_CF_STATUS=malformed_response; return 1; }
+    VX_CF_ORIGIN_REVOKED_AT=$revoked_at
 }
 
 vx_cf_origin_compensate_new_certificate() {
@@ -1456,12 +1459,6 @@ vx_cf_origin_cleanup_locked() {
         && "$VX_CF_ORIGIN_HOSTNAMES_DIGEST" == "$VX_CF_CERT_META_DIGEST" ]] \
         || { VX_CF_STATUS=ownership_mismatch; return 1; }
     vx_cf_origin_revoke_certificate "$certificate_id" || return 1
-    if vx_cf_origin_get_certificate "$certificate_id"; then
-        VX_CF_STATUS=delete_not_confirmed
-        return 1
-    elif [[ "$VX_CF_STATUS" != not_found ]]; then
-        return 1
-    fi
     vx_cf_remove_certificate_metadata "$user" "$domain" || return 1
     VX_CF_STATUS=deleted
 }

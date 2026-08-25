@@ -103,7 +103,7 @@ certificate_metadata="$vesta_root/data/vx/cloudflare/certificates/alice/$domain_
 [[ -f "$certificate_metadata" ]] || fail 'certificate metadata is missing'
 first_certificate_id=$(/usr/bin/sed -n \
     "s/^CERTIFICATE_ID='\([^']*\)'$/\1/p" "$certificate_metadata")
-[[ "$first_certificate_id" =~ ^[a-f0-9]{32}$ ]] \
+[[ "$first_certificate_id" =~ ^[A-Za-z0-9_-]{1,64}$ ]] \
     || fail 'certificate ID is not protected exact authority'
 /usr/bin/openssl x509 -in "$vesta_root/data/users/alice/ssl/$domain_one.crt" \
     -noout -checkhost "$domain_one" >/dev/null 2>&1 \
@@ -170,7 +170,7 @@ run_vesta "$vesta_root/bin/v-add-vx-cloudflare-web-alias" alice "$domain_one" \
     || fail 'custom alias did not use native alias state'
 second_certificate_id=$(/usr/bin/sed -n \
     "s/^CERTIFICATE_ID='\([^']*\)'$/\1/p" "$certificate_metadata")
-[[ "$second_certificate_id" =~ ^[a-f0-9]{32}$ \
+[[ "$second_certificate_id" =~ ^[A-Za-z0-9_-]{1,64}$ \
     && "$second_certificate_id" != "$first_certificate_id" ]] \
     || fail 'alias addition did not rotate the Origin certificate'
 /usr/bin/openssl x509 -in "$vesta_root/data/users/alice/ssl/$domain_one.crt" \

@@ -56,7 +56,9 @@ if [[ "$url" == https://api.cloudflare.com/client/v4/certificates* ]]; then
                 || counter=$(<"$certificate_root/counter")
             counter=$((counter + 1))
             printf '%s\n' "$counter" >"$certificate_root/counter"
-            certificate_id=$(/usr/bin/printf '%032x' "$counter")
+            # Live Origin CA IDs are opaque and currently exceed the API
+            # schema's historical 32-character example.
+            certificate_id=$(/usr/bin/printf '%047d' "$counter")
             csr="$certificate_root/$certificate_id.csr"
             certificate="$certificate_root/$certificate_id.pem"
             /usr/bin/jq -r .csr "$body" >"$csr" || exit 91
@@ -101,7 +103,7 @@ if [[ "$url" == https://api.cloudflare.com/client/v4/certificates* ]]; then
                 "$certificate_root/$certificate_id.pem" \
                 "$certificate_root/$certificate_id.csr"
             printf 'origin-delete %s\n' "$certificate_id" >>"$call_log"
-            printf '{"success":true,"result":{"id":"%s"}}' \
+            printf '{"success":true,"result":{"id":"%s","revoked_at":"2026-08-25T00:00:00Z"}}' \
                 "$certificate_id" >"$output"
             ;;
         *) exit 87 ;;

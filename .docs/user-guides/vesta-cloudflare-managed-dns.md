@@ -178,8 +178,8 @@ After nonsecret code deployment, the protected acceptance sequence is:
    HTTPS response through Cloudflare Full (strict), with no 526 response.
 5. Attach an already-configured proxied alias and verify its certificate SAN
    and HTTPS response.
-6. Delete the website and verify the exact record and Origin CA certificate are
-   absent.
+6. Delete the website and verify the exact record is absent and the exact
+   Origin CA certificate is revoked.
 
 Acceptance evidence must record only stable statuses and pass/fail results;
 never include protected provider values or raw responses.
