@@ -29,7 +29,9 @@ check_args '1' "$#" 'USER [RESTART]'
 is_format_valid 'user'
 is_system_enabled "$WEB_SYSTEM" 'WEB_SYSTEM'
 is_object_valid 'user' 'USER' "$user"
-is_object_unsuspended 'user' 'USER' "$user"
+if [ "${VX_CLOUDFLARE_INTERNAL_MIGRATION:-}" != 1 ]; then
+    is_object_unsuspended 'user' 'USER' "$user"
+fi
 
 
 #----------------------------------------------------------#

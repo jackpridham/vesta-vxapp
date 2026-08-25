@@ -28,7 +28,9 @@ source $VESTA/conf/vesta.conf
 check_args '2' "$#" 'USER DOMAIN [TEMPLATE] [RESTART]'
 is_system_enabled "$WEB_BACKEND" 'WEB_BACKEND'
 is_object_valid 'user' 'USER' "$user"
-is_object_unsuspended 'user' 'USER' "$user"
+if [ "${VX_CLOUDFLARE_INTERNAL_MIGRATION:-}" != 1 ]; then
+    is_object_unsuspended 'user' 'USER' "$user"
+fi
 is_backend_template_valid "$template"
 
 
