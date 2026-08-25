@@ -16,7 +16,7 @@ source $VESTA/conf/vesta.conf
 
 # Keep the Vortex-managed DNS selector bounded even on older configurations.
 case "${VX_MANAGED_DNS_PROVIDER:-local}" in
-    local|cloudflare-managed) ;;
+    cloudflare-managed) VX_MANAGED_DNS_PROVIDER=cloudflare-managed ;;
     *) VX_MANAGED_DNS_PROVIDER=local ;;
 esac
 
