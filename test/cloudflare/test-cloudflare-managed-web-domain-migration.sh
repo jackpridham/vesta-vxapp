@@ -111,6 +111,16 @@ run_migration() {
         VX_CLOUDFLARE_MIGRATION_PASSWD_FILE="$passwd_file" "$@"
 }
 
+(
+    unset HOMEDIR
+    VESTA=$vesta_root
+    source "$repo_root/func/vx/cloudflare/main.sh"
+    vx_cf_runtime_home_root \
+        || fail 'runtime home default was not resolved without func/main.sh'
+    assert_eq "$VX_CF_HOME_ROOT" /home \
+        'runtime home default differs from the upstream Vesta layout'
+)
+
 snapshot_native_state() {
     local destination=$1 extension
 

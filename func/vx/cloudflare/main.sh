@@ -36,6 +36,18 @@ vx_cf_runtime_root() {
     printf '%s/runtime\n' "$(vx_cf_root)"
 }
 
+vx_cf_runtime_home_root() {
+    local root=${HOMEDIR:-/home}
+
+    root=${root%/}
+    [[ -n "$root" && "$root" == /* && "$root" != / \
+        && "$root" != *$'\n'* && "$root" != *'/../'* \
+        && "$root" != */.. && "$root" != *'/./'* \
+        && "$root" != */. ]] \
+        || { VX_CF_STATUS=state_error; return 1; }
+    VX_CF_HOME_ROOT=$root
+}
+
 vx_cf_expected_uid() {
     if (( EUID == 0 )); then
         printf '0\n'
@@ -2021,13 +2033,8 @@ vx_cf_rendered_ssl_paths() {
 
     vx_cf_valid_user "$user" && vx_cf_valid_domain "$domain" \
         || { VX_CF_STATUS=state_error; return 1; }
-    home_root=${HOMEDIR:-}
-    home_root=${home_root%/}
-    [[ -n "$home_root" && "$home_root" == /* && "$home_root" != / \
-        && "$home_root" != *$'\n'* && "$home_root" != *'/../'* \
-        && "$home_root" != */.. && "$home_root" != *'/./'* \
-        && "$home_root" != */. ]] \
-        || { VX_CF_STATUS=state_error; return 1; }
+    vx_cf_runtime_home_root || return 1
+    home_root=$VX_CF_HOME_ROOT
     directory="$home_root/$user/conf/web"
     for component in "$home_root" "$home_root/$user" \
         "$home_root/$user/conf" "$directory"; do
@@ -2145,7 +2152,7 @@ vx_cf_restore_native_ssl() {
 
     [[ "$VX_CF_SNAPSHOT_RESTORABLE" == yes ]] || return 1
     if [[ "$VX_CF_SNAPSHOT_SSL" == yes ]]; then
-        command="$BIN/v-change-web-domain-sslcert"
+        command="$VESTA/bin/v-change-web-domain-sslcert"
         vx_cf_run_internal_origin_ssl "$command" "$user" "$domain" \
             "$snapshot" "$restart" || return 1
         if [[ -f "$snapshot/$domain.pem" && ! -L "$snapshot/$domain.pem" ]]; then
@@ -2153,7 +2160,7 @@ vx_cf_restore_native_ssl() {
                 "$VESTA/data/users/$user/ssl/$domain.pem" || return 1
         fi
     else
-        command="$BIN/v-delete-web-domain-ssl"
+        command="$VESTA/bin/v-delete-web-domain-ssl"
         vx_cf_run_internal_origin_ssl "$command" "$user" "$domain" \
             "$restart" || return 1
     fi
@@ -2255,12 +2262,12 @@ vx_cf_install_origin_certificate() {
         && vx_cf_secure_path "$expected_pem" 0600 \
         || { VX_CF_STATUS=state_error; return 1; }
     if [[ "$ssl" == yes ]]; then
-        command="$BIN/v-change-web-domain-sslcert"
+        command="$VESTA/bin/v-change-web-domain-sslcert"
         vx_cf_run_internal_origin_ssl "$command" "$user" "$domain" \
             "$stage" "$restart" \
             || { VX_CF_STATUS=certificate_install_failed; return 1; }
     else
-        command="$BIN/v-add-web-domain-ssl"
+        command="$VESTA/bin/v-add-web-domain-ssl"
         vx_cf_run_internal_origin_ssl "$command" "$user" "$domain" \
             "$stage" same "$restart" \
             || { VX_CF_STATUS=certificate_install_failed; return 1; }

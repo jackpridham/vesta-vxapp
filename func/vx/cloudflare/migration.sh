@@ -267,13 +267,8 @@ vx_cf_migration_read_path_fingerprint() {
 }
 
 vx_cf_migration_homedir() {
-    local line
-
-    line=$(/usr/bin/sed -n "s/^HOMEDIR='\([^']*\)'$/\1/p" \
-        "$VESTA/conf/vesta.conf") || return 1
-    [[ -n "$line" && "$line" == /* && "$line" != / && "$line" != *$'\n'* \
-        && "$line" != *'/../'* && "$line" != */.. ]] || return 1
-    VX_CF_MIGRATION_HOME=${line%/}
+    vx_cf_runtime_home_root || return 1
+    VX_CF_MIGRATION_HOME=$VX_CF_HOME_ROOT
 }
 
 vx_cf_migration_log_root() {
