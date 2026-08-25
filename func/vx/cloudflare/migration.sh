@@ -273,6 +273,19 @@ vx_cf_migration_path_fingerprint() {
     fi
 }
 
+vx_cf_migration_mutable_file_fingerprint() {
+    local path=$1
+
+    if [[ ! -e "$path" && ! -L "$path" ]]; then
+        printf 'missing\t-\n'
+    elif [[ -f "$path" && ! -L "$path" ]]; then
+        printf 'mutable-file\t%s\n' \
+            "$(/usr/bin/stat -c '%a:%u:%g:%h:%d:%i' "$path")"
+    else
+        return 1
+    fi
+}
+
 vx_cf_migration_read_path_fingerprint() {
     local line
 
@@ -656,6 +669,7 @@ vx_cf_migration_exact_row() {
 
 vx_cf_migration_filesystem_write() {
     local plan_file=$1 include_docroot_metadata=${2:-yes}
+    local reference_artifact=${3:-}
     local item user source target hostnames_digest address retain_source_ssl
     local row kind digest path ftp_line component extension link_target logs_kind
 
@@ -709,9 +723,25 @@ vx_cf_migration_filesystem_write() {
                 error) path="$VX_CF_MIGRATION_LOG_ROOT/$source.error.log" ;;
                 bytes) path="$VX_CF_MIGRATION_LOG_ROOT/$source.bytes" ;;
             esac
-            IFS=$'\t' read -r kind digest \
-                < <(vx_cf_migration_path_fingerprint "$path") || return 1
-            [[ "$kind" == file || "$kind" == missing ]] || return 1
+            if [[ -n "$reference_artifact" ]]; then
+                vx_cf_migration_filesystem_component "$reference_artifact" \
+                    "$item" "log.$component" || return 1
+                if [[ "$VX_CF_MIGRATION_COMPONENT_KIND" == file ]]; then
+                    IFS=$'\t' read -r kind digest \
+                        < <(vx_cf_migration_path_fingerprint "$path") \
+                        || return 1
+                else
+                    IFS=$'\t' read -r kind digest \
+                        < <(vx_cf_migration_mutable_file_fingerprint "$path") \
+                        || return 1
+                fi
+            else
+                IFS=$'\t' read -r kind digest \
+                    < <(vx_cf_migration_mutable_file_fingerprint "$path") \
+                    || return 1
+            fi
+            [[ "$kind" == file || "$kind" == mutable-file \
+                || "$kind" == missing ]] || return 1
             printf '%s\tlog.%s\t%s\t%s\n' "$item" "$component" "$kind" "$digest"
         done
         for component in crt key ca pem; do
@@ -885,12 +915,56 @@ vx_cf_migration_live_matches_plan() {
         return 1
     fi
     if vx_cf_migration_filesystem_write "$artifact/plan.tsv" \
-        "$include_docroot_metadata" >"$temporary" \
-        && /usr/bin/cmp -s -- "$temporary" "$artifact/filesystem.tsv"; then
+        "$include_docroot_metadata" "$artifact" >"$temporary" \
+        && vx_cf_migration_filesystem_inventory_matches \
+            "$artifact/filesystem.tsv" "$temporary"; then
         result=0
     fi
     /usr/bin/rm -f -- "$temporary"
     return "$result"
+}
+
+vx_cf_migration_filesystem_inventory_matches() {
+    local expected=$1 actual=$2 item component kind value
+    local actual_kind actual_value count expected_count actual_count
+
+    [[ -f "$expected" && ! -L "$expected" \
+        && -f "$actual" && ! -L "$actual" ]] || return 1
+    [[ "$(/usr/bin/head -n1 "$expected")" \
+            == $'ITEM\tCOMPONENT\tKIND\tDIGEST_OR_VALUE' \
+        && "$(/usr/bin/head -n1 "$actual")" \
+            == $'ITEM\tCOMPONENT\tKIND\tDIGEST_OR_VALUE' ]] || return 1
+    expected_count=$(/usr/bin/awk 'END { print NR + 0 }' "$expected") \
+        || return 1
+    actual_count=$(/usr/bin/awk 'END { print NR + 0 }' "$actual") || return 1
+    [[ "$expected_count" == "$actual_count" ]] || return 1
+    while IFS=$'\t' read -r item component kind value; do
+        [[ "$item" != ITEM ]] || continue
+        count=$(/usr/bin/awk -F '\t' -v item="$item" -v component="$component" '
+            $1 == item && $2 == component { count++ }
+            END { print count + 0 }
+        ' "$actual") || return 1
+        [[ "$count" == 1 ]] || return 1
+        IFS=$'\t' read -r actual_kind actual_value < <(
+            /usr/bin/awk -F '\t' -v item="$item" -v component="$component" '
+                $1 == item && $2 == component { print $3 "\t" $4 }
+            ' "$actual"
+        ) || return 1
+        if [[ "$component" =~ ^log\.(log|error|bytes)$ \
+            && "$kind" == file && "$actual_kind" == file \
+            && "$actual_value" != "$value" ]]; then
+            [[ "$value" =~ ^[a-f0-9]{64}$ \
+                && "$actual_value" =~ ^[a-f0-9]{64}$ \
+                && "$VX_CF_MIGRATION_RECOVERY_STATUS" == recovery_required ]] \
+                || return 1
+            vx_cf_migration_results_get "${expected%/*}" "$item" || return 1
+            [[ "$VX_CF_MIGRATION_ITEM_STATE" == pending \
+                || "$VX_CF_MIGRATION_ITEM_STATE" == rolled_back ]] || return 1
+        else
+            [[ "$actual_kind" == "$kind" && "$actual_value" == "$value" ]] \
+                || return 1
+        fi
+    done <"$expected"
 }
 
 vx_cf_migration_candidate_reserved() {
@@ -1765,7 +1839,8 @@ vx_cf_migration_restore_paths() {
         esac
         vx_cf_migration_filesystem_component "$artifact" "$item" "$component" \
             || return 1
-        if [[ "$VX_CF_MIGRATION_COMPONENT_KIND" == file ]]; then
+        if [[ "$VX_CF_MIGRATION_COMPONENT_KIND" == file \
+            || "$VX_CF_MIGRATION_COMPONENT_KIND" == mutable-file ]]; then
             if [[ -e "$from" && ! -e "$to" && ! -L "$from" && ! -L "$to" ]]; then
                 /usr/bin/mv -T -- "$from" "$to" || return 1
             fi
@@ -2706,12 +2781,34 @@ vx_cf_migration_verify_restored_item_locked() {
             bytes) component=log.bytes ;;
         esac
         path="$VX_CF_MIGRATION_LOG_ROOT/$source.$extension"
-        vx_cf_migration_read_path_fingerprint "$path" || return 1
         vx_cf_migration_filesystem_component "$artifact" "$item" "$component" \
             || return 1
-        [[ "$VX_CF_MIGRATION_PATH_KIND" == "$VX_CF_MIGRATION_COMPONENT_KIND" \
-            && "$VX_CF_MIGRATION_PATH_VALUE" == "$VX_CF_MIGRATION_COMPONENT_VALUE" ]] \
-            || return 1
+        if [[ "$VX_CF_MIGRATION_COMPONENT_KIND" == mutable-file ]]; then
+            IFS=$'\t' read -r kind value \
+                < <(vx_cf_migration_mutable_file_fingerprint "$path") \
+                || return 1
+            [[ "$kind" == mutable-file \
+                && "$value" == "$VX_CF_MIGRATION_COMPONENT_VALUE" ]] \
+                || return 1
+        elif [[ "$VX_CF_MIGRATION_COMPONENT_KIND" == file ]]; then
+            vx_cf_migration_read_path_fingerprint "$path" || return 1
+            if [[ "$VX_CF_MIGRATION_PATH_KIND" != file \
+                || "$VX_CF_MIGRATION_PATH_VALUE" \
+                    != "$VX_CF_MIGRATION_COMPONENT_VALUE" ]]; then
+                vx_cf_migration_results_get "$artifact" "$item" || return 1
+                [[ "$VX_CF_MIGRATION_COMPONENT_VALUE" =~ ^[a-f0-9]{64}$ \
+                    && "$VX_CF_MIGRATION_RECOVERY_STATUS" == recovery_required \
+                    && ( "$VX_CF_MIGRATION_ITEM_STATE" == pending \
+                        || "$VX_CF_MIGRATION_ITEM_STATE" == rolled_back ) \
+                    && -f "$path" && ! -L "$path" \
+                    && "$(/usr/bin/stat -c '%a:%u:%g:%h' "$path")" \
+                        == "640:0:$(/usr/bin/id -g "$user"):1" ]] || return 1
+            fi
+        else
+            [[ "$VX_CF_MIGRATION_COMPONENT_KIND" == missing \
+                && "$VX_CF_MIGRATION_COMPONENT_VALUE" == - \
+                && ! -e "$path" && ! -L "$path" ]] || return 1
+        fi
         [[ ! -e "$VX_CF_MIGRATION_LOG_ROOT/$target.$extension" \
             && ! -L "$VX_CF_MIGRATION_LOG_ROOT/$target.$extension" ]] || return 1
     done

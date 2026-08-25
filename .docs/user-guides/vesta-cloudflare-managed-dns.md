@@ -236,8 +236,10 @@ sudo /usr/local/vesta/install/migrations/cloudflare-managed-web-domains/rollback
 Rollback restores the snapshotted primary, aliases, SSL and rendered material,
 proxy/native state, counters, suspension, FTP relationships, and filesystem
 identity. It removes only the exact migration-owned technical A record and
-Origin CA certificate authority. Repeated apply and rollback calls are
-idempotent. A site that cannot be proven restored remains in protected
+Origin CA certificate authority. Access, error, and bandwidth logs retain the
+same protected filesystem identity while their normal runtime content may
+continue growing during apply and rollback. Repeated apply and rollback calls
+are idempotent. A site that cannot be proven restored remains in protected
 `recovery_required` state; retain the migration directory and resolve that
 state before deleting or replacing the artifact.
 

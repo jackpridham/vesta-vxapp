@@ -544,6 +544,13 @@ while IFS= read -r -d '' artifact_path; do
         fail 'migration artifact contains a special file'
     fi
 done < <(/usr/bin/find -P "$artifact" -print0)
+assert_eq "$(/usr/bin/awk -F '\t' '
+    NR > 1 && $2 ~ /^log\.(log|error|bytes)$/ && $3 == "mutable-file" {
+        count++
+    }
+    END { print count + 0 }
+' "$artifact/filesystem.tsv")" 3 \
+    'migration plan did not bind mutable log filesystem identity'
 
 generated_domain=$(/usr/bin/jq -er '.[0].generated_primary' \
     "$artifact/mapping.json") || fail 'prepared mapping omitted its generated primary'
@@ -564,6 +571,11 @@ assert_sanitized_json "$drift_output" drift 1 0 0 1
 assert_eq "$(provider_mutation_count)" "$mutations_before" \
     'drift rejection reached a provider mutation'
 printf '%s\n' "$original_row" >"$vesta_root/data/users/alice/web.conf"
+
+printf 'access appended after prepare\n' >>"$log_root/$source_domain.log"
+printf 'bytes appended after prepare\n' >>"$log_root/$source_domain.bytes"
+printf 'access appended after prepare\n' >>"$native_snapshot/$source_domain.log"
+printf 'bytes appended after prepare\n' >>"$native_snapshot/$source_domain.bytes"
 
 apply_output=$(run_migration \
     "$vesta_root/install/migrations/cloudflare-managed-web-domains/apply.sh" \
@@ -671,6 +683,11 @@ assert_eq "$(native_mutation_count)" "$native_before" \
 assert_eq "$(/usr/bin/sha256sum "$vesta_root/data/users/alice/web.conf" \
     | /usr/bin/cut -d ' ' -f1)" "$web_sha_before" \
     'idempotent apply changed authoritative web state'
+
+printf 'access appended while managed\n' >>"$log_root/$generated_domain.log"
+printf 'bytes appended while managed\n' >>"$log_root/$generated_domain.bytes"
+printf 'access appended while managed\n' >>"$native_snapshot/$source_domain.log"
+printf 'bytes appended while managed\n' >>"$native_snapshot/$source_domain.bytes"
 
 /usr/bin/grep -Fqx "U_WEB_SSL='1'" \
     "$vesta_root/data/users/alice/user.conf" \
