@@ -120,7 +120,8 @@ install_old_certificate_files() {
 
 /usr/bin/mkdir -p "$vesta_root/bin" "$vesta_root/conf" \
     "$vesta_root/func/vx/cloudflare" "$vesta_root/data/users/alice" \
-    "$vesta_root/data/vx/cloudflare" "$vesta_root/log" "$home_root"
+    "$vesta_root/data/vx/cloudflare/runtime" "$vesta_root/log" "$home_root"
+/usr/bin/chmod 0700 "$vesta_root/data/vx/cloudflare/runtime"
 /usr/bin/ln -s "$repo_root/test/cloudflare/fixtures/native-lifecycle-main-stub" \
     "$vesta_root/func/main.sh"
 /usr/bin/ln -s "$repo_root/test/cloudflare/fixtures/native-lifecycle-cloudflare-stub" \
@@ -332,6 +333,11 @@ if /usr/bin/find -P "$home_root/alice/web/$domain/private" -mindepth 1 \
     -maxdepth 1 -type d -name 'tmp.*' -print -quit | /usr/bin/grep -q .; then
     fail 'internal Origin SSL replacement retained tenant-tree staging state'
 fi
+if /usr/bin/find -P "$vesta_root/data/vx/cloudflare/runtime" -mindepth 1 \
+    -maxdepth 1 -type d -name '.native-origin-ssl.*' -print -quit \
+    | /usr/bin/grep -q .; then
+    fail 'internal Origin SSL replacement retained provider staging state'
+fi
 
 reset_domain yes no
 clear_metadata
@@ -348,6 +354,11 @@ assert_file_contains "$home_root/alice/conf/web/ssl.$domain.crt" \
 if /usr/bin/find -P "$home_root/alice/web/$domain/private" -mindepth 1 \
     -maxdepth 1 -type d -name 'tmp.*' -print -quit | /usr/bin/grep -q .; then
     fail 'restored internal Origin SSL retained tenant-tree staging state'
+fi
+if /usr/bin/find -P "$vesta_root/data/vx/cloudflare/runtime" -mindepth 1 \
+    -maxdepth 1 -type d -name '.native-origin-ssl.*' -print -quit \
+    | /usr/bin/grep -q .; then
+    fail 'restored internal Origin SSL retained provider staging state'
 fi
 
 reset_domain yes no

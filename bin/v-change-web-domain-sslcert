@@ -70,8 +70,19 @@ is_web_domain_cert_valid
 # failed copy or service restart can restore the exact pre-change files.
 ssl_data_dir="$USER_DATA/ssl"
 ssl_web_dir="$HOMEDIR/$user/conf/web"
-tmpdir=$(mktemp -p "$HOMEDIR/$user/web/$domain/private" -d) \
-    || check_result "$E_UPDATE" 'SSL certificate staging failed'
+if [ "${VX_CLOUDFLARE_INTERNAL_ORIGIN_SSL:-}" = 1 ]; then
+    ssl_staging_root="$VESTA/data/vx/cloudflare/runtime"
+    expected_staging_owner="$EUID:$(id -g)"
+    [ -d "$ssl_staging_root" ] && [ ! -L "$ssl_staging_root" ] \
+        && [ "$(stat -c '%u:%g:%a:%F' "$ssl_staging_root")" \
+            = "$expected_staging_owner:700:directory" ] \
+        || check_result "$E_UPDATE" 'SSL certificate staging failed'
+    tmpdir=$(mktemp -d "$ssl_staging_root/.native-origin-ssl.XXXXXXXX") \
+        || check_result "$E_UPDATE" 'SSL certificate staging failed'
+else
+    tmpdir=$(mktemp -p "$HOMEDIR/$user/web/$domain/private" -d) \
+        || check_result "$E_UPDATE" 'SSL certificate staging failed'
+fi
 stage_dir="$tmpdir/stage"
 backup_data_dir="$tmpdir/data"
 backup_web_dir="$tmpdir/web"
