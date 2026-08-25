@@ -79,6 +79,21 @@ mkdir -p "$stage_dir" "$backup_data_dir" "$backup_web_dir" \
     || check_result "$E_UPDATE" 'SSL certificate staging failed'
 ssl_files_touched=no
 
+finalize_ssl_certificate_staging() {
+    local cleanup_result=0
+
+    # VX Origin SSL already owns a separate root-only transactional snapshot.
+    # Do not leave that internal staging backup inside the website tree: it
+    # changes tenant content and prevents exact migration rollback readback.
+    if [ "${VX_CLOUDFLARE_INTERNAL_ORIGIN_SSL:-}" = 1 ]; then
+        rm -rf -- "$tmpdir" || cleanup_result=1
+    else
+        rm -rf -- "$stage_dir" || cleanup_result=1
+        chown -R "$user:$user" "$tmpdir" >/dev/null 2>&1 || :
+    fi
+    return "$cleanup_result"
+}
+
 restore_ssl_certificate_files() {
     local restore_result=0
 
@@ -100,8 +115,8 @@ abort_ssl_certificate_change() {
         chown -R "$user:$user" "$tmpdir" >/dev/null 2>&1 || :
         check_result "$E_UPDATE" 'SSL certificate rollback failed'
     fi
-    rm -rf "$stage_dir"
-    chown -R "$user:$user" "$tmpdir" >/dev/null 2>&1 || :
+    finalize_ssl_certificate_staging \
+        || check_result "$E_UPDATE" 'SSL certificate staging cleanup failed'
     check_result "$result" "$message"
 }
 
@@ -179,8 +194,8 @@ if [ "$restart_result" -ne 0 ]; then
         || rollback_restart_failed=yes
     $BIN/v-restart-proxy $restart >/dev/null 2>&1 \
         || rollback_restart_failed=yes
-    rm -rf "$stage_dir"
-    chown -R "$user:$user" "$tmpdir" >/dev/null 2>&1 || :
+    finalize_ssl_certificate_staging \
+        || check_result "$E_UPDATE" 'SSL certificate staging cleanup failed'
     [ "$rollback_restart_failed" = no ] \
         || check_result "$E_RESTART" 'SSL certificate rollback restart failed'
     check_result "$restart_result" "Web restart failed" >/dev/null
@@ -196,15 +211,15 @@ if [ "$restart_result" -ne 0 ]; then
         || rollback_restart_failed=yes
     $BIN/v-restart-proxy $restart >/dev/null 2>&1 \
         || rollback_restart_failed=yes
-    rm -rf "$stage_dir"
-    chown -R "$user:$user" "$tmpdir" >/dev/null 2>&1 || :
+    finalize_ssl_certificate_staging \
+        || check_result "$E_UPDATE" 'SSL certificate staging cleanup failed'
     [ "$rollback_restart_failed" = no ] \
         || check_result "$E_RESTART" 'SSL certificate rollback restart failed'
     check_result "$restart_result" "Proxy restart failed" >/dev/null
 fi
 
-rm -rf "$stage_dir"
-chown -R "$user:$user" "$tmpdir" >/dev/null 2>&1 || :
+finalize_ssl_certificate_staging \
+    || check_result "$E_UPDATE" 'SSL certificate staging cleanup failed'
 
 # Logging
 log_history "changed ssl certificate for $domain"

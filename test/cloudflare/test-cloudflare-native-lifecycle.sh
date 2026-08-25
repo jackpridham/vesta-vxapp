@@ -328,6 +328,10 @@ run_vesta_internal_ssl "$vesta_root/bin/v-change-web-domain-sslcert" alice \
     || fail 'internal Origin SSL change capability was rejected'
 assert_file_contains "$vesta_root/data/users/alice/ssl/$domain.crt" \
     'new-certificate' 'internal Origin SSL replacement was not installed'
+if /usr/bin/find -P "$home_root/alice/web/$domain/private" -mindepth 1 \
+    -maxdepth 1 -type d -name 'tmp.*' -print -quit | /usr/bin/grep -q .; then
+    fail 'internal Origin SSL replacement retained tenant-tree staging state'
+fi
 
 reset_domain yes no
 clear_metadata
@@ -341,6 +345,10 @@ assert_file_contains "$vesta_root/data/users/alice/ssl/$domain.crt" \
     'old-crt' 'restart failure did not restore canonical certificate'
 assert_file_contains "$home_root/alice/conf/web/ssl.$domain.crt" \
     'old-crt' 'restart failure did not restore rendered certificate'
+if /usr/bin/find -P "$home_root/alice/web/$domain/private" -mindepth 1 \
+    -maxdepth 1 -type d -name 'tmp.*' -print -quit | /usr/bin/grep -q .; then
+    fail 'restored internal Origin SSL retained tenant-tree staging state'
+fi
 
 reset_domain yes no
 clear_metadata
