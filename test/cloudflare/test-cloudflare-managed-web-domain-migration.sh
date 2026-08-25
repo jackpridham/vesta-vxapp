@@ -313,7 +313,7 @@ done
 printf "BIN='%s/bin'\nDNS_SYSTEM='bind9'\nVX_MANAGED_DNS_PROVIDER='local'\nWEB_SYSTEM='apache2'\nPROXY_SYSTEM='nginx'\nHOMEDIR='%s'\nVESTA_CERTIFICATE='alice:%s'\n" \
     "$vesta_root" "$home_root" "$source_domain" \
     >"$vesta_root/conf/vesta.conf"
-printf "SUSPENDED='yes' WEB_DOMAINS='1' WEB_ALIASES='3' U_WEB_DOMAINS='1' U_WEB_ALIASES='3'\nU_WEB_SSL='0'\n" \
+printf "SUSPENDED='yes'\nWEB_DOMAINS='1'\nWEB_ALIASES='3'\nU_WEB_DOMAINS='1'\nU_WEB_ALIASES='3'\nU_WEB_SSL='0'\n" \
     >"$vesta_root/data/users/alice/user.conf"
 original_row="DOMAIN='$source_domain' IP='192.0.2.10' IP6='' ALIAS='$source_alias_one,$source_alias_two,$source_alias_one' TPL='PHP-FPM-82' SSL='no' SSL_HOME='same' LETSENCRYPT='yes' FTP_USER='alice_ftp' FTP_PATH='/uploads' FTP_MD5='fixture-md5' BACKEND='PHP-8_2' PROXY='hosting' PROXY_EXT='jpg,png,css' STATS='awstats' STATS_USER='stats' STATS_CRYPT='fixture-crypt' U_DISK='321' U_BANDWIDTH='654' SUSPENDED='yes' TIME='12:34:56' DATE='2026-08-25'"
 printf '%s\n' "$original_row" >"$vesta_root/data/users/alice/web.conf"
@@ -376,7 +376,7 @@ empty_user=empty
 empty_plan=empty-managed-plan
 /usr/bin/mkdir -p "$vesta_root/data/users/$empty_user"
 printf '\n' >"$vesta_root/data/users/$empty_user/web.conf"
-printf "SUSPENDED='no' WEB_DOMAINS='0' WEB_ALIASES='0' U_WEB_DOMAINS='0' U_WEB_ALIASES='0'\nU_WEB_SSL='0'\n" \
+printf "SUSPENDED='no'\nWEB_DOMAINS='0'\nWEB_ALIASES='0'\nU_WEB_DOMAINS='0'\nU_WEB_ALIASES='0'\nU_WEB_SSL='0'\n" \
     >"$vesta_root/data/users/$empty_user/user.conf"
 empty_prepare_output=$(run_migration \
     "$vesta_root/install/migrations/cloudflare-managed-web-domains/prepare.sh" \
@@ -390,7 +390,7 @@ uppercase_user=Placeholder50df7
 uppercase_plan=uppercase-user-plan
 /usr/bin/mkdir -p "$vesta_root/data/users/$uppercase_user"
 printf '\n' >"$vesta_root/data/users/$uppercase_user/web.conf"
-printf "SUSPENDED='no' WEB_DOMAINS='0' WEB_ALIASES='0' U_WEB_DOMAINS='0' U_WEB_ALIASES='0'\nU_WEB_SSL='0'\n" \
+printf "SUSPENDED='no'\nWEB_DOMAINS='0'\nWEB_ALIASES='0'\nU_WEB_DOMAINS='0'\nU_WEB_ALIASES='0'\nU_WEB_SSL='0'\n" \
     >"$vesta_root/data/users/$uppercase_user/user.conf"
 uppercase_prepare_output=$(run_migration \
     "$vesta_root/install/migrations/cloudflare-managed-web-domains/prepare.sh" \
@@ -627,9 +627,13 @@ assert_source_ssl_matches_snapshot "$native_snapshot"
 assert_eq "$(/usr/bin/cut -d: -f6 "$passwd_file")" \
     "$home_root/alice/web/$generated_domain/uploads" \
     'migration apply did not preserve the FTP subpath relationship'
-/usr/bin/cmp -s -- "$native_snapshot/user.conf" \
+expected_applied_user="$work_root/user-applied-expected.conf"
+/usr/bin/cp -a -- "$native_snapshot/user.conf" "$expected_applied_user"
+/usr/bin/sed -i "s/^U_WEB_SSL='0'$/U_WEB_SSL='1'/" \
+    "$expected_applied_user"
+/usr/bin/cmp -s -- "$expected_applied_user" \
     "$vesta_root/data/users/alice/user.conf" \
-    || fail 'migration apply changed suspension or counters'
+    || fail 'migration apply did not converge its exact owned counters'
 assert_file_contains "$cloudflare_root/migration-native.log" \
     'v-rebuild-web-domains alice' \
     'suspended user was not rebuilt through the internal migration capability'
@@ -668,11 +672,9 @@ assert_eq "$(/usr/bin/sha256sum "$vesta_root/data/users/alice/web.conf" \
     | /usr/bin/cut -d ' ' -f1)" "$web_sha_before" \
     'idempotent apply changed authoritative web state'
 
-/usr/bin/sed -i "s/^U_WEB_SSL='0'$/U_WEB_SSL='1'/" \
-    "$vesta_root/data/users/alice/user.conf"
 /usr/bin/grep -Fqx "U_WEB_SSL='1'" \
     "$vesta_root/data/users/alice/user.conf" \
-    || fail 'fixture did not model the migration-owned SSL counter change'
+    || fail 'migration apply did not own its exact SSL counter change'
 /usr/bin/cp -a -- "$vesta_root/data/users/alice/user.conf" \
     "$work_root/user-before-unrelated-drift.conf"
 /usr/bin/sed -i "s/^U_WEB_SSL='1'$/U_WEB_SSL='2'/" \
@@ -715,6 +717,28 @@ assert_eq "$(native_mutation_count)" "$native_before" \
 /usr/bin/cmp -s -- "$work_root/user-with-unrelated-drift.conf" \
     "$vesta_root/data/users/alice/user.conf" \
     || fail 'drifted rollback overwrote unrelated user.conf state'
+/usr/bin/cp -a -- "$work_root/user-before-unrelated-drift.conf" \
+    "$vesta_root/data/users/alice/user.conf"
+
+/usr/bin/sed -i "s/^U_WEB_ALIASES='3'$/U_WEB_ALIASES='4'/" \
+    "$vesta_root/data/users/alice/user.conf"
+/usr/bin/cp -a -- "$vesta_root/data/users/alice/user.conf" \
+    "$work_root/user-with-extra-alias-counter.conf"
+mutations_before=$(provider_mutation_count)
+native_before=$(native_mutation_count)
+if rollback_output=$(run_migration \
+    "$vesta_root/install/migrations/cloudflare-managed-web-domains/rollback.sh" \
+    "$plan" --json); then
+    fail 'migration rollback accepted an unrelated alias counter increment'
+fi
+assert_sanitized_json "$rollback_output" drift 0 1 0 1
+assert_eq "$(provider_mutation_count)" "$mutations_before" \
+    'alias-counter drift reached a provider mutation'
+assert_eq "$(native_mutation_count)" "$native_before" \
+    'alias-counter drift reached a native mutation'
+/usr/bin/cmp -s -- "$work_root/user-with-extra-alias-counter.conf" \
+    "$vesta_root/data/users/alice/user.conf" \
+    || fail 'alias-counter drift changed user.conf'
 /usr/bin/cp -a -- "$work_root/user-before-unrelated-drift.conf" \
     "$vesta_root/data/users/alice/user.conf"
 

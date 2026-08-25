@@ -185,6 +185,22 @@ vx_cf_migration_target_row() {
     VX_CF_MIGRATION_TARGET_ROW=$VX_CF_MIGRATION_ROW
 }
 
+vx_cf_migration_row_alias_count() {
+    local row=$1 aliases alias
+    local count=0
+    local -a values=()
+
+    vx_cf_migration_row_value "$row" ALIAS || return 1
+    aliases=$VX_CF_MIGRATION_ROW_VALUE
+    [[ -z "$aliases" ]] || IFS=, read -r -a values <<<"$aliases"
+    for alias in "${values[@]}"; do
+        [[ -n "$alias" ]] || return 1
+        vx_cf_valid_domain "$alias" || return 1
+        ((count++))
+    done
+    VX_CF_MIGRATION_ALIAS_COUNT=$count
+}
+
 vx_cf_migration_replace_exact_row() {
     local file=$1 old=$2 new=$3 temporary count
 
@@ -1913,26 +1929,37 @@ vx_cf_migration_user_conf_projection() {
     [[ -f "$file" && ! -L "$file" ]] || return 1
     /usr/bin/awk '
         /^U_WEB_SSL=\047[0-9]+\047$/ {
-            count++
+            ssl_count++
             print "U_WEB_SSL=\047<migration-owned>\047"
             next
         }
+        /^U_WEB_ALIASES=\047[0-9]+\047$/ {
+            alias_count++
+            print "U_WEB_ALIASES=\047<migration-owned>\047"
+            next
+        }
         { print }
-        END { if (count != 1) exit 1 }
+        END { if (ssl_count != 1 || alias_count != 1) exit 1 }
     ' "$file"
 }
 
-vx_cf_migration_user_ssl_counter_value() {
-    local file=$1 line count
+vx_cf_migration_user_counter_value() {
+    local file=$1 key=$2 line count
 
-    [[ -f "$file" && ! -L "$file" ]] || return 1
-    line=$(/usr/bin/grep -E "^U_WEB_SSL='(0|[1-9][0-9]{0,8})'$" "$file") \
+    [[ -f "$file" && ! -L "$file" \
+        && "$key" =~ ^U_WEB_(SSL|ALIASES)$ ]] || return 1
+    line=$(/usr/bin/grep -E "^${key}='(0|[1-9][0-9]{0,8})'$" "$file") \
         || return 1
-    count=$(/usr/bin/grep -Ec "^U_WEB_SSL='(0|[1-9][0-9]{0,8})'$" "$file") \
+    count=$(/usr/bin/grep -Ec "^${key}='(0|[1-9][0-9]{0,8})'$" "$file") \
         || return 1
     [[ "$count" == 1 ]] || return 1
-    VX_CF_MIGRATION_USER_SSL_COUNTER=${line#U_WEB_SSL=\'}
-    VX_CF_MIGRATION_USER_SSL_COUNTER=${VX_CF_MIGRATION_USER_SSL_COUNTER%\'}
+    VX_CF_MIGRATION_USER_COUNTER=${line#*=\'}
+    VX_CF_MIGRATION_USER_COUNTER=${VX_CF_MIGRATION_USER_COUNTER%\'}
+}
+
+vx_cf_migration_user_ssl_counter_value() {
+    vx_cf_migration_user_counter_value "$1" U_WEB_SSL || return 1
+    VX_CF_MIGRATION_USER_SSL_COUNTER=$VX_CF_MIGRATION_USER_COUNTER
 }
 
 vx_cf_migration_expected_user_ssl_counter() {
@@ -1960,6 +1987,94 @@ vx_cf_migration_expected_user_ssl_counter() {
     VX_CF_MIGRATION_EXPECTED_USER_SSL_COUNTER=$((baseline + delta))
 }
 
+vx_cf_migration_expected_user_alias_counter() {
+    local artifact=$1 user=$2 item row_user source target hostnames address retain
+    local state baseline original_count target_count delta=0
+
+    vx_cf_migration_user_counter_value \
+        "$artifact/snapshots/users/$user/user.conf" U_WEB_ALIASES || return 1
+    baseline=$VX_CF_MIGRATION_USER_COUNTER
+    while IFS=$'\t' read -r item row_user source target hostnames address retain; do
+        [[ "$item" != ITEM && "$row_user" == "$user" ]] || continue
+        vx_cf_migration_results_get "$artifact" "$item" || return 1
+        state=$VX_CF_MIGRATION_ITEM_STATE
+        [[ "$state" == provisioned || "$state" == applied \
+            || "$state" == rolling_back || "$state" == recovery_required ]] \
+            || continue
+        vx_cf_migration_row_from_file \
+            "$artifact/snapshots/users/$user/web.conf" "$source" || return 1
+        vx_cf_migration_row_alias_count "$VX_CF_MIGRATION_SOURCE_ROW" \
+            || return 1
+        original_count=$VX_CF_MIGRATION_ALIAS_COUNT
+        vx_cf_migration_target_row "$source" "$target" \
+            "$VX_CF_MIGRATION_SOURCE_ROW" || return 1
+        vx_cf_migration_row_alias_count "$VX_CF_MIGRATION_TARGET_ROW" \
+            || return 1
+        target_count=$VX_CF_MIGRATION_ALIAS_COUNT
+        ((delta += target_count - original_count))
+    done <"$artifact/plan.tsv"
+    (( baseline + delta >= 0 && baseline + delta <= 999999999 )) || return 1
+    VX_CF_MIGRATION_EXPECTED_USER_ALIAS_COUNTER=$((baseline + delta))
+}
+
+vx_cf_migration_write_user_owned_counters() {
+    local file=$1 expected_ssl=$2 expected_aliases=$3
+    local current_ssl current_aliases old_ssl old_aliases new_ssl new_aliases
+    local temporary
+
+    [[ "$expected_ssl" =~ ^(0|[1-9][0-9]{0,8})$ \
+        && "$expected_aliases" =~ ^(0|[1-9][0-9]{0,8})$ ]] || return 1
+    vx_cf_migration_user_counter_value "$file" U_WEB_SSL || return 1
+    current_ssl=$VX_CF_MIGRATION_USER_COUNTER
+    vx_cf_migration_user_counter_value "$file" U_WEB_ALIASES || return 1
+    current_aliases=$VX_CF_MIGRATION_USER_COUNTER
+    [[ "$current_ssl" == "$expected_ssl" \
+        && "$current_aliases" == "$expected_aliases" ]] && return 0
+    old_ssl="U_WEB_SSL='$current_ssl'"
+    old_aliases="U_WEB_ALIASES='$current_aliases'"
+    new_ssl="U_WEB_SSL='$expected_ssl'"
+    new_aliases="U_WEB_ALIASES='$expected_aliases'"
+    temporary=$(/usr/bin/mktemp "${file%/*}/.migration-counters.XXXXXX") \
+        || return 1
+    if ! /usr/bin/awk -v old_ssl="$old_ssl" -v new_ssl="$new_ssl" \
+        -v old_aliases="$old_aliases" -v new_aliases="$new_aliases" '
+            $0 == old_ssl && !ssl_done { print new_ssl; ssl_done=1; next }
+            $0 == old_aliases && !aliases_done {
+                print new_aliases
+                aliases_done=1
+                next
+            }
+            { print }
+            END { if (!ssl_done || !aliases_done) exit 1 }
+        ' "$file" >"$temporary" \
+        || ! /usr/bin/chmod --reference="$file" "$temporary" \
+        || ! { (( EUID != 0 )) \
+            || /usr/bin/chown --reference="$file" "$temporary"; } \
+        || ! /usr/bin/mv -fT -- "$temporary" "$file"; then
+        /usr/bin/rm -f -- "$temporary"
+        return 1
+    fi
+    vx_cf_migration_user_counter_value "$file" U_WEB_SSL \
+        && [[ "$VX_CF_MIGRATION_USER_COUNTER" == "$expected_ssl" ]] \
+        && vx_cf_migration_user_counter_value "$file" U_WEB_ALIASES \
+        && [[ "$VX_CF_MIGRATION_USER_COUNTER" == "$expected_aliases" ]]
+}
+
+vx_cf_migration_reconcile_user_owned_counters() {
+    local artifact=$1 user=$2 file
+
+    vx_cf_migration_valid_user "$user" || return 1
+    vx_cf_migration_user_conf_matches_snapshot "$artifact" "$user" yes no \
+        || return 1
+    vx_cf_migration_expected_user_ssl_counter "$artifact" "$user" || return 1
+    vx_cf_migration_expected_user_alias_counter "$artifact" "$user" || return 1
+    file="$VESTA/data/users/$user/user.conf"
+    vx_cf_migration_write_user_owned_counters "$file" \
+        "$VX_CF_MIGRATION_EXPECTED_USER_SSL_COUNTER" \
+        "$VX_CF_MIGRATION_EXPECTED_USER_ALIAS_COUNTER" || return 1
+    vx_cf_migration_user_conf_matches_snapshot "$artifact" "$user" yes
+}
+
 vx_cf_migration_user_has_planned_item() {
     local artifact=$1 user=$2
 
@@ -1974,6 +2089,7 @@ vx_cf_migration_user_conf_matches_snapshot() {
     local artifact=$1 user=$2 allow_owned_counter=$3 saved live details expected
     local enforce_expected_counter=${4:-yes}
     local root saved_projection live_projection result=1 live_counter
+    local live_alias_counter saved_alias_counter saved_ssl_counter
 
     saved="$artifact/snapshots/users/$user/user.conf"
     live="$VESTA/data/users/$user/user.conf"
@@ -2011,14 +2127,21 @@ vx_cf_migration_user_conf_matches_snapshot() {
     vx_cf_migration_expected_user_ssl_counter "$artifact" "$user" || return 1
     vx_cf_migration_user_ssl_counter_value "$live" || return 1
     live_counter=$VX_CF_MIGRATION_USER_SSL_COUNTER
-    if [[ "$live_counter" \
-        == "$VX_CF_MIGRATION_EXPECTED_USER_SSL_COUNTER" ]]; then
+    vx_cf_migration_expected_user_alias_counter "$artifact" "$user" || return 1
+    vx_cf_migration_user_counter_value "$live" U_WEB_ALIASES || return 1
+    live_alias_counter=$VX_CF_MIGRATION_USER_COUNTER
+    if [[ "$live_counter" == "$VX_CF_MIGRATION_EXPECTED_USER_SSL_COUNTER" \
+        && "$live_alias_counter" \
+            == "$VX_CF_MIGRATION_EXPECTED_USER_ALIAS_COUNTER" ]]; then
         return 0
     fi
     [[ "$VX_CF_MIGRATION_RECOVERY_STATUS" == recovery_required ]] || return 1
     vx_cf_migration_user_ssl_counter_value "$saved" || return 1
-    [[ "$live_counter" \
-        == "$VX_CF_MIGRATION_USER_SSL_COUNTER" ]]
+    saved_ssl_counter=$VX_CF_MIGRATION_USER_SSL_COUNTER
+    vx_cf_migration_user_counter_value "$saved" U_WEB_ALIASES || return 1
+    saved_alias_counter=$VX_CF_MIGRATION_USER_COUNTER
+    [[ "$live_counter" == "$saved_ssl_counter" \
+        && "$live_alias_counter" == "$saved_alias_counter" ]]
 }
 
 vx_cf_migration_user_conf_scope_matches() {
@@ -2036,23 +2159,17 @@ vx_cf_migration_user_conf_scope_matches() {
     return 0
 }
 
-vx_cf_migration_restore_user_owned_counter() {
-    local artifact=$1 user=$2 saved live saved_line live_line count
+vx_cf_migration_restore_user_owned_counters() {
+    local artifact=$1 user=$2 saved live
 
     saved="$artifact/snapshots/users/$user/user.conf"
     live="$VESTA/data/users/$user/user.conf"
     vx_cf_migration_user_conf_matches_snapshot "$artifact" "$user" yes no \
         || return 1
-    saved_line=$(/usr/bin/grep -E "^U_WEB_SSL='[0-9]+'$" "$saved") || return 1
-    count=$(/usr/bin/grep -Ec "^U_WEB_SSL='[0-9]+'$" "$saved") || return 1
-    [[ "$count" == 1 ]] || return 1
-    live_line=$(/usr/bin/grep -E "^U_WEB_SSL='[0-9]+'$" "$live") || return 1
-    count=$(/usr/bin/grep -Ec "^U_WEB_SSL='[0-9]+'$" "$live") || return 1
-    [[ "$count" == 1 ]] || return 1
-    if [[ "$live_line" != "$saved_line" ]]; then
-        vx_cf_migration_replace_exact_row "$live" "$live_line" "$saved_line" \
-            || return 1
-    fi
+    vx_cf_migration_user_metadata "$artifact" "$user" USER || return 1
+    vx_cf_migration_native_file_restore "$saved" "$live" \
+        "$VX_CF_MIGRATION_USER_MODE" "$VX_CF_MIGRATION_USER_UID" \
+        "$VX_CF_MIGRATION_USER_GID" || return 1
     /usr/bin/cmp -s -- "$saved" "$live"
 }
 
@@ -2065,7 +2182,7 @@ vx_cf_migration_restore_user_snapshot() {
         "$VESTA/data/users/$user/web.conf" "$VX_CF_MIGRATION_USER_MODE" \
         "$VX_CF_MIGRATION_USER_UID" "$VX_CF_MIGRATION_USER_GID" || return 1
     if vx_cf_migration_user_has_planned_item "$artifact" "$user"; then
-        vx_cf_migration_restore_user_owned_counter "$artifact" "$user" \
+        vx_cf_migration_restore_user_owned_counters "$artifact" "$user" \
             || return 1
     fi
     vx_cf_migration_homedir || return 1
@@ -2280,7 +2397,8 @@ vx_cf_migration_apply_item_locked() {
         && "$VX_CF_CERT_META_DIGEST" == "$hostnames_digest" ]] || return 1
     vx_cf_migration_results_set "$artifact" "$item" provisioned \
         "$VX_CF_MIGRATION_ITEM_RECORD_ID" \
-        "$VX_CF_MIGRATION_ITEM_CERTIFICATE_ID" "$target"
+        "$VX_CF_MIGRATION_ITEM_CERTIFICATE_ID" "$target" || return 1
+    vx_cf_migration_reconcile_user_owned_counters "$artifact" "$user"
 }
 
 vx_cf_migration_verify_and_finish_locked() {
@@ -2331,6 +2449,7 @@ vx_cf_migration_applied_matches_locked() {
         && "$(vx_cf_migration_sha256 "$VESTA/conf/vesta.conf")" \
         == "$VX_CF_MIGRATION_VESTA_SHA" ]] || return 1
     vx_cf_migration_scope_matches "$artifact" || return 1
+    vx_cf_migration_user_conf_scope_matches "$artifact" || return 1
     while IFS= read -r user; do
         [[ -n "$user" ]] || continue
         temporary=$(/usr/bin/mktemp "$(vx_cf_migration_root)/.expected.XXXXXX") \
@@ -2703,6 +2822,7 @@ vx_cf_migration_apply_locked() {
             && "$(vx_cf_migration_sha256 "$VESTA/conf/vesta.conf")" \
             == "$VX_CF_MIGRATION_VESTA_SHA" ]] \
             && vx_cf_migration_scope_matches "$artifact" \
+            && vx_cf_migration_user_conf_scope_matches "$artifact" \
             && vx_cf_status_locked && [[ "$VX_CF_STATUS" == ready ]] || {
                 VX_CF_MIGRATION_STATUS=drift
                 return 7
@@ -2771,6 +2891,9 @@ vx_cf_migration_apply_locked() {
             item_failed=1
         elif ! vx_cf_migration_verify_applied_native "$artifact" "$user" \
             "$source" "$target"; then
+            item_failed=1
+        elif ! vx_cf_migration_user_conf_matches_snapshot "$artifact" \
+            "$user" yes; then
             item_failed=1
         else
             vx_cf_migration_results_get "$artifact" "$item" || item_failed=1

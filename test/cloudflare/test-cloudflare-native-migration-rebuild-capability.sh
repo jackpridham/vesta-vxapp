@@ -89,5 +89,42 @@ done
 
 grep -F 'rebuild_web_domain_conf' "$repo_root/bin/v-rebuild-web-domains" \
     >/dev/null || fail 'per-domain rebuild call is missing'
+grep -F 'if [ "${VX_CLOUDFLARE_INTERNAL_MIGRATION:-}" != 1 ]; then' \
+    "$repo_root/bin/v-rebuild-web-domains" >/dev/null \
+    || fail 'internal migration rebuild does not isolate unrelated counters'
+
+counter_bin="$tmp_root/counter-bin"
+counter_runner="$tmp_root/counter-runner"
+mkdir -p "$counter_bin"
+cat >"$counter_bin/v-update-user-counters" <<'COUNTER_STUB'
+#!/usr/bin/env bash
+printf 'updated\n' >>"$CALL_LOG"
+COUNTER_STUB
+chmod 0700 "$counter_bin/v-update-user-counters"
+{
+    printf '%s\n' '#!/usr/bin/env bash' 'set -euo pipefail' \
+        "BIN='$counter_bin'" "user='test'"
+    awk '
+        /# Updating user counters/ { capture=1; next }
+        capture && /# Restarting web server/ { exit }
+        capture { print }
+    ' "$repo_root/bin/v-rebuild-web-domains"
+} >"$counter_runner"
+chmod 0700 "$counter_runner"
+for migration_value in unset 0 yes 1; do
+    call_log="$tmp_root/counter-$migration_value"
+    command=(env -u VX_CLOUDFLARE_INTERNAL_MIGRATION "CALL_LOG=$call_log")
+    [ "$migration_value" = unset ] \
+        || command+=("VX_CLOUDFLARE_INTERNAL_MIGRATION=$migration_value")
+    command+=("$counter_runner")
+    "${command[@]}" || fail "counter boundary failed for $migration_value"
+    if [ "$migration_value" = 1 ]; then
+        [ ! -e "$call_log" ] \
+            || fail 'internal migration rebuild updated unrelated counters'
+    else
+        [ "$(cat "$call_log")" = updated ] \
+            || fail "ordinary rebuild skipped counters for $migration_value"
+    fi
+done
 
 printf 'PASS: native migration rebuild suspension capability\n'

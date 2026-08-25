@@ -169,6 +169,23 @@ scenario=normal
 [[ ! -f "$cloudflare_root/stub-scenario" ]] \
     || IFS= read -r scenario <"$cloudflare_root/stub-scenario"
 
+adjust_ssl_counter() {
+    local delta=$1 file line count value replacement
+
+    file="$VESTA/data/users/$user/user.conf"
+    [[ -f "$file" && ! -L "$file" ]] || return 0
+    line=$(/usr/bin/grep -E "^U_WEB_SSL='(0|[1-9][0-9]{0,8})'$" "$file") \
+        || return 0
+    count=$(/usr/bin/grep -Ec "^U_WEB_SSL='(0|[1-9][0-9]{0,8})'$" "$file") \
+        || return 1
+    [[ "$count" == 1 ]] || return 1
+    value=${line#U_WEB_SSL=\'}
+    value=${value%\'}
+    (( value + delta >= 0 && value + delta <= 999999999 )) || return 1
+    replacement="U_WEB_SSL='$((value + delta))'"
+    /usr/bin/sed -i "s/^${line}$/${replacement}/" "$file"
+}
+
 case "$command_name" in
     v-add-web-domain)
         ip=${3:-192.0.2.10}
@@ -234,6 +251,9 @@ case "$command_name" in
                 "$ssl_web_root/ssl.$domain.$extension"
         done
         /usr/bin/sed -i "/^DOMAIN='$domain' /s/ SSL='[^']*'/ SSL='yes'/" "$web_conf"
+        if [[ "$command_name" == v-add-web-domain-ssl ]]; then
+            adjust_ssl_counter 1 || exit 91
+        fi
         printf 'native-ssl %s %s internal=1\n' "$command_name" "$domain" >>"$call_log"
         if [[ "${VX_CLOUDFLARE_INTERNAL_MIGRATION:-}" == 1 ]]; then
             printf 'native-ssl-migration %s\n' "$domain" >>"$call_log"
@@ -250,6 +270,7 @@ case "$command_name" in
         /usr/bin/rm -f -- "$VESTA/data/users/$user/ssl/$domain."{crt,key,ca,pem}
         /usr/bin/rm -f -- "$ssl_web_root/ssl.$domain."{crt,key,ca,pem}
         /usr/bin/sed -i "/^DOMAIN='$domain' /s/ SSL='[^']*'/ SSL='no'/" "$web_conf"
+        adjust_ssl_counter -1 || exit 91
         printf 'native-ssl-delete %s internal=1\n' "$domain" >>"$call_log"
         ;;
     *) exit 92 ;;

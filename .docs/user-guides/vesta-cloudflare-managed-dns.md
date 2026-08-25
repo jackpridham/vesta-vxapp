@@ -243,11 +243,11 @@ state before deleting or replacing the artifact.
 
 Do not change scoped Vesta user-account state between apply and rollback.
 Rollback validates every unrelated `user.conf` value and the exact
-migration-owned `U_WEB_SSL` delta before it mutates provider or native state;
-unexpected changes fail closed as `drift`. External custom-domain edge health
-is not required to undo a plan, but the configured provider must remain in
-Cloudflare-managed mode with enough API access to verify and remove the exact
-migration-owned record and Origin certificate.
+migration-owned `U_WEB_SSL` and `U_WEB_ALIASES` deltas before it mutates
+provider or native state; unexpected changes fail closed as `drift`. External
+custom-domain edge health is not required to undo a plan, but the configured
+provider must remain in Cloudflare-managed mode with enough API access to
+verify and remove the exact migration-owned record and Origin certificate.
 
 ## Recovery and rotation
 

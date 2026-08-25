@@ -99,7 +99,9 @@ done
 #----------------------------------------------------------#
 
 # Updating user counters
-$BIN/v-update-user-counters $user
+if [ "${VX_CLOUDFLARE_INTERNAL_MIGRATION:-}" != 1 ]; then
+    $BIN/v-update-user-counters $user
+fi
 
 # Restarting web server
 $BIN/v-restart-web $restart
