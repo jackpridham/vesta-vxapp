@@ -21,6 +21,8 @@ restart="$4"
 source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
 source $VESTA/func/ip.sh
+source $VESTA/func/vx/cloudflare/main.sh
+source $VESTA/func/vx/cloudflare/web-hooks.sh
 source $VESTA/conf/vesta.conf
 
 # Additional argument formatting
@@ -51,6 +53,7 @@ is_package_full 'WEB_ALIASES'
 
 # Parsing domain values
 get_domain_values 'web'
+previous_alias=$ALIAS
 
 # Preparing domain values for the template substitution
 local_ip=$(get_real_ip $IP)
@@ -87,6 +90,11 @@ fi
 # Adding new alias
 update_object_value 'web' 'DOMAIN' "$domain" '$ALIAS' "$ALIAS"
 increase_user_value "$user" '$U_WEB_ALIASES'
+
+# Managed sites cannot publish an alias until their Origin CA certificate has
+# been replaced with one covering the exact updated alias set.
+vx_cf_reconcile_alias_change "$previous_alias" add "$restart" \
+    || check_result "$E_CONNECT" "${VX_CF_STATUS:-certificate_error}"
 
 # Restarting web server
 $BIN/v-restart-web $restart

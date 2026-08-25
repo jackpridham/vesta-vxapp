@@ -36,6 +36,80 @@ case "$scenario" in
     malformed) printf 'not-json' >"$output"; printf 200; exit ;;
 esac
 
+if [[ "$url" == https://api.cloudflare.com/client/v4/certificates* ]]; then
+    certificate_path=${url#https://api.cloudflare.com/client/v4/certificates}
+    certificate_root="$stub_root/stub-certificates"
+    /usr/bin/mkdir -p "$certificate_root"
+    case "$method:$certificate_path" in
+        GET:\?*)
+            printf 'origin-list\n' >>"$call_log"
+            printf '{"success":true,"result":[]}' >"$output"
+            ;;
+        POST:)
+            if [[ "$scenario" == origin_failure ]]; then
+                printf '{"success":false,"errors":[]}' >"$output"
+                printf 403
+                exit
+            fi
+            counter=0
+            [[ ! -f "$certificate_root/counter" ]] \
+                || counter=$(<"$certificate_root/counter")
+            counter=$((counter + 1))
+            printf '%s\n' "$counter" >"$certificate_root/counter"
+            certificate_id=$(/usr/bin/printf '%032x' "$counter")
+            csr="$certificate_root/$certificate_id.csr"
+            certificate="$certificate_root/$certificate_id.pem"
+            /usr/bin/jq -r .csr "$body" >"$csr" || exit 91
+            /usr/bin/openssl x509 -req -sha256 -days 365 \
+                -in "$csr" -CA "$stub_root/stub-origin-ca.pem" \
+                -CAkey "$stub_root/stub-origin-ca.key" -CAcreateserial \
+                -copy_extensions copy -out "$certificate" >/dev/null 2>&1 \
+                || exit 90
+            if [[ "$scenario" == origin_mismatch ]]; then
+                hostnames='["wrong.example.test"]'
+            else
+                hostnames=$(/usr/bin/jq -c .hostnames "$body")
+            fi
+            printf 'origin-hostnames %s\n' "$hostnames" >>"$call_log"
+            /usr/bin/jq -n --arg id "$certificate_id" \
+                --arg certificate "$(<"$certificate")" \
+                --argjson hostnames "$hostnames" \
+                '{id:$id,certificate:$certificate,hostnames:$hostnames,
+                  request_type:"origin-rsa",requested_validity:5475}' \
+                >"$certificate_root/$certificate_id.json" || exit 89
+            printf 'origin-create %s\n' "$certificate_id" >>"$call_log"
+            /usr/bin/jq -c '{success:true,result:.}' \
+                "$certificate_root/$certificate_id.json" >"$output"
+            ;;
+        GET:/*)
+            certificate_id=${certificate_path#/}
+            printf 'origin-get %s\n' "$certificate_id" >>"$call_log"
+            if [[ ! -f "$certificate_root/$certificate_id.json" ]]; then
+                printf '{"success":false,"errors":[]}' >"$output"
+                printf 404
+                exit
+            fi
+            /usr/bin/jq -c '{success:true,result:.}' \
+                "$certificate_root/$certificate_id.json" >"$output"
+            ;;
+        DELETE:/*)
+            certificate_id=${certificate_path#/}
+            [[ -f "$certificate_root/$certificate_id.json" ]] || exit 88
+            /usr/bin/cp "$certificate_root/$certificate_id.json" \
+                "$certificate_root/last-revoked.json"
+            /usr/bin/rm -f -- "$certificate_root/$certificate_id.json" \
+                "$certificate_root/$certificate_id.pem" \
+                "$certificate_root/$certificate_id.csr"
+            printf 'origin-delete %s\n' "$certificate_id" >>"$call_log"
+            printf '{"success":true,"result":{"id":"%s"}}' \
+                "$certificate_id" >"$output"
+            ;;
+        *) exit 87 ;;
+    esac
+    printf 200
+    exit
+fi
+
 if [[ "$url" == */zones/"$zone_id"/ ]]; then
     printf 'zone\n' >>"$call_log"
     printf '{"success":true,"result":{"id":"%s","name":"managed.example.test"}}' \

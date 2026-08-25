@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `$milestone-driven-implementation`. This is one integrated product milestone so implementation can run continuously and the user-requested single combined audit happens only after the complete feature is deployed without credentials.
 
-**Goal:** Make every website created through the Vesta panel receive an immutable Vesta-generated `s-<10 lowercase hex>.<configured-zone>` primary hostname, reconcile its exact Cloudflare A record, retain custom domains as aliases, and delete the owned record with the website.
+**Goal:** Make every website created through the Vesta panel receive an immutable Vesta-generated `s-<10 lowercase hex>.<configured-zone>` primary hostname, reconcile its exact Cloudflare A record, retain custom domains as aliases, automatically install a certificate valid for the primary and aliases under Cloudflare Full (strict), and delete the owned record and certificate with the website.
 
-**Architecture:** Keep upstream myVesta commands compatible and put provider authority in `func/vx/cloudflare/` plus thin `v-*` adapters. A root-owned atomic configuration stores the scoped token, zone ID, account email, and API-derived zone name; a separate `VX_MANAGED_DNS_PROVIDER` setting selects Cloudflare without misrepresenting the installed BIND service in `DNS_SYSTEM`. Per-domain root-owned metadata records the exact Cloudflare record ID used for bounded deletion.
+**Architecture:** Keep upstream myVesta commands compatible and put provider authority in `func/vx/cloudflare/` plus thin `v-*` adapters. A root-owned atomic configuration stores the scoped token, zone ID, account email, and API-derived zone name; a separate `VX_MANAGED_DNS_PROVIDER` setting selects Cloudflare without misrepresenting the installed BIND service in `DNS_SYSTEM`. Per-domain root-owned metadata records the exact Cloudflare record and Origin CA certificate IDs used for bounded deletion. Vesta generates each private key and CSR locally, asks Cloudflare only to sign the exact Vesta primary/alias SAN set, and installs the result through native Vesta SSL commands.
 
 **Tech Stack:** Bash, curl, jq, Vesta state files, PHP panel pages/templates, deterministic shell/PHP tests.
 
@@ -17,10 +17,12 @@
 - Cloudflare automation manages only one A record in one configured zone. TTL is Cloudflare Auto (`1`) and proxying is enabled.
 - The web domain's Vesta IP/NAT state supplies the A-record target; callers cannot supply provider address, zone, record type, TTL, proxy policy, token, or record ID.
 - Custom domains are Vesta aliases. The DNS-page action attaches an already-configured external domain as an alias and does not alter that external domain's DNS.
+- Managed create issues one 5475-day Cloudflare Origin CA RSA certificate containing the generated hostname and complete current alias set. Alias add/remove rotates that certificate automatically; callers cannot supply hostnames, certificate material, or a certificate ID.
+- Alias zones must already be proxied through Cloudflare and be accessible to the configured token with SSL and Certificates Edit. Certificate failure rolls alias/native creation back instead of publishing a Full (strict)-broken site.
 - `DNS_SYSTEM` continues to identify the installed local DNS service. `VX_MANAGED_DNS_PROVIDER=cloudflare-managed` is the Vortex provider authority shown as “Cloudflare managed” in Server → Configure → DNS.
 - Token, zone ID, account email, ingress address, record ID, provider response, and authorization headers never appear in argv, environment, UI, logs, history, or command output.
 - Configuration and mutations are serialized with a provider lock. Configuration and record metadata are root-owned, non-symlink, mode `0600`; their parent directories are mode `0700`.
-- Website deletion first verifies and deletes the exact owned Cloudflare record, then removes metadata and continues the normal Vesta deletion. Custom-alias DNS is never deleted.
+- Website deletion first verifies and revokes the exact owned Origin CA certificate and deletes the exact owned Cloudflare record, then removes metadata and continues the normal Vesta deletion. Custom-alias DNS is never deleted.
 - Live Cloudflare acceptance remains intentionally pending until the operator supplies the token, zone ID, and account email after nonsecret deployment.
 
 ## Files and responsibilities
@@ -33,6 +35,9 @@
 - Create `bin/v-reconcile-vx-cloudflare-web-domain`: bounded `USER DOMAIN [FORMAT]` compatibility adapter.
 - Create `bin/v-delete-vx-cloudflare-web-domain`: exact owned-record cleanup adapter.
 - Create `bin/v-add-vx-cloudflare-web-alias`: attach an already configured custom domain as a Vesta alias.
+- Create `bin/v-reconcile-vx-cloudflare-origin-ssl` and `bin/v-delete-vx-cloudflare-origin-ssl`: issue/install the exact Vesta-derived SAN certificate and revoke its exact stored ID.
+- Create `func/vx/cloudflare/origin-ca-rsa.pem` and `func/vx/cloudflare/web-hooks.sh`: ship the official Cloudflare Origin CA RSA root and keep native alias changes thin while rotating or rolling back certificates.
+- Modify `bin/v-add-web-domain-alias` and `bin/v-delete-web-domain-alias`: invoke the VX certificate hook only for managed sites.
 - Modify `bin/v-list-sys-config`: expose only the bounded nonsecret managed-provider enum to the existing server form.
 - Modify `bin/v-delete-web-domain`: thin managed-record cleanup hook before destructive local deletion.
 - Modify `bin/v-change-web-domain-name`: reject rename of Vesta-managed technical hostnames.
@@ -137,7 +142,7 @@ The guide records the least-privilege token (Zone Read and DNS Read/Edit for one
 Run exactly once after implementation:
 
 ```bash
-bash -n func/vx/cloudflare/main.sh bin/v-configure-vx-cloudflare bin/v-list-vx-cloudflare-status bin/v-change-vx-dns-provider bin/v-add-vx-managed-web-domain bin/v-reconcile-vx-cloudflare-web-domain bin/v-delete-vx-cloudflare-web-domain bin/v-add-vx-cloudflare-web-alias bin/v-delete-web-domain bin/v-change-web-domain-name
+bash -n func/vx/cloudflare/main.sh func/vx/cloudflare/web-hooks.sh bin/v-configure-vx-cloudflare bin/v-list-vx-cloudflare-status bin/v-change-vx-dns-provider bin/v-add-vx-managed-web-domain bin/v-reconcile-vx-cloudflare-web-domain bin/v-delete-vx-cloudflare-web-domain bin/v-add-vx-cloudflare-web-alias bin/v-reconcile-vx-cloudflare-origin-ssl bin/v-delete-vx-cloudflare-origin-ssl bin/v-add-web-domain-alias bin/v-delete-web-domain-alias bin/v-delete-web-domain bin/v-change-web-domain-name
 bash test/cloudflare/test-cloudflare-managed-domains.sh
 php test/test_cloudflare_web_ui.php
 php -l web/add/web/index.php
@@ -161,6 +166,8 @@ Request the Cloudflare API token, zone ID, and account email. After they are sup
 - [ ] Every panel-created site has a Vesta-generated immutable `s-<10 hex>.<zone>` primary hostname.
 - [ ] No caller can provide the generated label/hostname to the managed create surface.
 - [ ] Custom domains are aliases; the DNS-area action attaches an already configured external domain without mutating its DNS.
+- [ ] Managed create and alias mutation automatically install a certificate whose SANs exactly cover the generated hostname and all current aliases, so Cloudflare Full (strict) succeeds.
+- [ ] Private keys remain on Vesta; superseded/deleted exact Origin CA certificate IDs are revoked.
 - [ ] Technical A-record create/no-op/update/readback and exact idempotent deletion work.
 - [ ] Website deletion cannot leave a known owned record behind or delete any broader record set.
 - [ ] Provider selection is visible in Server → Configure → DNS while installed `DNS_SYSTEM` remains intact.

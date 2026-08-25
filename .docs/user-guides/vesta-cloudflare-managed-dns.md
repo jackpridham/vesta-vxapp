@@ -1,9 +1,12 @@
 # Vesta-Managed Cloudflare DNS
 
 Vesta can allocate a public technical hostname for each new panel website and
-own that hostname's Cloudflare A-record lifecycle. The first release is
-deliberately narrow: one Cloudflare zone, one proxied A record per managed
-website, Cloudflare Auto TTL, and exact-record deletion.
+own that hostname's Cloudflare A-record lifecycle. Each managed website also
+receives a Cloudflare Origin CA certificate for its technical hostname and
+complete Vesta alias set, so Cloudflare Full (strict) works from first create.
+The release remains deliberately narrow: one configured Cloudflare zone, one
+proxied A record per managed website, Cloudflare Auto TTL, and exact record and
+certificate deletion.
 
 ## Ownership model
 
@@ -16,15 +19,23 @@ website, Cloudflare Auto TTL, and exact-record deletion.
   website. It does not edit that custom domain's DNS.
 - Only the generated technical hostname is created, reconciled, and deleted
   through the configured Cloudflare zone.
+- Certificate private keys and CSRs are generated on the Vesta host. Cloudflare
+  returns only the signed Origin CA certificate; the private key never leaves
+  Vesta. Alias add/remove rotates the per-site certificate to the complete
+  current hostname set.
 - The installed local DNS service remains recorded in `DNS_SYSTEM`.
   `VX_MANAGED_DNS_PROVIDER` independently selects whether Vortex-managed web
   hostnames use Cloudflare.
 
 Cloudflare documents bearer API tokens as its preferred authentication method.
-The scoped token for this integration must be restricted to the one managed
-zone with Zone Read and DNS Read/Edit permissions. The integration uses the
-zone-details and DNS-record endpoints documented in the
-[Cloudflare API](https://developers.cloudflare.com/api/resources/dns/subresources/records/).
+The token needs Zone Read, DNS Read/Edit, and SSL and Certificates Edit for the
+configured zone and for every custom-alias zone it will certify. The
+integration uses the documented
+[DNS record API](https://developers.cloudflare.com/api/resources/dns/subresources/records/)
+and [Origin CA API](https://developers.cloudflare.com/api/resources/origin_ca_certificates/).
+Custom aliases must already be proxied through Cloudflare and belong to zones
+accessible to this token; otherwise the alias operation rolls back without
+publishing a Full (strict)-broken hostname.
 
 ## Configure credentials
 
@@ -40,9 +51,9 @@ sudo /usr/local/vesta/bin/v-configure-vx-cloudflare
 ```
 
 The command requests the API token with terminal echo disabled, then requests
-the zone ID and account email. It validates access to the exact zone
-before atomically replacing the existing configuration. A failed validation
-does not replace working credentials.
+the zone ID and account email. It validates access to the exact zone and the
+Origin CA service before atomically replacing the existing configuration. A
+failed validation does not replace working credentials.
 
 For automation, place the three exact assignments in a regular, root-owned
 mode-`0600` file and pass only its path:
@@ -109,7 +120,15 @@ There is intentionally no `DOMAIN` argument. The command validates Vesta and
 provider prerequisites, generates a collision-resistant label, creates the
 native Vesta web domain with custom domains as aliases, reconciles exactly one
 proxied A record to the web domain's Vesta/NAT address, reads the record back,
-and returns the generated public hostname.
+issues and installs a 15-year per-site Origin CA certificate for the generated
+hostname and aliases, and returns the generated public hostname. If DNS or
+certificate setup fails, the new website, exact provider record, and any issued
+certificate are compensated automatically.
+
+Adding or removing a Vesta web alias automatically rotates that site's Origin
+CA certificate before the final web/proxy restart. The previous certificate is
+revoked only after the replacement is installed. An issuance failure restores
+the previous alias and certificate state.
 
 Existing automation that already owns a Vesta technical domain can request an
 idempotent reconciliation without choosing provider values:
@@ -119,16 +138,27 @@ sudo /usr/local/vesta/bin/v-reconcile-vx-cloudflare-web-domain USER DOMAIN
 ```
 
 Normal `v-delete-web-domain USER DOMAIN` detects managed technical hostnames.
-It verifies and deletes the exact record identity saved for that domain before
-removing Vesta state. An absent record is an idempotent success. A provider or
-ownership verification failure stops deletion so Vesta does not knowingly
-orphan the managed record. No zone-wide search or broad deletion occurs.
+It verifies and revokes the exact Origin CA certificate and deletes the exact
+record identity saved for that domain before removing Vesta state. An absent
+provider object is an idempotent success. A provider or ownership verification
+failure stops deletion so Vesta does not knowingly orphan managed state. No
+zone-wide search or broad deletion occurs.
+
+Certificate reconciliation is available for recovery without passing any key,
+hostname set, certificate ID, or provider value:
+
+```bash
+sudo /usr/local/vesta/bin/v-reconcile-vx-cloudflare-origin-ssl USER DOMAIN
+```
 
 ## Recovery and rotation
 
 - Retry `v-reconcile-vx-cloudflare-web-domain USER DOMAIN` after a transient
   transport, timeout, or rate-limit failure. Read-before-write and readback
   make retries convergent.
+- Retry `v-reconcile-vx-cloudflare-origin-ssl USER DOMAIN` if certificate
+  issuance or installation was interrupted. Vesta derives the exact SAN set
+  from its primary-domain and alias authority.
 - Duplicate/conflicting records fail closed. Resolve the unexpected records in
   Cloudflare, then retry; do not remove Vesta ownership metadata manually.
 - Rotate credentials by running `v-configure-vx-cloudflare` again. The new
@@ -144,9 +174,12 @@ After nonsecret code deployment, the protected acceptance sequence is:
 1. Configure the scoped token and exact zone.
 2. Select **Cloudflare managed** and require health `ready`.
 3. Create one disposable panel website with a custom alias omitted.
-4. Verify the returned hostname's Cloudflare A record and public resolution to
-   the intended Vesta ingress.
-5. Delete the website and verify the exact record is absent.
+4. Verify the returned hostname's Cloudflare A record, public resolution, and
+   HTTPS response through Cloudflare Full (strict), with no 526 response.
+5. Attach an already-configured proxied alias and verify its certificate SAN
+   and HTTPS response.
+6. Delete the website and verify the exact record and Origin CA certificate are
+   absent.
 
 Acceptance evidence must record only stable statuses and pass/fail results;
 never include protected provider values or raw responses.

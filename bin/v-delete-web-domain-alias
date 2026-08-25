@@ -20,6 +20,8 @@ restart=$4
 source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
 source $VESTA/func/ip.sh
+source $VESTA/func/vx/cloudflare/main.sh
+source $VESTA/func/vx/cloudflare/web-hooks.sh
 source $VESTA/conf/vesta.conf
 
 
@@ -35,6 +37,7 @@ is_object_unsuspended 'user' 'USER' "$user"
 is_object_valid 'web' 'DOMAIN' "$domain"
 is_object_unsuspended 'web' 'DOMAIN' "$domain"
 get_domain_values 'web'
+previous_alias=$ALIAS
 if [ -z "$(echo $ALIAS |tr ',' '\n' |grep ^$dom_alias$)" ]; then
     check_result $E_NOTEXIST "alias $dom_alias doesn't exist"
 fi
@@ -79,6 +82,10 @@ fi
 # Update config
 update_object_value 'web' 'DOMAIN' "$domain" '$ALIAS' "$ALIAS"
 decrease_user_value "$user" '$U_WEB_ALIASES'
+
+# Rotate away removed SANs as part of the same managed alias lifecycle.
+vx_cf_reconcile_alias_change "$previous_alias" delete "$restart" \
+    || check_result "$E_CONNECT" "${VX_CF_STATUS:-certificate_error}"
 
 # Restarting web server
 $BIN/v-restart-web $restart

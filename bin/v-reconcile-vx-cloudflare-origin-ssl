@@ -1,6 +1,6 @@
 #!/bin/bash
-# info: delete an owned Vortex Cloudflare web-domain record
-# options: USER DOMAIN [FORMAT]
+# info: issue and install the exact Cloudflare Origin CA certificate for a managed site
+# options: USER DOMAIN [RESTART] [FORMAT]
 
 
 #----------------------------------------------------------#
@@ -9,7 +9,8 @@
 
 user=$1
 domain=$2
-format=${3:-human}
+restart=${3:-yes}
+format=${4:-human}
 
 source "$VESTA/func/main.sh"
 source "$VESTA/func/domain.sh"
@@ -21,23 +22,22 @@ source "$VESTA/conf/vesta.conf"
 #                    Verifications                         #
 #----------------------------------------------------------#
 
-check_args 2 "$#" 'USER DOMAIN [FORMAT]'
-[[ $# -le 3 && ( "$format" == human || "$format" == json ) ]] \
-    || check_result "$E_ARGS" 'invalid format'
+check_args 2 "$#" 'USER DOMAIN [RESTART] [FORMAT]'
+[[ $# -le 4 && ( "$format" == human || "$format" == json ) ]] \
+    || check_result "$E_ARGS" 'invalid arguments'
 is_format_valid user domain
 is_object_valid user USER "$user"
 is_object_unsuspended user USER "$user"
 is_object_valid web DOMAIN "$domain"
+is_object_unsuspended web DOMAIN "$domain"
 
 
 #----------------------------------------------------------#
 #                       Action                             #
 #----------------------------------------------------------#
 
-vx_cf_origin_cleanup "$user" "$domain" \
-    || check_result "$E_CONNECT" "${VX_CF_STATUS:-provider_error}"
-vx_cf_cleanup "$user" "$domain" \
-    || check_result "$E_CONNECT" "${VX_CF_STATUS:-provider_error}"
+vx_cf_origin_reconcile "$user" "$domain" "$restart" \
+    || check_result "$E_CONNECT" "${VX_CF_STATUS:-certificate_error}"
 vx_cf_emit_status "$VX_CF_STATUS" "$format"
 
 
@@ -45,5 +45,6 @@ vx_cf_emit_status "$VX_CF_STATUS" "$format"
 #                       Vesta                              #
 #----------------------------------------------------------#
 
+log_history "reconciled managed origin certificate for $domain"
 log_event "$OK" "$ARGUMENTS"
 exit

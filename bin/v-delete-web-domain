@@ -48,8 +48,12 @@ is_object_unsuspended 'web' 'DOMAIN' "$domain"
 #                       Action                             #
 #----------------------------------------------------------#
 
-# Remove only an exact provider record owned by this Vesta web domain. Any
+# Revoke only exact provider identities owned by this Vesta web domain. Any
 # verification/provider failure aborts before native website state is touched.
+if vx_cf_certificate_metadata_exists "$user" "$domain"; then
+    vx_cf_origin_cleanup "$user" "$domain" >/dev/null \
+        || check_result "$E_CONNECT" "${VX_CF_STATUS:-provider_error}"
+fi
 if vx_cf_metadata_exists "$user" "$domain"; then
     vx_cf_cleanup "$user" "$domain" >/dev/null \
         || check_result "$E_CONNECT" "${VX_CF_STATUS:-provider_error}"

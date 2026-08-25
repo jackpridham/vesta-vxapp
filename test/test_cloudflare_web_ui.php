@@ -106,7 +106,9 @@ assert_cloudflare_ui_contains($server_template, 'value="local"', 'provider selec
 assert_cloudflare_ui_contains($server_template, 'value="cloudflare-managed"', 'provider selector lacks Cloudflare-managed mode');
 assert_cloudflare_ui_contains($server_template, '$v_cloudflare_configured ? __(\'Configured\') : __(\'Not configured\')', 'server DNS section does not show sanitized configuration state');
 assert_cloudflare_ui_contains($system_config_command, '"VX_MANAGED_DNS_PROVIDER":', 'system config JSON does not reload the managed provider into the server page');
-assert_cloudflare_ui_contains($system_config_command, 'local|cloudflare-managed', 'system config does not bound the managed provider value');
+assert_cloudflare_ui_contains($system_config_command, 'case "${VX_MANAGED_DNS_PROVIDER:-local}"', 'system config does not bound the managed provider value');
+assert_cloudflare_ui_contains($system_config_command, 'cloudflare-managed)', 'system config does not accept the managed provider value');
+assert_cloudflare_ui_contains($system_config_command, '*) VX_MANAGED_DNS_PROVIDER=local', 'system config does not default an unknown provider to local');
 foreach (array('API token', 'Zone ID', 'Account email', 'Authorization:') as $protected_label) {
     assert_cloudflare_ui_not_contains($server_template, $protected_label, 'server template exposes protected Cloudflare detail: '.$protected_label);
 }

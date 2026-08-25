@@ -66,6 +66,15 @@ if ! vx_cf_reconcile_locked "$user" "$managed_domain"; then
         >/dev/null 2>&1 || :
     check_result "$E_CONNECT" "$original_result"
 fi
+if ! vx_cf_origin_reconcile_locked "$user" "$managed_domain" "$restart"; then
+    original_result=${VX_CF_STATUS:-certificate_error}
+    vx_cf_origin_cleanup_locked "$user" "$managed_domain" >/dev/null 2>&1 || :
+    vx_cf_cleanup_locked "$user" "$managed_domain" >/dev/null 2>&1 || :
+    vx_cf_lock_release || :
+    VESTA="$VESTA" "$BIN/v-delete-web-domain" "$user" "$managed_domain" \
+        >/dev/null 2>&1 || :
+    check_result "$E_CONNECT" "$original_result"
+fi
 vx_cf_lock_release || check_result "$E_UPDATE" 'state_error'
 
 

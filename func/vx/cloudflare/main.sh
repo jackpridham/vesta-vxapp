@@ -28,6 +28,10 @@ vx_cf_records_root() {
     printf '%s/records\n' "$(vx_cf_root)"
 }
 
+vx_cf_certificates_root() {
+    printf '%s/certificates\n' "$(vx_cf_root)"
+}
+
 vx_cf_runtime_root() {
     printf '%s/runtime\n' "$(vx_cf_root)"
 }
@@ -79,19 +83,23 @@ vx_cf_secure_directory() {
 }
 
 vx_cf_prepare_layout() {
-    local vx_root root records runtime
+    local vx_root root records certificates runtime
 
     vx_root="$VESTA/data/vx"
     root=$(vx_cf_root)
     records=$(vx_cf_records_root)
+    certificates=$(vx_cf_certificates_root)
     runtime=$(vx_cf_runtime_root)
 
     [[ ! -L "$VESTA/data" && ! -L "$vx_root" && ! -L "$root" \
-        && ! -L "$records" && ! -L "$runtime" ]] || return 1
-    /usr/bin/mkdir -p "$vx_root" "$root" "$records" "$runtime" || return 1
+        && ! -L "$records" && ! -L "$certificates" && ! -L "$runtime" ]] \
+        || return 1
+    /usr/bin/mkdir -p "$vx_root" "$root" "$records" "$certificates" \
+        "$runtime" || return 1
     vx_cf_secure_path "$vx_root" 0700 || return 1
     vx_cf_secure_path "$root" 0700 || return 1
     vx_cf_secure_path "$records" 0700 || return 1
+    vx_cf_secure_path "$certificates" 0700 || return 1
     vx_cf_secure_path "$runtime" 0700 || return 1
 }
 
@@ -311,8 +319,8 @@ vx_cf_curl_binary() {
     fi
 }
 
-vx_cf_transport() {
-    local method=$1 api_path=$2 response_path=$3 body_path=${4:-}
+vx_cf_transport_url() {
+    local method=$1 url=$2 response_path=$3 body_path=${4:-}
     local runtime curl_config status_file curl_binary curl_status result=1 size
 
     runtime=$(vx_cf_runtime_root)
@@ -332,8 +340,7 @@ vx_cf_transport() {
         }
 
     {
-        printf 'url = "https://api.cloudflare.com/client/v4/zones/%s/%s"\n' \
-            "$VX_CF_ZONE_ID" "$api_path"
+        printf 'url = "%s"\n' "$url"
         printf 'request = "%s"\n' "$method"
         printf 'header = "Authorization: Bearer %s"\n' "$VX_CF_API_TOKEN"
         printf 'header = "Content-Type: application/json"\n'
@@ -385,6 +392,22 @@ vx_cf_transport() {
 
     /usr/bin/rm -f -- "$curl_config" "$status_file"
     return "$result"
+}
+
+vx_cf_transport() {
+    local method=$1 api_path=$2 response_path=$3 body_path=${4:-}
+
+    vx_cf_transport_url "$method" \
+        "https://api.cloudflare.com/client/v4/zones/$VX_CF_ZONE_ID/$api_path" \
+        "$response_path" "$body_path"
+}
+
+vx_cf_origin_transport() {
+    local method=$1 api_path=$2 response_path=$3 body_path=${4:-}
+
+    vx_cf_transport_url "$method" \
+        "https://api.cloudflare.com/client/v4/certificates$api_path" \
+        "$response_path" "$body_path"
 }
 
 vx_cf_new_response_file() {
@@ -712,6 +735,13 @@ vx_cf_configure_locked() {
         return 1
     fi
     VX_CF_ZONE_NAME=$VX_CF_PREFLIGHT_ZONE_NAME
+    vx_cf_origin_preflight || {
+        VX_CF_API_TOKEN=$old_token
+        VX_CF_ZONE_ID=$old_zone
+        VX_CF_ACCOUNT_EMAIL=$old_email
+        VX_CF_ZONE_NAME=$old_name
+        return 1
+    }
 
     target=$(vx_cf_config_path)
     [[ ! -L "$target" ]] || { VX_CF_STATUS=state_error; return 1; }
@@ -953,6 +983,493 @@ vx_cf_cleanup() {
     vx_cf_with_lock vx_cf_cleanup_locked "$1" "$2"
 }
 
+vx_cf_certificate_path() {
+    local user=$1 domain=$2
+    printf '%s/%s/%s.conf\n' "$(vx_cf_certificates_root)" "$user" "$domain"
+}
+
+vx_cf_certificate_metadata_exists() {
+    local user=$1 domain=$2 path
+
+    vx_cf_valid_user "$user" && vx_cf_valid_domain "$domain" || return 1
+    path=$(vx_cf_certificate_path "$user" "$domain")
+    [[ -f "$path" && ! -L "$path" ]]
+}
+
+vx_cf_valid_certificate_id() {
+    [[ "$1" =~ ^[A-Za-z0-9_-]{1,32}$ ]]
+}
+
+vx_cf_valid_certificate_hostname() {
+    local hostname=$1 suffix
+
+    if [[ "$hostname" == \*.* ]]; then
+        suffix=${hostname#*.}
+        [[ "$suffix" == *.* ]] && vx_cf_valid_domain "$suffix"
+    else
+        vx_cf_valid_domain "$hostname"
+    fi
+}
+
+vx_cf_hostname_digest() {
+    /usr/bin/sha256sum | /usr/bin/cut -d ' ' -f1
+}
+
+vx_cf_collect_certificate_hostnames() {
+    local user=$1 domain=$2 row aliases hostname
+    local -a names=()
+
+    vx_cf_exact_web_row "$user" "$domain" || return 1
+    row=$VX_CF_WEB_ROW
+    [[ "$row" =~ (^|[[:space:]])ALIAS=\'([^\']*)\'([[:space:]]|$) ]] \
+        || { VX_CF_STATUS=state_error; return 1; }
+    aliases=${BASH_REMATCH[2]}
+    names+=("$domain")
+    if [[ -n "$aliases" ]]; then
+        local IFS=,
+        read -r -a VX_CF_ALIAS_NAMES <<<"$aliases"
+        names+=("${VX_CF_ALIAS_NAMES[@]}")
+    fi
+    mapfile -t VX_CF_CERT_HOSTNAMES < <(
+        printf '%s\n' "${names[@]}" | /usr/bin/tr '[:upper:]' '[:lower:]' \
+            | LC_ALL=C /usr/bin/sort -u
+    )
+    (( ${#VX_CF_CERT_HOSTNAMES[@]} >= 1 \
+        && ${#VX_CF_CERT_HOSTNAMES[@]} <= 200 )) \
+        || { VX_CF_STATUS=invalid_alias; return 1; }
+    for hostname in "${VX_CF_CERT_HOSTNAMES[@]}"; do
+        vx_cf_valid_certificate_hostname "$hostname" \
+            || { VX_CF_STATUS=invalid_alias; return 1; }
+    done
+    VX_CF_CERT_HOSTNAMES_CSV=$(IFS=,; printf '%s' "${VX_CF_CERT_HOSTNAMES[*]}")
+    VX_CF_CERT_HOSTNAMES_DIGEST=$(printf '%s\n' "${VX_CF_CERT_HOSTNAMES[@]}" \
+        | vx_cf_hostname_digest) || { VX_CF_STATUS=state_error; return 1; }
+}
+
+vx_cf_write_certificate_metadata() {
+    local user=$1 domain=$2 certificate_id=$3 hostnames=$4 digest=$5
+    local parent target temporary
+
+    vx_cf_valid_user "$user" && vx_cf_valid_domain "$domain" \
+        && vx_cf_valid_certificate_id "$certificate_id" \
+        && [[ "$digest" =~ ^[a-f0-9]{64}$ && "$hostnames" =~ ^[a-z0-9*.,-]+$ ]] \
+        || { VX_CF_STATUS=state_error; return 1; }
+    parent="$(vx_cf_certificates_root)/$user"
+    target=$(vx_cf_certificate_path "$user" "$domain")
+    [[ ! -L "$parent" && ! -L "$target" ]] \
+        || { VX_CF_STATUS=state_error; return 1; }
+    /usr/bin/mkdir -p "$parent" || { VX_CF_STATUS=state_error; return 1; }
+    vx_cf_secure_path "$parent" 0700 || { VX_CF_STATUS=state_error; return 1; }
+    temporary=$(/usr/bin/mktemp "$parent/.certificate.XXXXXX") \
+        || { VX_CF_STATUS=state_error; return 1; }
+    vx_cf_secure_path "$temporary" 0600 || {
+        /usr/bin/rm -f -- "$temporary"
+        VX_CF_STATUS=state_error
+        return 1
+    }
+    {
+        printf "SCHEMA='1'\n"
+        printf "USER='%s'\n" "$user"
+        printf "DOMAIN='%s'\n" "$domain"
+        printf "ZONE_ID='%s'\n" "$VX_CF_ZONE_ID"
+        printf "CERTIFICATE_ID='%s'\n" "$certificate_id"
+        printf "HOSTNAMES='%s'\n" "$hostnames"
+        printf "HOSTNAMES_DIGEST='%s'\n" "$digest"
+    } >"$temporary" || {
+        /usr/bin/rm -f -- "$temporary"
+        VX_CF_STATUS=state_error
+        return 1
+    }
+    /usr/bin/mv -fT -- "$temporary" "$target" || {
+        /usr/bin/rm -f -- "$temporary"
+        VX_CF_STATUS=state_error
+        return 1
+    }
+}
+
+vx_cf_load_certificate_metadata() {
+    local user=$1 domain=$2 path line key value hostname computed_digest
+    local schema_seen=0 user_seen=0 domain_seen=0 zone_seen=0 id_seen=0
+    local hostnames_seen=0 digest_seen=0
+
+    path=$(vx_cf_certificate_path "$user" "$domain")
+    vx_cf_secure_regular_file "$path" || { VX_CF_STATUS=state_error; return 1; }
+    VX_CF_CERT_META_SCHEMA=''
+    VX_CF_CERT_META_USER=''
+    VX_CF_CERT_META_DOMAIN=''
+    VX_CF_CERT_META_ZONE_ID=''
+    VX_CF_CERT_META_ID=''
+    VX_CF_CERT_META_HOSTNAMES=''
+    VX_CF_CERT_META_DIGEST=''
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ "$line" =~ ^([A-Z_]+)=\'([^\']*)\'$ ]] \
+            || { VX_CF_STATUS=state_error; return 1; }
+        key=${BASH_REMATCH[1]}
+        value=${BASH_REMATCH[2]}
+        case "$key" in
+            SCHEMA) (( schema_seen++ == 0 )) || return 1; VX_CF_CERT_META_SCHEMA=$value ;;
+            USER) (( user_seen++ == 0 )) || return 1; VX_CF_CERT_META_USER=$value ;;
+            DOMAIN) (( domain_seen++ == 0 )) || return 1; VX_CF_CERT_META_DOMAIN=$value ;;
+            ZONE_ID) (( zone_seen++ == 0 )) || return 1; VX_CF_CERT_META_ZONE_ID=$value ;;
+            CERTIFICATE_ID) (( id_seen++ == 0 )) || return 1; VX_CF_CERT_META_ID=$value ;;
+            HOSTNAMES) (( hostnames_seen++ == 0 )) || return 1; VX_CF_CERT_META_HOSTNAMES=$value ;;
+            HOSTNAMES_DIGEST) (( digest_seen++ == 0 )) || return 1; VX_CF_CERT_META_DIGEST=$value ;;
+            *) VX_CF_STATUS=state_error; return 1 ;;
+        esac
+    done <"$path"
+    [[ "$VX_CF_CERT_META_SCHEMA" == 1 \
+        && "$VX_CF_CERT_META_USER" == "$user" \
+        && "$VX_CF_CERT_META_DOMAIN" == "$domain" \
+        && "$VX_CF_CERT_META_ZONE_ID" =~ ^[a-f0-9]{32}$ \
+        && "$VX_CF_CERT_META_DIGEST" =~ ^[a-f0-9]{64}$ ]] \
+        && vx_cf_valid_certificate_id "$VX_CF_CERT_META_ID" \
+        || { VX_CF_STATUS=state_error; return 1; }
+    local IFS=,
+    read -r -a VX_CF_CERT_META_NAMES <<<"$VX_CF_CERT_META_HOSTNAMES"
+    (( ${#VX_CF_CERT_META_NAMES[@]} >= 1 \
+        && ${#VX_CF_CERT_META_NAMES[@]} <= 200 )) \
+        || { VX_CF_STATUS=state_error; return 1; }
+    for hostname in "${VX_CF_CERT_META_NAMES[@]}"; do
+        vx_cf_valid_certificate_hostname "$hostname" \
+            || { VX_CF_STATUS=state_error; return 1; }
+    done
+    computed_digest=$(printf '%s\n' "${VX_CF_CERT_META_NAMES[@]}" \
+        | LC_ALL=C /usr/bin/sort -u | vx_cf_hostname_digest) \
+        || { VX_CF_STATUS=state_error; return 1; }
+    [[ "$computed_digest" == "$VX_CF_CERT_META_DIGEST" ]] \
+        || { VX_CF_STATUS=state_error; return 1; }
+}
+
+vx_cf_remove_certificate_metadata() {
+    local user=$1 domain=$2 target
+
+    target=$(vx_cf_certificate_path "$user" "$domain")
+    [[ -f "$target" && ! -L "$target" ]] \
+        || { VX_CF_STATUS=state_error; return 1; }
+    /usr/bin/rm -f -- "$target"
+}
+
+vx_cf_origin_ca_path() {
+    if [[ "${VX_CLOUDFLARE_TEST_MODE:-}" == yes \
+        && "$VESTA" != /usr/local/vesta \
+        && -f "$(vx_cf_root)/stub-origin-ca.pem" ]]; then
+        printf '%s/stub-origin-ca.pem\n' "$(vx_cf_root)"
+    else
+        printf '%s/func/vx/cloudflare/origin-ca-rsa.pem\n' "$VESTA"
+    fi
+}
+
+vx_cf_origin_preflight() {
+    local response
+
+    response=$(vx_cf_new_response_file) || { VX_CF_STATUS=state_error; return 1; }
+    if ! vx_cf_origin_transport GET "?zone_id=$VX_CF_ZONE_ID&per_page=1" "$response"; then
+        /usr/bin/rm -f -- "$response"
+        return 1
+    fi
+    if ! vx_cf_response_success "$response" \
+        || ! /usr/bin/jq -e '.result | type == "array"' "$response" \
+            >/dev/null 2>&1; then
+        /usr/bin/rm -f -- "$response"
+        [[ -n "${VX_CF_STATUS:-}" ]] || VX_CF_STATUS=malformed_response
+        return 1
+    fi
+    /usr/bin/rm -f -- "$response"
+}
+
+vx_cf_origin_get_certificate() {
+    local certificate_id=$1 response returned_id returned_hostnames hostname digest
+
+    vx_cf_valid_certificate_id "$certificate_id" \
+        || { VX_CF_STATUS=state_error; return 1; }
+    response=$(vx_cf_new_response_file) || { VX_CF_STATUS=state_error; return 1; }
+    if ! vx_cf_origin_transport GET "/$certificate_id" "$response"; then
+        /usr/bin/rm -f -- "$response"
+        return 1
+    fi
+    if ! vx_cf_response_success "$response" \
+        || ! /usr/bin/jq -e '(.result | type == "object") and
+            (.result.hostnames | type == "array")' "$response" \
+            >/dev/null 2>&1; then
+        /usr/bin/rm -f -- "$response"
+        [[ -n "${VX_CF_STATUS:-}" ]] || VX_CF_STATUS=malformed_response
+        return 1
+    fi
+    returned_id=$(/usr/bin/jq -r '.result.id // empty' "$response")
+    mapfile -t returned_hostnames < <(/usr/bin/jq -r '.result.hostnames[]' "$response" \
+        | LC_ALL=C /usr/bin/sort -u)
+    /usr/bin/rm -f -- "$response"
+    [[ "$returned_id" == "$certificate_id" \
+        && ${#returned_hostnames[@]} -ge 1 && ${#returned_hostnames[@]} -le 200 ]] \
+        || { VX_CF_STATUS=malformed_response; return 1; }
+    for hostname in "${returned_hostnames[@]}"; do
+        vx_cf_valid_certificate_hostname "$hostname" \
+            || { VX_CF_STATUS=malformed_response; return 1; }
+    done
+    digest=$(printf '%s\n' "${returned_hostnames[@]}" | vx_cf_hostname_digest) \
+        || { VX_CF_STATUS=state_error; return 1; }
+    VX_CF_ORIGIN_CERTIFICATE_ID=$returned_id
+    VX_CF_ORIGIN_HOSTNAMES_DIGEST=$digest
+}
+
+vx_cf_origin_revoke_certificate() {
+    local certificate_id=$1 response returned_id
+
+    response=$(vx_cf_new_response_file) || { VX_CF_STATUS=state_error; return 1; }
+    if ! vx_cf_origin_transport DELETE "/$certificate_id" "$response"; then
+        /usr/bin/rm -f -- "$response"
+        return 1
+    fi
+    if ! vx_cf_response_success "$response"; then
+        /usr/bin/rm -f -- "$response"
+        return 1
+    fi
+    returned_id=$(/usr/bin/jq -r '.result.id // empty' "$response")
+    /usr/bin/rm -f -- "$response"
+    [[ "$returned_id" == "$certificate_id" ]] \
+        || { VX_CF_STATUS=malformed_response; return 1; }
+}
+
+vx_cf_origin_compensate_new_certificate() {
+    local certificate_id=$1 status=$2
+
+    vx_cf_origin_revoke_certificate "$certificate_id" >/dev/null 2>&1 || :
+    VX_CF_STATUS=$status
+    return 1
+}
+
+vx_cf_origin_create_certificate() {
+    local domain=$1 stage=$2 key csr crt ca body response san hostname
+    local certificate_id expected_names actual_names cert_key_digest private_key_digest
+
+    key="$stage/$domain.key"
+    csr="$stage/$domain.csr"
+    crt="$stage/$domain.crt"
+    ca="$stage/$domain.ca"
+    body="$stage/request.json"
+    response=$(vx_cf_new_response_file) || { VX_CF_STATUS=state_error; return 1; }
+    san=''
+    for hostname in "${VX_CF_CERT_HOSTNAMES[@]}"; do
+        [[ -z "$san" ]] || san+=,
+        san+="DNS:$hostname"
+    done
+    /usr/bin/openssl req -new -newkey rsa:2048 -nodes -sha256 \
+        -subj "/CN=$domain" -addext "subjectAltName=$san" \
+        -keyout "$key" -out "$csr" >/dev/null 2>&1 \
+        || { /usr/bin/rm -f -- "$response"; VX_CF_STATUS=certificate_error; return 1; }
+    vx_cf_secure_path "$key" 0600 && vx_cf_secure_path "$csr" 0600 \
+        || { /usr/bin/rm -f -- "$response"; VX_CF_STATUS=state_error; return 1; }
+    /usr/bin/jq -n --rawfile csr "$csr" --args \
+        '{csr:$csr,hostnames:$ARGS.positional,request_type:"origin-rsa",requested_validity:5475}' \
+        -- "${VX_CF_CERT_HOSTNAMES[@]}" >"$body" || {
+        /usr/bin/rm -f -- "$response"
+        VX_CF_STATUS=state_error
+        return 1
+    }
+    vx_cf_secure_path "$body" 0600 || {
+        /usr/bin/rm -f -- "$response"
+        VX_CF_STATUS=state_error
+        return 1
+    }
+    if ! vx_cf_origin_transport POST '' "$response" "$body"; then
+        /usr/bin/rm -f -- "$response"
+        return 1
+    fi
+    if ! vx_cf_response_success "$response"; then
+        /usr/bin/rm -f -- "$response"
+        return 1
+    fi
+    certificate_id=$(/usr/bin/jq -r '.result.id // empty' "$response")
+    if ! vx_cf_valid_certificate_id "$certificate_id"; then
+        /usr/bin/rm -f -- "$response"
+        VX_CF_STATUS=malformed_response
+        return 1
+    fi
+    if ! /usr/bin/jq -e '(.result | type == "object") and
+            (.result.hostnames | type == "array") and
+            (.result.certificate | type == "string")' "$response" \
+            >/dev/null 2>&1; then
+        /usr/bin/rm -f -- "$response"
+        vx_cf_origin_compensate_new_certificate "$certificate_id" malformed_response
+        return
+    fi
+    expected_names=$(printf '%s\n' "${VX_CF_CERT_HOSTNAMES[@]}" | LC_ALL=C /usr/bin/sort -u)
+    actual_names=$(/usr/bin/jq -r '.result.hostnames[]' "$response" \
+        | LC_ALL=C /usr/bin/sort -u)
+    /usr/bin/jq -r '.result.certificate' "$response" >"$crt"
+    /usr/bin/rm -f -- "$response"
+    if [[ "$actual_names" != "$expected_names" ]]; then
+        vx_cf_origin_compensate_new_certificate "$certificate_id" certificate_hostname_mismatch
+        return
+    fi
+    vx_cf_secure_path "$crt" 0600 || {
+        vx_cf_origin_compensate_new_certificate "$certificate_id" state_error
+        return
+    }
+    /usr/bin/cp -- "$(vx_cf_origin_ca_path)" "$ca" \
+        && vx_cf_secure_path "$ca" 0600 \
+        || {
+            vx_cf_origin_compensate_new_certificate "$certificate_id" state_error
+            return
+        }
+    /usr/bin/openssl x509 -in "$crt" -noout -checkend 86400 >/dev/null 2>&1 \
+        || {
+            vx_cf_origin_compensate_new_certificate "$certificate_id" certificate_error
+            return
+        }
+    for hostname in "${VX_CF_CERT_HOSTNAMES[@]}"; do
+        /usr/bin/openssl x509 -in "$crt" -noout -checkhost "$hostname" \
+            >/dev/null 2>&1 || {
+                vx_cf_origin_compensate_new_certificate "$certificate_id" certificate_error
+                return
+            }
+    done
+    cert_key_digest=$(/usr/bin/openssl x509 -in "$crt" -pubkey -noout 2>/dev/null \
+        | /usr/bin/openssl pkey -pubin -outform DER 2>/dev/null \
+        | /usr/bin/sha256sum | /usr/bin/cut -d ' ' -f1)
+    private_key_digest=$(/usr/bin/openssl pkey -in "$key" -pubout -outform DER \
+        2>/dev/null | /usr/bin/sha256sum | /usr/bin/cut -d ' ' -f1)
+    [[ "$cert_key_digest" =~ ^[a-f0-9]{64}$ \
+        && "$cert_key_digest" == "$private_key_digest" ]] \
+        || {
+            vx_cf_origin_compensate_new_certificate "$certificate_id" certificate_error
+            return
+        }
+    VX_CF_NEW_CERTIFICATE_ID=$certificate_id
+}
+
+vx_cf_install_origin_certificate() {
+    local user=$1 domain=$2 stage=$3 restart=${4:-yes} row ssl command
+
+    vx_cf_exact_web_row "$user" "$domain" || return 1
+    row=$VX_CF_WEB_ROW
+    [[ "$row" =~ (^|[[:space:]])SSL=\'([^\']*)\'([[:space:]]|$) ]] \
+        && ssl=${BASH_REMATCH[2]} || ssl=no
+    if [[ "$ssl" == yes ]]; then
+        command="$BIN/v-change-web-domain-sslcert"
+        VESTA="$VESTA" "$command" "$user" "$domain" "$stage" "$restart" \
+            >/dev/null 2>&1 \
+            || { VX_CF_STATUS=certificate_install_failed; return 1; }
+    else
+        command="$BIN/v-add-web-domain-ssl"
+        VESTA="$VESTA" "$command" "$user" "$domain" "$stage" same "$restart" \
+            >/dev/null 2>&1 \
+            || { VX_CF_STATUS=certificate_install_failed; return 1; }
+    fi
+    [[ -f "$VESTA/data/users/$user/ssl/$domain.crt" \
+        && -f "$VESTA/data/users/$user/ssl/$domain.key" ]] \
+        && /usr/bin/cmp -s "$stage/$domain.crt" \
+            "$VESTA/data/users/$user/ssl/$domain.crt" \
+        && /usr/bin/cmp -s "$stage/$domain.key" \
+            "$VESTA/data/users/$user/ssl/$domain.key" \
+        || { VX_CF_STATUS=certificate_install_failed; return 1; }
+}
+
+vx_cf_origin_reconcile_locked() {
+    local user=$1 domain=$2 restart=${3:-yes} stage old_id='' old_hostnames=''
+    local old_digest='' new_id original_status
+
+    vx_cf_provider_mode || { VX_CF_STATUS=state_error; return 1; }
+    [[ "$VX_CF_PROVIDER_MODE" == cloudflare-managed ]] \
+        || { VX_CF_STATUS=provider_disabled; return 1; }
+    vx_cf_load_config || return 1
+    vx_cf_metadata_exists "$user" "$domain" \
+        || { VX_CF_STATUS=ownership_mismatch; return 1; }
+    vx_cf_load_metadata "$user" "$domain" || return 1
+    [[ "$VX_CF_META_ZONE_ID" == "$VX_CF_ZONE_ID" ]] \
+        || { VX_CF_STATUS=ownership_mismatch; return 1; }
+    vx_cf_collect_certificate_hostnames "$user" "$domain" || return 1
+    if vx_cf_certificate_metadata_exists "$user" "$domain"; then
+        vx_cf_load_certificate_metadata "$user" "$domain" || return 1
+        [[ "$VX_CF_CERT_META_ZONE_ID" == "$VX_CF_ZONE_ID" ]] \
+            || { VX_CF_STATUS=ownership_mismatch; return 1; }
+        old_id=$VX_CF_CERT_META_ID
+        old_hostnames=$VX_CF_CERT_META_HOSTNAMES
+        old_digest=$VX_CF_CERT_META_DIGEST
+        if [[ "$old_digest" == "$VX_CF_CERT_HOSTNAMES_DIGEST" ]]; then
+            VX_CF_STATUS=ssl_unchanged
+            return 0
+        fi
+    fi
+    stage=$(/usr/bin/mktemp -d "$(vx_cf_runtime_root)/.origin-ssl.XXXXXX") \
+        || { VX_CF_STATUS=state_error; return 1; }
+    vx_cf_secure_path "$stage" 0700 || {
+        /usr/bin/rm -rf -- "$stage"
+        VX_CF_STATUS=state_error
+        return 1
+    }
+    if ! vx_cf_origin_create_certificate "$domain" "$stage"; then
+        /usr/bin/rm -rf -- "$stage"
+        return 1
+    fi
+    new_id=$VX_CF_NEW_CERTIFICATE_ID
+    if ! vx_cf_install_origin_certificate "$user" "$domain" "$stage" "$restart"; then
+        original_status=${VX_CF_STATUS:-certificate_install_failed}
+        vx_cf_origin_revoke_certificate "$new_id" >/dev/null 2>&1 || :
+        /usr/bin/rm -rf -- "$stage"
+        VX_CF_STATUS=$original_status
+        return 1
+    fi
+    if ! vx_cf_write_certificate_metadata "$user" "$domain" "$new_id" \
+        "$VX_CF_CERT_HOSTNAMES_CSV" "$VX_CF_CERT_HOSTNAMES_DIGEST"; then
+        original_status=${VX_CF_STATUS:-state_error}
+        vx_cf_origin_revoke_certificate "$new_id" >/dev/null 2>&1 || :
+        /usr/bin/rm -rf -- "$stage"
+        VX_CF_STATUS=$original_status
+        return 1
+    fi
+    /usr/bin/rm -rf -- "$stage"
+    if [[ -n "$old_id" ]]; then
+        # The replacement is already installed and authoritative. Revocation
+        # of the superseded exact ID is best-effort and never rolls it back.
+        vx_cf_origin_revoke_certificate "$old_id" >/dev/null 2>&1 || :
+    fi
+    VX_CF_STATUS=ssl_ready
+}
+
+vx_cf_origin_reconcile() {
+    vx_cf_with_lock vx_cf_origin_reconcile_locked "$1" "$2" "${3:-yes}"
+}
+
+vx_cf_origin_cleanup_locked() {
+    local user=$1 domain=$2 certificate_id
+
+    if ! vx_cf_certificate_metadata_exists "$user" "$domain"; then
+        VX_CF_STATUS=unchanged
+        return 0
+    fi
+    vx_cf_load_config || return 1
+    vx_cf_load_certificate_metadata "$user" "$domain" || return 1
+    [[ "$VX_CF_CERT_META_ZONE_ID" == "$VX_CF_ZONE_ID" \
+        && "$VX_CF_CERT_META_DOMAIN" == "$domain" ]] \
+        || { VX_CF_STATUS=ownership_mismatch; return 1; }
+    certificate_id=$VX_CF_CERT_META_ID
+    if ! vx_cf_origin_get_certificate "$certificate_id"; then
+        if [[ "$VX_CF_STATUS" == not_found ]]; then
+            vx_cf_remove_certificate_metadata "$user" "$domain" || return 1
+            VX_CF_STATUS=deleted
+            return 0
+        fi
+        return 1
+    fi
+    [[ "$VX_CF_ORIGIN_CERTIFICATE_ID" == "$certificate_id" \
+        && "$VX_CF_ORIGIN_HOSTNAMES_DIGEST" == "$VX_CF_CERT_META_DIGEST" ]] \
+        || { VX_CF_STATUS=ownership_mismatch; return 1; }
+    vx_cf_origin_revoke_certificate "$certificate_id" || return 1
+    if vx_cf_origin_get_certificate "$certificate_id"; then
+        VX_CF_STATUS=delete_not_confirmed
+        return 1
+    elif [[ "$VX_CF_STATUS" != not_found ]]; then
+        return 1
+    fi
+    vx_cf_remove_certificate_metadata "$user" "$domain" || return 1
+    VX_CF_STATUS=deleted
+}
+
+vx_cf_origin_cleanup() {
+    vx_cf_with_lock vx_cf_origin_cleanup_locked "$1" "$2"
+}
+
 vx_cf_generated_label() {
     local value
     value=$(/usr/bin/od -An -N5 -tx1 /dev/urandom 2>/dev/null) || return 1
@@ -1000,6 +1517,7 @@ vx_cf_change_provider_locked() {
         vx_cf_zone_preflight || return 1
         [[ "$VX_CF_PREFLIGHT_ZONE_NAME" == "$VX_CF_ZONE_NAME" ]] \
             || { VX_CF_STATUS=zone_mismatch; return 1; }
+        vx_cf_origin_preflight || return 1
     fi
     temporary=$(/usr/bin/mktemp "$VESTA/conf/.vesta.conf.cloudflare.XXXXXX") \
         || { VX_CF_STATUS=state_error; return 1; }

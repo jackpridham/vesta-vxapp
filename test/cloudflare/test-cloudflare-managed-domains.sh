@@ -7,6 +7,10 @@ vesta_root="$work_root/vesta"
 stub_curl="$repo_root/test/cloudflare/fixtures/curl-stub"
 
 cleanup() {
+    [[ "${VX_CLOUDFLARE_KEEP_TEST_ROOT:-no}" != yes ]] || {
+        printf 'test root retained: %s\n' "$work_root" >&2
+        return
+    }
     [[ "$work_root" == /tmp/* && -d "$work_root" ]] \
         && /usr/bin/rm -rf -- "$work_root"
 }
@@ -32,10 +36,13 @@ run_vesta() {
 for command in v-configure-vx-cloudflare v-list-vx-cloudflare-status \
     v-change-vx-dns-provider v-add-vx-managed-web-domain \
     v-reconcile-vx-cloudflare-web-domain v-delete-vx-cloudflare-web-domain \
-    v-add-vx-cloudflare-web-alias; do
+    v-add-vx-cloudflare-web-alias v-reconcile-vx-cloudflare-origin-ssl \
+    v-delete-vx-cloudflare-origin-ssl; do
     /usr/bin/ln -s "$repo_root/bin/$command" "$vesta_root/bin/$command"
 done
-for command in v-add-web-domain v-delete-web-domain v-add-web-domain-alias; do
+for command in v-add-web-domain v-delete-web-domain v-add-web-domain-alias \
+    v-delete-web-domain-alias v-add-web-domain-ssl \
+    v-change-web-domain-sslcert; do
     /usr/bin/ln -s "$repo_root/test/cloudflare/fixtures/native-web-stub" \
         "$vesta_root/bin/$command"
 done
@@ -50,6 +57,15 @@ printf "NAT='192.0.2.20' OWNER='admin' STATUS='shared'\n" \
 
 status=$(run_vesta "$vesta_root/bin/v-list-vx-cloudflare-status")
 assert_eq "$status" not_configured 'initial status is not sanitized'
+
+cloudflare_root="$vesta_root/data/vx/cloudflare"
+/usr/bin/openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 3650 \
+    -subj '/C=US/O=Cloudflare Test/OU=Cloudflare Origin SSL Certificate Authority' \
+    -keyout "$cloudflare_root/stub-origin-ca.key" \
+    -out "$cloudflare_root/stub-origin-ca.pem" >/dev/null 2>&1 \
+    || fail 'test Origin CA generation failed'
+/usr/bin/chmod 0600 "$cloudflare_root/stub-origin-ca.key" \
+    "$cloudflare_root/stub-origin-ca.pem"
 
 input="$work_root/cloudflare.input"
 printf "API_TOKEN='fixture_token_12345678901234567890'\n" >"$input"
@@ -83,6 +99,18 @@ domain_one=$(run_vesta "$vesta_root/bin/v-add-vx-managed-web-domain" alice \
     || fail 'record metadata is missing'
 [[ "$(/usr/bin/stat -c '%a' "$vesta_root/data/vx/cloudflare/records/alice/$domain_one.conf")" == 600 ]] \
     || fail 'record metadata mode is not 0600'
+certificate_metadata="$vesta_root/data/vx/cloudflare/certificates/alice/$domain_one.conf"
+[[ -f "$certificate_metadata" ]] || fail 'certificate metadata is missing'
+first_certificate_id=$(/usr/bin/sed -n \
+    "s/^CERTIFICATE_ID='\([^']*\)'$/\1/p" "$certificate_metadata")
+[[ "$first_certificate_id" =~ ^[a-f0-9]{32}$ ]] \
+    || fail 'certificate ID is not protected exact authority'
+/usr/bin/openssl x509 -in "$vesta_root/data/users/alice/ssl/$domain_one.crt" \
+    -noout -checkhost "$domain_one" >/dev/null 2>&1 \
+    || fail 'installed certificate does not cover the generated domain'
+/usr/bin/grep -q "native-ssl .* $domain_one" \
+    "$vesta_root/data/vx/cloudflare/native-calls.log" \
+    || fail 'Origin certificate did not use native Vesta SSL installation'
 
 reconcile=$(run_vesta "$vesta_root/bin/v-reconcile-vx-cloudflare-web-domain" \
     alice "$domain_one") || fail 'no-op reconcile failed'
@@ -106,6 +134,20 @@ fi
 after_domains=$(/usr/bin/wc -l <"$vesta_root/data/users/alice/web.conf")
 assert_eq "$after_domains" "$before_domains" 'partial native create was not compensated'
 
+printf 'origin_failure\n' >"$vesta_root/data/vx/cloudflare/stub-scenario"
+if origin_create_failure=$(run_vesta \
+    "$vesta_root/bin/v-add-vx-managed-web-domain" alice 192.0.2.10 no none); then
+    fail 'Origin certificate failure left a managed site active'
+fi
+[[ "$origin_create_failure" == 'Error: unauthorized' ]] \
+    || fail 'initial Origin certificate failure is not stable'
+after_domains=$(/usr/bin/wc -l <"$vesta_root/data/users/alice/web.conf")
+assert_eq "$after_domains" "$before_domains" \
+    'Origin certificate failure did not remove the local website'
+[[ ! -s "$vesta_root/data/vx/cloudflare/stub-record.conf" ]] \
+    || fail 'Origin certificate failure did not remove the DNS record'
+: >"$vesta_root/data/vx/cloudflare/stub-scenario"
+
 unowned_domain=s-1111111111.managed.example.test
 printf "DOMAIN='%s' IP='192.0.2.10' ALIAS='' SUSPENDED='no'\n" \
     "$unowned_domain" >>"$vesta_root/data/users/alice/web.conf"
@@ -126,12 +168,55 @@ run_vesta "$vesta_root/bin/v-add-vx-cloudflare-web-alias" alice "$domain_one" \
 /usr/bin/grep -q "native-alias $domain_one custom.example.test" \
     "$vesta_root/data/vx/cloudflare/native-calls.log" \
     || fail 'custom alias did not use native alias state'
+second_certificate_id=$(/usr/bin/sed -n \
+    "s/^CERTIFICATE_ID='\([^']*\)'$/\1/p" "$certificate_metadata")
+[[ "$second_certificate_id" =~ ^[a-f0-9]{32}$ \
+    && "$second_certificate_id" != "$first_certificate_id" ]] \
+    || fail 'alias addition did not rotate the Origin certificate'
+/usr/bin/openssl x509 -in "$vesta_root/data/users/alice/ssl/$domain_one.crt" \
+    -noout -checkhost custom.example.test >/dev/null 2>&1 \
+    || fail 'rotated certificate does not cover the custom alias'
+/usr/bin/grep -q "origin-delete $first_certificate_id" \
+    "$vesta_root/data/vx/cloudflare/stub-calls.log" \
+    || fail 'superseded Origin certificate was not revoked'
+
+printf 'origin_failure\n' >"$vesta_root/data/vx/cloudflare/stub-scenario"
+if alias_failure=$(run_vesta "$vesta_root/bin/v-add-vx-cloudflare-web-alias" \
+    alice "$domain_one" rollback.example.test); then
+    fail 'failed Origin certificate issue left an alias attached'
+fi
+[[ "$alias_failure" == 'Error: native_alias_failed' ]] \
+    || fail 'alias certificate failure is not stable'
+! /usr/bin/grep -q "ALIAS='[^']*rollback.example.test" \
+    "$vesta_root/data/users/alice/web.conf" \
+    || fail 'alias certificate failure did not restore alias state'
+: >"$vesta_root/data/vx/cloudflare/stub-scenario"
+
+printf 'origin_mismatch\n' >"$vesta_root/data/vx/cloudflare/stub-scenario"
+if mismatch_failure=$(run_vesta "$vesta_root/bin/v-add-vx-cloudflare-web-alias" \
+    alice "$domain_one" mismatch.example.test); then
+    fail 'mismatched Origin certificate response was accepted'
+fi
+[[ "$mismatch_failure" == 'Error: native_alias_failed' ]] \
+    || fail 'mismatched Origin response failure is not stable'
+latest_created_id=$(/usr/bin/grep '^origin-create ' \
+    "$vesta_root/data/vx/cloudflare/stub-calls.log" | /usr/bin/tail -n1 \
+    | /usr/bin/cut -d ' ' -f2)
+/usr/bin/grep -q "origin-delete $latest_created_id" \
+    "$vesta_root/data/vx/cloudflare/stub-calls.log" \
+    || fail 'mismatched issued certificate was not compensated'
+: >"$vesta_root/data/vx/cloudflare/stub-scenario"
 
 delete_status=$(run_vesta "$vesta_root/bin/v-delete-vx-cloudflare-web-domain" \
     alice "$domain_one") || fail 'exact deletion failed'
 assert_eq "$delete_status" deleted 'delete status is incorrect'
 [[ ! -e "$vesta_root/data/vx/cloudflare/records/alice/$domain_one.conf" ]] \
     || fail 'metadata remained after deletion'
+[[ ! -e "$certificate_metadata" ]] \
+    || fail 'certificate metadata remained after deletion'
+/usr/bin/grep -q "origin-delete $second_certificate_id" \
+    "$vesta_root/data/vx/cloudflare/stub-calls.log" \
+    || fail 'current exact Origin certificate was not revoked on deletion'
 /usr/bin/grep -q '^delete$' "$vesta_root/data/vx/cloudflare/stub-calls.log" \
     || fail 'exact provider deletion was not called'
 
@@ -195,5 +280,8 @@ fi
 /usr/bin/grep -n 'managed web domains cannot be renamed' \
     "$repo_root/bin/v-change-web-domain-name" >/dev/null \
     || fail 'managed rename guard is missing'
+/usr/bin/grep -n 'vx_cf_reconcile_alias_change' \
+    "$repo_root/bin/v-add-web-domain-alias" "$repo_root/bin/v-delete-web-domain-alias" \
+    >/dev/null || fail 'generic alias paths can bypass Origin certificate rotation'
 
 printf 'PASS: Cloudflare managed-domain provider and lifecycle\n'

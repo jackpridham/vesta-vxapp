@@ -12,7 +12,7 @@ case "$command_name" in
         aliases=${5:-none}
         [[ -z "$ip" ]] && ip=192.0.2.10
         [[ "$aliases" == none ]] && aliases=''
-        printf "DOMAIN='%s' IP='%s' ALIAS='%s' SUSPENDED='no'\n" \
+        printf "DOMAIN='%s' IP='%s' ALIAS='%s' SSL='no' SUSPENDED='no'\n" \
             "$domain" "$ip" "$aliases" >>"$web_conf"
         printf 'native-add %s %s\n' "$domain" "$aliases" >>"$call_log"
         [[ ! -f "$VESTA/data/vx/cloudflare/native-add-fail" ]] || exit 1
@@ -22,7 +22,41 @@ case "$command_name" in
         printf 'native-delete %s\n' "$domain" >>"$call_log"
         ;;
     v-add-web-domain-alias)
+        alias_name=$3
+        current_alias=$(/usr/bin/sed -n "/^DOMAIN='$domain' /s/.* ALIAS='\([^']*\)'.*/\1/p" \
+            "$web_conf")
+        [[ -z "$current_alias" ]] && updated_alias=$alias_name \
+            || updated_alias="$current_alias,$alias_name"
+        /usr/bin/sed -i "/^DOMAIN='$domain' /s/ ALIAS='[^']*'/ ALIAS='$updated_alias'/" \
+            "$web_conf"
         printf 'native-alias %s %s\n' "$domain" "$3" >>"$call_log"
+        if [[ "${VX_CF_STUB_SKIP_ALIAS_SSL:-no}" != yes \
+            && -f "$VESTA/data/vx/cloudflare/records/$user/$domain.conf" ]] \
+            && ! VESTA="$VESTA" "$VESTA/bin/v-reconcile-vx-cloudflare-origin-ssl" \
+                "$user" "$domain" no >/dev/null 2>&1; then
+            /usr/bin/sed -i "/^DOMAIN='$domain' /s/ ALIAS='[^']*'/ ALIAS='$current_alias'/" \
+                "$web_conf"
+            exit 1
+        fi
+        ;;
+    v-delete-web-domain-alias)
+        alias_name=$3
+        current_alias=$(/usr/bin/sed -n "/^DOMAIN='$domain' /s/.* ALIAS='\([^']*\)'.*/\1/p" \
+            "$web_conf")
+        updated_alias=$(printf '%s\n' "$current_alias" | /usr/bin/tr ',' '\n' \
+            | /usr/bin/grep -Fxv "$alias_name" | /usr/bin/paste -sd, - || :)
+        /usr/bin/sed -i "/^DOMAIN='$domain' /s/ ALIAS='[^']*'/ ALIAS='$updated_alias'/" \
+            "$web_conf"
+        printf 'native-unalias %s %s\n' "$domain" "$alias_name" >>"$call_log"
+        ;;
+    v-add-web-domain-ssl|v-change-web-domain-sslcert)
+        ssl_dir=$3
+        /usr/bin/mkdir -p "$VESTA/data/users/$user/ssl"
+        /usr/bin/cp -f -- "$ssl_dir/$domain.crt" "$VESTA/data/users/$user/ssl/$domain.crt"
+        /usr/bin/cp -f -- "$ssl_dir/$domain.key" "$VESTA/data/users/$user/ssl/$domain.key"
+        /usr/bin/cp -f -- "$ssl_dir/$domain.ca" "$VESTA/data/users/$user/ssl/$domain.ca"
+        /usr/bin/sed -i "/^DOMAIN='$domain' /s/ SSL='[^']*'/ SSL='yes'/" "$web_conf"
+        printf 'native-ssl %s %s\n' "$command_name" "$domain" >>"$call_log"
         ;;
     *) exit 92 ;;
 esac

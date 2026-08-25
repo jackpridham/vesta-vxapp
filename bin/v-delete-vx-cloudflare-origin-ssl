@@ -1,5 +1,5 @@
 #!/bin/bash
-# info: delete an owned Vortex Cloudflare web-domain record
+# info: revoke the exact owned Cloudflare Origin CA certificate for a managed site
 # options: USER DOMAIN [FORMAT]
 
 
@@ -12,7 +12,6 @@ domain=$2
 format=${3:-human}
 
 source "$VESTA/func/main.sh"
-source "$VESTA/func/domain.sh"
 source "$VESTA/func/vx/cloudflare/main.sh"
 source "$VESTA/conf/vesta.conf"
 
@@ -23,11 +22,10 @@ source "$VESTA/conf/vesta.conf"
 
 check_args 2 "$#" 'USER DOMAIN [FORMAT]'
 [[ $# -le 3 && ( "$format" == human || "$format" == json ) ]] \
-    || check_result "$E_ARGS" 'invalid format'
+    || check_result "$E_ARGS" 'invalid arguments'
 is_format_valid user domain
 is_object_valid user USER "$user"
 is_object_unsuspended user USER "$user"
-is_object_valid web DOMAIN "$domain"
 
 
 #----------------------------------------------------------#
@@ -35,8 +33,6 @@ is_object_valid web DOMAIN "$domain"
 #----------------------------------------------------------#
 
 vx_cf_origin_cleanup "$user" "$domain" \
-    || check_result "$E_CONNECT" "${VX_CF_STATUS:-provider_error}"
-vx_cf_cleanup "$user" "$domain" \
     || check_result "$E_CONNECT" "${VX_CF_STATUS:-provider_error}"
 vx_cf_emit_status "$VX_CF_STATUS" "$format"
 
