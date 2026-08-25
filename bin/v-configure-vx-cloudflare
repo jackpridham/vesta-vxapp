@@ -1,0 +1,71 @@
+#!/bin/bash
+# info: configure Vortex Cloudflare managed DNS
+# options: [--config-file ROOT_ONLY_FILE]
+
+
+#----------------------------------------------------------#
+#                    Variable&Function                     #
+#----------------------------------------------------------#
+
+config_file=''
+temporary_input=''
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/cloudflare/main.sh"
+
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+if [[ $# -eq 2 && "$1" == --config-file ]]; then
+    config_file=$2
+elif [[ $# -ne 0 ]]; then
+    check_result "$E_ARGS" 'invalid arguments'
+fi
+
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+if [[ -z "$config_file" ]]; then
+    [[ -t 0 ]] || check_result "$E_ARGS" 'interactive input requires a terminal'
+    vx_cf_prepare_layout || check_result "$E_UPDATE" 'state_error'
+    temporary_input=$(/usr/bin/mktemp "$(vx_cf_root)/.input.XXXXXX") \
+        || check_result "$E_UPDATE" 'state_error'
+    vx_cf_secure_path "$temporary_input" 0600 || {
+        /usr/bin/rm -f -- "$temporary_input"
+        check_result "$E_UPDATE" 'state_error'
+    }
+    printf 'Cloudflare API token: ' >&2
+    IFS= read -r -s api_token
+    printf '\nCloudflare zone ID: ' >&2
+    IFS= read -r -s zone_id
+    printf '\nCloudflare account email: ' >&2
+    IFS= read -r -s account_email
+    printf '\n' >&2
+    {
+        printf "API_TOKEN='%s'\n" "$api_token"
+        printf "ZONE_ID='%s'\n" "$zone_id"
+        printf "ACCOUNT_EMAIL='%s'\n" "$account_email"
+    } >"$temporary_input"
+    unset api_token zone_id account_email
+    config_file=$temporary_input
+fi
+
+if ! vx_cf_configure_from_file "$config_file"; then
+    result=$VX_CF_STATUS
+    [[ -n "$temporary_input" ]] && /usr/bin/rm -f -- "$temporary_input"
+    check_result "$E_CONNECT" "$result"
+fi
+[[ -n "$temporary_input" ]] && /usr/bin/rm -f -- "$temporary_input"
+
+
+#----------------------------------------------------------#
+#                       Vesta                              #
+#----------------------------------------------------------#
+
+log_event "$OK" "$ARGUMENTS"
+vx_cf_emit_status ready
+exit

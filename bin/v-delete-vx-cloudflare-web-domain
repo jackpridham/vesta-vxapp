@@ -1,0 +1,47 @@
+#!/bin/bash
+# info: delete an owned Vortex Cloudflare web-domain record
+# options: USER DOMAIN [FORMAT]
+
+
+#----------------------------------------------------------#
+#                    Variable&Function                     #
+#----------------------------------------------------------#
+
+user=$1
+domain=$2
+format=${3:-human}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/domain.sh"
+source "$VESTA/func/vx/cloudflare/main.sh"
+source "$VESTA/conf/vesta.conf"
+
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+check_args 2 "$#" 'USER DOMAIN [FORMAT]'
+[[ $# -le 3 && ( "$format" == human || "$format" == json ) ]] \
+    || check_result "$E_ARGS" 'invalid format'
+is_format_valid user domain
+is_object_valid user USER "$user"
+is_object_unsuspended user USER "$user"
+is_object_valid web DOMAIN "$domain"
+
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+vx_cf_cleanup "$user" "$domain" \
+    || check_result "$E_CONNECT" "${VX_CF_STATUS:-provider_error}"
+vx_cf_emit_status "$VX_CF_STATUS" "$format"
+
+
+#----------------------------------------------------------#
+#                       Vesta                              #
+#----------------------------------------------------------#
+
+log_event "$OK" "$ARGUMENTS"
+exit

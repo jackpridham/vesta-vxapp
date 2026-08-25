@@ -1,0 +1,54 @@
+#!/bin/bash
+# info: attach an external domain as a managed website alias
+# options: USER WEB_DOMAIN CUSTOM_DOMAIN [RESTART]
+
+
+#----------------------------------------------------------#
+#                    Variable&Function                     #
+#----------------------------------------------------------#
+
+user=$1
+domain=$2
+custom_domain=$3
+restart=$4
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/domain.sh"
+source "$VESTA/func/vx/cloudflare/main.sh"
+source "$VESTA/conf/vesta.conf"
+
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+check_args 3 "$#" 'USER WEB_DOMAIN CUSTOM_DOMAIN [RESTART]'
+[[ $# -le 4 ]] || check_result "$E_ARGS" 'invalid arguments'
+is_format_valid user domain
+aliases=$custom_domain
+is_format_valid aliases
+is_object_valid user USER "$user"
+is_object_unsuspended user USER "$user"
+is_object_valid web DOMAIN "$domain"
+vx_cf_load_config || check_result "$E_CONNECT" "${VX_CF_STATUS:-not_configured}"
+vx_cf_managed_domain_matches_zone "$domain" "$VX_CF_ZONE_NAME" \
+    || check_result "$E_FORBIDEN" 'target is not a managed web domain'
+vx_cf_managed_domain_matches_zone "$custom_domain" "$VX_CF_ZONE_NAME" \
+    && check_result "$E_FORBIDEN" 'managed technical domains cannot be aliases'
+
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+VESTA="$VESTA" "$BIN/v-add-web-domain-alias" "$user" "$domain" \
+    "$custom_domain" "$restart"
+check_result $? 'native_alias_failed'
+
+
+#----------------------------------------------------------#
+#                       Vesta                              #
+#----------------------------------------------------------#
+
+log_event "$OK" "$ARGUMENTS"
+exit

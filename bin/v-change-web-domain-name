@@ -20,6 +20,7 @@ restart=$4
 source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
 source $VESTA/func/ip.sh
+source $VESTA/func/vx/cloudflare/main.sh
 source $VESTA/conf/vesta.conf
 
 # Additional argument formatting
@@ -39,6 +40,13 @@ is_object_valid 'user' 'USER' "$user"
 is_object_unsuspended 'user' 'USER' "$user"
 is_object_valid 'web' 'DOMAIN' "$domain"
 is_object_unsuspended 'web' 'DOMAIN' "$domain"
+if vx_cf_metadata_exists "$user" "$domain"; then
+    check_result $E_FORBIDEN 'managed web domains cannot be renamed'
+fi
+if vx_cf_load_config >/dev/null 2>&1 \
+    && vx_cf_managed_domain_matches_zone "$domain" "$VX_CF_ZONE_NAME"; then
+    check_result $E_FORBIDEN 'managed web domains cannot be renamed'
+fi
 check_new_domain=$(grep "DOMAIN='$new_domain'" $VESTA/data/users/*/web.conf)
 if [ ! -z "$check_new_domain" ]; then
     check_result $E_EXISTS "$new_domain already exists"

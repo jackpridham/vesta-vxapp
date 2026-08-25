@@ -1,0 +1,142 @@
+#!/bin/bash
+
+[[ $# -eq 2 && "$1" == --config && -f "$2" ]] || exit 97
+curl_config=$2
+stub_root=${curl_config%/runtime/*}
+scenario_file="$stub_root/stub-scenario"
+state_file="$stub_root/stub-record.conf"
+call_log="$stub_root/stub-calls.log"
+scenario=normal
+[[ -f "$scenario_file" ]] && IFS= read -r scenario <"$scenario_file"
+
+config_value() {
+    local key=$1
+    /usr/bin/sed -n "s/^${key} = \"\(.*\)\"$/\1/p" "$curl_config" | /usr/bin/head -n1
+}
+
+url=$(config_value url)
+method=$(config_value request)
+output=$(config_value output)
+body=$(config_value data-binary)
+body=${body#@}
+token=$(/usr/bin/sed -n 's/^header = "Authorization: Bearer \(.*\)"$/\1/p' "$curl_config")
+zone_id=${url#*'/zones/'}
+zone_id=${zone_id%%/*}
+
+# The real transport must give curl only its config path under an empty env.
+while IFS='=' read -r _ value; do
+    [[ "$value" != "$token" && "$value" != "$zone_id" ]] || exit 96
+done < <(/usr/bin/env)
+
+case "$scenario" in
+    timeout) exit 28 ;;
+    unauthorized) printf '{"success":false,"errors":[]}' >"$output"; printf 401; exit ;;
+    forbidden) printf '{"success":false,"errors":[]}' >"$output"; printf 403; exit ;;
+    rate_limited) printf '{"success":false,"errors":[]}' >"$output"; printf 429; exit ;;
+    malformed) printf 'not-json' >"$output"; printf 200; exit ;;
+esac
+
+if [[ "$url" == */zones/"$zone_id"/ ]]; then
+    printf 'zone\n' >>"$call_log"
+    printf '{"success":true,"result":{"id":"%s","name":"managed.example.test"}}' \
+        "$zone_id" >"$output"
+    printf 200
+    exit
+fi
+
+load_state() {
+    record_id=''
+    record_name=''
+    record_address=''
+    if [[ -f "$state_file" ]]; then
+        while IFS='=' read -r key value; do
+            case "$key" in
+                id) record_id=$value ;;
+                name) record_name=$value ;;
+                address) record_address=$value ;;
+            esac
+        done <"$state_file"
+    fi
+}
+
+write_record() {
+    printf 'id=%s\nname=%s\naddress=%s\n' \
+        "$record_id" "$record_name" "$record_address" >"$state_file"
+}
+
+record_json() {
+    printf '{"id":"%s","name":"%s","type":"A","content":"%s","ttl":1,"proxied":true}' \
+        "$record_id" "$record_name" "$record_address"
+}
+
+load_state
+api_path=${url#*"/zones/$zone_id/"}
+case "$method:$api_path" in
+    GET:dns_records\?*)
+        lookup_name=${api_path#*name=}
+        lookup_name=${lookup_name%%&*}
+        printf 'lookup %s\n' "$lookup_name" >>"$call_log"
+        if [[ "$scenario" == duplicate ]]; then
+            printf '{"success":true,"result":[' >"$output"
+            record_id=11111111111111111111111111111111 record_name=$lookup_name record_address=192.0.2.20
+            record_json >>"$output"
+            printf ',' >>"$output"
+            record_id=22222222222222222222222222222222
+            record_json >>"$output"
+            printf ']}' >>"$output"
+        elif [[ -n "$record_id" && "$record_name" == "$lookup_name" ]]; then
+            printf '{"success":true,"result":[' >"$output"
+            record_json >>"$output"
+            printf ']}' >>"$output"
+        else
+            printf '{"success":true,"result":[]}' >"$output"
+        fi
+        ;;
+    POST:dns_records)
+        record_id=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+        record_name=$(/usr/bin/jq -r .name "$body")
+        record_address=$(/usr/bin/jq -r .content "$body")
+        write_record
+        if [[ "$scenario" == metadata_failure ]]; then
+            /usr/bin/mkdir -p "$stub_root/records/alice"
+            /usr/bin/ln -s /dev/null \
+                "$stub_root/records/alice/$record_name.conf"
+        fi
+        printf 'create %s\n' "$record_name" >>"$call_log"
+        printf '{"success":true,"result":' >"$output"
+        record_json >>"$output"
+        printf '}' >>"$output"
+        ;;
+    PUT:dns_records/*)
+        requested_id=${api_path#dns_records/}
+        [[ "$requested_id" == "$record_id" ]] || exit 95
+        record_name=$(/usr/bin/jq -r .name "$body")
+        record_address=$(/usr/bin/jq -r .content "$body")
+        write_record
+        printf 'update\n' >>"$call_log"
+        printf '{"success":true,"result":' >"$output"
+        record_json >>"$output"
+        printf '}' >>"$output"
+        ;;
+    GET:dns_records/*)
+        requested_id=${api_path#dns_records/}
+        printf 'read\n' >>"$call_log"
+        if [[ -z "$record_id" || "$requested_id" != "$record_id" ]]; then
+            printf '{"success":false,"errors":[]}' >"$output"
+            printf 404
+            exit
+        fi
+        printf '{"success":true,"result":' >"$output"
+        record_json >>"$output"
+        printf '}' >>"$output"
+        ;;
+    DELETE:dns_records/*)
+        requested_id=${api_path#dns_records/}
+        [[ -n "$record_id" && "$requested_id" == "$record_id" ]] || exit 94
+        printf 'delete\n' >>"$call_log"
+        printf '{"success":true,"result":{"id":"%s"}}' "$record_id" >"$output"
+        : >"$state_file"
+        ;;
+    *) exit 93 ;;
+esac
+printf 200

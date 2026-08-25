@@ -22,6 +22,7 @@ restart=$3
 source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
 source $VESTA/func/ip.sh
+source $VESTA/func/vx/cloudflare/main.sh
 source $VESTA/conf/vesta.conf
 
 # Additional argument formatting
@@ -46,6 +47,13 @@ is_object_unsuspended 'web' 'DOMAIN' "$domain"
 #----------------------------------------------------------#
 #                       Action                             #
 #----------------------------------------------------------#
+
+# Remove only an exact provider record owned by this Vesta web domain. Any
+# verification/provider failure aborts before native website state is touched.
+if vx_cf_metadata_exists "$user" "$domain"; then
+    vx_cf_cleanup "$user" "$domain" >/dev/null \
+        || check_result "$E_CONNECT" "${VX_CF_STATUS:-provider_error}"
+fi
 
 # Deleting web backend
 if [ ! -z "$WEB_BACKEND" ]; then

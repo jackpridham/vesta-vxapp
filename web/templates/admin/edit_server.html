@@ -188,6 +188,35 @@
 
                                         <tr>
                                             <td class="vst-text input-label">
+                                                <?php print __('Managed DNS Provider');?>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>
+                                                <select class="vst-list long-2" name="v_dns_provider">
+                                                    <option value="local" <?php if ($v_dns_provider === 'local') echo 'selected';?>><?=__('Local DNS')?></option>
+                                                    <option value="cloudflare-managed" <?php if ($v_dns_provider === 'cloudflare-managed') echo 'selected';?>><?=__('Cloudflare managed')?></option>
+                                                </select>
+                                                <br><br>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td class="vst-text input-label">
+                                                <?php print __('Cloudflare Configuration');?>
+                                            </td>
+                                        </tr>
+                                        <tr>
+                                            <td>
+                                                <input type="text" size="20" class="vst-input" value="<?=$v_cloudflare_configured ? __('Configured') : __('Not configured')?>" disabled>
+                                                <?php if (!$v_cloudflare_configured) { ?>
+                                                <div class="vst-text" style="padding-top: 6px; color: #555;"><?php print __('Configure Cloudflare credentials securely on the server before selecting Cloudflare managed.');?></div>
+                                                <?php } ?>
+                                                <br><br>
+                                            </td>
+                                        </tr>
+
+                                        <tr>
+                                            <td class="vst-text input-label">
                                                 <?php print __('DNS Cluster');?>
                                             </td>
                                         </tr>

@@ -1,0 +1,28 @@
+#!/bin/bash
+
+command_name=${0##*/}
+user=$1
+domain=$2
+web_conf="$VESTA/data/users/$user/web.conf"
+call_log="$VESTA/data/vx/cloudflare/native-calls.log"
+
+case "$command_name" in
+    v-add-web-domain)
+        ip=${3:-192.0.2.10}
+        aliases=${5:-none}
+        [[ -z "$ip" ]] && ip=192.0.2.10
+        [[ "$aliases" == none ]] && aliases=''
+        printf "DOMAIN='%s' IP='%s' ALIAS='%s' SUSPENDED='no'\n" \
+            "$domain" "$ip" "$aliases" >>"$web_conf"
+        printf 'native-add %s %s\n' "$domain" "$aliases" >>"$call_log"
+        [[ ! -f "$VESTA/data/vx/cloudflare/native-add-fail" ]] || exit 1
+        ;;
+    v-delete-web-domain)
+        /usr/bin/sed -i "/^DOMAIN='$domain' /d" "$web_conf"
+        printf 'native-delete %s\n' "$domain" >>"$call_log"
+        ;;
+    v-add-web-domain-alias)
+        printf 'native-alias %s %s\n' "$domain" "$3" >>"$call_log"
+        ;;
+    *) exit 92 ;;
+esac

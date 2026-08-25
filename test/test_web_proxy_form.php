@@ -25,6 +25,13 @@ function assert_source_contains($source, $needle, $message)
     }
 }
 
+function assert_source_not_contains($source, $needle, $message)
+{
+    if (strpos($source, $needle) !== false) {
+        fail_test($message);
+    }
+}
+
 function headers_from($value)
 {
     $_POST = array('v_proxy_headers' => $value);
@@ -91,9 +98,10 @@ assert_same('', vx_proxy_long_flags_from_post(), 'empty add target should not em
 
 $addController = file_get_contents($root.'/web/add/web/index.php');
 $editController = file_get_contents($root.'/web/edit/web/index.php');
-assert_source_contains($addController, 'v-add-web-domain ".$user.', 'create controller is not owner-scoped through $user');
+assert_source_contains($addController, 'v-add-vx-managed-web-domain ".escapeshellarg($user)', 'managed create controller is not owner-scoped through $user');
 assert_source_contains($addController, '$proxy_options = vx_proxy_long_flags_from_post();', 'create controller does not use the native proxy helper');
-assert_source_contains($addController, "VESTA_CMD.\"v-add-web-domain ", 'create controller does not call v-add-web-domain');
+assert_source_contains($addController, "VESTA_CMD.\"v-add-vx-managed-web-domain ", 'create controller does not call the Vesta-owned allocator');
+assert_source_not_contains($addController, "VESTA_CMD.\"v-add-web-domain ", 'create controller still accepts a caller-owned primary domain');
 assert_source_contains($editController, '$v_username = $user;', 'edit controller does not bind mutations to the resolved owner');
 assert_source_contains($editController, '$proxy_args = vx_proxy_change_args_from_post();', 'edit controller does not use the positional proxy helper');
 assert_source_contains($editController, 'v-change-web-domain-proxy-options ', 'edit controller does not call v-change-web-domain-proxy-options');
@@ -115,6 +123,10 @@ foreach ($templates as $template) {
     assert_source_contains($source, 'name="v_proxy_target"', basename($template).' does not expose the proxy target');
     assert_source_contains($source, 'name="v_proxy_headers"', basename($template).' does not expose proxy headers');
 }
+
+$addTemplate = file_get_contents($root.'/web/templates/admin/add_web.html');
+assert_source_not_contains($addTemplate, 'name="v_domain"', 'managed create template still posts a primary domain');
+assert_source_contains($addTemplate, 'name="v_aliases"', 'managed create template does not expose custom domains as aliases');
 
 if (!empty($failures)) {
     foreach ($failures as $failure) {

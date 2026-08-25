@@ -1,0 +1,38 @@
+#!/bin/bash
+# info: change Vortex managed DNS provider
+# options: PROVIDER
+
+
+#----------------------------------------------------------#
+#                    Variable&Function                     #
+#----------------------------------------------------------#
+
+provider=$1
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/cloudflare/main.sh"
+
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+check_args 1 "$#" 'PROVIDER'
+[[ $# -eq 1 && ( "$provider" == local || "$provider" == cloudflare-managed ) ]] \
+    || check_result "$E_INVALID" 'invalid provider'
+
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+vx_cf_change_provider "$provider" \
+    || check_result "$E_UPDATE" "${VX_CF_STATUS:-state_error}"
+
+
+#----------------------------------------------------------#
+#                       Vesta                              #
+#----------------------------------------------------------#
+
+log_event "$OK" "$ARGUMENTS"
+exit

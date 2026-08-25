@@ -1,0 +1,79 @@
+#!/bin/bash
+# info: add a Vesta-generated Cloudflare managed web domain
+# options: USER [IP] [RESTART] [ALIASES] [PROXY_EXTENSIONS] [native proxy long options]
+
+
+#----------------------------------------------------------#
+#                    Variable&Function                     #
+#----------------------------------------------------------#
+
+user=$1
+ip=$2
+restart=$3
+aliases=$4
+proxy_ext=$5
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/cloudflare/main.sh"
+source "$VESTA/conf/vesta.conf"
+
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+check_args 1 "$#" 'USER [IP] [RESTART] [ALIASES] [PROXY_EXTENSIONS] [native proxy long options]'
+is_format_valid user
+is_object_valid user USER "$user"
+is_object_unsuspended user USER "$user"
+[[ -z "$aliases" ]] && aliases=none
+
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+vx_cf_lock_acquire || check_result "$E_UPDATE" 'state_error'
+if ! vx_cf_allocate_domain_locked; then
+    result=${VX_CF_STATUS:-provider_error}
+    vx_cf_lock_release || :
+    check_result "$E_CONNECT" "$result"
+fi
+managed_domain=$VX_CF_ALLOCATED_DOMAIN
+
+native_args=("$user" "$managed_domain" "$ip" "$restart" "$aliases")
+if (( $# >= 5 )); then
+    native_args+=("$proxy_ext")
+fi
+if (( $# >= 6 )); then
+    native_args+=("${@:6}")
+fi
+
+if ! VESTA="$VESTA" "$BIN/v-add-web-domain" "${native_args[@]}" >/dev/null 2>&1; then
+    vx_cf_lock_release || :
+    # Native create is not transactional and can fail after creating partial
+    # local state. Its ordinary delete path is the bounded compensation.
+    VESTA="$VESTA" "$BIN/v-delete-web-domain" "$user" "$managed_domain" \
+        >/dev/null 2>&1 || :
+    check_result "$E_UPDATE" 'native_create_failed'
+fi
+
+if ! vx_cf_reconcile_locked "$user" "$managed_domain"; then
+    original_result=${VX_CF_STATUS:-provider_error}
+    vx_cf_cleanup_locked "$user" "$managed_domain" >/dev/null 2>&1 || :
+    vx_cf_lock_release || :
+    VESTA="$VESTA" "$BIN/v-delete-web-domain" "$user" "$managed_domain" \
+        >/dev/null 2>&1 || :
+    check_result "$E_CONNECT" "$original_result"
+fi
+vx_cf_lock_release || check_result "$E_UPDATE" 'state_error'
+
+
+#----------------------------------------------------------#
+#                       Vesta                              #
+#----------------------------------------------------------#
+
+log_history "added managed web domain $managed_domain"
+log_event "$OK" "$ARGUMENTS"
+printf '%s\n' "$managed_domain"
+exit

@@ -1,0 +1,36 @@
+#!/bin/bash
+# info: list Vortex Cloudflare managed DNS status
+# options: [FORMAT]
+
+
+#----------------------------------------------------------#
+#                    Variable&Function                     #
+#----------------------------------------------------------#
+
+format=${1:-human}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/cloudflare/main.sh"
+
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+[[ $# -le 1 && ( "$format" == human || "$format" == json ) ]] \
+    || check_result "$E_ARGS" 'invalid format'
+
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+vx_cf_status || :
+vx_cf_emit_status "${VX_CF_STATUS:-state_error}" "$format"
+
+
+#----------------------------------------------------------#
+#                       Vesta                              #
+#----------------------------------------------------------#
+
+exit

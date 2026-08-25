@@ -11,6 +11,10 @@ if ($_SESSION['user'] != 'admin') {
     exit;
 }
 
+$v_dns_provider = (isset($_SESSION['VX_MANAGED_DNS_PROVIDER']) && $_SESSION['VX_MANAGED_DNS_PROVIDER'] === 'cloudflare-managed')
+    ? 'cloudflare-managed'
+    : 'local';
+
 // Get server hostname
 $v_hostname = exec('hostname');
 
@@ -131,6 +135,19 @@ if (!empty($_POST['save'])) {
     if ((!isset($_POST['token'])) || ($_SESSION['token'] != $_POST['token'])) {
         header('location: /login/');
         exit();
+    }
+
+    // Change the Vortex-managed DNS provider without changing the installed DNS service.
+    $requested_dns_provider = isset($_POST['v_dns_provider']) && !is_array($_POST['v_dns_provider'])
+        ? $_POST['v_dns_provider']
+        : '';
+    if (!in_array($requested_dns_provider, array('local', 'cloudflare-managed'), true)) {
+        $_SESSION['error_msg'] = __('Invalid managed DNS provider.');
+    } elseif ($requested_dns_provider !== $v_dns_provider) {
+        exec (VESTA_CMD."v-change-vx-dns-provider ".escapeshellarg($requested_dns_provider), $output, $return_var);
+        check_return_code($return_var,$output);
+        unset($output);
+        if (empty($_SESSION['error_msg'])) $v_dns_provider = $requested_dns_provider;
     }
 
     // Change hostname
@@ -618,6 +635,17 @@ $sys_arr = $data['config'];
 foreach ($sys_arr as $key => $value) {
     $_SESSION[$key] = $value;
 }
+
+$v_dns_provider = (isset($_SESSION['VX_MANAGED_DNS_PROVIDER']) && $_SESSION['VX_MANAGED_DNS_PROVIDER'] === 'cloudflare-managed')
+    ? 'cloudflare-managed'
+    : 'local';
+
+// Provider status is deliberately reduced to a configured/not-configured flag.
+exec (VESTA_CMD."v-list-vx-cloudflare-status", $output, $return_var);
+$v_cloudflare_status = trim(implode('', $output));
+$v_cloudflare_configured = ($return_var === 0 && $v_cloudflare_status === 'ready');
+unset($output);
+unset($v_cloudflare_status);
 
 
 // Render page

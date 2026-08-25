@@ -14,6 +14,12 @@ format=${1-shell}
 
 source $VESTA/conf/vesta.conf
 
+# Keep the Vortex-managed DNS selector bounded even on older configurations.
+case "${VX_MANAGED_DNS_PROVIDER:-local}" in
+    local|cloudflare-managed) ;;
+    *) VX_MANAGED_DNS_PROVIDER=local ;;
+esac
+
 # JSON list function
 json_list() {
     echo '{
@@ -34,6 +40,7 @@ json_list() {
         "ANTISPAM_SYSTEM": "'$ANTISPAM_SYSTEM'",
         "DB_SYSTEM": "'$DB_SYSTEM'",
         "DNS_SYSTEM": "'$DNS_SYSTEM'",
+        "VX_MANAGED_DNS_PROVIDER": "'$VX_MANAGED_DNS_PROVIDER'",
         "DNS_CLUSTER": "'$DNS_CLUSTER'",
         "STATS_SYSTEM": "'$STATS_SYSTEM'",
         "BACKUP_SYSTEM": "'$BACKUP_SYSTEM'",

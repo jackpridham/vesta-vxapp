@@ -18,6 +18,8 @@ Current documents:
 - [Earlier Vesta-managed Harbor development attempts](validation/2026-08-08-vesta-managed-harbor-development.md)
 - [Tenant Compose deployment guide — start here](user-guides/docker-compose-projects.md)
 - [Native web-domain reverse-proxy guide](user-guides/native-web-domain-proxy.md)
+- [Vesta-managed Cloudflare DNS guide](user-guides/vesta-cloudflare-managed-dns.md)
+- [Vesta-owned Cloudflare managed-domains plan](plans/2026-08-25-vesta-cloudflare-managed-domains.md)
 - [Native web-domain proxy validation](validation/2026-08-06-native-web-proxy-release.md)
 - [Self-service staging evidence](status/2026-07-29-compose-self-service-task7-staging-evidence.md)
 - [Compose contracts](contracts/)
