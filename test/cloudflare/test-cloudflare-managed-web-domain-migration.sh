@@ -364,6 +364,17 @@ assert_sanitized_json "$empty_prepare_output" prepared 0 0 0 0 0
 empty_artifact="$cloudflare_root/migrations/$empty_plan"
 empty_fingerprint=$(artifact_fingerprint "$empty_artifact") \
     || fail 'empty plan fingerprint failed'
+uppercase_user=Placeholder50df7
+uppercase_plan=uppercase-user-plan
+/usr/bin/mkdir -p "$vesta_root/data/users/$uppercase_user"
+printf '\n' >"$vesta_root/data/users/$uppercase_user/web.conf"
+printf "SUSPENDED='no' WEB_DOMAINS='0' WEB_ALIASES='0' U_WEB_DOMAINS='0' U_WEB_ALIASES='0'\nU_WEB_SSL='0'\n" \
+    >"$vesta_root/data/users/$uppercase_user/user.conf"
+uppercase_prepare_output=$(run_migration \
+    "$vesta_root/install/migrations/cloudflare-managed-web-domains/prepare.sh" \
+    "$uppercase_plan" --user "$uppercase_user" --json) \
+    || fail 'authoritative uppercase Vesta user prepare failed'
+assert_sanitized_json "$uppercase_prepare_output" prepared 0 0 0 0 0
 run_migration "$vesta_root/bin/v-change-vx-dns-provider" local >/dev/null \
     || fail 'local provider selection failed'
 calls_before=$(/usr/bin/wc -l <"$cloudflare_root/stub-calls.log")

@@ -16,7 +16,7 @@ vx_cf_migration_valid_plan() {
 }
 
 vx_cf_migration_valid_user() {
-    [[ "$1" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ ]]
+    vx_cf_valid_user "$1"
 }
 
 vx_cf_migration_is_test() {
@@ -318,7 +318,7 @@ vx_cf_migration_ftp_snapshot() {
     vx_cf_migration_passwd_file || return 1
     VX_CF_MIGRATION_FTP_LINES=''
     for ftp_user in "${users[@]}"; do
-        [[ "$ftp_user" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ ]] || return 1
+        vx_cf_migration_valid_user "$ftp_user" || return 1
         entry=$(/usr/bin/awk -F: -v user="$ftp_user" '$1 == user { print; count++ }
             END { if (count != 1) exit 1 }' "$VX_CF_MIGRATION_PASSWD") || return 1
         home=$(/usr/bin/printf '%s\n' "$entry" | /usr/bin/cut -d: -f6)
@@ -607,7 +607,7 @@ vx_cf_migration_artifact_validate() {
                 || "$relative" == snapshots/users \
                 || "$relative" == snapshots/ssl \
                 || "$relative" == recovery \
-                || "$relative" =~ ^snapshots/users/[a-z0-9][a-z0-9_-]{0,31}$ \
+                || "$relative" =~ ^snapshots/users/[A-Za-z0-9][-._A-Za-z0-9]{0,64}$ \
                 || "$relative" =~ ^snapshots/ssl/[0-9]{6}$ \
                 || "$relative" =~ ^recovery/[0-9]{6}$ ]] || return 1
         elif [[ -f "$path" ]]; then
@@ -1505,7 +1505,7 @@ vx_cf_migration_ftp_change() {
     [[ -z "$ftp_users" ]] || IFS=: read -r -a users <<<"$ftp_users"
     vx_cf_migration_homedir || return 1
     for ftp_user in "${users[@]}"; do
-        [[ "$ftp_user" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ ]] || return 1
+        vx_cf_migration_valid_user "$ftp_user" || return 1
         vx_cf_migration_ftp_one "$ftp_user" \
             "$VX_CF_MIGRATION_HOME/$user/web/$source" \
             "$VX_CF_MIGRATION_HOME/$user/web/$target" || return 1
