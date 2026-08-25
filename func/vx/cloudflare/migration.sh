@@ -1341,7 +1341,7 @@ vx_cf_migration_regular_file() {
 
 vx_cf_migration_verify_applied_native() {
     local artifact=$1 user=$2 source=$3 target=$4 original expected row
-    local rendered web_system proxy_system proxy stats tpl version pool
+    local rendered web_system proxy_system proxy stats tpl backend version pool
     local path
     local -a paths=()
 
@@ -1368,6 +1368,8 @@ vx_cf_migration_verify_applied_native() {
         || stats=''
     vx_cf_migration_row_value "$row" TPL && tpl=$VX_CF_MIGRATION_ROW_VALUE \
         || tpl=''
+    vx_cf_migration_row_value "$row" BACKEND \
+        && backend=$VX_CF_MIGRATION_ROW_VALUE || backend=''
 
     if [[ -n "$web_system" && "$web_system" != no ]]; then
         [[ "$web_system" =~ ^[a-z0-9][a-z0-9_-]{0,31}$ ]] || return 1
@@ -1392,7 +1394,8 @@ vx_cf_migration_verify_applied_native() {
         vx_cf_migration_regular_file "$path" || return 1
     done
 
-    if [[ "$tpl" =~ ^PHP-FPM-([0-9])([0-9])(-ioncube)?$ ]]; then
+    if [[ -n "$backend" && "$backend" != no \
+        && "$tpl" =~ ^PHP-FPM-([0-9])([0-9])(-ioncube)?$ ]]; then
         version="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}"
         pool=pool.d
         [[ -z "${BASH_REMATCH[3]}" ]] || pool=pool.d-ioncube
@@ -1943,7 +1946,9 @@ vx_cf_migration_expected_user_ssl_counter() {
         [[ "$item" != ITEM && "$row_user" == "$user" ]] || continue
         vx_cf_migration_results_get "$artifact" "$item" || return 1
         state=$VX_CF_MIGRATION_ITEM_STATE
-        [[ "$state" == applied || "$state" == rolling_back ]] || continue
+        [[ "$state" == provisioned || "$state" == applied \
+            || "$state" == rolling_back || "$state" == recovery_required ]] \
+            || continue
         vx_cf_migration_row_from_file \
             "$artifact/snapshots/users/$user/web.conf" "$source" || return 1
         vx_cf_migration_row_value "$VX_CF_MIGRATION_SOURCE_ROW" SSL || return 1
