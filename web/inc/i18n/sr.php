@@ -511,17 +511,17 @@ $LANG['sr'] = array(
     'CRON_EXCLUSIONS' => 'Da bi izuzeo sve cron-job-ove unesi zvezdicu *',
     'USER_EXCLUSIONS' => 'Unesi direktorijume, po jedan u svakoj liniji. Da bi izuzeo sve direktorijume unesi zvezdicu *',
 
-    'Welcome to Vesta Control Panel'  => 'Dobrodošli u myVesta kontrolni panel',
-    'MAIL_FROM'  => 'myVesta kontrolni panel <noreply@%s>',
+    'Welcome to Vesta Control Panel'  => 'Dobrodošli u Vesta kontrolni panel',
+    'MAIL_FROM'  => 'Vesta kontrolni panel <noreply@%s>',
     'GREETINGS_GORDON_FREEMAN' => "Poštovani %s %s,\n",
     'GREETINGS' => "Poštovani,\n",
-    'ACCOUNT_READY' => "Vaš hosting nalog je kreiran i spreman za korišćenje.\n\nhttps://%s/login/\nUsername: %s\nPassword: %s\n\n--\nmyVesta kontrolni panel\n",
+    'ACCOUNT_READY' => "Vaš hosting nalog je kreiran i spreman za korišćenje.\n\nhttps://%s/login/\nUsername: %s\nPassword: %s\n\n--\nVesta kontrolni panel\n",
 
     'FTP login credentials'  => 'FTP podaci',
-    'FTP_ACCOUNT_READY' => "FTP nalog je kreiran. Koristite sledeće podatke kako biste se ulogovali:\n\nHostname: %s\nUsername: %s_%s\nPassword: %s\n\n--\nmyVesta kontrolni panel\n",
+    'FTP_ACCOUNT_READY' => "FTP nalog je kreiran. Koristite sledeće podatke kako biste se ulogovali:\n\nHostname: %s\nUsername: %s_%s\nPassword: %s\n\n--\nVesta kontrolni panel\n",
 
     'Database Credentials'  => 'Podaci baze podataka',
-    'DATABASE_READY' => "Baza podataka je kreirana. Koristite sledeće podatke kako biste se ulogovali:\n\nDatabase: %s\nUsername: %s\nPassword: %s\n%s\n\n--\nmyVesta kontrolni panel\n",
+    'DATABASE_READY' => "Baza podataka je kreirana. Koristite sledeće podatke kako biste se ulogovali:\n\nDatabase: %s\nUsername: %s\nPassword: %s\n%s\n\n--\nVesta kontrolni panel\n",
 
     'forgot password'  => 'zaboravljen password',
     'Confirm'  => 'Potvrditi',
@@ -532,7 +532,7 @@ $LANG['sr'] = array(
     'RESET_NOTICE'  => '',
     'RESET_CODE_SENT'  => 'Kod resetovanog passworda je poslat na vašu email adresu<br>',
     'MAIL_RESET_SUBJECT'  => 'Password je resetovan %s',
-    'PASSWORD_RESET_REQUEST' => "Za resetovanje passworda sledite link:\nhttps://%s/reset/?action=confirm&user=%s&code=%s\n\nIli, možete ići na https://%s/reset/?action=code&user=%s i uneti kod:\n%s\n\nAko niste tražili resetovanje passworda, ignorišite ovu poruku i prihvatite naše izvinjenje.\n\n--\nmyVesta kontrolni panel\n",
+    'PASSWORD_RESET_REQUEST' => "Za resetovanje passworda sledite link:\nhttps://%s/reset/?action=confirm&user=%s&code=%s\n\nIli, možete ići na https://%s/reset/?action=code&user=%s i uneti kod:\n%s\n\nAko niste tražili resetovanje passworda, ignorišite ovu poruku i prihvatite naše izvinjenje.\n\n--\nVesta kontrolni panel\n",
 
     'Jan' => 'Jan',
     'Feb' => 'Feb',

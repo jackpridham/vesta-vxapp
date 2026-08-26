@@ -66,28 +66,6 @@
         if ($user == 'admin') {
     ?>
         <div class="io-box clearfix">
-            <div class="io-box-left clearfix">
-              <div class="io-box-left-items io-1-homepage-block">
-                <a href="https://www.myvestacp.com/" target="_blank">myVesta</a>
-                <span class="io-description">website</span>
-              </div>
-              <div class="io-box-left-items io-2-homepage-block">
-                <a href="https://forum.myvestacp.com/" target="_blank">Forum</a>
-                <span class="io-description">Ask the questions on our forum</span>
-              </div>
-              <div class="io-box-left-items io-3-homepage-block">
-                <a href="https://github.com/myvesta/vesta" target="_blank">Git</a>
-                <span class="io-description">Become our code contributor</span>
-              </div>
-              <div class="io-box-left-items io-4-homepage-block">
-                <a href="https://forum.myvestacp.com/viewtopic.php?t=814" target="_blank">Donate</a>
-                <span class="io-description">Buy us a coffee</span>
-              </div>
-              <div class="io-box-left-items io-5-homepage-block">
-                <a href="https://wiki.myvestacp.com/" target="_blank">Wiki</a>
-                <span class="io-description">Find solution in our documentation</span>
-              </div>
-            </div>
             <div class="io-box-right io-banner clearfix">
               <a href="/list/rrd/"><img src="/list/rrd/image.php?/rrd/la/daily-la.png" alt="SysLoad"></a>
             </div>
@@ -97,7 +75,7 @@
             echo '<a class="l-sort__create-btn" style="position: relative; bottom: 0; margin-bottom: 15px; left: 20px;" href="/add/user/" title="'.__('Add User').'"><div id="add-icon"></div><div id="tooltip">'.__('Add User').'</div></a>';
         }
         if (isset($changelog)) {
-          echo "<br /><br /><div style='margin: -20px 20px 20px 20px; padding: 10px; background: #fff;'><h1 style=\"margin: 0; color: #aa9c88;\">".__("What's new:")."</h1><br /><pre  style=\"padding: 16px; overflow: auto; font-size: 85%; line-height: 1.45; background-color: #f6f8fa; border-radius: 3px; font-weight: bold;\">".$changelog."</pre>".__("This only admin see after myVesta upgrade, and will dissapear on next refresh.")." ".__("If you missed an update, see our previous")." <a style=\"color: #007bff;\" target=\"_blank\" href=\"https://github.com/myvesta/vesta/blob/master/Changelog.md\">".__("change logs")."</a>.<br />".__("Check out our")." <a style=\"color: #007bff;\" target=\"_blank\" href=\"https://www.myvestacp.com/\">".__("new site, forum and knowledge base")."</a>.<br /><br /><hr style=\"color: #ffebcd;\" /></div>";
+          echo "<br /><br /><div style='margin: -20px 20px 20px 20px; padding: 10px; background: #fff;'><h1 style=\"margin: 0; color: #aa9c88;\">".__("What's new:")."</h1><br /><pre style=\"padding: 16px; overflow: auto; font-size: 85%; line-height: 1.45; background-color: #f6f8fa; border-radius: 3px; font-weight: bold;\">".$changelog."</pre>".__("This update summary is shown only to administrators and will disappear on the next refresh.")."<br /><br /><hr style=\"color: #ffebcd;\" /></div>";
         }
 
         foreach ($data as $key => $value) {
