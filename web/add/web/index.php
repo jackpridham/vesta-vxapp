@@ -6,7 +6,6 @@ $TAB = 'WEB';
 // Main include
 include($_SERVER['DOCUMENT_ROOT']."/inc/main.php");
 include($_SERVER['DOCUMENT_ROOT']."/inc/vx_proxy_form.php");
-include_once($_SERVER['DOCUMENT_ROOT']."/inc/vx_custom_domains.php");
 
 // Check POST request
 if (!empty($_POST['ok'])) {
@@ -16,16 +15,6 @@ if (!empty($_POST['ok'])) {
         header('location: /login/');
         exit();
     }
-
-    // Validate and canonicalize the scalar aliases field before any Vesta
-    // mutation. The reusable form component serializes its rows with LF.
-    $posted_aliases = isset($_POST['v_aliases']) ? $_POST['v_aliases'] : '';
-    $custom_domain_error = '';
-    if (!vx_custom_domains_validate($posted_aliases, '', $custom_domain_error)) {
-        $_SESSION['error_msg'] = __($custom_domain_error);
-    }
-    $v_aliases = vx_custom_domains_normalize($posted_aliases);
-    $_POST['v_aliases'] = $v_aliases;
 
     // Managed websites always receive Vesta-owned Origin CA SSL during the
     // allocator transaction. Ignore legacy/manual certificate fields even if
@@ -63,9 +52,9 @@ if (!empty($_POST['ok'])) {
     // Define domain ip address
     $v_ip = escapeshellarg($_POST['v_ip']);
 
-    // Define domain aliases
-    $aliases_arr = vx_custom_domains_values($v_aliases);
-    $aliases = empty($aliases_arr) ? 'none' : escapeshellarg(implode(',', $aliases_arr));
+    // Initial websites never accept aliases. They can be added after creation
+    // from the edit page once their external DNS is ready.
+    $aliases = 'none';
 
     // Define proxy extensions
     $v_proxy_ext = $_POST['v_proxy_ext'];
@@ -309,7 +298,6 @@ if (!empty($_POST['ok'])) {
     if (empty($_SESSION['error_msg'])) {
         $_SESSION['ok_msg'] = __('WEB_DOMAIN_CREATED_OK',htmlentities($generated_domain),htmlentities($generated_domain));
         unset($v_domain);
-        unset($v_aliases);
         unset($v_ssl);
         unset($v_ssl_crt);
         unset($v_ssl_key);

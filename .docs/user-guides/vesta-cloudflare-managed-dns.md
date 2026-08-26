@@ -2,8 +2,9 @@
 
 Vesta can allocate a public technical hostname for each new panel website and
 own that hostname's Cloudflare A-record lifecycle. Each managed website also
-receives a Cloudflare Origin CA certificate for its technical hostname and
-complete Vesta alias set, so Cloudflare Full (strict) works from first create.
+receives a Cloudflare Origin CA certificate for its technical hostname, so
+Cloudflare Full (strict) works from first create. Later alias changes rotate
+that certificate to the complete current hostname set.
 The release remains deliberately narrow: one configured Cloudflare zone, one
 proxied A record per managed website, Cloudflare Auto TTL, and exact record and
 certificate deletion.
@@ -130,16 +131,18 @@ The panel uses this Vortex-owned creation surface:
 v-add-vx-managed-web-domain USER [IP] [RESTART] [ALIASES] [PROXY_EXTENSIONS] [proxy options]
 ```
 
-There is intentionally no `DOMAIN` argument. The command validates Vesta and
-provider prerequisites, generates a collision-resistant label, creates the
-native Vesta web domain with custom domains as aliases, reconciles exactly one
+There is intentionally no `DOMAIN` argument. The panel always creates the
+website with an empty alias set, so custom-domain DNS does not block initial
+provisioning. The command validates Vesta and provider prerequisites, generates
+a collision-resistant label, creates the native Vesta web domain, reconciles exactly one
 proxied A record to the web domain's Vesta/NAT address, reads the record back,
 issues and installs a 15-year per-site Origin CA certificate for the generated
-hostname and aliases, and returns the generated public hostname. If DNS or
+hostname, and returns the generated public hostname. If DNS or
 certificate setup fails, the new website, exact provider record, and any issued
 certificate are compensated automatically.
 
-Adding or removing a Vesta web alias automatically validates its Cloudflare
+After creation, add aliases from the website edit page once their external DNS
+is ready. Adding or removing a Vesta web alias automatically validates its Cloudflare
 zone/DNS/proxy/edge/strict prerequisites and rotates that site's Origin CA
 certificate before the final web/proxy restart. The previous certificate is
 revoked only after the replacement is installed and its exact ID remains

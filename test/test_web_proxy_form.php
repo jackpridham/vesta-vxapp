@@ -126,7 +126,7 @@ foreach ($templates as $template) {
 
 $addTemplate = file_get_contents($root.'/web/templates/admin/add_web.html');
 assert_source_not_contains($addTemplate, 'name="v_domain"', 'managed create template still posts a primary domain');
-assert_source_contains($addTemplate, 'vx_custom_domains_render(', 'managed create template does not expose the reusable custom-domain component');
+assert_source_not_contains($addTemplate, 'vx_custom_domains_render(', 'managed create template still exposes aliases before DNS is ready');
 
 if (!empty($failures)) {
     foreach ($failures as $failure) {

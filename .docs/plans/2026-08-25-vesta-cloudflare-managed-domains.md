@@ -49,7 +49,7 @@
 - Modify `bin/v-list-sys-config`: expose only the bounded nonsecret managed-provider enum to the existing server form.
 - Modify `bin/v-delete-web-domain`: thin managed-record cleanup hook before destructive local deletion.
 - Modify `bin/v-change-web-domain-name`: reject rename of Vesta-managed technical hostnames.
-- Modify `web/add/web/index.php` and `web/templates/admin/add_web.html`: remove caller primary-domain input, make custom domains the visible alias input, and consume the generated hostname returned by the Vortex command.
+- Modify `web/add/web/index.php` and `web/templates/admin/add_web.html`: remove caller primary-domain and alias inputs, force an empty initial alias set, and consume the generated hostname returned by the Vortex command. Custom domains are added later from web edit after their DNS is ready.
 - Modify `web/api/index.php`: route authenticated product creation through the Vesta allocator while preserving low-level restore/import compatibility.
 - Modify `web/edit/web/index.php` and the admin/user edit templates: hide and reject manual certificate or Let's Encrypt changes for managed/degraded domains.
 - Create `web/add/vx-cloudflare-domain/index.php` and `web/templates/admin/add_vx_cloudflare_domain.html`: admin-only CSRF-protected external-domain alias form.
@@ -126,7 +126,7 @@ Expected before implementation: `FAIL` on the missing Vortex panel surfaces.
 
 - [x] **Step 2: Implement the thin PHP/template integration**
 
-The add-web page treats custom domains as aliases, obtains the generated hostname from the successful command response, and then uses that server result for existing FTP/SSL/stats flows. The new DNS toolbar form attaches an already-configured custom hostname to a selected owned web domain. Server configuration displays local versus Cloudflare-managed provider mode and only a configured/not-configured credential status.
+The add-web page omits aliases, obtains the generated hostname from the successful command response, and then uses that server result for existing FTP/SSL/stats flows. The web edit component and DNS toolbar form attach already-configured custom hostnames to an owned web domain. Server configuration displays local versus Cloudflare-managed provider mode and only a configured/not-configured credential status.
 
 - [x] **Step 3: Run focused UI tests and syntax checks**
 
