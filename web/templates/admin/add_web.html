@@ -50,8 +50,7 @@
                         </tr>
                         <tr>
                             <td>
-                                <textarea data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false" size="20" class="vst-textinput" name="v_aliases" id="v_aliases"><?=htmlentities(trim($v_aliases, "'"))?></textarea>
-                                <div class="vst-text" style="padding-top: 6px; color: #555;"><?php print __('Enter custom domains separated by spaces or new lines. Vesta generates the primary hostname. Each custom domain must already have an accessible proxied Cloudflare A record to the selected Vesta address.');?></div>
+                                <?php vx_custom_domains_render(isset($v_aliases) ? $v_aliases : ''); ?>
                             </td>
                         </tr>
                         <tr>

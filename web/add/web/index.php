@@ -6,6 +6,7 @@ $TAB = 'WEB';
 // Main include
 include($_SERVER['DOCUMENT_ROOT']."/inc/main.php");
 include($_SERVER['DOCUMENT_ROOT']."/inc/vx_proxy_form.php");
+include_once($_SERVER['DOCUMENT_ROOT']."/inc/vx_custom_domains.php");
 
 // Check POST request
 if (!empty($_POST['ok'])) {
@@ -15,6 +16,16 @@ if (!empty($_POST['ok'])) {
         header('location: /login/');
         exit();
     }
+
+    // Validate and canonicalize the scalar aliases field before any Vesta
+    // mutation. The reusable form component serializes its rows with LF.
+    $posted_aliases = isset($_POST['v_aliases']) ? $_POST['v_aliases'] : '';
+    $custom_domain_error = '';
+    if (!vx_custom_domains_validate($posted_aliases, '', $custom_domain_error)) {
+        $_SESSION['error_msg'] = __($custom_domain_error);
+    }
+    $v_aliases = vx_custom_domains_normalize($posted_aliases);
+    $_POST['v_aliases'] = $v_aliases;
 
     // Managed websites always receive Vesta-owned Origin CA SSL during the
     // allocator transaction. Ignore legacy/manual certificate fields even if
@@ -53,17 +64,8 @@ if (!empty($_POST['ok'])) {
     $v_ip = escapeshellarg($_POST['v_ip']);
 
     // Define domain aliases
-    $v_aliases = $_POST['v_aliases'];
-    $aliases = preg_replace("/\n/", ",", $v_aliases);
-    $aliases = preg_replace("/\r/", ",", $aliases);
-    $aliases = preg_replace("/\t/", ",", $aliases);
-    $aliases = preg_replace("/ /", ",", $aliases);
-    $aliases_arr = explode(",", $aliases);
-    $aliases_arr = array_unique($aliases_arr);
-    $aliases_arr = array_filter($aliases_arr);
-    $aliases = implode(",",$aliases_arr);
-    $aliases = escapeshellarg($aliases);
-    if (empty($_POST['v_aliases'])) $aliases = 'none';
+    $aliases_arr = vx_custom_domains_values($v_aliases);
+    $aliases = empty($aliases_arr) ? 'none' : escapeshellarg(implode(',', $aliases_arr));
 
     // Define proxy extensions
     $v_proxy_ext = $_POST['v_proxy_ext'];

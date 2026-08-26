@@ -77,12 +77,12 @@
                             </tr>
                             <tr>
                                 <td class="vst-text input-label">
-                                    <?php print __('Aliases');?>
+                                    <?php print __('Custom domains');?>
                                 </td>
                             </tr>
                             <tr>
                                 <td>
-                                    <textarea data-gramm="false" data-gramm_editor="false" data-enable-grammarly="false" size="20" class="vst-textinput" name="v_aliases"><?=htmlentities(trim($v_aliases, "'"))?></textarea>
+                                    <?php vx_custom_domains_render($v_aliases, trim($v_domain, "'")); ?>
                                 </td>
                             </tr>
                             <tr>

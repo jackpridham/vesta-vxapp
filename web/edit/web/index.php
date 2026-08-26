@@ -8,6 +8,7 @@ $TAB = 'WEB';
 include($_SERVER['DOCUMENT_ROOT']."/inc/main.php");
 include($_SERVER['DOCUMENT_ROOT']."/inc/vx_proxy_form.php");
 include($_SERVER['DOCUMENT_ROOT']."/inc/vx_docker.php");
+include_once($_SERVER['DOCUMENT_ROOT']."/inc/vx_custom_domains.php");
 
 // Check domain argument
 if (empty($_GET['domain'])) {
@@ -38,8 +39,8 @@ if (($return_var == 0) && (($v_cloudflare_status === 'managed') || ($v_cloudflar
 unset($output);
 $v_ip = $data[$v_domain]['IP'];
 $v_template = $data[$v_domain]['TPL'];
-$v_aliases = str_replace(',', "\n", $data[$v_domain]['ALIAS']);
-$valiases = explode(",", $data[$v_domain]['ALIAS']);
+$v_aliases = vx_custom_domains_normalize($data[$v_domain]['ALIAS']);
+$valiases = vx_custom_domains_values($data[$v_domain]['ALIAS']);
 $v_tpl = $data[$v_domain]['IP'];
 $v_cgi = $data[$v_domain]['CGI'];
 $v_elog = $data[$v_domain]['ELOG'];
@@ -145,6 +146,16 @@ if (!empty($_POST['save'])) {
         exit();
     }
 
+    // Validate custom domains before IP, template, proxy, or alias commands
+    // can mutate the website. Keep the legacy scalar LF-delimited POST value.
+    $posted_aliases = isset($_POST['v_aliases']) ? $_POST['v_aliases'] : '';
+    $custom_domain_error = '';
+    if (!vx_custom_domains_validate($posted_aliases, $_GET['domain'], $custom_domain_error)) {
+        $_SESSION['error_msg'] = __($custom_domain_error);
+    }
+    $v_aliases = vx_custom_domains_normalize($posted_aliases);
+    $_POST['v_aliases'] = $v_aliases;
+
     if (!empty($v_docker_route_container['NAME']) && (empty($_SESSION['error_msg']))) {
         $requested_proxy_enabled = !empty($_POST['v_proxy']);
         $requested_proxy_mode = vx_proxy_post_value('v_proxy_mode', 'proxy');
@@ -217,12 +228,8 @@ if (!empty($_POST['save'])) {
 
     // Change aliases
     if (empty($_SESSION['error_msg'])) {
-        $waliases = preg_replace("/\n/", " ", $_POST['v_aliases']);
-        $waliases = preg_replace("/,/", " ", $waliases);
-        $waliases = preg_replace('/\s+/', ' ',$waliases);
-        $waliases = trim($waliases);
-        $aliases = explode(" ", $waliases);
-        $v_aliases = str_replace(' ', "\n", $waliases);
+        $aliases = vx_custom_domains_values($_POST['v_aliases']);
+        $v_aliases = $_POST['v_aliases'];
         $result = array_diff($valiases, $aliases);
         foreach ($result as $alias) {
             if ((empty($_SESSION['error_msg'])) && (!empty($alias))) {

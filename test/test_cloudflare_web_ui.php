@@ -52,6 +52,8 @@ $edit_web_controller = read_cloudflare_ui_source($root.'/web/edit/web/index.php'
 $edit_web_admin_template = read_cloudflare_ui_source($root.'/web/templates/admin/edit_web.html');
 $edit_web_user_template = read_cloudflare_ui_source($root.'/web/templates/user/edit_web.html');
 $web_api_controller = read_cloudflare_ui_source($root.'/web/api/index.php');
+$custom_domains_helper = read_cloudflare_ui_source($root.'/web/inc/vx_custom_domains.php');
+$custom_domains_js = read_cloudflare_ui_source($root.'/web/js/vx-custom-domains.js');
 
 assert_cloudflare_ui_contains($add_web_controller, "(!isset(\$_POST['token']))", 'managed web creation lost its CSRF token presence check');
 assert_cloudflare_ui_contains($add_web_controller, "(\$_SESSION['token'] != \$_POST['token'])", 'managed web creation lost its CSRF token comparison');
@@ -72,11 +74,22 @@ foreach (array('v-add-dns-domain ', 'v-add-dns-on-web-alias ', 'v-restart-dns', 
 if (preg_match('/name\s*=\s*["\']v_domain["\']/i', $add_web_template)) {
     fail_cloudflare_ui_test('add-web template still posts a primary domain');
 }
-assert_cloudflare_ui_contains($add_web_template, 'name="v_aliases"', 'custom domains are not exposed as the alias input');
+assert_cloudflare_ui_contains($add_web_controller, '/inc/vx_custom_domains.php', 'managed web creation does not load the custom-domain helper');
+assert_cloudflare_ui_contains($add_web_controller, 'vx_custom_domains_validate($posted_aliases', 'managed web creation does not validate every custom domain');
+assert_cloudflare_ui_contains($add_web_controller, 'vx_custom_domains_normalize($posted_aliases)', 'managed web creation does not preserve the scalar newline schema');
+assert_cloudflare_ui_contains($add_web_controller, 'vx_custom_domains_values($v_aliases)', 'managed web creation does not convert the canonical aliases for the allocator');
+$add_validation_position = strpos($add_web_controller, 'vx_custom_domains_validate($posted_aliases');
+$add_mutation_position = strpos($add_web_controller, 'v-add-vx-managed-web-domain ');
+if ($add_validation_position === false || $add_mutation_position === false
+    || $add_validation_position > $add_mutation_position) {
+    fail_cloudflare_ui_test('managed web creation validates custom domains after mutation');
+}
+assert_cloudflare_ui_contains($add_web_template, 'vx_custom_domains_render(isset($v_aliases) ? $v_aliases : \'\')', 'add-web template does not use the reusable custom-domain component');
 assert_cloudflare_ui_contains($add_web_template, "__('Custom domains')", 'visible alias field is not labelled as custom domains');
-if (strpos($add_web_template, 'name="v_aliases"') > strpos($add_web_template, "__('Advanced options')")) {
+if (strpos($add_web_template, 'vx_custom_domains_render(') > strpos($add_web_template, "__('Advanced options')")) {
     fail_cloudflare_ui_test('custom domains remain hidden inside advanced options');
 }
+assert_cloudflare_ui_not_contains($add_web_template, 'name="v_aliases"', 'add-web template retained its legacy alias textarea');
 assert_cloudflare_ui_not_contains($add_web_template, 'name="v_dns"', 'managed add form still exposes legacy DNS support');
 assert_cloudflare_ui_not_contains($add_web_template, 'name="v_mail"', 'managed add form still exposes incoherent mail support');
 foreach (array('name="v_ssl"', 'name="v_letsencrypt"', 'name="v_ssl_crt"', 'name="v_ssl_key"', 'name="v_ssl_ca"') as $manual_ssl_field) {
@@ -128,6 +141,15 @@ foreach (array('API token', 'Zone ID', 'Account email', 'Authorization:') as $pr
 assert_cloudflare_ui_contains($edit_web_controller, 'v-list-vx-cloudflare-web-domain-status ', 'web edit does not resolve exact managed-domain ownership');
 assert_cloudflare_ui_contains($edit_web_controller, "\$v_cloudflare_status === 'managed'", 'web edit does not recognize exact managed status');
 assert_cloudflare_ui_contains($edit_web_controller, "\$v_cloudflare_status === 'degraded'", 'web edit does not fail closed for degraded managed metadata');
+assert_cloudflare_ui_contains($edit_web_controller, '/inc/vx_custom_domains.php', 'web edit does not load the custom-domain helper');
+assert_cloudflare_ui_contains($edit_web_controller, 'vx_custom_domains_normalize($data[$v_domain][\'ALIAS\'])', 'web edit does not hydrate the persisted alias schema');
+assert_cloudflare_ui_contains($edit_web_controller, 'vx_custom_domains_validate($posted_aliases, $_GET[\'domain\']', 'web edit does not validate custom domains against the immutable primary');
+$edit_validation_position = strpos($edit_web_controller, 'vx_custom_domains_validate($posted_aliases');
+$edit_mutation_position = strpos($edit_web_controller, 'v-change-web-domain-ip ');
+if ($edit_validation_position === false || $edit_mutation_position === false
+    || $edit_validation_position > $edit_mutation_position) {
+    fail_cloudflare_ui_test('web edit validates custom domains after native mutation');
+}
 foreach (array(
     "v-change-web-domain-sslcert",
     "v-delete-letsencrypt-domain",
@@ -142,9 +164,21 @@ foreach (array(
 }
 assert_cloudflare_ui_contains($edit_web_controller, 'if ((!$v_cloudflare_managed)', 'managed SSL mutation paths are not controller-gated');
 foreach (array($edit_web_admin_template, $edit_web_user_template) as $edit_template) {
+    assert_cloudflare_ui_contains($edit_template, "__('Custom domains')", 'edit template does not label aliases as custom domains');
+    assert_cloudflare_ui_contains($edit_template, "vx_custom_domains_render(\$v_aliases, trim(\$v_domain, \"'\"));", 'edit template does not use the shared hydrated custom-domain component');
+    assert_cloudflare_ui_not_contains($edit_template, 'name="v_aliases"', 'edit template retained its legacy alias textarea');
     assert_cloudflare_ui_contains($edit_template, 'if (!empty($v_cloudflare_managed))', 'managed SSL template branch is missing');
     assert_cloudflare_ui_contains($edit_template, 'Cloudflare Origin CA — managed automatically', 'managed SSL ownership is not shown');
     assert_cloudflare_ui_contains($edit_template, 'Manual replacement and Lets Encrypt are disabled', 'managed SSL controls are not explained');
+}
+
+assert_cloudflare_ui_contains($custom_domains_helper, 'name="v_aliases"', 'custom-domain component lost the scalar aliases field');
+assert_cloudflare_ui_not_contains($custom_domains_helper, 'name="v_aliases[]"', 'custom-domain component posts an incompatible aliases array');
+assert_cloudflare_ui_contains($custom_domains_helper, 'data-vx-custom-domain-input', 'custom-domain component lacks individual visible inputs');
+assert_cloudflare_ui_contains($custom_domains_helper, 'data-vx-custom-domain-add', 'custom-domain component lacks its add control');
+assert_cloudflare_ui_contains($custom_domains_helper, 'data-vx-custom-domain-remove', 'custom-domain component lacks its remove control');
+foreach (array('normalizeDomain', 'isValidDomain', 'serializeDomains', 'validateDomains') as $browser_contract) {
+    assert_cloudflare_ui_contains($custom_domains_js, $browser_contract.': '.$browser_contract, 'custom-domain browser helper does not export '.$browser_contract);
 }
 
 assert_cloudflare_ui_contains($web_api_controller, "\$requested_cmd === 'v-add-web-domain'", 'web API does not identify native website creation');
