@@ -85,7 +85,7 @@ if ($add_validation_position === false || $add_mutation_position === false
     fail_cloudflare_ui_test('managed web creation validates custom domains after mutation');
 }
 assert_cloudflare_ui_contains($add_web_template, 'vx_custom_domains_render(isset($v_aliases) ? $v_aliases : \'\')', 'add-web template does not use the reusable custom-domain component');
-assert_cloudflare_ui_contains($add_web_template, "__('Custom domains')", 'visible alias field is not labelled as custom domains');
+assert_cloudflare_ui_contains($add_web_template, "__('Aliases')", 'visible alias field is not labelled as aliases');
 if (strpos($add_web_template, 'vx_custom_domains_render(') > strpos($add_web_template, "__('Advanced options')")) {
     fail_cloudflare_ui_test('custom domains remain hidden inside advanced options');
 }
@@ -164,7 +164,7 @@ foreach (array(
 }
 assert_cloudflare_ui_contains($edit_web_controller, 'if ((!$v_cloudflare_managed)', 'managed SSL mutation paths are not controller-gated');
 foreach (array($edit_web_admin_template, $edit_web_user_template) as $edit_template) {
-    assert_cloudflare_ui_contains($edit_template, "__('Custom domains')", 'edit template does not label aliases as custom domains');
+    assert_cloudflare_ui_contains($edit_template, "__('Aliases')", 'edit template does not label custom domains as aliases');
     assert_cloudflare_ui_contains($edit_template, "vx_custom_domains_render(\$v_aliases, trim(\$v_domain, \"'\"));", 'edit template does not use the shared hydrated custom-domain component');
     assert_cloudflare_ui_not_contains($edit_template, 'name="v_aliases"', 'edit template retained its legacy alias textarea');
     assert_cloudflare_ui_contains($edit_template, 'if (!empty($v_cloudflare_managed))', 'managed SSL template branch is missing');
@@ -177,6 +177,7 @@ assert_cloudflare_ui_not_contains($custom_domains_helper, 'name="v_aliases[]"', 
 assert_cloudflare_ui_contains($custom_domains_helper, 'data-vx-custom-domain-input', 'custom-domain component lacks individual visible inputs');
 assert_cloudflare_ui_contains($custom_domains_helper, 'data-vx-custom-domain-add', 'custom-domain component lacks its add control');
 assert_cloudflare_ui_contains($custom_domains_helper, 'data-vx-custom-domain-remove', 'custom-domain component lacks its remove control');
+assert_cloudflare_ui_not_contains($custom_domains_helper, 'Add each custom domain separately.', 'custom-domain component retained unnecessary explanatory text');
 foreach (array('normalizeDomain', 'isValidDomain', 'serializeDomains', 'validateDomains') as $browser_contract) {
     assert_cloudflare_ui_contains($custom_domains_js, $browser_contract.': '.$browser_contract, 'custom-domain browser helper does not export '.$browser_contract);
 }

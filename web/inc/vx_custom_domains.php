@@ -129,7 +129,6 @@ function vx_custom_domains_render($raw, $primary_domain = '')
             .vx-custom-domains__input.is-invalid { border-color: #f05050; }
             .vx-custom-domains__error { color: #f05050; display: none; font-size: 12px; margin: 2px 0 8px; }
             .vx-custom-domains__error.is-visible { display: block; }
-            .vx-custom-domains__help { color: #777; font-size: 12px; line-height: 18px; margin-top: 6px; max-width: 458px; }
             .vx-custom-domains__serialized { display: none; }
         </style>
         <script defer src="/js/vx-custom-domains.js?<?=vx_custom_domains_escape(JS_LATEST_UPDATE)?>"></script>
@@ -170,7 +169,6 @@ function vx_custom_domains_render($raw, $primary_domain = '')
         </div>
         <div class="vx-custom-domains__error" data-vx-custom-domain-error role="alert" aria-live="polite"></div>
         <textarea class="vx-custom-domains__serialized" name="v_aliases" id="v_aliases" tabindex="-1" aria-hidden="true"><?=vx_custom_domains_escape($serialized)?></textarea>
-        <div class="vx-custom-domains__help"><?php print __('Add each custom domain separately. Vesta generates the primary hostname. Each domain must already have an accessible proxied Cloudflare record to the selected Vesta address.');?></div>
     </div>
     <?php
 }
