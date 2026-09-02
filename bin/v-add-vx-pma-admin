@@ -10,6 +10,7 @@
 #                    Variable&Function                     #
 #----------------------------------------------------------#
 
+VESTA=${VESTA:-/usr/local/vesta}
 list_only=no
 pma_config=/etc/phpmyadmin/config.inc.php
 user='admin'

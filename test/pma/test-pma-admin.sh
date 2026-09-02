@@ -144,5 +144,8 @@ if /usr/bin/grep -R -q 'vortex-scripts' \
     "$repo_root/bin/v-add-vx-pma-admin" "$repo_root/func/vx/pma-admin.sh"; then
     fail 'Vesta-owned implementation references vortex-scripts'
 fi
+/usr/bin/grep -Fqx 'VESTA=${VESTA:-/usr/local/vesta}' \
+    "$repo_root/bin/v-add-vx-pma-admin" \
+    || fail 'public command does not default VESTA for direct sudo execution'
 
 printf 'pma admin tests passed\n'
