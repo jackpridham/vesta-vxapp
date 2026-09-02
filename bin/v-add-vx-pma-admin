@@ -1,0 +1,84 @@
+#!/bin/bash
+# info: add a local Vortex phpMyAdmin database administrator and list databases
+# options: [--list-only]
+#
+# Creates or rotates pma_admin@localhost and stores its credentials in
+# root-only Vesta state. The --list-only mode makes no changes.
+
+
+#----------------------------------------------------------#
+#                    Variable&Function                     #
+#----------------------------------------------------------#
+
+list_only=no
+pma_config=/etc/phpmyadmin/config.inc.php
+user='admin'
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/pma-admin.sh"
+source "$VESTA/conf/vesta.conf"
+
+
+#----------------------------------------------------------#
+#                    Verifications                         #
+#----------------------------------------------------------#
+
+if [[ $# -eq 1 && "$1" == --list-only ]]; then
+    list_only=yes
+elif [[ $# -ne 0 ]]; then
+    check_result "$E_ARGS" 'invalid arguments; usage: v-add-vx-pma-admin [--list-only]'
+fi
+
+[[ $EUID -eq 0 ]] \
+    || check_result "$E_FORBIDEN" 'v-add-vx-pma-admin must be run as root'
+case ",${DB_SYSTEM:-}," in
+    *,mysql,*) ;;
+    *) check_result "$E_DISABLED" 'mysql is not enabled in DB_SYSTEM' ;;
+esac
+vx_pma_check_connection || check_result "$E_CONNECT" "$VX_PMA_ERROR"
+
+if [[ "$list_only" == no && ! -f "$pma_config" ]]; then
+    check_result "$E_NOTEXIST" "phpMyAdmin config does not exist at $pma_config"
+fi
+
+
+#----------------------------------------------------------#
+#                       Action                             #
+#----------------------------------------------------------#
+
+if [[ "$list_only" == no ]]; then
+    vx_pma_create_admin || check_result "$E_DB" "$VX_PMA_ERROR"
+    printf 'Created pma_admin@localhost. Credentials: %s\n' \
+        "$(vx_pma_credentials_file)"
+
+    vx_pma_reconcile_control_user "$pma_config"
+    control_result=$?
+    if [[ $control_result -eq 0 ]]; then
+        printf 'Reconciled phpMyAdmin control user: %s@localhost\n' \
+            "$VX_PMA_CONTROL_USER"
+    elif [[ $control_result -eq 2 ]]; then
+        printf 'Warning: phpMyAdmin has no configured control user; skipped reconciliation.\n' >&2
+    else
+        check_result "$E_DB" "$VX_PMA_ERROR"
+    fi
+fi
+
+printf '\nManaged MySQL databases and owners\n'
+vx_pma_list_managed_databases
+printf '\nMySQL server databases\n'
+vx_pma_list_server_databases || check_result "$E_DB" "$VX_PMA_ERROR"
+
+if [[ "$list_only" == no ]]; then
+    printf '\nphpMyAdmin URL: %s\n' "${DB_PMA_URL:-not configured}"
+fi
+
+
+#----------------------------------------------------------#
+#                       Vesta                              #
+#----------------------------------------------------------#
+
+if [[ "$list_only" == no ]]; then
+    log_history 'added or rotated local Vortex phpMyAdmin administrator' '' admin
+    log_event "$OK" "$ARGUMENTS"
+fi
+exit 0
