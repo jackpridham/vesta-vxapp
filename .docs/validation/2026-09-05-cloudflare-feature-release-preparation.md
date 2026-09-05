@@ -1,5 +1,8 @@
 # Cloudflare feature branch release preparation
 
+The separately approved production transaction is recorded in the
+[production acceptance evidence](2026-09-05-cloudflare-production-release.md).
+
 ## Source and integration
 
 The repository default branch is `master`; no `main` branch exists.
