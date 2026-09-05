@@ -36,7 +36,18 @@ password=$(vx_pma_generate_password)
 [[ "$password" =~ ^[[:xdigit:]]{36}$ ]] \
     || fail 'generated password is not 144 bits of hexadecimal data'
 
-vx_pma_store_credentials "$password"
+(
+    # Intercept external printf without changing the production command path.
+    /usr/bin/printf() {
+        local argument
+        for argument in "$@"; do
+            [[ "$argument" != *"$password"* ]] \
+                || fail 'administrator password exposed in external printf arguments'
+        done
+        command /usr/bin/printf "$@"
+    }
+    vx_pma_store_credentials "$password"
+) || fail 'credential storage must not expose the password in process arguments'
 credentials=$(vx_pma_credentials_file)
 [[ "$(/usr/bin/stat -c '%a' "$credentials")" == 600 ]] \
     || fail 'credentials mode is not 0600'

@@ -64,7 +64,7 @@ vx_pma_store_credentials() {
 
     if ! {
         /usr/bin/printf 'username=pma_admin\n'
-        /usr/bin/printf 'password=%s\n' "$password"
+        builtin printf 'password=%s\n' "$password"
         /usr/bin/printf 'updated=%s\n' "$(/usr/bin/date -u +%Y-%m-%dT%H:%M:%SZ)"
     } >"$temporary_file"; then
         /usr/bin/rm -f -- "$temporary_file"
