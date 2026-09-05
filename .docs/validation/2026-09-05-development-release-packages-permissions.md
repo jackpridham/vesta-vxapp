@@ -1,5 +1,11 @@
 # Development release and Packages template permissions
 
+The operator subsequently reported an edit-handler failure and missing Docker
+navigation. The template-only checks below did not cover the unreadable shared
+include or legacy quota fields. See the
+[follow-up repair and validation](2026-09-05-development-panel-package-docker-repair.md)
+for the broader file-readability audit and corrective UI release.
+
 ## Authorized scope and source
 
 The operator requested the current version on development and reported a blank
