@@ -290,30 +290,43 @@ wait_for_file() {
     return 1
 }
 
-expect_interrupted_preview_cleanup() {
-    local signal="$1" upload_fd upload_pid root_seen=no
+expect_interrupted_preview_cleanup() (
+    local signal="$1" upload_fd upload_pid child child_name reader_seen=no
+    local -a children=()
     mkfifo "$fixture/upload-$signal"
     exec {upload_fd}<>"$fixture/upload-$signal"
     set -m
     "${broker[@]}" preview app change <&"$upload_fd" >/dev/null 2>&1 &
     upload_pid=$!
     set +m
+    trap 'kill -KILL -- "-$upload_pid" 2>/dev/null || :
+          wait "$upload_pid" 2>/dev/null || :
+          exec {upload_fd}>&-
+          rm -f -- "$fixture/upload-$signal"' EXIT
+    # The snapshot directory appears before head starts; signal the active reader.
     for _ in {1..200}; do
-        if compgen -G '/tmp/vx-compose-web.*' >/dev/null; then
-            root_seen=yes
-            break
-        fi
+        read -r -a children 2>/dev/null <"/proc/$upload_pid/task/$upload_pid/children" || :
+        for child in "${children[@]}"; do
+            if IFS= read -r child_name 2>/dev/null <"/proc/$child/comm" \
+                && [[ "$child_name" == head ]]; then
+                reader_seen=yes
+                break 2
+            fi
+        done
         kill -0 "$upload_pid" 2>/dev/null || break
         sleep 0.025
     done
-    [[ "$root_seen" == yes ]] || fail "$signal preview did not create a snapshot root"
+    [[ "$reader_seen" == yes ]] || fail "$signal preview did not start its stdin reader"
     kill -s "$signal" -- "-$upload_pid"
+    for _ in {1..200}; do
+        kill -0 "$upload_pid" 2>/dev/null || break
+        sleep 0.025
+    done
+    ! kill -0 "$upload_pid" 2>/dev/null || fail "$signal preview did not exit after interruption"
     ! wait "$upload_pid" || fail "$signal preview succeeded after interruption"
-    exec {upload_fd}>&-
-    rm -f "$fixture/upload-$signal"
     ! compgen -G '/tmp/vx-compose-web.*' >/dev/null \
         || fail "$signal preview retained Compose stdin snapshot"
-}
+)
 
 expect_interrupted_preview_cleanup INT
 expect_interrupted_preview_cleanup TERM
