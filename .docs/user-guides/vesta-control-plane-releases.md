@@ -111,6 +111,12 @@ lock:
 8. Stop if unrelated recovery state, an active deployment, stale authorization,
    an unexpected baseline hash, or insufficient rollback capacity is present.
 
+For panel repairs, also check readability of the shipped web files as the
+actual PHP worker account. Include page handlers, shared includes, templates,
+and AJAX handlers outside the incremental payload. A root-owned file can
+match its source hash while remaining unreadable to the panel. Record any
+existing source or metadata differences before choosing an exact repair scope.
+
 Do not “repair” a failed preflight with broad ownership changes, global Docker
 cleanup, firewall mutation, or deletion of retained data.
 
@@ -159,6 +165,8 @@ Acceptance must prove, in proportion to the changed surface:
 
 - exact live payload hashes, types, modes, and ownership;
 - installed runtime/release identity;
+- affected panel files readable by the PHP worker account, including their
+  shared dependencies;
 - Bash, PHP, JavaScript, sudoers, systemd, nginx, and other affected syntax;
 - required services active and configuration-valid;
 - package and shell entitlements unchanged except where authorized;
@@ -170,6 +178,13 @@ Acceptance must prove, in proportion to the changed surface:
 - no global prune, broad cleanup, or unapproved data deletion;
 - protected audit/evidence records complete; and
 - release, owner, and project locks free after closeout.
+
+Check affected list/add/edit pages through an ordinary authenticated session.
+Record template rendering and Vesta command checks separately from full page
+acceptance. If operator credentials are unavailable, retain that limitation
+and request confirmation from the operator's existing session. Compose views
+must use the effective project entitlement and usage, including users whose
+legacy container quota is zero.
 
 Remove the transferred archive, checksum, staging directory, temporary
 credentials, and transient units after acceptance. Retain only the approved

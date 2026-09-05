@@ -101,10 +101,10 @@
 	          </a>
 	        </div>
 		<?php } ?>
-		<?php if($panel[$user]['DOCKER_CONTAINERS'] != "0") { ?>
+		<?php if($panel[$user]['DOCKER_PROJECTS'] != "0") { ?>
 	        <div class="l-stat__col <?php if($TAB == 'DOCKER' ) echo 'l-stat__col--active' ?>">
 	          <a href="/list/docker/">
-	            <div class="l-stat__col-title"><?=__('DOCKER')?><span><?=$panel[$user]['U_DOCKER_CONTAINERS']?></span></div>
+	            <div class="l-stat__col-title"><?=__('DOCKER')?><span><?=$panel[$user]['U_DOCKER_PROJECTS']?></span></div>
 	          </a>
 	        </div>
 		<?php } ?>
