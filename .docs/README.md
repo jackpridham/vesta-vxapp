@@ -9,6 +9,7 @@ Current documents:
 - [Production host/user migration command release](validation/2026-08-17-production-host-user-migration-release.md)
 - [Cloudflare feature release preparation](validation/2026-09-05-cloudflare-feature-release-preparation.md)
 - [Cloudflare feature production release](validation/2026-09-05-cloudflare-production-release.md)
+- [Development release and Packages permissions repair](validation/2026-09-05-development-release-packages-permissions.md)
 - [Operator architecture and runbook](../docs/container-orchestration.md)
 - [Vesta control-plane release runbook](user-guides/vesta-control-plane-releases.md)
 - [Container workload deployment runbook](../DOCKER_ORCHESTRATION_DEPLOYMENT.md)
