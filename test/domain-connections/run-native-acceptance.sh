@@ -227,6 +227,12 @@ while IFS=$'\t' read -r owner technical customer www connection challenge_path c
     fi
 done < <(jq -r '.sites[] | [.owner,.technical_fqdn,.customer_fqdn,.www_fqdn,.connection_id,.challenge_path,.challenge_sha256,.site_sha256,.technical_sha256,(.customer_routing_type // "A"),(.www_routing_type // "CNAME"),.proxy.enabled] | @tsv' "$config_file")
 
+if [[ "$apply" == yes && $failed -ne 0 ]]; then
+    report 'controlled certificate rotation' 'NOT RUN (required read-only prechecks failed)'
+    report 'scheduled renewal' 'NOT PROVEN (read-only prechecks failed before apply)'
+    exit 1
+fi
+
 if [[ "$apply" == yes ]]; then
     jq -e '
       .apply.authorized == true and

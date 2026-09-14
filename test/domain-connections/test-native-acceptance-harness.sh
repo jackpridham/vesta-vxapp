@@ -11,6 +11,10 @@ fail() { printf 'FAIL: %s\n' "$1" >&2; exit 1; }
 mkdir -p "$test_root/bin"
 cat >"$test_root/bin/dig" <<'EOF'
 #!/bin/bash
+if [[ ${VX_TEST_FAIL_DNS:-} == 1 ]]; then
+    printf 'unavailable.acceptance.example.test.\n'
+    exit 0
+fi
 case "${*: -1}" in CNAME) printf 'connect.acceptance.example.test.\n' ;; A) printf '203.0.113.10\n' ;; esac
 EOF
 cat >"$test_root/bin/curl" <<'EOF'
@@ -30,6 +34,11 @@ printf 200
 EOF
 cat >"$test_root/bin/ssh" <<'EOF'
 #!/bin/bash
+if [[ $* == *'/bin/bash -s --'* ]]; then
+    : "${TEST_RENEW_LOG:?}"
+    printf 'renew\n' >>"$TEST_RENEW_LOG"
+    exit 0
+fi
 [[ $* == *'env VESTA=/usr/local/vesta'* ]] || exit 1
 for arg in "$@"; do
     [[ $arg == -n ]] && break
@@ -59,6 +68,17 @@ grep -Fq 'trusted customer HTTPS/SNI www.two.example.test         PASS' <<<"$out
 if PATH="$test_root/bin:$PATH" "$repo_root/test/domain-connections/run-native-acceptance.sh" --config-file "$config" --apply >/dev/null 2>&1; then
     fail 'apply ran without explicit disposable-domain authorization'
 fi
+
+failed_apply="$test_root/failed-apply.json"
+jq '.apply={authorized:true,allowed_mutations:["certificate_rotation"],disposable_domains:[.sites[] | .customer_fqdn,.www_fqdn]}' "$config" >"$failed_apply"
+chmod 600 "$failed_apply"
+renew_log="$test_root/renew.log"
+: >"$renew_log"
+if TEST_RENEW_LOG="$renew_log" VX_TEST_FAIL_DNS=1 PATH="$test_root/bin:$PATH" \
+    "$repo_root/test/domain-connections/run-native-acceptance.sh" --config-file "$failed_apply" --apply >/dev/null 2>&1; then
+    fail 'apply continued after required read-only precheck failure'
+fi
+[[ ! -s "$renew_log" ]] || fail 'renewal ran after required read-only precheck failure'
 
 jq '.target.public_ingress_ipv4 = "192.168.1.1"' "$config" >"$test_root/private.json"
 chmod 600 "$test_root/private.json"
