@@ -160,13 +160,12 @@ Release order: Vesta capability with enrollment disabled; additive API schema/wo
 
 ## Execution ledger and handoff
 
-Use `$milestone-driven-implementation` as the sole execution coordinator when implementation is authorized. Link one successor owner issue in `jackpridham/vesta-vxapp` for milestone state, revisions, evidence, and the numbered blockers below. This documentation revision publishes no issue or comment. API and UI work may proceed in parallel against Milestone 1's frozen contract; migration proceeds after the Vesta/API behavior stabilizes. Reserve broad review and closeout for Milestone 4.
+Use `$milestone-driven-implementation` as the sole execution coordinator when implementation is authorized. Link one successor owner issue in this Vesta repository for milestone state, revisions, evidence, and the numbered blockers below. This documentation revision publishes no issue or comment. API and UI work may proceed in parallel against Milestone 1's frozen contract; migration proceeds after the Vesta/API behavior stabilizes. Reserve broad review and closeout for Milestone 4.
 
-[Vesta #5](https://github.com/jackpridham/vesta-vxapp/issues/5) records the original implemented lifecycle. [Vesta #6](https://github.com/jackpridham/vesta-vxapp/issues/6) is optional admin/DNS work, not a prerequisite; coordinate only overlapping files. Reconcile API issue #139 and its related recovery, readiness, and E2E issues with this contract during authorized execution; preserve completed migration history. The execution ledger records the exact consumer repositories and revisions. Do not implement the earlier customer-zone/one-certificate assumptions as new requirements.
+Vesta issue #5 records the original implemented lifecycle. Vesta issue #6 is optional admin/DNS work, not a prerequisite; coordinate only overlapping files. Reconcile API issue #139 and its related recovery, readiness, and E2E issues with this contract during authorized execution; preserve completed migration history. The execution ledger records the exact consumer repositories and revisions. Do not implement the earlier customer-zone/one-certificate assumptions as new requirements.
 
 Implementation progress, compatible revisions, review findings, validation,
-and deployment evidence are tracked in the sole [execution ledger on Vesta
-#7](https://github.com/jackpridham/vesta-vxapp/issues/7#issuecomment-5669043128).
+and deployment evidence are tracked in the sole execution ledger: Vesta issue #7, comment `5669043128`.
 The requirements below remain acceptance criteria; code completion alone does
 not establish live acceptance. One blocker list:
 
