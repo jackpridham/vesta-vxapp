@@ -33,9 +33,13 @@ decrease_ip_value() { :; }
 # Ownership of fixture IPs belongs to the private test tree.
 STUB
 cat >"$VESTA/func/ip.sh" <<'STUB'
+source "$VX_NATIVE_TEST_REPO/func/ip.sh"
 is_ip_valid() { :; }
-get_real_ip() { printf '%s\n' "$1"; }
+increase_ip_value() { :; }
+decrease_ip_value() { :; }
 STUB
+mkdir -p "$VESTA/data/ips"
+printf "IP='8.8.8.8' NAT=''\n" >"$VESTA/data/ips/8.8.8.8"
 ln -s "$root/func/vx/cloudflare" "$VESTA/func/vx/cloudflare"
 ln -s "$root/func/vx/proxy.sh" "$VESTA/func/vx/proxy.sh"
 cat >"$VESTA/func/vx/domain-connections/main.sh" <<'STUB'
@@ -211,7 +215,16 @@ import os,sys
 os.chdir(sys.argv[1]); os.setgroups([]); os.setgid(65534); os.setuid(65534)
 assert open('.well-known/acme-challenge/fixture-token').read().strip() == 'fixture-token.fixture-thumbprint'
 PY
-vx_domain_connection_native_activate "$record" || fail 'activation'
+# Match the worker source graph in a fresh shell: no preloaded domain/IP
+# functions. Native activation must load its own renderer dependencies.
+VX_DOMAIN_CONNECTION_OWNER_LOCK_FD="$VX_DOMAIN_CONNECTION_OWNER_LOCK_FD" VX_DOMAIN_CONNECTION_LOCK_FD="$VX_DOMAIN_CONNECTION_LOCK_FD" /bin/bash -c 'user=alice; source "$VESTA/func/main.sh"; source "$VESTA/conf/vesta.conf"; source "$VESTA/func/vx/domain-connections/main.sh"; vx_domain_connection_native_activate "$1"' _ "$record" || fail 'worker activation dependency closure'
+grep -Eq 'listen[[:space:]]+8\.8\.8\.8:443([[:space:]]|;)' "$HOMEDIR/alice/conf/web/$host.nginx.ssl.conf" || fail 'native listener IP'
+# An unresolved native IP must fail before overwriting any accepted config.
+before_render=$(sha256sum "$HOMEDIR/alice/conf/web/$host.nginx.ssl.conf")
+mv "$VESTA/data/ips/8.8.8.8" "$VESTA/ip.saved"
+expect_failure vx_domain_connection_native_render
+[[ $(sha256sum "$HOMEDIR/alice/conf/web/$host.nginx.ssl.conf") == "$before_render" ]] || fail 'unresolved IP changed config'
+mv "$VESTA/ip.saved" "$VESTA/data/ips/8.8.8.8"
 # Public HTTPS transport is a fixture; mismatched identity, trust failure and
 # missing admitted ingress must all remain unaccepted.
 vx_domain_connection_target_read_json() { printf '{"IPV4":"8.8.8.8","IPV6":""}\n'; }

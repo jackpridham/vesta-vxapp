@@ -176,10 +176,12 @@ vx_domain_connection_native_render() (
     vx_domain_connection_native_marker_matches || return 1
     local user=$VX_DC_OWNER domain=$VX_DC_HOSTNAME
     USER_DATA="$VESTA/data/users/$user"
-    source "$VESTA/func/domain.sh"
-    get_domain_values web
-    local_ip=$(get_real_ip "$IP")
-    prepare_web_domain_values
+    source "$VESTA/func/domain.sh" || return 1
+    source "$VESTA/func/ip.sh" || return 1
+    get_domain_values web || return 1
+    local_ip=$(get_real_ip "$IP") || return 1
+    [[ -n "$local_ip" ]] || return 1
+    prepare_web_domain_values || return 1
     add_web_config "$WEB_SYSTEM" "$TPL.tpl" || return 1
     add_web_config "$PROXY_SYSTEM" "$PROXY.tpl" || return 1
     if [[ "$SSL" == yes ]]; then
