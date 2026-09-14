@@ -101,6 +101,7 @@ assert_cloudflare_ui_contains($alias_controller, 'v-add-vx-web-domain-connection
 assert_cloudflare_ui_contains($alias_controller, 'v-list-vx-cloudflare-web-domain-status ', 'domain connection form accepts non-technical local-DNS sites');
 assert_cloudflare_ui_contains($alias_controller, 'v-reconcile-vx-web-domain-connection ', 'domain connection form does not queue a bounded check');
 assert_cloudflare_ui_contains($alias_controller, 'v-spawn-ajax-process ', 'domain connection check is not dispatched asynchronously');
+assert_cloudflare_ui_contains($alias_controller, 'v-delete-vx-web-domain-connection ', 'domain connection form does not queue disconnect cleanup');
 assert_cloudflare_ui_not_contains($alias_controller, 'v-add-vx-cloudflare-web-alias ', 'new connection lifecycle still attaches a synchronous alias');
 assert_cloudflare_ui_not_contains($alias_controller, 'curl ', 'domain connection form must not mutate external DNS');
 assert_cloudflare_ui_contains($alias_template, 'name="token" value="<?=$_SESSION[\'token\']?>"', 'Cloudflare alias template lost its CSRF token');
@@ -108,6 +109,7 @@ assert_cloudflare_ui_contains($alias_template, 'name="v_web_domain"', 'Cloudflar
 assert_cloudflare_ui_contains($alias_template, 'name="v_cloudflare_domain"', 'Cloudflare alias template lacks the custom domain input');
 assert_cloudflare_ui_contains($alias_template, 'TXT', 'domain connection template does not render TXT proof');
 assert_cloudflare_ui_contains($alias_template, 'Retry check', 'domain connection template does not expose retry');
+assert_cloudflare_ui_contains($alias_template, 'Disconnect', 'domain connection template does not expose disconnect');
 assert_cloudflare_ui_contains($alias_template, 'Domain enrollment is disabled', 'domain connection template does not explain disabled enrollment');
 
 assert_cloudflare_ui_contains($dns_template, '/add/vx-cloudflare-domain/', 'DNS toolbar lacks the Cloudflare domain action');

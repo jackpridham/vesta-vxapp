@@ -15,6 +15,31 @@ function vx_domain_connection_capability()
     if ($return_var !== 0) return array();
     $data = json_decode(implode('', $output), true); return is_array($data) ? $data : array();
 }
+function vx_domain_connection_ingress_ipv4($capability)
+{
+    $values = isset($capability['capabilities']['ingress']['ipv4']) ? $capability['capabilities']['ingress']['ipv4'] : array();
+    if (!is_array($values)) $values = array($values);
+    $values = array_filter($values, 'is_string');
+    return implode(', ', $values);
+}
+function vx_domain_connection_quota_label($quota)
+{
+    $quota = trim((string) $quota);
+    if (strtolower($quota) === 'unlimited') return __('unlimited');
+    return preg_match('/^[0-9]+$/', $quota) ? $quota : '';
+}
+function vx_domain_connection_action_allowed($enrollment_enabled, $action)
+{
+    return $enrollment_enabled || $action === 'retry' || $action === 'disconnect';
+}
+function vx_domain_connection_request_id()
+{
+    if (function_exists('openssl_random_pseudo_bytes')) {
+        $bytes = openssl_random_pseudo_bytes(32, $strong);
+        if ($bytes !== false && $strong) return 'panel-'.bin2hex($bytes);
+    }
+    return 'panel-'.hash('sha256', uniqid('', true).mt_rand());
+}
 function vx_domain_connection_child_parent($row)
 {
     return isset($row['VX_CONNECTION_PARENT']) && is_string($row['VX_CONNECTION_PARENT']) ? trim($row['VX_CONNECTION_PARENT']) : '';

@@ -23,9 +23,9 @@ unset($output);
 $v_domain_connection_capability = vx_domain_connection_capability();
 $v_domain_connection_enabled = !empty($v_domain_connection_capability['capabilities']['enrollmentEnabled']);
 $v_domain_connection_target = isset($v_domain_connection_capability['capabilities']['connectionTarget']) ? (string) $v_domain_connection_capability['capabilities']['connectionTarget'] : '';
-$v_domain_connection_ipv4 = isset($v_domain_connection_capability['capabilities']['ingress']['ipv4']) ? (string) $v_domain_connection_capability['capabilities']['ingress']['ipv4'] : '';
+$v_domain_connection_ipv4 = vx_domain_connection_ingress_ipv4($v_domain_connection_capability);
 $v_domain_connection_quota_used = count($web_domains);
-$v_domain_connection_quota_limit = isset($panel[$user]['WEB_DOMAINS']) ? (int) $panel[$user]['WEB_DOMAINS'] : 0;
+$v_domain_connection_quota_limit = isset($panel[$user]['WEB_DOMAINS']) ? vx_domain_connection_quota_label($panel[$user]['WEB_DOMAINS']) : '';
 $v_domain_connection_sites = array();
 foreach ($web_domains as $listed_domain => $details) {
     if (vx_domain_connection_child_parent($details) !== '') continue;
@@ -51,13 +51,25 @@ if (!empty($_POST['ok'])) {
 
     // Check empty fields
     if (!array_key_exists($v_web_domain, $v_domain_connection_sites)) $_SESSION['error_msg'] = __('The selected technical site is not owned by this account.');
-    elseif (!$v_domain_connection_enabled || $v_domain_connection_target === '') $_SESSION['error_msg'] = __('Domain enrollment is disabled. Configure the DNS-only connection target and enable enrollment before accepting customer domains.');
     elseif ($v_connection_id !== '') {
-        $hash = trim((string) shell_exec(VESTA_CMD.'v-spawn-ajax-process '.escapeshellarg($_SESSION['user']).' /usr/local/vesta/bin/v-reconcile-vx-web-domain-connection '.escapeshellarg($user).' '.escapeshellarg($v_web_domain).' '.escapeshellarg($v_connection_id)));
-        $_SESSION['ok_msg'] = $hash === '' ? __('Connection check could not be queued.') : __('Connection check queued. Refresh this page for its latest status.');
-    } elseif ($v_cloudflare_domain === '') $_SESSION['error_msg'] = __('Field "%s" can not be blank.', __('domain'));
+        $action = isset($_POST['v_connection_action']) && !is_array($_POST['v_connection_action']) ? $_POST['v_connection_action'] : 'retry';
+        if (!vx_domain_connection_action_allowed($v_domain_connection_enabled, $action)) $_SESSION['error_msg'] = __('Domain enrollment is disabled.');
+        elseif ($action === 'disconnect') {
+            exec(VESTA_CMD.'v-delete-vx-web-domain-connection '.escapeshellarg($user).' '.escapeshellarg($v_web_domain).' '.escapeshellarg($v_connection_id).' json', $output, $return_var);
+            $deleted = json_decode(implode('', $output), true); unset($output);
+            if ($return_var !== 0 || empty($deleted['connection']['connectionID'])) $_SESSION['error_msg'] = __('The domain connection could not be disconnected.');
+            else {
+                shell_exec(VESTA_CMD.'v-spawn-ajax-process '.escapeshellarg($_SESSION['user']).' /usr/local/vesta/bin/v-reconcile-vx-web-domain-connection '.escapeshellarg($user).' '.escapeshellarg($v_web_domain).' '.escapeshellarg($v_connection_id));
+                $_SESSION['ok_msg'] = __('Disconnect queued. The technical URL remains available.');
+            }
+        } else {
+            $hash = trim((string) shell_exec(VESTA_CMD.'v-spawn-ajax-process '.escapeshellarg($_SESSION['user']).' /usr/local/vesta/bin/v-reconcile-vx-web-domain-connection '.escapeshellarg($user).' '.escapeshellarg($v_web_domain).' '.escapeshellarg($v_connection_id)));
+            $_SESSION['ok_msg'] = $hash === '' ? __('Connection check could not be queued.') : __('Connection check queued. Refresh this page for its latest status.');
+        }
+    } elseif (!$v_domain_connection_enabled || $v_domain_connection_target === '') $_SESSION['error_msg'] = __('Domain enrollment is disabled. Configure the DNS-only connection target and enable enrollment before accepting customer domains.');
+    elseif ($v_cloudflare_domain === '') $_SESSION['error_msg'] = __('Field "%s" can not be blank.', __('domain'));
     else {
-        try { $request_id = 'panel-'.bin2hex(random_bytes(16)); } catch (Exception $exception) { $request_id = 'panel-'.uniqid('', true); }
+        $request_id = vx_domain_connection_request_id();
         exec(VESTA_CMD.'v-add-vx-web-domain-connection '.escapeshellarg($user).' '.escapeshellarg($v_web_domain).' '.escapeshellarg($v_cloudflare_domain).' '.escapeshellarg($request_id).' json', $output, $return_var);
         $created = json_decode(implode('', $output), true); unset($output);
         if ($return_var !== 0 || empty($created['connection']['connectionID'])) $_SESSION['error_msg'] = __('The domain connection could not be created. Check that the hostname is public and available.');
