@@ -26,7 +26,7 @@ Current documents:
 - [Native web-domain reverse-proxy guide](user-guides/native-web-domain-proxy.md)
 - [Vesta-managed Cloudflare DNS guide](user-guides/vesta-cloudflare-managed-dns.md)
 - [Vesta-owned Cloudflare managed-domains plan](plans/2026-08-25-vesta-cloudflare-managed-domains.md)
-- [Domain connection lifecycle plan — proposed successor](plans/2026-09-15-domain-connection-lifecycle.md)
+- [Domain connection plan — Cloudflare technical DNS and native Vesta customer HTTPS](plans/2026-09-15-domain-connection-lifecycle.md)
 - [Native web-domain proxy validation](validation/2026-08-06-native-web-proxy-release.md)
 - [Self-service staging evidence](status/2026-07-29-compose-self-service-task7-staging-evidence.md)
 - [Compose contracts](contracts/)

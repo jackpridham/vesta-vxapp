@@ -1,8 +1,9 @@
 # Vesta-Owned Cloudflare Managed Domains Implementation Plan
 
 The [domain connection lifecycle plan](2026-09-15-domain-connection-lifecycle.md)
-proposes a successor for customer domains that retain external DNS. It has not
-replaced the implemented behavior or the current migration preconditions below.
+selects Cloudflare for technical hostnames and native Vesta/Let's Encrypt for
+customer domains that retain external DNS. It has not replaced the implemented
+behavior or the current migration preconditions below.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `$milestone-driven-implementation`. This is one integrated product milestone so implementation can run continuously and the user-requested single combined audit happens only after the complete feature is deployed without credentials.
 
