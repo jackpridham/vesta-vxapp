@@ -109,9 +109,9 @@ remote_native_renew() {
     ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes \
         debian@192.168.200.100 "sudo -n -- /bin/bash -s -- $1 $2" <<'SCRIPT'
 set -e
-VESTA=/usr/local/vesta
-BIN=$VESTA/bin
+export VESTA=/usr/local/vesta
 source "$VESTA/func/main.sh"
+source "$VESTA/conf/vesta.conf"
 source "$VESTA/func/vx/domain-connections/main.sh"
 vx_domain_connection_native_renew "$1" "$2"
 SCRIPT

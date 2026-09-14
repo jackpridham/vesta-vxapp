@@ -67,6 +67,10 @@ grep -Fq 'debian@192.168.200.100 sudo -n --' "$repo_root/test/domain-connections
     || fail 'harness does not use the authorized sudo SSH boundary'
 grep -Fq 'vx_domain_connection_native_renew' "$repo_root/test/domain-connections/run-native-acceptance.sh" \
     || fail 'controlled rotation bypasses protected native renewal'
+grep -Fq 'export VESTA=/usr/local/vesta' "$repo_root/test/domain-connections/run-native-acceptance.sh" \
+    || fail 'controlled rotation does not export the Vesta runtime'
+grep -Fq 'source "$VESTA/conf/vesta.conf"' "$repo_root/test/domain-connections/run-native-acceptance.sh" \
+    || fail 'controlled rotation does not load web and proxy runtime configuration'
 ! grep -Fq 'v-add-letsencrypt-domain' "$repo_root/test/domain-connections/run-native-acceptance.sh" \
     || fail 'controlled rotation calls the raw LetsEncrypt command'
 ! grep -Fq 'curl_proof "$technical" 443' "$repo_root/test/domain-connections/run-native-acceptance.sh" \
