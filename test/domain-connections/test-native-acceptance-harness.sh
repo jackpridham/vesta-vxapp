@@ -30,6 +30,7 @@ printf 200
 EOF
 cat >"$test_root/bin/ssh" <<'EOF'
 #!/bin/bash
+[[ $* == *'env VESTA=/usr/local/vesta'* ]] || exit 1
 case "$*" in
   *capability*) printf '%s\n' '{"version":1,"capabilities":{"connectionTarget":"connect.acceptance.example.test","ingress":{"ipv4":["203.0.113.10"],"ipv6":[],"supportsApex":true}}}' ;;
   *) printf '%s\n' '{"version":1,"connections":[{"connectionID":"one","hostname":"one.example.test","state":"connected","observations":{"native":{"CONFIG_VALID":true}}},{"connectionID":"two","hostname":"two.example.test","state":"connected"}]}' ;;
