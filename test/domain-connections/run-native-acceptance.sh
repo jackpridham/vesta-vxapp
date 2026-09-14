@@ -65,6 +65,8 @@ jq -e '
     (.www_fqdn|type == "string" and test("^[a-z0-9][a-z0-9.-]*[a-z0-9]$")) and
     (.connection_id|type == "string" and test("^[A-Za-z0-9_-]{1,80}$")) and
     (.challenge_path|type == "string" and test("^/.well-known/acme-challenge/[A-Za-z0-9_-]{1,128}$")) and
+    ((.customer_routing_type // "A") | type == "string" and (. == "A" or . == "CNAME")) and
+    ((.www_routing_type // "CNAME") | type == "string" and (. == "A" or . == "CNAME")) and
     (.challenge_sha256|type == "string" and test("^[a-f0-9]{64}$")) and
     (.site_sha256|type == "string" and test("^[a-f0-9]{64}$")) and
     (.technical_sha256|type == "string" and test("^[a-f0-9]{64}$")) and
@@ -148,6 +150,14 @@ dns_exact() {
     [[ "$actual" == "$expected" ]]
 }
 
+routing_expected_value() {
+    case "$1" in
+        A) printf '%s\n' "$ingress" ;;
+        CNAME) printf '%s\n' "$connection_target" ;;
+        *) return 1 ;;
+    esac
+}
+
 dns_public_a() {
     local resolver=$1 host=$2 address
     address=$(dig +short +time=5 +tries=1 "@$resolver" "$host" A 2>/dev/null | /usr/bin/sort -u)
@@ -197,10 +207,12 @@ check_proxy() {
 
 check 'published native connection capability' check_capability
 
-while IFS=$'\t' read -r owner technical customer www connection challenge_path challenge_sha site_sha technical_sha proxy_enabled; do
+while IFS=$'\t' read -r owner technical customer www connection challenge_path challenge_sha site_sha technical_sha customer_routing_type www_routing_type proxy_enabled; do
+    customer_routing_value=$(routing_expected_value "$customer_routing_type") || redacted_fail
+    www_routing_value=$(routing_expected_value "$www_routing_type") || redacted_fail
     for resolver in $(jq -r '.resolvers[]' "$config_file"); do
-        check "DNS CNAME $www via $resolver" dns_exact "$resolver" "$www" CNAME "$connection_target"
-        check "DNS direct A $customer via $resolver" dns_exact "$resolver" "$customer" A "$ingress"
+        check "DNS $customer_routing_type $customer via $resolver" dns_exact "$resolver" "$customer" "$customer_routing_type" "$customer_routing_value"
+        check "DNS $www_routing_type $www via $resolver" dns_exact "$resolver" "$www" "$www_routing_type" "$www_routing_value"
     done
     check "registry connected $customer" check_registry "$owner" "$technical" "$connection"
     check "public port 80 challenge $customer" curl_proof "$customer" 80 "$challenge_path" "$challenge_sha"
@@ -213,7 +225,7 @@ while IFS=$'\t' read -r owner technical customer www connection challenge_path c
         check "customer proxy public DNS $proxy_host" dns_public_a "$(jq -r '.resolvers[0]' "$config_file")" "$proxy_host"
         check "configured proxy compatibility $customer" check_proxy "$owner" "$technical" "$customer" "$proxy_host" "$proxy_sha"
     fi
-done < <(jq -r '.sites[] | [.owner,.technical_fqdn,.customer_fqdn,.www_fqdn,.connection_id,.challenge_path,.challenge_sha256,.site_sha256,.technical_sha256,.proxy.enabled] | @tsv' "$config_file")
+done < <(jq -r '.sites[] | [.owner,.technical_fqdn,.customer_fqdn,.www_fqdn,.connection_id,.challenge_path,.challenge_sha256,.site_sha256,.technical_sha256,(.customer_routing_type // "A"),(.www_routing_type // "CNAME"),.proxy.enabled] | @tsv' "$config_file")
 
 if [[ "$apply" == yes ]]; then
     jq -e '
