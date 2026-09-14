@@ -38,8 +38,11 @@ audited web tree were readable by that account.
 
 Both anonymous browser checks passed before and after installation. The panel
 root returned HTTP 302, login returned 200 and password reset returned 404.
-An authenticated browser session was unavailable, so full authenticated page
-acceptance remains unconfirmed; worker rendering was verified separately.
+An authenticated browser session was unavailable to the agent during
+installation; worker rendering was verified separately. During the follow-up
+audit the operator confirmed, from their existing authenticated session, that
+Users, Packages, Edit User and Docker navigation render correctly with project
+quotas. This is operator confirmation, not an automated authenticated test.
 
 ## Continuity and closeout
 
@@ -58,3 +61,33 @@ evidence and acceptance records are retained at:
 
 This records one authorized production deployment and does not authorize
 future production changes.
+
+## Follow-up deployment audit
+
+The deployment-maintenance skill was audited after installation. A fresh
+read-only check held the release, owner and project locks and verified all
+97 live files, all ten protected rollback snapshots, the 54 unchanged authority
+hashes, installed orchestration readiness, mounts, services and workloads.
+The bundled-PHP worker regression reached an explicit completion sentinel.
+The backend and all three native proxy health endpoints returned HTTP 200.
+
+The annotated release tag `vesta-vxapp-20260914-2e0a3b3b` was published during
+this audit and peels to the installed commit. Before installation the exact
+commit was remotely recoverable, but the branch was unprotected and no release
+tag had been created. The exact source archive was reproduced from Git, and
+the path list, input checksums and retained evidence inventory were checked.
+
+The operations guidance incorrectly described current compatibility revision 5
+as five-field legacy image evidence. Its actual schema-2 files match the
+September 5 predeployment hashes; neither this release nor the audit migrated
+them. The guidance now distinguishes current evidence from the historical
+legacy compatibility boundary without changing that boundary's validator.
+
+Historical process gaps are retained in the private audit record: exact gate
+start/end timestamps and contemporaneous tool versions were not captured;
+the authorization file followed the first read-only connection; transfer
+preparation preceded the release lock; and the independent browser checks and
+final transfer cleanup used later phases rather than one uninterrupted lock.
+Current verification closes the evidence gaps but does not retroactively
+change that sequence. The skill now makes these requirements explicit for
+future releases. No production runtime or workload change was needed.
