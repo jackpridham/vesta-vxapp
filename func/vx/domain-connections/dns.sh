@@ -53,22 +53,42 @@ vx_domain_connection_dns_proof_observe() {
     /usr/bin/jq -cn --arg name "$name" --argjson proof "$proof" '{PROOF:$proof,NAME:$name}'
 }
 vx_domain_connection_dns_caa_ok() {
-    local current=$1 answer flags tag value allow=false
-    while :; do
-        answer=$(vx_domain_connection_dns_query "$current" CAA 2>/dev/null) || return 1
+    local policy=$1 current answer cname flags tag value allow=false has_issue=false i aliases
+    local -a seen cname_lines
+    vx_cf_valid_domain "$policy" || return 1
+    # RFC 8659: CAA(policy) follows aliases, but an empty canonical RRset
+    # resumes at Parent(policy), never at a parent of the alias target.
+    for ((i=0;i<128;i++)); do
+        current=$policy; seen=("$current")
+        for ((aliases=0;aliases<VX_DOMAIN_CONNECTION_DNS_MAX_CHAIN;aliases++)); do
+            [[ $(vx_domain_connection_dns_status "$current" 2>/dev/null || :) == ok ]] || return 1
+            answer=$(vx_domain_connection_dns_query "$current" CAA 2>/dev/null) || return 1
+            mapfile -t cname_lines < <(vx_domain_connection_dns_query "$current" CNAME 2>/dev/null)
+            ((${#cname_lines[@]} == 1)) && [[ -z "${cname_lines[0]}" ]] && cname_lines=()
+            if ((${#cname_lines[@]} == 0)); then break; fi
+            ((${#cname_lines[@]} == 1)) || return 1
+            cname=$(vx_domain_connection_dns_name "${cname_lines[0]}" 2>/dev/null || :) || return 1
+            [[ -n "$cname" && ( -z "$answer" || "$(vx_domain_connection_dns_name "$answer" 2>/dev/null || :)" == "$cname" ) ]] || return 1
+            for value in "${seen[@]}"; do [[ "$value" != "$cname" ]] || return 1; done
+            seen+=("$cname"); current=$cname
+        done
+        ((aliases < VX_DOMAIN_CONNECTION_DNS_MAX_CHAIN)) || return 1
         if [[ -n "$answer" ]]; then
-            while read -r flags tag value; do
-                [[ "$flags" =~ ^[0-9]+$ && "$tag" =~ ^[A-Za-z0-9-]+$ ]] || return 1
-                tag=${tag,,}; value=${value//\"/}
+            while IFS= read -r value; do
+                [[ "$value" =~ ^([0-9]+)[[:space:]]+([A-Za-z0-9-]+)[[:space:]]+\"([^\"]*)\"$ ]] || return 1
+                flags=${BASH_REMATCH[1]}; tag=${BASH_REMATCH[2],,}; value=${BASH_REMATCH[3]}
                 (( flags & 128 )) && [[ "$tag" != issue && "$tag" != issuewild && "$tag" != iodef ]] && return 1
-                [[ "$tag" == issue && "$value" =~ ^letsencrypt\.org([[:space:]]*;.*)?$ ]] && allow=true
+                if [[ "$tag" == issue ]]; then
+                    has_issue=true
+                    [[ "$value" =~ ^letsencrypt\.org([[:space:]]*;.*)?$ ]] && allow=true
+                fi
             done <<<"$answer"
-            [[ "${allow:-false}" == true ]] && return 0
+            [[ "$has_issue" == false || "$allow" == true ]] && return 0
             return 1
         fi
-        current=${current#*.}; [[ "$current" == *.* ]] || return 0
-        vx_domain_connection_psl_public_suffix "$current" && return 0
+        policy=${policy#*.}; [[ "$policy" != "$current" && -n "$policy" ]] || return 0
     done
+    return 1
 }
 vx_domain_connection_dns_observe() {
     local hostname=$1 target=$2 config=${3:-} current cname status error='' safe=true routed=false caa=false dnssec=unknown value i
