@@ -188,13 +188,30 @@ vx_domain_connection_native_render() (
     fi
 )
 
-vx_domain_connection_native_configtest() {
-    local service_name
+vx_domain_connection_native_configtest() (
+    local service_name service_limit
     for service_name in "$WEB_SYSTEM" "$PROXY_SYSTEM"; do
         [[ -n "$service_name" && "$service_name" != remote ]] || continue
-        /usr/sbin/service "$service_name" configtest >/dev/null 2>&1 || return 1
+        case "$service_name" in
+            apache2)
+                # Some packaged init scripts do not expose configtest.
+                /usr/sbin/apache2ctl configtest >/dev/null 2>&1 || return 1
+                ;;
+            nginx)
+                # nginx -t opens each vhost log. Match the running service's
+                # configured descriptor limit in this validator process only;
+                # a CLI's lower default can otherwise reject valid live config.
+                service_limit=$(/usr/bin/systemctl show nginx --property=LimitNOFILESoft --value 2>/dev/null) || service_limit=''
+                if [[ -n "$service_limit" ]]; then
+                    [[ "$service_limit" =~ ^[0-9]+$ ]] || return 1
+                    ulimit -Sn "$service_limit" || return 1
+                fi
+                /usr/sbin/nginx -t >/dev/null 2>&1 || return 1
+                ;;
+            *) /usr/sbin/service "$service_name" configtest >/dev/null 2>&1 || return 1 ;;
+        esac
     done
-}
+)
 
 vx_domain_connection_native_restart() {
     "$BIN/v-restart-web" now >/dev/null 2>&1 && "$BIN/v-restart-proxy" now >/dev/null 2>&1

@@ -5,6 +5,7 @@
 set -e
 root=$(cd "$(dirname "$0")/../.." && pwd)
 if [[ $EUID != 0 ]]; then exec sudo -n /bin/bash "$0"; fi
+bash "$root/test/domain-connections/test-native-configtest.sh"
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 export VESTA="$work/vesta" VX_NATIVE_TEST_REPO="$root"
