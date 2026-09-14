@@ -19,6 +19,7 @@ restart=$3
 source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
 source $VESTA/func/vx/cloudflare/main.sh
+source "$VESTA/func/vx/domain-connections/main.sh" 2>/dev/null || :
 source $VESTA/conf/vesta.conf
 
 # Additional argument formatting
@@ -40,6 +41,8 @@ if [ "${VX_CLOUDFLARE_INTERNAL_ORIGIN_SSL:-}" != 1 ] \
     is_object_unsuspended 'user' 'USER' "$user"
 fi
 is_object_valid 'web' 'DOMAIN' "$domain"
+vx_domain_connection_native_guard "$user" "$domain" issue \
+    || check_result "$E_FORBIDEN" 'native connection TLS is worker-only'
 if [ "${VX_CLOUDFLARE_INTERNAL_ORIGIN_SSL:-}" != 1 ] \
     || [ "${VX_CLOUDFLARE_INTERNAL_MIGRATION:-}" != 1 ]; then
     is_object_unsuspended 'web' 'DOMAIN' "$domain"

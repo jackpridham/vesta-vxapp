@@ -27,6 +27,9 @@ json_list() {
         "U_BANDWIDTH": "'$U_BANDWIDTH'",
         "TPL": "'$TPL'",
         "ALIAS": "'$ALIAS'",
+        "VX_CONNECTION_ID": "'$VX_CONNECTION_ID'",
+        "VX_CONNECTION_PARENT": "'$VX_CONNECTION_PARENT'",
+        "VX_CONNECTION_GENERATION": "'$VX_CONNECTION_GENERATION'",
         "STATS": "'$STATS'",
         "STATS_USER": "'$STATS_USER'",
         "SSL": "'$SSL'",
@@ -138,8 +141,9 @@ is_object_valid 'web' 'DOMAIN' "$domain"
 #----------------------------------------------------------#
 
 # Parsing domain
-PROXY_MODE='' PROXY_TARGET='' PROXY_PRESERVE_HOST='' PROXY_PROFILE='' PROXY_TIMEOUT='' PROXY_HEADERS=''
+VX_CONNECTION_ID='' VX_CONNECTION_PARENT='' VX_CONNECTION_GENERATION='' PROXY_MODE='' PROXY_TARGET='' PROXY_PRESERVE_HOST='' PROXY_PROFILE='' PROXY_TIMEOUT='' PROXY_HEADERS=''
 eval $(grep "DOMAIN='$domain'" $USER_DATA/web.conf)
+[ -z "$VX_CONNECTION_ID" ] || PROXY_HEADERS=''
 
 # Listing data
 case $format in

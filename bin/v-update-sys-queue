@@ -35,7 +35,7 @@ check_args '1' "$#" 'QUEUE'
 
 
 case $queue in
-    restart|webstats|backup|disk|traffic|dns-cluster|letsencrypt) ;;
+    restart|webstats|backup|disk|traffic|dns-cluster|letsencrypt|domain-connections) ;;
     *)              check_args '1' '0' 'QUEUE' ;;
 esac
 
@@ -55,7 +55,18 @@ if ! flock -n 9; then
     exit
 fi
 
-bash "$queue_file" > /dev/null 2>&1
+if [[ "$queue" == domain-connections ]]; then
+    "$BIN/v-update-vx-web-domain-connections" > /dev/null 2>&1
+else
+    bash "$queue_file" > /dev/null 2>&1
+fi
+
+# The existing minute restart queue drives connection progress. Release its
+# descriptor in the detached worker; shared service restarts never wait on DNS
+# or ACME. The worker has its own lock, due-time scan, and bounded process budget.
+if [[ "$queue" == restart && -x "$BIN/v-update-vx-web-domain-connections" ]]; then
+    "$BIN/v-update-vx-web-domain-connections" </dev/null >/dev/null 2>&1 9>&- &
+fi
 
 if [ "$queue" = "disk" ]; then
     if [ ! -d "/usr/local/vesta/data/df" ]; then

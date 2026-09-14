@@ -112,3 +112,8 @@ search_objects() {
 }
 
 is_acme_name_reserved() { return 1; }
+
+_native_fixture_root=$(cd "$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")/../../.." && pwd)
+source "$_native_fixture_root/func/vx/domain-connections/state.sh"
+source "$_native_fixture_root/func/vx/domain-connections/native.sh"
+unset _native_fixture_root

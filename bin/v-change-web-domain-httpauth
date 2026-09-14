@@ -17,6 +17,8 @@ password=$4; HIDE=4
 
 # Includes
 source $VESTA/func/main.sh
+declare -F vx_domain_connection_native_guard >/dev/null \
+    || source "$VESTA/func/vx/domain-connections/main.sh"
 source $VESTA/func/domain.sh
 source $VESTA/conf/vesta.conf
 
@@ -34,6 +36,8 @@ is_system_enabled "$WEB_SYSTEM" 'WEB_SYSTEM'
 is_object_valid 'user' 'USER' "$user"
 is_object_unsuspended 'user' 'USER' "$user"
 is_object_valid 'web' 'DOMAIN' "$domain"
+vx_domain_connection_native_guard "$user" "$domain" auth \
+    || check_result "$E_FORBIDEN" 'native connection child is lifecycle-owned'
 is_object_unsuspended 'web' 'DOMAIN' "$domain"
 is_password_valid
 get_domain_values 'web'

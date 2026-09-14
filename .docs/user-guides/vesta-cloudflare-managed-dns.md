@@ -1,5 +1,25 @@
 # Vesta-Managed Cloudflare DNS
 
+## Lifecycle versions
+
+The technical-hostname lifecycle in this guide remains authoritative for
+Vesta-generated sites and their Cloudflare Origin CA certificates. The legacy
+customer-alias sections describe existing, unmigrated sites and low-level
+administrator maintenance.
+
+The new [domain connection lifecycle v1](domain-connections.md) gives each
+customer hostname a separate native Vesta child with its own Let's Encrypt
+certificate. Its panel and API workflow uses TXT proof and customer-managed
+DNS, while the permanent technical URL keeps this guide's proxied Cloudflare
+lifecycle. New customer connections do not require access to the customer's
+Cloudflare zone. Legacy Site alias fields remain read projections; the API
+rejects alias writes with HTTP 422 and directs callers to the Domains routes.
+Use the [versioned contract](../contracts/domain-connections.md) to check
+capability and enrollment before offering the workflow. Installing the code
+does not enable enrollment or migrate existing aliases.
+
+## Technical sites and legacy aliases
+
 Vesta can allocate a public technical hostname for each new panel website and
 own that hostname's Cloudflare A-record lifecycle. Each managed website also
 receives a Cloudflare Origin CA certificate for its technical hostname, so

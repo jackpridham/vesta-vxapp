@@ -1,0 +1,17 @@
+#!/bin/bash
+# info: reconcile pending native customer-domain connections once
+# options: [json]
+
+# Variable&Function
+format=${1-shell}
+[[ $EUID == 0 ]] || { echo "Error: root authority required" >&2; exit 10; }
+source "$VESTA/func/main.sh"
+source "$VESTA/conf/vesta.conf"
+source "$VESTA/func/vx/domain-connections/main.sh"
+# Verifications
+[ "$#" -le 1 ] || check_result "$E_ARGS" 'too many arguments'
+[[ "$format" == json || "$format" == shell ]] || check_result "$E_INVALID" 'invalid format'
+vx_domain_connection_update_all || check_result "$E_INVALID" 'unable to update domain connections'
+case "$format" in json) vx_domain_connection_worker_health_json;; shell) printf '%s\n' 'domain connections reconciled';; *) check_result "$E_INVALID" 'invalid format';; esac
+# Vesta
+exit

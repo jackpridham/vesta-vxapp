@@ -196,6 +196,25 @@ vx_cf_valid_ipv4() {
     done
 }
 
+# This is deliberately separate from vx_cf_mutate_record: managed technical
+# records are always proxied, while the connection target is DNS-only.
+vx_cf_valid_ipv6() {
+    local address=$1 left right label count=0
+    [[ "$address" != *'/'* && "$address" =~ ^[0-9A-Fa-f:]+$ \
+        && "$address" == *:* && ${#address} -le 39 ]] || return 1
+    [[ "$address" != *:::* && "${address//::/}" != *::* ]] || return 1
+    if [[ "$address" == *::* ]]; then
+        left=${address%%::*}; right=${address#*::}
+        [[ "$left" != :* && "$left" != *: && "$right" != :* && "$right" != *: ]] || return 1
+        for label in ${left//:/ }; do [[ "$label" =~ ^[0-9A-Fa-f]{1,4}$ ]] || return 1; ((count++)); done
+        for label in ${right//:/ }; do [[ "$label" =~ ^[0-9A-Fa-f]{1,4}$ ]] || return 1; ((count++)); done
+        (( count < 8 ))
+    else
+        for label in ${address//:/ }; do [[ "$label" =~ ^[0-9A-Fa-f]{1,4}$ ]] || return 1; ((count++)); done
+        (( count == 8 ))
+    fi
+}
+
 vx_cf_managed_domain_matches_zone() {
     local domain=$1 zone=$2 label
 
@@ -1247,6 +1266,15 @@ vx_cf_verify_managed_site_locked() {
 vx_cf_assert_zone_rotation_safe() {
     local candidate_zone=$1 root parent path zone_line zone_id
 
+    # Shared target authority survives even when no technical site exists.
+    for path in "$VESTA/data/vx/domain-connections/target.conf" "$VESTA/data/vx/domain-connections/target-operation.json"; do
+        [[ -e "$path" || -L "$path" ]] || continue
+        declare -F vx_domain_connection_safe_path >/dev/null || source "$VESTA/func/vx/domain-connections/state.sh"
+        vx_domain_connection_safe_path "$path" file || { VX_CF_STATUS=state_error; return 1; }
+        if [[ "$path" == *.json ]]; then zone_id=$(/usr/bin/jq -er '.ZONE_ID' "$path") || return 1
+        else zone_id=$(/usr/bin/sed -n "s/^ZONE_ID='\\([a-f0-9]\\{32\\}\\)'$/\\1/p" "$path"); fi
+        [[ "$zone_id" == "$candidate_zone" ]] || { VX_CF_STATUS=managed_zone_in_use; return 1; }
+    done
     for root in "$(vx_cf_records_root)" "$(vx_cf_certificates_root)"; do
         while IFS= read -r -d '' parent; do
             vx_cf_secure_directory "$parent" \

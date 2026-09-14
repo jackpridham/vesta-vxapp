@@ -1,0 +1,20 @@
+#!/bin/bash
+# info: configure Vortex shared DNS-only domain connection target
+# options: --config-file ROOT_ONLY_FILE
+
+config_file=${2:-}
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/cloudflare/main.sh"
+source "$VESTA/func/vx/domain-connections/target.sh"
+
+[[ $# -eq 2 && "$1" == --config-file ]] \
+    || check_result "$E_ARGS" 'invalid arguments'
+[[ $EUID -eq 0 ]] || check_result "$E_FORBID" 'root_required'
+
+vx_domain_connection_target_configure_from_file "$config_file" \
+    || check_result "$E_CONNECT" "${VX_DOMAIN_CONNECTION_TARGET_STATUS:-state_error}"
+
+log_event "$OK" "$ARGUMENTS"
+vx_cf_emit_status ready
+exit

@@ -188,6 +188,12 @@ prepare_web_domain_values() {
         sdocroot="$VESTA/data/templates/web/suspend"
     fi
 
+    if [ -n "${VX_CONNECTION_ID:-}" ]; then
+        declare -F vx_domain_connection_native_render_guard >/dev/null \
+            || source "$VESTA/func/vx/domain-connections/main.sh"
+        vx_domain_connection_native_render_guard "$user" "$domain" \
+            || check_result "$E_FORBIDEN" 'invalid native connection render authority'
+    fi
     if declare -F vx_proxy_prepare_template_values >/dev/null; then
         vx_proxy_prepare_template_values
     fi
@@ -684,6 +690,12 @@ is_mail_new() {
 is_domain_new() {
     type=$1
     for object in ${2//,/ }; do
+        if [ "$type" = web ]; then
+            declare -F vx_domain_connection_native_guard >/dev/null \
+                || source "$VESTA/func/vx/domain-connections/main.sh"
+            vx_domain_connection_native_guard "$user" "$object" create \
+                || check_result "$E_FORBIDEN" 'hostname is reserved by a domain connection'
+        fi
         if [ ! -z "$WEB_SYSTEM" ]; then
             is_web_domain_new $object $type
             is_web_alias_new $object $type
@@ -699,6 +711,7 @@ is_domain_new() {
 
 # Get domain variables
 get_domain_values() {
+    VX_CONNECTION_ID='' VX_CONNECTION_PARENT='' VX_CONNECTION_GENERATION=''
     eval $(grep "DOMAIN='$domain'" $USER_DATA/$1.conf)
 }
 

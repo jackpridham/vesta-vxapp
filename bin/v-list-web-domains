@@ -23,8 +23,9 @@ json_list() {
     objects=$(grep DOMAIN $USER_DATA/web.conf |wc -l)
     echo "{"
     while read str; do
-        PROXY_MODE='' PROXY_TARGET='' PROXY_PRESERVE_HOST='' PROXY_PROFILE='' PROXY_TIMEOUT='' PROXY_HEADERS=''
+        VX_CONNECTION_ID='' VX_CONNECTION_PARENT='' VX_CONNECTION_GENERATION='' PROXY_MODE='' PROXY_TARGET='' PROXY_PRESERVE_HOST='' PROXY_PROFILE='' PROXY_TIMEOUT='' PROXY_HEADERS=''
         eval $str
+        [ -z "$VX_CONNECTION_ID" ] || PROXY_HEADERS=''
         echo -n '    "'$DOMAIN'": {
         "IP": "'$IP'",
         "IP6": "'$IP6'",
@@ -32,6 +33,9 @@ json_list() {
         "U_BANDWIDTH": "'$U_BANDWIDTH'",
         "TPL": "'$TPL'",
         "ALIAS": "'$ALIAS'",
+        "VX_CONNECTION_ID": "'$VX_CONNECTION_ID'",
+        "VX_CONNECTION_PARENT": "'$VX_CONNECTION_PARENT'",
+        "VX_CONNECTION_GENERATION": "'$VX_CONNECTION_GENERATION'",
         "STATS": "'$STATS'",
         "STATS_USER": "'$STATS_USER'",
         "SSL": "'$SSL'",
@@ -69,8 +73,9 @@ shell_list() {
     echo "DOMAIN   IP   TPL   SSL   DISK   BW   SPND   DATE"
     echo "------   --   ---   ---   ----   --   ----   -----"
     while read str; do
-        PROXY_MODE='' PROXY_TARGET='' PROXY_PRESERVE_HOST='' PROXY_PROFILE='' PROXY_TIMEOUT='' PROXY_HEADERS=''
+        VX_CONNECTION_ID='' VX_CONNECTION_PARENT='' VX_CONNECTION_GENERATION='' PROXY_MODE='' PROXY_TARGET='' PROXY_PRESERVE_HOST='' PROXY_PROFILE='' PROXY_TIMEOUT='' PROXY_HEADERS=''
         eval $str
+        [ -z "$VX_CONNECTION_ID" ] || PROXY_HEADERS=''
         echo "$DOMAIN $IP $TPL $SSL $U_DISK $U_BANDWIDTH $SUSPENDED $DATE"
     done < <(cat $USER_DATA/web.conf)
 }
@@ -79,8 +84,9 @@ shell_list() {
 plain_list() {
     IFS=$'\n'
     while read str; do
-        PROXY_MODE='' PROXY_TARGET='' PROXY_PRESERVE_HOST='' PROXY_PROFILE='' PROXY_TIMEOUT='' PROXY_HEADERS=''
+        VX_CONNECTION_ID='' VX_CONNECTION_PARENT='' VX_CONNECTION_GENERATION='' PROXY_MODE='' PROXY_TARGET='' PROXY_PRESERVE_HOST='' PROXY_PROFILE='' PROXY_TIMEOUT='' PROXY_HEADERS=''
         eval $str
+        [ -z "$VX_CONNECTION_ID" ] || PROXY_HEADERS=''
         echo -ne "$DOMAIN\t$IP\t$IP6\t$U_DISK\t$U_BANDWIDTH\t$TPL\t"
         echo -ne "$ALIAS\t$STATS\t$STATS_USER\t$SSL\t$SSL_HOME\t$LETSENCRYPT\t"
         echo -ne "$FTP_USER\t$FTP_PATH\t$AUTH_USER\t$BACKEND\t$PROXY\t"
@@ -97,8 +103,9 @@ csv_list() {
     echo -n "PROXY_EXT,PROXY_MODE,PROXY_TARGET,PROXY_PRESERVE_HOST,PROXY_PROFILE,"
     echo "PROXY_TIMEOUT,PROXY_HEADERS,SUSPENDED,TIME,DATE"
     while read str; do
-        PROXY_MODE='' PROXY_TARGET='' PROXY_PRESERVE_HOST='' PROXY_PROFILE='' PROXY_TIMEOUT='' PROXY_HEADERS=''
+        VX_CONNECTION_ID='' VX_CONNECTION_PARENT='' VX_CONNECTION_GENERATION='' PROXY_MODE='' PROXY_TARGET='' PROXY_PRESERVE_HOST='' PROXY_PROFILE='' PROXY_TIMEOUT='' PROXY_HEADERS=''
         eval $str
+        [ -z "$VX_CONNECTION_ID" ] || PROXY_HEADERS=''
         echo -n "$DOMAIN,$IP,$IP6,$U_DISK,$U_BANDWIDTH,$TPL,"
         echo -n "\"$ALIAS\",$STATS,\"$STATS_USER\",$SSL,$SSL_HOME,$LETSENCRYPT,"
         echo -n "\"$FTP_USER\",\"$FTP_PATH\",\"$AUTH_USER\",$BACKEND,$PROXY,"

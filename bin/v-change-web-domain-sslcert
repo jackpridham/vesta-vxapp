@@ -19,6 +19,8 @@ restart=$4
 
 # Includes
 source $VESTA/func/main.sh
+declare -F vx_domain_connection_native_guard >/dev/null \
+    || source "$VESTA/func/vx/domain-connections/main.sh"
 source $VESTA/func/domain.sh
 source $VESTA/func/vx/cloudflare/main.sh
 source $VESTA/conf/vesta.conf
@@ -42,6 +44,8 @@ if [ "${VX_CLOUDFLARE_INTERNAL_ORIGIN_SSL:-}" != 1 ] \
     is_object_unsuspended 'user' 'USER' "$user"
 fi
 is_object_valid 'web' 'DOMAIN' "$domain"
+vx_domain_connection_native_guard "$user" "$domain" issue \
+    || check_result "$E_FORBIDEN" 'native connection child is lifecycle-owned'
 if [ "${VX_CLOUDFLARE_INTERNAL_ORIGIN_SSL:-}" != 1 ] \
     || [ "${VX_CLOUDFLARE_INTERNAL_MIGRATION:-}" != 1 ]; then
     is_object_unsuspended 'web' 'DOMAIN' "$domain"
@@ -70,8 +74,11 @@ is_web_domain_cert_valid
 # failed copy or service restart can restore the exact pre-change files.
 ssl_data_dir="$USER_DATA/ssl"
 ssl_web_dir="$HOMEDIR/$user/conf/web"
-if [ "${VX_CLOUDFLARE_INTERNAL_ORIGIN_SSL:-}" = 1 ]; then
+native_connection_ssl=no
+vx_domain_connection_is_native_child "$user" "$domain" && native_connection_ssl=yes
+if [ "${VX_CLOUDFLARE_INTERNAL_ORIGIN_SSL:-}" = 1 ] || [ "$native_connection_ssl" = yes ]; then
     ssl_staging_root="$VESTA/data/vx/cloudflare/runtime"
+    [ "$native_connection_ssl" != yes ] || ssl_staging_root="$(vx_domain_connection_root)"
     expected_staging_owner="$EUID:$(id -g)"
     [ -d "$ssl_staging_root" ] && [ ! -L "$ssl_staging_root" ] \
         && [ "$(stat -c '%u:%g:%a:%F' "$ssl_staging_root")" \
@@ -96,7 +103,7 @@ finalize_ssl_certificate_staging() {
     # VX Origin SSL already owns a separate root-only transactional snapshot.
     # Do not leave that internal staging backup inside the website tree: it
     # changes tenant content and prevents exact migration rollback readback.
-    if [ "${VX_CLOUDFLARE_INTERNAL_ORIGIN_SSL:-}" = 1 ]; then
+    if [ "${VX_CLOUDFLARE_INTERNAL_ORIGIN_SSL:-}" = 1 ] || [ "$native_connection_ssl" = yes ]; then
         rm -rf -- "$tmpdir" || cleanup_result=1
     else
         rm -rf -- "$stage_dir" || cleanup_result=1

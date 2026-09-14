@@ -15,6 +15,7 @@ restart=$2
 
 # Includes
 source $VESTA/func/main.sh
+source "$VESTA/func/vx/domain-connections/main.sh" 2>/dev/null || :
 source $VESTA/conf/vesta.conf
 
 
@@ -26,6 +27,8 @@ check_args '1' "$#" 'USER [RESTART]'
 is_format_valid 'user'
 is_system_enabled "$WEB_SYSTEM" 'WEB_SYSTEM'
 is_object_valid 'user' 'USER' "$user"
+vx_domain_connection_native_owner_has_connections "$user" \
+    && check_result "$E_FORBIDEN" 'user has active domain connections'
 
 
 #----------------------------------------------------------#

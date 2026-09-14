@@ -18,6 +18,8 @@ restart=$4
 # Includes
 source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
+declare -F vx_domain_connection_native_guard >/dev/null \
+    || source "$VESTA/func/vx/domain-connections/main.sh"
 source $VESTA/conf/vesta.conf
 
 
@@ -31,6 +33,8 @@ is_object_valid 'user' 'USER' "$user"
 if [ "${VX_CLOUDFLARE_INTERNAL_MIGRATION:-}" != 1 ]; then
     is_object_unsuspended 'user' 'USER' "$user"
 fi
+vx_domain_connection_native_guard "$user" "$domain" backend \
+    || check_result "$E_FORBIDEN" 'native connection child backend is inherited'
 is_backend_template_valid "$template"
 
 

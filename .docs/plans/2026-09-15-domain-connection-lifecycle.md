@@ -164,7 +164,11 @@ Use `$milestone-driven-implementation` as the sole execution coordinator when im
 
 [Vesta #5](https://github.com/jackpridham/vesta-vxapp/issues/5) records the original implemented lifecycle. [Vesta #6](https://github.com/jackpridham/vesta-vxapp/issues/6) is optional admin/DNS work, not a prerequisite; coordinate only overlapping files. Reconcile [API #139](https://github.com/jackpridham/api-vxapp/issues/139) and its related recovery, readiness, and E2E issues with this contract during authorized execution; preserve completed migration history. Do not implement the earlier customer-zone/one-certificate assumptions as new requirements.
 
-All four milestones are **planned**. One blocker list:
+Implementation progress, compatible revisions, review findings, validation,
+and deployment evidence are tracked in the sole [execution ledger on Vesta
+#7](https://github.com/jackpridham/vesta-vxapp/issues/7#issuecomment-5669043128).
+The requirements below remain acceptance criteria; code completion alone does
+not establish live acceptance. One blocker list:
 
 1. **Native integration proof:** Separate SNI certificates, challenge-only staging, child-aware guards, quotas, and renewal/rollback must pass Milestone 1. The TLS implementation is selected; provider selection is no longer a blocker.
 2. **Test resources and ingress:** Name disposable domains and allowed DNS/host mutations before live acceptance. Confirm public 80/443 and any IPv6 path; offline implementation can proceed independently.

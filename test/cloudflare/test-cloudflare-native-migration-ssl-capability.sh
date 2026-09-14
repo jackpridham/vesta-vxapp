@@ -34,6 +34,8 @@ is_object_unsuspended() { printf '%s\n' "$1" >>"$CALL_LOG"; }
 is_object_value_empty() { :; }
 is_object_value_exist() { :; }
 is_web_domain_cert_valid() { :; }
+# These cases have no customer connection authority.
+vx_domain_connection_native_guard() { :; }
 vx_cf_record_path() { printf '/does/not/exist/record\n'; }
 vx_cf_certificate_path() { printf '/does/not/exist/certificate\n'; }
 vx_cf_metadata_exists() { [ "${MANAGED:-no}" = yes ]; }

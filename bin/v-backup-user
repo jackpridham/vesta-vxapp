@@ -22,6 +22,8 @@ source $VESTA/func/domain.sh
 source $VESTA/func/db.sh
 source $VESTA/func/docker.sh
 source "$VESTA/func/vx/compose/main.sh"
+source "$VESTA/func/vx/domain-connections/main.sh"
+source "$VESTA/func/vx/domain-connections/backup.sh"
 source $VESTA/conf/vesta.conf
 
 if [ ! -z "$NOW" ]; then
@@ -101,6 +103,7 @@ mkdir $tmpdir/vesta
 echo -e "$(date "+%F %T") $user.conf" |tee -a $BACKUP/$user.log
 cp -r $USER_DATA/user.conf $tmpdir/vesta/
 cp -r $USER_DATA/ssl $tmpdir/vesta/
+vx_domain_connection_backup_user "$user" "$tmpdir/vesta/domain-connections" || check_result $? "Domain connection backup failed"
 
 if [ -e "$USER_DATA/stats.log" ]; then
     echo -e "$(date "+%F %T") stats.log" |tee -a $BACKUP/$user.log

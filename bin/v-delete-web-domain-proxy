@@ -18,6 +18,7 @@ restart=$3
 # Includes
 source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
+source "$VESTA/func/vx/domain-connections/main.sh" 2>/dev/null || :
 source $VESTA/func/ip.sh
 source $VESTA/func/vx/proxy.sh
 source "$VESTA/func/vx/compose/routes.sh"
@@ -39,6 +40,7 @@ is_system_enabled "$PROXY_SYSTEM" 'WEB_SYSTEM'
 is_object_valid 'user' 'USER' "$user"
 is_object_unsuspended 'user' 'USER' "$user"
 is_object_valid 'web' 'DOMAIN' "$domain"
+vx_domain_connection_native_guard "$user" "$domain" proxy || check_result "$E_FORBIDEN" 'native connection child proxy is inherited'
 is_object_unsuspended 'web' 'DOMAIN' "$domain"
 is_object_value_exist 'web' 'DOMAIN' "$domain" '$PROXY'
 compose_route_project="$(vx_compose_domain_route_project "$user" "$domain" 2>/dev/null)"

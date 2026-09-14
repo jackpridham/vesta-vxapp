@@ -1,0 +1,29 @@
+#!/bin/bash
+# info: list cached native customer-domain connections
+# options: USER TECHNICAL_FQDN [json]
+
+# Variable&Function
+user=$1; technical=$2; format=${3-shell}
+[[ $EUID == 0 ]] || { echo "Error: root authority required" >&2; exit 10; }
+source "$VESTA/func/main.sh"
+source "$VESTA/conf/vesta.conf"
+source "$VESTA/func/vx/domain-connections/main.sh"
+# Verifications
+check_args 2 "$#" 'USER TECHNICAL_FQDN [json]'; [ "$#" -le 3 ] || check_result "$E_ARGS" 'too many arguments'
+domain=$technical
+is_format_valid user domain; is_object_valid user USER "$user"
+technical=$(vx_domain_connection_canonical_hostname "$technical") || check_result "$E_INVALID" 'invalid technical hostname'
+[[ "$format" == json || "$format" == shell ]] || check_result "$E_INVALID" 'invalid format'
+# Action
+records="$(vx_domain_connection_list "$user" "$technical")" || check_result "$E_INVALID" 'unable to list domain connections'
+quota=$(vx_domain_connection_quota_json "$user") || check_result "$E_INVALID" 'unable to read domain quota'
+case "$format" in
+    json)
+        connections=$(while IFS= read -r record; do
+            vx_domain_connection_public_json "$record" "$(jq -r .used <<<"$quota")" "$(jq -r '.available // "null"' <<<"$quota")" | jq -c .connection || exit 1
+        done < <(jq -c '.[]' <<<"$records")) || check_result "$E_INVALID" 'unable to render connections'
+        jq -cs --argjson quota "$quota" '{version:1,connections:.,quota:$quota}' <<<"$connections" ;;
+    shell) jq -r '.[] | "\(.CONNECTION_ID) \(.STATE) \(.HOSTNAME)"' <<<"$records" ;;
+esac
+# Vesta
+exit

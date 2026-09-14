@@ -1022,7 +1022,7 @@ format_domain() {
             domain=$(echo "$domain" |tr '[:upper:]' '[:lower:]')
         fi
     fi
-    if [[ "$domain" =~ ^www\..* ]]; then
+    if [[ "$domain" =~ ^www\..* ]] && ! vx_domain_connection_exact_hostname "$user" "$domain"; then
         domain=$(echo "$domain" |sed -e "s/^www.//")
     fi
     if [[ "$domain" =~ .*\.$ ]]; then
@@ -1326,4 +1326,16 @@ list_child_pids() {
         echo $child
         list_child_pids $child
     done
+}
+
+# Keep exact www connection primaries intact through native argument formatting.
+# This is only a name-preservation check; mutations still require registry locks.
+vx_domain_connection_exact_hostname() {
+    local owner=$1 hostname=$2 path
+    [[ "$hostname" =~ ^[a-z0-9.-]+$ ]] || return 1
+    if /usr/bin/grep -F "DOMAIN='$hostname' " "$VESTA/data/users/$owner/web.conf" 2>/dev/null \
+        | /usr/bin/grep -q " VX_CONNECTION_ID='[^']"; then return 0; fi
+    path="$VESTA/data/vx/domain-connections/hostnames/$(printf '%s' "$hostname" | /usr/bin/sha256sum | /usr/bin/cut -d' ' -f1).json"
+    [[ -f "$path" && ! -L "$path" ]] || return 1
+    /usr/bin/jq -e --arg owner "$owner" --arg hostname "$hostname" '.OWNER==$owner and .HOSTNAME==$hostname and .STATE!="disconnected"' "$path" >/dev/null 2>&1
 }

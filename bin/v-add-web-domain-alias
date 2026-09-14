@@ -23,6 +23,7 @@ source $VESTA/func/domain.sh
 source $VESTA/func/ip.sh
 source $VESTA/func/vx/cloudflare/main.sh
 source $VESTA/func/vx/cloudflare/web-hooks.sh
+source "$VESTA/func/vx/domain-connections/main.sh" 2>/dev/null || :
 source $VESTA/conf/vesta.conf
 
 # Additional argument formatting
@@ -42,6 +43,8 @@ is_system_enabled "$WEB_SYSTEM" 'WEB_SYSTEM'
 is_object_valid 'user' 'USER' "$user"
 is_object_unsuspended 'user' 'USER' "$user"
 is_object_valid 'web' 'DOMAIN' "$domain"
+vx_domain_connection_native_guard "$user" "$domain" alias \
+    || check_result "$E_FORBIDEN" 'native connection children cannot have aliases'
 is_object_unsuspended 'web' 'DOMAIN' "$domain"
 vx_cf_native_web_authority_preflight "$user" "$domain" \
     || check_result "$E_CONNECT" "${VX_CF_STATUS:-state_error}"

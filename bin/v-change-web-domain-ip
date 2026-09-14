@@ -21,6 +21,7 @@ source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
 source $VESTA/func/ip.sh
 source $VESTA/func/vx/cloudflare/main.sh
+source "$VESTA/func/vx/domain-connections/main.sh" 2>/dev/null || :
 source $VESTA/conf/vesta.conf
 
 # Additional argument formatting
@@ -39,6 +40,8 @@ is_system_enabled "$WEB_SYSTEM" 'WEB_SYSTEM'
 is_object_valid 'user' 'USER' "$user"
 is_object_unsuspended 'user' 'USER' "$user"
 is_object_valid 'web' 'DOMAIN' "$domain"
+vx_domain_connection_native_guard "$user" "$domain" ip \
+    || check_result "$E_FORBIDEN" 'native connection child IP is inherited'
 is_object_unsuspended 'web' 'DOMAIN' "$domain"
 is_ip_valid "$ip" "$user"
 

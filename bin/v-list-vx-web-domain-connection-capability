@@ -1,0 +1,16 @@
+#!/bin/bash
+# info: show native customer-domain connection capability
+# options: [json]
+
+# Variable&Function
+format=${1-json}
+[[ $EUID == 0 ]] || { echo "Error: root authority required" >&2; exit 10; }
+source "$VESTA/func/main.sh"
+source "$VESTA/conf/vesta.conf"
+source "$VESTA/func/vx/domain-connections/main.sh"
+# Verifications
+[ "$#" -le 1 ] || check_result "$E_ARGS" 'too many arguments'
+[[ "$format" == json ]] || check_result "$E_INVALID" 'invalid format'
+vx_domain_connection_capability_json
+# Vesta
+exit

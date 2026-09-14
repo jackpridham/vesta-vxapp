@@ -21,6 +21,8 @@ restart=$4
 
 # Includes
 source $VESTA/func/main.sh
+declare -F vx_domain_connection_native_guard >/dev/null \
+    || source "$VESTA/func/vx/domain-connections/main.sh"
 source $VESTA/func/domain.sh
 source $VESTA/func/ip.sh
 source $VESTA/conf/vesta.conf
@@ -42,6 +44,8 @@ is_system_enabled "$WEB_SSL" 'SSL_SUPPORT'
 is_object_valid 'user' 'USER' "$user"
 is_object_unsuspended 'user' 'USER' "$user"
 is_object_valid 'web' 'DOMAIN' "$domain"
+vx_domain_connection_native_guard "$user" "$domain" ssl \
+    || check_result "$E_FORBIDEN" 'native connection child is lifecycle-owned'
 is_object_unsuspended 'web' 'DOMAIN' "$domain"
 is_object_value_exist 'web' 'DOMAIN' "$domain" '$SSL'
 is_web_domain_cert_valid

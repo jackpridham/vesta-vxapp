@@ -108,7 +108,7 @@ vx_proxy_defaults() {
 
 vx_proxy_validate_mode() {
     case "$PROXY_MODE" in
-        proxy|redirect|redirect-temp) return 0 ;;
+        proxy|redirect|redirect-temp|holding) return 0 ;;
     esac
     check_result "$E_INVALID" "proxy mode is invalid"
 }
@@ -334,9 +334,35 @@ EOF
 
 vx_proxy_prepare_template_values() {
     VX_PROXY_LOCATION_BLOCK=""
+    VX_PROXY_HOST_GUARD=""
     [ "$PROXY" = "$VX_PROXY_TEMPLATE" ] || [ "$PROXY_TEMPLATE" = "$VX_PROXY_TEMPLATE" ] || return 0
 
     vx_proxy_defaults
+    # A vhost selected as nginx's address default must not route an unknown
+    # Host to this tenant. Preserve exact configured aliases, including legacy
+    # wildcard aliases, while new connection children have only their primary.
+    local host_name host_pattern host_patterns=""
+    local host_aliases=${aliases_idn:-}
+    for host_name in ${domain_idn:-${domain:-}} ${host_aliases//,/ }; do
+        host_pattern=${host_name//./\\.}
+        host_pattern=${host_pattern//\*/[^.]+}
+        host_patterns="${host_patterns:+$host_patterns|}$host_pattern"
+    done
+    if [ -n "$host_patterns" ]; then
+        VX_PROXY_HOST_GUARD="    if (\$http_host !~* ^($host_patterns)(:[0-9]+)?$) { return 444; }"
+    fi
+    if [ "$PROXY_MODE" = holding ]; then
+        # A verified connection child has no tenant route until its own LE
+        # certificate is accepted. Keep HTTP-01 reachable on the exact host.
+        VX_PROXY_LOCATION_BLOCK="    location ^~ /.well-known/acme-challenge/ {
+        root ${docroot};
+    }
+
+    location / {
+        return 404;
+    }"
+        return 0
+    fi
     vx_proxy_validate
 
     if [ "$PROXY_MODE" = "redirect" ] || [ "$PROXY_MODE" = "redirect-temp" ]; then
@@ -359,7 +385,20 @@ vx_proxy_prepare_template_values() {
         proxy_ssl_server_name on;"
     fi
 
-    VX_PROXY_LOCATION_BLOCK="    location ${PROXY_PATH} {
+    local identity_location=""
+    if [ -n "${VX_CONNECTION_ID:-}" ]; then
+        identity_location="    location ^~ /.well-known/acme-challenge/ {
+        root ${docroot};
+        default_type text/plain;
+    }
+
+    location = /.well-known/vx-domain-connection {
+        default_type text/plain;
+        return 200 \"${VX_CONNECTION_ID}\";
+    }
+"
+    fi
+    VX_PROXY_LOCATION_BLOCK="${identity_location}    location ${PROXY_PATH} {
         proxy_pass ${PROXY_TARGET};
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -376,9 +415,19 @@ $(vx_proxy_build_header_block)
 }
 
 vx_proxy_apply_template_blocks() {
-    local line
+    local line skip_holding=no
     while IFS= read -r line; do
         case "$line" in
+            *'# vx connection: content begin'*)
+                [ "$PROXY_MODE" != holding ] || skip_holding=yes
+                continue ;;
+            *'# vx connection: content end'*) skip_holding=no; continue ;;
+        esac
+        [ "$skip_holding" != yes ] || continue
+        case "$line" in
+            *%vx_proxy_host_guard%*)
+                printf '%s\n' "$VX_PROXY_HOST_GUARD"
+                ;;
             *%vx_proxy_location_block%*)
                 printf '%s\n' "$VX_PROXY_LOCATION_BLOCK"
                 ;;

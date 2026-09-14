@@ -1,0 +1,21 @@
+#!/bin/bash
+# info: perform one bounded domain-connection reconciliation attempt
+# options: USER TECHNICAL_FQDN CONNECTION_ID [json]
+
+# Variable&Function
+user=$1; technical=$2; id=$3; format=${4-shell}
+[[ $EUID == 0 ]] || { echo "Error: root authority required" >&2; exit 10; }
+source "$VESTA/func/main.sh"
+source "$VESTA/conf/vesta.conf"
+source "$VESTA/func/vx/domain-connections/main.sh"
+# Verifications
+check_args 3 "$#" 'USER TECHNICAL_FQDN CONNECTION_ID [json]'; [ "$#" -le 4 ] || check_result "$E_ARGS" 'too many arguments'
+domain=$technical
+is_format_valid user domain; is_object_valid user USER "$user"
+technical=$(vx_domain_connection_canonical_hostname "$technical") || check_result "$E_INVALID" 'invalid technical hostname'
+[[ "$format" == json || "$format" == shell ]] || check_result "$E_INVALID" 'invalid format'
+# Action
+record="$(vx_domain_connection_reconcile_bounded "$user" "$technical" "$id")" || check_result "$E_INVALID" 'unable to reconcile domain connection'
+case "$format" in json) vx_domain_connection_public_json "$record";; shell) /usr/bin/jq -r '.STATE + " " + .HOSTNAME' <<<"$record";; *) check_result "$E_INVALID" 'invalid format';; esac
+# Vesta
+exit

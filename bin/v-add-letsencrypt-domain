@@ -26,6 +26,7 @@ deb_release=$(cat /etc/debian_version | tr "." "\n" | head -n1)
 # Includes
 source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
+source "$VESTA/func/vx/domain-connections/main.sh" 2>/dev/null || :
 source $VESTA/func/vx/cloudflare/main.sh
 source $VESTA/conf/vesta.conf
 
@@ -87,7 +88,12 @@ is_system_enabled "$WEB_SYSTEM" 'WEB_SYSTEM'
 is_object_valid 'user' 'USER' "$user"
 is_object_unsuspended 'user' 'USER' "$user"
 is_object_valid 'web' 'DOMAIN' "$domain"
+vx_domain_connection_native_guard "$user" "$domain" issue \
+    || check_result "$E_FORBIDEN" 'native connection TLS is worker-only'
 is_object_unsuspended 'web' 'DOMAIN' "$domain"
+if vx_domain_connection_is_native_child "$user" "$domain" && [ -n "$aliases" ]; then
+    check_result "$E_FORBIDEN" 'connection certificates cover the exact hostname only'
+fi
 vx_cf_record_authority_path=$(vx_cf_record_path "$user" "$domain")
 vx_cf_certificate_authority_path=$(vx_cf_certificate_path "$user" "$domain")
 if vx_cf_metadata_exists "$user" "$domain" \
@@ -254,14 +260,19 @@ for auth in $authz; do
         systemctl restart bind9
     else
         if [ "$WEB_SYSTEM" = 'nginx' ] || [ ! -z "$PROXY_SYSTEM" ]; then
-            if [ -f "/usr/local/vesta/web/inc/nginx_proxy" ]; then
+            if [ -f "/usr/local/vesta/web/inc/nginx_proxy" ] || vx_domain_connection_is_native_child "$user" "$domain"; then
                 #  if vesta is behind main nginx
                 well_known="$HOMEDIR/$user/web/$domain/public_html/.well-known"
                 acme_challenge="$well_known/acme-challenge"
-                mkdir -p $acme_challenge
-                echo "$token.$THUMB" > $acme_challenge/$token
-                echo "[$(date)] : in $acme_challenge/$token we put: $token.$THUMB" >> /usr/local/vesta/log/letsencrypt.log
-                chown -R $user:$user $well_known
+                if vx_domain_connection_is_native_child "$user" "$domain"; then
+                    vx_domain_connection_native_write_challenge "$token" "$THUMB" \
+                        || check_result "$E_FORBIDEN" 'unsafe native challenge path'
+                else
+                    mkdir -p $acme_challenge
+                    echo "$token.$THUMB" > $acme_challenge/$token
+                    echo "[$(date)] : in $acme_challenge/$token we put: $token.$THUMB" >> /usr/local/vesta/log/letsencrypt.log
+                    chown -R $user:$user $well_known
+                fi
             else
                 # default nginx method
                 conf="$HOMEDIR/$user/conf/web/nginx.$domain.conf_letsencrypt"
@@ -466,15 +477,17 @@ fi
 
 # Adding SSL
 ssl_home=$(search_objects 'web' 'LETSENCRYPT' 'yes' 'SSL_HOME')
-$BIN/v-delete-web-domain-ssl $user $domain >/dev/null 2>&1
-echo "[$(date)] : v-add-web-domain-ssl $user $domain $ssl_dir $ssl_home" >> /usr/local/vesta/log/letsencrypt.log
-$BIN/v-add-web-domain-ssl $user $domain $ssl_dir $ssl_home
-exitstatus=$?
-echo "[$(date)] : v-add-web-domain-ssl status: $exitstatus" >> /usr/local/vesta/log/letsencrypt.log
-if [ "$exitstatus" -ne '0' ]; then
+if vx_domain_connection_is_native_child "$user" "$domain"; then
+    vx_domain_connection_native_install_certificate "$ssl_dir"
+    exitstatus=$?
+else
+    $BIN/v-delete-web-domain-ssl $user $domain >/dev/null 2>&1
+    $BIN/v-add-web-domain-ssl $user $domain $ssl_dir $ssl_home
+    exitstatus=$?
+fi
+if [ "$exitstatus" -ne 0 ]; then
     touch $VESTA/data/queue/letsencrypt.pipe
     sed -i "/ $domain /d" $VESTA/data/queue/letsencrypt.pipe
-    echo "[$(date)] : EXIT=$domain certificate installation failed" >> /usr/local/vesta/log/letsencrypt.log
     send_notice 'LETSENCRYPT' "$domain certificate installation failed"
     check_result $exitstatus "SSL install" >/dev/null
 fi

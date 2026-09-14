@@ -49,6 +49,8 @@ source $VESTA/func/ip.sh
 source $VESTA/func/db.sh
 source $VESTA/func/docker.sh
 source "$VESTA/func/vx/compose/main.sh"
+source "$VESTA/func/vx/domain-connections/main.sh"
+source "$VESTA/func/vx/domain-connections/backup.sh"
 source $VESTA/func/rebuild.sh
 source $VESTA/conf/vesta.conf
 
@@ -306,12 +308,19 @@ if [ "$create_user" = 'yes' ]; then
         check_result "$E_PARSING" "can't unpack user contaner"
     fi
 
+    # Check the global registry before restored web rows can be rendered.
+    # The relationship is committed only after those rows prove their exact
+    # parent/child TLS boundary below.
+    vx_domain_connection_restore_preflight "$user" "$tmpdir/vesta/domain-connections" \
+        || check_result "$E_FORBIDEN" 'domain connection restore conflict'
+    vx_domain_connection_restore_archive_preflight "$user" "$tmpdir/vesta/domain-connections" "$BACKUP/$backup" \
+        || check_result "$E_FORBIDEN" 'domain connection restore native conflict'
+
     # Restoring user.conf
     mkdir $USER_DATA
     cp $tmpdir/vesta/user.conf $USER_DATA/
     cp -r  $tmpdir/vesta/ssl $USER_DATA/ >/dev/null 2>&1
     cp $tmpdir/vesta/backup-excludes.conf $USER_DATA/ >/dev/null 2>&1
-
     # Rebuilding user
     rebuild_user_conf
 fi
@@ -442,6 +451,11 @@ if [ "$web" != 'no' ] && [ ! -z "$WEB_SYSTEM" ]; then
             str="$str LETSENCRYPT='$LETSENCRYPT' FTP_USER='$FTP_USER'"
             str="$str FTP_MD5='$FTP_MD5' BACKEND='$BACKEND' PROXY='$PROXY'"
             str="$str PROXY_EXT='$PROXY_EXT' STATS='$STATS'"
+            str="$str PROXY_MODE='$PROXY_MODE' PROXY_TARGET='$PROXY_TARGET'"
+            str="$str PROXY_PRESERVE_HOST='$PROXY_PRESERVE_HOST' PROXY_PROFILE='$PROXY_PROFILE'"
+            str="$str PROXY_TIMEOUT='$PROXY_TIMEOUT' PROXY_HEADERS='$PROXY_HEADERS' PROXY_PATH='$PROXY_PATH'"
+            str="$str VX_CONNECTION_ID='$VX_CONNECTION_ID' VX_CONNECTION_PARENT='$VX_CONNECTION_PARENT'"
+            str="$str VX_CONNECTION_GENERATION='$VX_CONNECTION_GENERATION'"
             str="$str STATS_USER='$STATS_USER' STATS_CRYPT='$STATS_CRYPT'"
             str="$str U_DISK='$U_DISK' U_BANDWIDTH='0' SUSPENDED='no'"
             str="$str TIME='$(date +%T)' DATE='$(date +%F)'"
@@ -506,6 +520,9 @@ if [ "$web" != 'no' ] && [ ! -z "$WEB_SYSTEM" ]; then
         $BIN/v-restart-proxy
         check_result $? "Proxy restart failed"
     fi
+
+    vx_domain_connection_restore_commit "$user" "$tmpdir/vesta/domain-connections" \
+        || check_result "$E_FORBIDEN" 'domain connection restore recovery required'
 fi
 
 # Restoring dns domains

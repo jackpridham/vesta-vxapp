@@ -20,6 +20,7 @@ restart=$4
 source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
 source $VESTA/func/ip.sh
+source "$VESTA/func/vx/domain-connections/main.sh" 2>/dev/null || :
 source $VESTA/conf/vesta.conf
 
 # Additional argument formatting
@@ -37,6 +38,7 @@ is_system_enabled "$WEB_BACKEND" 'WEB_BACKEND'
 is_object_valid 'user' 'USER' "$user"
 is_object_unsuspended 'user' 'USER' "$user"
 is_object_valid 'web' 'DOMAIN' "$domain"
+vx_domain_connection_native_guard "$user" "$domain" backend || check_result "$E_FORBIDEN" 'native connection child backend is inherited'
 is_object_unsuspended 'web' 'DOMAIN' "$domain"
 is_backend_template_valid $template
 

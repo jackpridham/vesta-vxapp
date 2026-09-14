@@ -38,6 +38,7 @@ source $VESTA/func/main.sh
 source $VESTA/func/domain.sh
 source $VESTA/func/ip.sh
 source $VESTA/func/vx/proxy.sh
+source "$VESTA/func/vx/domain-connections/main.sh" 2>/dev/null || :
 source $VESTA/conf/vesta.conf
 
 # Additional argument formatting
@@ -59,9 +60,11 @@ check_args '2' "$#" 'USER DOMAIN [IP] [RESTART] [ALIASES] [PROXY_EXTENSIONS] [--
 is_format_valid 'user' 'domain' 'aliases' 'ip' 'proxy_ext'
 is_object_valid 'user' 'USER' "$user"
 is_object_unsuspended 'user' 'USER' "$user"
+vx_domain_connection_native_guard "$user" "$domain" create \
+    || check_result "$E_FORBIDEN" 'native connection children are lifecycle-owned'
 is_package_full 'WEB_DOMAINS' 'WEB_ALIASES'
 is_domain_new 'web' "$domain"
-[ "$aliases" = 'none' ] || is_domain_new 'web' "$aliases"
+[ "$aliases" = 'none' ] || is_domain_new 'web' "${aliases:-www.$domain}"
 is_dir_symlink $HOMEDIR/$user/web
 if_dir_exists $HOMEDIR/$user/web/$domain
 is_dir_symlink $HOMEDIR/$user/web/$domain
@@ -78,6 +81,10 @@ fi
 
 # Reading user values
 source $USER_DATA/user.conf
+if [ "${VX_DOMAIN_CONNECTION_NATIVE_CREATE:-}" = 1 ]; then
+    vx_domain_connection_native_creation_values || check_result "$E_FORBIDEN" 'invalid connection creation authority'
+    aliases=none
+fi
 if [ -n "$VX_PROXY_OPTION_TARGET" ]; then
     vx_proxy_apply_option_globals
     vx_proxy_validate
@@ -126,7 +133,7 @@ if [ ! -z "$WEB_BACKEND" ]; then
             update_user_value "$user" '$BACKEND_TEMPLATE' "default"
         fi
     fi
-    $BIN/v-add-web-domain-backend "$user" "$domain" $BACKEND_TEMPLATE
+    $BIN/v-add-web-domain-backend "$user" "$domain" "$BACKEND_TEMPLATE" "$restart"
     check_result $? "Backend error" >/dev/null
 fi
 
@@ -188,12 +195,21 @@ echo "DOMAIN='$domain' IP='$ip' IP6='' ALIAS='$ALIAS' TPL='$WEB_TEMPLATE'\
  BACKEND='$BACKEND_TEMPLATE' PROXY='$PROXY_TEMPLATE' PROXY_EXT='$PROXY_EXT'\
  PROXY_MODE='$PROXY_MODE' PROXY_TARGET='$PROXY_TARGET'\
  PROXY_PRESERVE_HOST='$PROXY_PRESERVE_HOST' PROXY_PROFILE='$PROXY_PROFILE'\
- PROXY_TIMEOUT='$PROXY_TIMEOUT' PROXY_HEADERS='$PROXY_HEADERS'\
+ PROXY_TIMEOUT='$PROXY_TIMEOUT' PROXY_HEADERS='$PROXY_HEADERS' PROXY_PATH='$PROXY_PATH'\
  STATS='' STATS_USER='' STATS_CRYPT='' U_DISK='0' U_BANDWIDTH='0'\
  SUSPENDED='no' TIME='$time' DATE='$date'" >> $USER_DATA/web.conf
 
+# Persist relationship before any restart or unsigned-SSL installation. Native
+# creation already rendered the holding template with these same values.
+if [ "${VX_DOMAIN_CONNECTION_NATIVE_CREATE:-}" = 1 ]; then
+    vx_domain_connection_native_apply_binding holding \
+        || check_result "$E_UPDATE" 'connection binding persistence failed'
+fi
+
 # Install unsigned SSL
-$BIN/v-install-unsigned-ssl "$domain" "no"
+if [ "${VX_DOMAIN_CONNECTION_NATIVE_CREATE:-}" != 1 ]; then
+    $BIN/v-install-unsigned-ssl "$domain" "no"
+fi
 
 # Restarting web server
 $BIN/v-restart-web $restart
