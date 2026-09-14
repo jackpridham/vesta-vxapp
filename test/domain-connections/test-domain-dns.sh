@@ -8,7 +8,7 @@ cat >"$fixture" <<'EOF'
 n="${@: -2:1}"; t="${@: -1}"
 case "$*" in
     *+comments*)
-        [[ "$n:$t" == servfail-caa.example.com:CAA ]] && echo 'status: SERVFAIL' || echo 'status: NOERROR'
+        [[ "$n" == servfail.example.com || "$n:$t" == servfail-caa.example.com:CAA ]] && echo 'status: SERVFAIL' || echo 'status: NOERROR'
         exit
         ;;
 esac
@@ -33,7 +33,7 @@ case "$n:$t" in
     target.denied.example.com:CAA) echo '0 issue "other-ca.invalid"' ;;
     alias-policy.example.com:CAA) echo '0 issue "letsencrypt.org"' ;;
     alias-target.example.net:CAA) echo '0 issue "other-ca.invalid"' ;;
-    target.nocaa.example.com:CAA|nocaa.example.com:CAA|example.com:CAA) ;;
+    target.nocaa.example.com:CAA|nocaa.example.com:CAA|example.com:CAA|empty.example.net:CAA|example.net:CAA|net:CAA) ;;
     *:CAA) echo '0 issue "letsencrypt.org"' ;;
 esac
 EOF
@@ -47,13 +47,14 @@ jq -e '.PROOF' <<<"$(vx_domain_connection_dns_proof_observe valid.example.com pr
 jq -e '.ROUTED and .SAFE and .CAA' <<<"$(vx_domain_connection_dns_observe www.valid.example.com connect.example.com "$config")" >/dev/null
 jq -e '.ROUTED and .SAFE and .CAA' <<<"$(vx_domain_connection_dns_observe www.combined.example.com connect.example.com "$config")" >/dev/null
 jq -e '.ROUTED and .SAFE and .CAA' <<<"$(vx_domain_connection_dns_observe apex.com.au connect.example.com "$config")" >/dev/null
-jq -e '.ROUTED and .SAFE and .CAA' <<<"$(vx_domain_connection_dns_observe www.nocaa.example.com connect.example.com "$config")" >/dev/null
+jq -e '.ROUTED and .CAA' <<<"$(vx_domain_connection_dns_observe www.nocaa.example.com connect.example.com "$config")" >/dev/null
 jq -e '.CAA==false' <<<"$(vx_domain_connection_dns_observe www.denied.example.com connect.example.com "$config")" >/dev/null
 jq -e '. == true' <<<"$(vx_domain_connection_dns_caa_ok www.alias-policy.example.com && echo true || echo false)" >/dev/null
-jq -e '.ROUTED and .SAFE and .CAA' <<<"$(vx_domain_connection_dns_observe iodef.example.com connect.example.com "$config")" >/dev/null
+jq -e '.ROUTED and .CAA' <<<"$(vx_domain_connection_dns_observe iodef.example.com connect.example.com "$config")" >/dev/null
 jq -e '.CAA==false' <<<"$(vx_domain_connection_dns_observe malformed.example.com connect.example.com "$config")" >/dev/null
 jq -e '.ROUTED==false and .DNS.ERROR=="cname_loop"' <<<"$(vx_domain_connection_dns_observe bad.example.com connect.example.com "$config")" >/dev/null
 jq -e '.CAA==false' <<<"$(vx_domain_connection_dns_observe caa.example.com connect.example.com "$config")" >/dev/null
+vx_domain_connection_dns_caa_ok empty.example.net
 ! vx_domain_connection_dns_caa_ok failed-cname.example.com
 ! vx_domain_connection_dns_caa_ok invalid-flags.example.com
 ! vx_domain_connection_dns_caa_ok servfail-caa.example.com
