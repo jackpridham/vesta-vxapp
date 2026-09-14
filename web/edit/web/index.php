@@ -9,6 +9,7 @@ include($_SERVER['DOCUMENT_ROOT']."/inc/main.php");
 include($_SERVER['DOCUMENT_ROOT']."/inc/vx_proxy_form.php");
 include($_SERVER['DOCUMENT_ROOT']."/inc/vx_docker.php");
 include_once($_SERVER['DOCUMENT_ROOT']."/inc/vx_custom_domains.php");
+include_once($_SERVER['DOCUMENT_ROOT']."/inc/vx_domain_connections.php");
 
 // Check domain argument
 if (empty($_GET['domain'])) {
@@ -30,6 +31,13 @@ unset($output);
 // Parse domain
 $v_username = $user;
 $v_domain = $_GET['domain'];
+$v_domain_connection_parent = vx_domain_connection_find_child_parent($v_username, $v_domain);
+if ($v_domain_connection_parent !== '') {
+    $_SESSION['error_msg'] = __('This customer domain is managed from its technical site.');
+    header('Location: /edit/web/?domain='.rawurlencode($v_domain_connection_parent));
+    exit;
+}
+$v_domain_connections = vx_domain_connections_json($v_username, $v_domain);
 $v_cloudflare_managed = false;
 exec (VESTA_CMD."v-list-vx-cloudflare-web-domain-status ".$v_username." ".escapeshellarg($v_domain), $output, $return_var);
 $v_cloudflare_status = trim(implode("\n", $output));

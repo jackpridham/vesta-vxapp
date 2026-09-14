@@ -53,6 +53,7 @@ $edit_web_admin_template = read_cloudflare_ui_source($root.'/web/templates/admin
 $edit_web_user_template = read_cloudflare_ui_source($root.'/web/templates/user/edit_web.html');
 $web_api_controller = read_cloudflare_ui_source($root.'/web/api/index.php');
 $custom_domains_helper = read_cloudflare_ui_source($root.'/web/inc/vx_custom_domains.php');
+$domain_connections_helper = read_cloudflare_ui_source($root.'/web/inc/vx_domain_connections.php');
 $custom_domains_js = read_cloudflare_ui_source($root.'/web/js/vx-custom-domains.js');
 
 assert_cloudflare_ui_contains($add_web_controller, "(!isset(\$_POST['token']))", 'managed web creation lost its CSRF token presence check');
@@ -93,18 +94,21 @@ assert_cloudflare_ui_contains($alias_controller, "if (\$_SESSION['user'] != 'adm
 assert_cloudflare_ui_contains($alias_controller, "(!isset(\$_POST['token']))", 'Cloudflare alias form lost its CSRF token presence check');
 assert_cloudflare_ui_contains($alias_controller, "(\$_SESSION['token'] != \$_POST['token'])", 'Cloudflare alias form lost its CSRF token comparison');
 assert_cloudflare_ui_contains($alias_controller, 'v-list-web-domains ".escapeshellarg($user)', 'Cloudflare alias form does not list domains for the resolved owner safely');
-assert_cloudflare_ui_contains($alias_controller, 'array_key_exists($v_web_domain, $web_domains)', 'Cloudflare alias form does not enforce website ownership');
-assert_cloudflare_ui_contains($alias_controller, 'v-list-vx-cloudflare-web-domain-status ', 'Cloudflare alias form does not filter for exact managed ownership');
-assert_cloudflare_ui_contains($alias_controller, '$managed_status !== \'managed\'', 'Cloudflare alias form accepts non-managed lookalike websites');
-assert_cloudflare_ui_contains(
-    $alias_controller,
-    'v-add-vx-cloudflare-web-alias ".escapeshellarg($user)." ".escapeshellarg($v_web_domain)." ".escapeshellarg($v_cloudflare_domain)',
-    'Cloudflare alias mutation does not escape every owner/domain argument'
-);
-assert_cloudflare_ui_not_contains($alias_controller, 'curl ', 'Cloudflare alias form must not mutate external DNS');
+assert_cloudflare_ui_contains($alias_controller, 'array_key_exists($v_web_domain, $v_domain_connection_sites)', 'domain connection form does not enforce technical-site ownership');
+assert_cloudflare_ui_contains($alias_controller, '/inc/vx_domain_connections.php', 'domain connection form does not load its read-only projection helper');
+assert_cloudflare_ui_contains($domain_connections_helper, 'v-list-vx-web-domain-connection-capability', 'domain connection form does not show capability state');
+assert_cloudflare_ui_contains($alias_controller, 'v-add-vx-web-domain-connection ', 'domain connection form does not create a pending proof');
+assert_cloudflare_ui_contains($alias_controller, 'v-list-vx-cloudflare-web-domain-status ', 'domain connection form accepts non-technical local-DNS sites');
+assert_cloudflare_ui_contains($alias_controller, 'v-reconcile-vx-web-domain-connection ', 'domain connection form does not queue a bounded check');
+assert_cloudflare_ui_contains($alias_controller, 'v-spawn-ajax-process ', 'domain connection check is not dispatched asynchronously');
+assert_cloudflare_ui_not_contains($alias_controller, 'v-add-vx-cloudflare-web-alias ', 'new connection lifecycle still attaches a synchronous alias');
+assert_cloudflare_ui_not_contains($alias_controller, 'curl ', 'domain connection form must not mutate external DNS');
 assert_cloudflare_ui_contains($alias_template, 'name="token" value="<?=$_SESSION[\'token\']?>"', 'Cloudflare alias template lost its CSRF token');
 assert_cloudflare_ui_contains($alias_template, 'name="v_web_domain"', 'Cloudflare alias template lacks the owned website selector');
 assert_cloudflare_ui_contains($alias_template, 'name="v_cloudflare_domain"', 'Cloudflare alias template lacks the custom domain input');
+assert_cloudflare_ui_contains($alias_template, 'TXT', 'domain connection template does not render TXT proof');
+assert_cloudflare_ui_contains($alias_template, 'Retry check', 'domain connection template does not expose retry');
+assert_cloudflare_ui_contains($alias_template, 'Domain enrollment is disabled', 'domain connection template does not explain disabled enrollment');
 
 assert_cloudflare_ui_contains($dns_template, '/add/vx-cloudflare-domain/', 'DNS toolbar lacks the Cloudflare domain action');
 assert_cloudflare_ui_contains($dns_template, 'l-sort__create-btn2', 'DNS toolbar does not use the adjacent create-button style');
@@ -132,6 +136,8 @@ assert_cloudflare_ui_contains($edit_web_controller, 'v-list-vx-cloudflare-web-do
 assert_cloudflare_ui_contains($edit_web_controller, "\$v_cloudflare_status === 'managed'", 'web edit does not recognize exact managed status');
 assert_cloudflare_ui_contains($edit_web_controller, "\$v_cloudflare_status === 'degraded'", 'web edit does not fail closed for degraded managed metadata');
 assert_cloudflare_ui_contains($edit_web_controller, '/inc/vx_custom_domains.php', 'web edit does not load the custom-domain helper');
+assert_cloudflare_ui_contains($edit_web_controller, '/inc/vx_domain_connections.php', 'web edit does not load connection child guards');
+assert_cloudflare_ui_contains($edit_web_controller, 'vx_domain_connection_find_child_parent', 'web edit does not protect linked child edits');
 assert_cloudflare_ui_contains($edit_web_controller, 'vx_custom_domains_normalize($data[$v_domain][\'ALIAS\'])', 'web edit does not hydrate the persisted alias schema');
 assert_cloudflare_ui_contains($edit_web_controller, 'vx_custom_domains_validate($posted_aliases, $_GET[\'domain\']', 'web edit does not validate custom domains against the immutable primary');
 $edit_validation_position = strpos($edit_web_controller, 'vx_custom_domains_validate($posted_aliases');
@@ -160,6 +166,7 @@ foreach (array($edit_web_admin_template, $edit_web_user_template) as $edit_templ
     assert_cloudflare_ui_contains($edit_template, 'if (!empty($v_cloudflare_managed))', 'managed SSL template branch is missing');
     assert_cloudflare_ui_contains($edit_template, 'Cloudflare Origin CA — managed automatically', 'managed SSL ownership is not shown');
     assert_cloudflare_ui_contains($edit_template, 'Manual replacement and Lets Encrypt are disabled', 'managed SSL controls are not explained');
+    assert_cloudflare_ui_contains($edit_template, 'vx_domain_connection_render($v_domain_connections)', 'technical site edit does not render linked child state');
 }
 
 assert_cloudflare_ui_contains($custom_domains_helper, 'name="v_aliases"', 'custom-domain component lost the scalar aliases field');
