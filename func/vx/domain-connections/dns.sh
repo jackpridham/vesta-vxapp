@@ -15,14 +15,15 @@ vx_domain_connection_dns_query() {
     fi
     [[ "$type" =~ ^(A|AAAA|CAA|CNAME|TXT)$ ]] || return 1
     binary=$(vx_domain_connection_dns_binary)
-    result=$(/usr/bin/timeout 5 "$binary" +time=2 +tries=1 +short "$name" "$type" 2>/dev/null | /usr/bin/head -c "$VX_DOMAIN_CONNECTION_DNS_MAX_BYTES") || return 1
+    result=$(set -o pipefail; /usr/bin/timeout 5 "$binary" +time=2 +tries=1 +short "$name" "$type" 2>/dev/null | /usr/bin/head -c "$VX_DOMAIN_CONNECTION_DNS_MAX_BYTES") || return 1
     [[ ${#result} -lt $VX_DOMAIN_CONNECTION_DNS_MAX_BYTES ]] || return 1
     printf '%s\n' "$result"
 }
 vx_domain_connection_dns_status() {
-    local name=$1 binary result
+    local name=$1 type=${2:-A} binary result
     vx_cf_valid_domain "$name" || return 1; binary=$(vx_domain_connection_dns_binary)
-    result=$(/usr/bin/timeout 5 "$binary" +time=2 +tries=1 +dnssec +comments "$name" A 2>/dev/null | /usr/bin/head -c "$VX_DOMAIN_CONNECTION_DNS_MAX_BYTES") || return 1
+    [[ "$type" =~ ^(A|AAAA|CAA|CNAME|TXT)$ ]] || return 1
+    result=$(set -o pipefail; /usr/bin/timeout 5 "$binary" +time=2 +tries=1 +dnssec +comments "$name" "$type" 2>/dev/null | /usr/bin/head -c "$VX_DOMAIN_CONNECTION_DNS_MAX_BYTES") || return 1
     [[ ${#result} -lt $VX_DOMAIN_CONNECTION_DNS_MAX_BYTES && -n "$result" ]] || return 1
     if [[ "$result" =~ status:[[:space:]]*NOERROR ]]; then printf 'ok\n'
     elif [[ "$result" =~ status:[[:space:]]*SERVFAIL ]]; then printf 'servfail\n'
@@ -53,31 +54,35 @@ vx_domain_connection_dns_proof_observe() {
     /usr/bin/jq -cn --arg name "$name" --argjson proof "$proof" '{PROOF:$proof,NAME:$name}'
 }
 vx_domain_connection_dns_caa_ok() {
-    local policy=$1 current answer cname flags tag value allow=false has_issue=false i aliases
+    local policy=$1 current answer cname_answer cname flags flag_number tag value next allow=false has_issue=false i aliases
     local -a seen cname_lines
     vx_cf_valid_domain "$policy" || return 1
     # RFC 8659: CAA(policy) follows aliases, but an empty canonical RRset
     # resumes at Parent(policy), never at a parent of the alias target.
     for ((i=0;i<128;i++)); do
-        current=$policy; seen=("$current")
+        current=$policy; answer=''; seen=("$current")
         for ((aliases=0;aliases<VX_DOMAIN_CONNECTION_DNS_MAX_CHAIN;aliases++)); do
-            [[ $(vx_domain_connection_dns_status "$current" 2>/dev/null || :) == ok ]] || return 1
-            answer=$(vx_domain_connection_dns_query "$current" CAA 2>/dev/null) || return 1
-            mapfile -t cname_lines < <(vx_domain_connection_dns_query "$current" CNAME 2>/dev/null)
-            ((${#cname_lines[@]} == 1)) && [[ -z "${cname_lines[0]}" ]] && cname_lines=()
-            if ((${#cname_lines[@]} == 0)); then break; fi
+            [[ $(vx_domain_connection_dns_status "$current" CNAME 2>/dev/null || :) == ok ]] || return 1
+            cname_answer=$(vx_domain_connection_dns_query "$current" CNAME 2>/dev/null) || return 1
+            if [[ -z "$cname_answer" ]]; then
+                [[ $(vx_domain_connection_dns_status "$current" CAA 2>/dev/null || :) == ok ]] || return 1
+                answer=$(vx_domain_connection_dns_query "$current" CAA 2>/dev/null) || return 1
+                break
+            fi
+            mapfile -t cname_lines <<<"$cname_answer"
             ((${#cname_lines[@]} == 1)) || return 1
             cname=$(vx_domain_connection_dns_name "${cname_lines[0]}" 2>/dev/null || :) || return 1
-            [[ -n "$cname" && ( -z "$answer" || "$(vx_domain_connection_dns_name "$answer" 2>/dev/null || :)" == "$cname" ) ]] || return 1
+            [[ -n "$cname" ]] || return 1
             for value in "${seen[@]}"; do [[ "$value" != "$cname" ]] || return 1; done
             seen+=("$cname"); current=$cname
         done
         ((aliases < VX_DOMAIN_CONNECTION_DNS_MAX_CHAIN)) || return 1
         if [[ -n "$answer" ]]; then
             while IFS= read -r value; do
-                [[ "$value" =~ ^([0-9]+)[[:space:]]+([A-Za-z0-9-]+)[[:space:]]+\"([^\"]*)\"$ ]] || return 1
+                [[ "$value" =~ ^(0|[1-9][0-9]{0,2})[[:space:]]+([A-Za-z0-9-]+)[[:space:]]+\"([^\"]*)\"$ ]] || return 1
                 flags=${BASH_REMATCH[1]}; tag=${BASH_REMATCH[2],,}; value=${BASH_REMATCH[3]}
-                (( flags & 128 )) && [[ "$tag" != issue && "$tag" != issuewild && "$tag" != iodef ]] && return 1
+                flag_number=$((10#$flags)); (( flag_number <= 255 )) || return 1
+                (( flag_number & 128 )) && [[ "$tag" != issue && "$tag" != issuewild && "$tag" != iodef ]] && return 1
                 if [[ "$tag" == issue ]]; then
                     has_issue=true
                     [[ "$value" =~ ^letsencrypt\.org([[:space:]]*;.*)?$ ]] && allow=true
@@ -86,7 +91,8 @@ vx_domain_connection_dns_caa_ok() {
             [[ "$has_issue" == false || "$allow" == true ]] && return 0
             return 1
         fi
-        policy=${policy#*.}; [[ "$policy" != "$current" && -n "$policy" ]] || return 0
+        next=${policy#*.}; [[ "$next" != "$policy" ]] || return 0
+        policy=$next
     done
     return 1
 }
