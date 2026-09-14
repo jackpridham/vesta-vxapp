@@ -2,6 +2,7 @@
 # Execute the actual scheduled command against isolated service fixtures.
 set -euo pipefail
 root=$(cd "$(dirname "$0")/../.." && pwd)
+[[ -x $root/bin/v-apply-vx-graceful-services ]] || { echo 'FAIL: queued adapter is not executable'; exit 1; }
 work=$(mktemp -d)
 trap 'rm -rf -- "$work"' EXIT
 export VESTA=$work
