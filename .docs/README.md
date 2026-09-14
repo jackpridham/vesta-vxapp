@@ -12,6 +12,7 @@ Current documents:
 - [Development release and Packages permissions repair](validation/2026-09-05-development-release-packages-permissions.md)
 - [Development package editor and Docker navigation follow-up](validation/2026-09-05-development-panel-package-docker-repair.md)
 - [Production web-domain alias-sentinel hotfix](validation/2026-09-05-web-domain-alias-hotfix-production.md)
+- [Production panel quota release](validation/2026-09-14-production-panel-quota-release.md)
 - [Operator architecture and runbook](../docs/container-orchestration.md)
 - [Vesta control-plane release runbook](user-guides/vesta-control-plane-releases.md)
 - [Container workload deployment runbook](../DOCKER_ORCHESTRATION_DEPLOYMENT.md)
