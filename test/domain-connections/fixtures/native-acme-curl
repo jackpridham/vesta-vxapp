@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""Fixture CA transport for the actual native LE client's reused authorization."""
+import json
+import os
+import pathlib
+import sys
+
+args = sys.argv[1:]
+root = pathlib.Path(os.environ['VESTA'])
+url = next(arg for arg in args if arg.startswith('https://'))
+api = 'https://acme-v02.api.letsencrypt.org'
+if not url.startswith(api + '/'):
+    raise SystemExit('unexpected fixture destination')
+route = url[len(api):]
+with (root / 'acme-transport-effects').open('a') as log:
+    log.write(route + '\n')
+status = 200
+body = {}
+if route == '/directory':
+    pass
+elif route == '/acme/new-order':
+    status = 201
+    body = {'status': 'ready', 'authorizations': [api + '/acme/authz/fixture'],
+            'finalize': api + '/acme/finalize/fixture'}
+elif route == '/acme/authz/fixture':
+    # A valid authorization does not require a new token or HTTP-01 request.
+    body = {'status': 'valid', 'identifier': {'type': 'dns', 'value': 'www.customer.fixture.net'},
+            'challenges': []}
+    if (root / 'acme-auth-pending').exists():
+        body['status'] = 'pending'
+        body['challenges'] = [{'status': 'valid', 'type': 'http-01'}]
+elif route == '/acme/finalize/fixture':
+    body = {'status': 'valid', 'certificate': api + '/acme/cert/fixture'}
+elif route == '/acme/cert/fixture':
+    output = pathlib.Path(args[args.index('--output') + 1])
+    crt = (root / 'certificates/www.customer.fixture.net.crt').read_bytes()
+    output.write_bytes(crt + crt)
+else:
+    raise SystemExit('unexpected challenge or order route')
+print(f'HTTP/2 {status}\r')
+print('replay-nonce: fixture-nonce\r')
+if route == '/acme/new-order':
+    print(f'location: {api}/acme/order/fixture\r')
+print('\r')
+if route != '/acme/cert/fixture':
+    print(json.dumps(body, indent=2))

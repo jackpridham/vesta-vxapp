@@ -30,6 +30,7 @@ source "$VX_NATIVE_TEST_REPO/func/main.sh"
 HOMEDIR="${VESTA%/vesta}/home"
 increase_ip_value() { :; }
 decrease_ip_value() { :; }
+send_notice() { :; }
 # Ownership of fixture IPs belongs to the private test tree.
 STUB
 cat >"$VESTA/func/ip.sh" <<'STUB'
@@ -150,7 +151,7 @@ source "$VESTA/func/ip.sh"
 source "$VESTA/conf/vesta.conf"
 source "$VESTA/func/vx/domain-connections/main.sh"
 parent=s-aaaaaaaaaa.managed.example.test
-host=www.customer.example.net
+host=www.customer.fixture.net
 id=0123456789abcdef0123456789abcdef
 printf "DOMAIN='%s' IP='8.8.8.8' IP6='' ALIAS='' TPL='default' BACKEND='' PROXY='vx-proxy' PROXY_EXT='jpg' PROXY_MODE='proxy' PROXY_TARGET='http://127.0.0.1:8088' PROXY_PRESERVE_HOST='no' PROXY_PROFILE='standard' PROXY_TIMEOUT='60' PROXY_HEADERS='BusinessGUID: fixture-business-secret' PROXY_PATH='/app' SSL='yes' SSL_HOME='same' LETSENCRYPT='no' SUSPENDED='no' STATS=''\n" "$parent" >"$USER_DATA/web.conf"
 vx_cf_prepare_layout
@@ -188,7 +189,7 @@ vx_domain_connection_native_row alice "$host" || fail 'www primary was stripped'
 rendered="$HOMEDIR/alice/conf/web/$host.nginx.conf"
 grep -Fq 'location ^~ /.well-known/acme-challenge/' "$rendered" || fail 'challenge missing'
 grep -Fq 'return 404;' "$rendered" || fail 'holding missing'
-grep -Fq 'if ($http_host !~* ^(www\.customer\.example\.net)(:[0-9]+)?$) { return 444; }' "$rendered" || fail 'unknown Host guard missing'
+grep -Fq 'if ($http_host !~* ^(www\.customer\.fixture\.net)(:[0-9]+)?$) { return 444; }' "$rendered" || fail 'unknown Host guard missing'
 ! grep -Eq 'proxy_pass|document_errors|include ' "$rendered" || fail 'holding exposed tenant content'
 ! grep -Fq "www.$host" "$USER_DATA/web.conf" || fail 'www alias was added'
 ! grep -Fq 'fixture-business-secret' "$VESTA/effects" || fail 'header leaked through effects'
@@ -295,6 +296,42 @@ chmod +x "$BIN/v-list-users"
 jq -e '.RENEWAL.successful and (.RENEWAL.lastAttemptAt|type=="string")' "$record" >/dev/null || fail 'renewal result missing'
 vx_domain_connection_owner_lock alice
 vx_domain_connection_lock "$host"
+# Execute the shipped ACME client, not the fake CA adapter, for a reused valid
+# authorization. Only account provisioning and HTTP transport are fixtures;
+# CSR generation, parsing, native certificate replacement and state are real.
+mv "$BIN/v-add-letsencrypt-domain" "$BIN/v-add-letsencrypt-domain-fixture"
+python3 - "$root/bin/v-add-letsencrypt-domain" "$BIN/v-add-letsencrypt-domain" "$VESTA" <<'PY'
+import pathlib,sys
+source,destination,vesta = sys.argv[1:]
+p = pathlib.Path(destination)
+p.write_text(pathlib.Path(source).read_text().replace('/usr/local/vesta/log/',vesta+'/log/'))
+p.chmod(0o755)
+PY
+cp "$root/test/domain-connections/fixtures/native-acme-curl" "$work/os/curl"
+printf '#!/bin/bash\nexit 0\n' >"$BIN/v-add-letsencrypt-user"
+cat >"$BIN/v-generate-ssl-cert" <<'STUB'
+#!/bin/bash
+openssl req -new -key "$VESTA/certificates/$1.key" -subj "/CN=$1" -out "$VESTA/certificates/$1.csr" || exit
+printf 'DIR: %s\n' "$VESTA/certificates"
+STUB
+chmod +x "$BIN/v-add-letsencrypt-user" "$BIN/v-generate-ssl-cert"
+printf "KID='https://acme-v02.api.letsencrypt.org/acme/acct/fixture' THUMB='fixture-thumbprint'\n" >"$USER_DATA/ssl/le.conf"
+cp "$VESTA/certificates/$host.key" "$USER_DATA/ssl/user.key"
+mkdir -p "$VESTA/data/users/admin"
+printf 'v-update-letsencrypt-ssl\n' >"$VESTA/data/users/admin/cron.conf"
+old_cert=$(sha256sum "$USER_DATA/ssl/$host.crt")
+openssl req -x509 -newkey rsa:2048 -nodes -days 6 -subj "/CN=$host" -addext "subjectAltName=DNS:$host" -keyout "$VESTA/certificates/$host.key" -out "$VESTA/certificates/$host.crt" >/dev/null 2>&1
+touch "$VESTA/acme-auth-pending"
+expect_failure vx_domain_connection_native_issue "$record"
+[[ $(sha256sum "$USER_DATA/ssl/$host.crt") == "$old_cert" ]] || fail 'pending authorization changed certificate'
+! grep -Fxq /acme/finalize/fixture "$VESTA/acme-transport-effects" || fail 'pending authorization skipped challenge'
+rm "$VESTA/acme-auth-pending" "$VESTA/acme-transport-effects"
+vx_domain_connection_native_issue "$record" || fail 'real ACME client reused authorization'
+[[ $(sha256sum "$USER_DATA/ssl/$host.crt") != "$old_cert" ]] || fail 'reused authorization did not replace certificate'
+grep -Fxq /acme/finalize/fixture "$VESTA/acme-transport-effects" || fail 'ready order not finalized'
+[[ $(wc -l <"$VESTA/acme-transport-effects") == 5 ]] || fail 'unexpected ACME challenge request'
+rm "$work/os/curl"
+mv "$BIN/v-add-letsencrypt-domain-fixture" "$BIN/v-add-letsencrypt-domain"
 # Missing registry cannot disable child guards or expose it during rebuild.
 vx_domain_connection_native_record_load "$record"
 mv "$record" "$record.saved"

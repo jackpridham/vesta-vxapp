@@ -238,6 +238,12 @@ for auth in $authz; do
         echo "[$(date)] : EXIT=Let's Encrypt acme/authz bad status $status" >> /usr/local/vesta/log/letsencrypt.log
         check_result $E_CONNECT "Let's Encrypt acme/authz bad status $status"
     fi
+    # A recent native renewal may reuse an already-valid authorization. The
+    # CA can omit its challenge token; proceed directly toward finalization.
+    if vx_domain_connection_is_native_child "$user" "$domain" \
+        && printf '%s' "$answer" | /usr/bin/jq -Rse 'sub("^[^{]*"; "") | fromjson | .status == "valid"' >/dev/null 2>&1; then
+        continue
+    fi
 
     # Configuring challenge / STEP 4
     echo "[$(date)] : --- Configuring challenge / STEP 4 ---" >> /usr/local/vesta/log/letsencrypt.log
