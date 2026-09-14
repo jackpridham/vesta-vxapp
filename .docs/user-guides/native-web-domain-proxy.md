@@ -64,6 +64,12 @@ Edit all compact proxy options for an existing domain:
   'X-Business-GUID: EXAMPLE-GUID' yes
 ```
 
+This compact proxy-options command validates nginx configuration and reloads an
+active nginx service. It reports a failed reload without falling back to a full
+restart. Pass `no` to leave activation to the caller, or `scheduled` to defer the
+validated reload through Vesta's existing restart queue. The older generic
+restart commands keep their existing behavior.
+
 Multiple headers use `||` inside the single `HEADERS` argument:
 
 ```text

@@ -84,6 +84,21 @@ Only native `v-update-letsencrypt-ssl` schedules renewal. Failed native operatio
 retain recoverable intent; saved certificate recovery runs under the same locks.
 Restored records require a fresh proof before activation.
 
+Vortex-managed technical allocation, compact proxy-option changes, and native
+connection activation, certificate replacement, and cleanup validate the affected
+service configurations before applying them. Active web services are reloaded;
+a failed reload is not retried as a disruptive restart. Native connection
+recovery may use the existing service recovery command when a service is already
+inactive, and must verify that it becomes active.
+
+Managed technical allocation stages native domain and certificate writes with
+`RESTART=no`, then applies the complete configuration once. `RESTART=no` still
+leaves activation to the caller. Explicit `scheduled`, or an omitted restart
+argument with `SCHEDULED_RESTART=yes`, queues the Vortex apply command through the
+existing restart queue. Deferred execution must preserve unrelated queue entries
+and retain its own failed work for retry. Legacy restart commands remain outside
+this Vortex apply boundary.
+
 Shared target changes persist `target-operation.json` before any provider write.
 A random operation comment permits exact POST readback after process loss; an
 unrelated existing record is never adopted. The previously accepted `target.conf`
