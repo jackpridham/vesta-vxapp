@@ -85,6 +85,13 @@ source "$VESTA/func/vx/domain-connections/main.sh"
 source "$VESTA/conf/vesta.conf"
 vx_domain_connection_native_guard "$user" "$domain" issue || exit 10
 [[ -z $3 ]] || exit 10
+if [[ -f "$VESTA/acme-block" ]]; then
+    trap '' TERM
+    printf '%s\n' "$BASHPID" >"$VESTA/acme-pid"
+    sleep 30 &
+    printf '%s\n' "$!" >"$VESTA/acme-child-pid"
+    wait
+fi
 vx_domain_connection_native_write_challenge fixture-token fixture-thumbprint || exit 10
 printf 'acme %s\n' "$domain" >>"$VESTA/effects"
 [[ ! -f "$VESTA/acme-fail" ]] || exit 15
@@ -195,8 +202,15 @@ jq -e --arg parent "$parent" --arg host "$host" '.[$host].VX_CONNECTION_PARENT==
 # Local generated certs test the installation path, not public CA issuance.
 mkdir -p "$VESTA/certificates"
 openssl req -x509 -newkey rsa:2048 -nodes -days 3 -subj "/CN=$host" -addext "subjectAltName=DNS:$host" -keyout "$VESTA/certificates/$host.key" -out "$VESTA/certificates/$host.crt" >/dev/null 2>&1
-vx_domain_connection_native_issue "$record" || fail 'initial install'
+(umask 077; vx_domain_connection_native_issue "$record") || fail 'initial install'
 [[ $(cat "$HOMEDIR/alice/web/$host/public_html/.well-known/acme-challenge/fixture-token") == fixture-token.fixture-thumbprint ]] || fail 'native challenge write'
+# Read the challenge as an unprivileged HTTP worker, starting at public_html
+# so unrelated fixture ancestry permissions do not affect this assertion.
+python3 - "$HOMEDIR/alice/web/$host/public_html" <<'PY'
+import os,sys
+os.chdir(sys.argv[1]); os.setgroups([]); os.setgid(65534); os.setuid(65534)
+assert open('.well-known/acme-challenge/fixture-token').read().strip() == 'fixture-token.fixture-thumbprint'
+PY
 vx_domain_connection_native_activate "$record" || fail 'activation'
 # Public HTTPS transport is a fixture; mismatched identity, trust failure and
 # missing admitted ingress must all remain unaccepted.
@@ -212,6 +226,26 @@ rm "$VESTA/https-wrong"
 # Replacement plus failed restart must retain the accepted certificate/config.
 old_cert=$(sha256sum "$USER_DATA/ssl/$host.crt")
 old_config=$(sha256sum "$HOMEDIR/alice/conf/web/$host.nginx.ssl.conf")
+# Cancel the actual issue transaction through the worker's outer timeout.
+# Its inner timeout must stop both the ACME adapter and its descendants.
+touch "$VESTA/acme-block"
+timeout_status=0
+VX_DOMAIN_CONNECTION_OWNER_LOCK_FD="$VX_DOMAIN_CONNECTION_OWNER_LOCK_FD" VX_DOMAIN_CONNECTION_LOCK_FD="$VX_DOMAIN_CONNECTION_LOCK_FD" /usr/bin/timeout --kill-after=10 2 /bin/bash -c 'user=alice; source "$VESTA/func/main.sh"; source "$VESTA/conf/vesta.conf"; source "$VESTA/func/vx/domain-connections/main.sh"; vx_domain_connection_native_issue "$1"' _ "$record" || timeout_status=$?
+[[ "$timeout_status" == 124 ]] || fail 'issue timeout did not execute'
+python3 - "$VESTA/acme-pid" "$VESTA/acme-child-pid" <<'PY'
+import pathlib,sys,time
+for filename in sys.argv[1:]:
+    pid = pathlib.Path(filename).read_text().strip()
+    stat = pathlib.Path('/proc')/pid/'stat'
+    for _ in range(50):
+        if not stat.exists() or stat.read_text().split()[2] == 'Z': break
+        time.sleep(.02)
+    else: raise AssertionError('ACME process survived worker cancellation')
+PY
+rm "$VESTA/acme-block"
+jq -e '.RECOVERY.required' "$record" >/dev/null || fail 'timeout lost recovery snapshot'
+vx_domain_connection_native_recover "$record" || fail 'timeout recovery'
+[[ $(sha256sum "$USER_DATA/ssl/$host.crt") == "$old_cert" ]] || fail 'timeout changed certificate'
 openssl req -x509 -newkey rsa:2048 -nodes -days 4 -subj "/CN=$host" -addext "subjectAltName=DNS:$host" -keyout "$VESTA/certificates/$host.key" -out "$VESTA/certificates/$host.crt" >/dev/null 2>&1
 touch "$VESTA/restart-fail-once"
 expect_failure vx_domain_connection_native_issue "$record"

@@ -469,7 +469,7 @@ PY
 )
 
 vx_domain_connection_native_issue() (
-    local record=$1 snapshot result=0 recovery=false payload
+    local record=$1 snapshot result=0 recovery=false payload issue_pid
     vx_domain_connection_native_context "$record" || return 1
     vx_domain_connection_authorize_native_tls "$VX_DC_OWNER" "$VX_DC_HOSTNAME" "$VX_DC_CONNECTION_ID" "$VX_DC_GENERATION" || return 1
     vx_domain_connection_native_marker_matches || return 1
@@ -479,7 +479,20 @@ vx_domain_connection_native_issue() (
     payload=$(/usr/bin/jq --arg artifact "${snapshot##*/}" '.RECOVERY={required:true,artifact:$artifact,operation:"certificate_install"}' <<<"$payload")
     vx_domain_connection_record_write "$VX_DC_HOSTNAME" "$payload" || return 1
     export VX_DOMAIN_CONNECTION_RECORD="$record" VX_DOMAIN_CONNECTION_NATIVE_TLS=1
-    /usr/bin/timeout --signal=TERM --kill-after=15 300 "$BIN/v-add-letsencrypt-domain" "$VX_DC_OWNER" "$VX_DC_HOSTNAME" '' >/dev/null 2>&1 || result=$?
+    # timeout owns a separate process group. Forward worker cancellation to
+    # that group so neither the ACME client nor its descendants outlive it.
+    /usr/bin/timeout --signal=TERM --kill-after=5 300 "$BIN/v-add-letsencrypt-domain" "$VX_DC_OWNER" "$VX_DC_HOSTNAME" '' >/dev/null 2>&1 &
+    issue_pid=$!
+    trap '
+        trap "" TERM INT
+        kill -TERM -- "-$issue_pid" 2>/dev/null || :
+        /usr/bin/sleep 1
+        kill -KILL -- "-$issue_pid" 2>/dev/null || :
+        wait "$issue_pid" 2>/dev/null || :
+        exit 143
+    ' TERM INT
+    wait "$issue_pid" || result=$?
+    trap - TERM INT
     if (( result == 0 )); then
         vx_domain_connection_native_configtest && vx_domain_connection_native_restart || result=1
     fi
@@ -608,6 +621,9 @@ try:
         try: os.mkdir(part, 0o755, dir_fd=fd)
         except FileExistsError: pass
         child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+        # The registry writer leaves umask 077 in the worker. HTTP-01 needs
+        # these public directories traversable even on an interrupted retry.
+        os.fchmod(child, 0o755)
         os.close(fd); fd = child
     temp = ".vx-acme-" + secrets.token_hex(16)
     out = os.open(temp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=fd)
