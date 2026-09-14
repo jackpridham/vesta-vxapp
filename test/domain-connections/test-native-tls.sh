@@ -44,6 +44,11 @@ ln -s "$root/func/vx/cloudflare" "$VESTA/func/vx/cloudflare"
 ln -s "$root/func/vx/proxy.sh" "$VESTA/func/vx/proxy.sh"
 cat >"$VESTA/func/vx/domain-connections/main.sh" <<'STUB'
 source "$VX_NATIVE_TEST_REPO/func/vx/domain-connections/main.sh"
+# Keep the production restart helper; replace only its external service-state
+# observer because this fixture does not start host daemons.
+restart_helper=$(declare -f vx_domain_connection_native_restart)
+restart_helper=${restart_helper//\/usr\/bin\/systemctl/$VESTA/bin/systemctl}
+eval "$restart_helper"
 vx_domain_connection_native_configtest() {
     printf 'configtest\n' >>"$VESTA/effects"
     [[ ! -f "$VESTA/config-fail" ]]
@@ -77,6 +82,10 @@ done
 cat >"$VESTA/bin/v-update-user-counters" <<'STUB'
 #!/bin/bash
 exit 0
+STUB
+cat >"$VESTA/bin/systemctl" <<'STUB'
+#!/bin/bash
+[[ "$1 $2" == 'is-active --quiet' ]]
 STUB
 # ACME fixture returns genuine X.509/key material through the real native SSL
 # adapters; install, copy, state mutation and rollback remain production logic.

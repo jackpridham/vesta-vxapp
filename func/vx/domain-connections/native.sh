@@ -216,7 +216,18 @@ vx_domain_connection_native_configtest() (
 )
 
 vx_domain_connection_native_restart() {
-    "$BIN/v-restart-web" now >/dev/null 2>&1 && "$BIN/v-restart-proxy" now >/dev/null 2>&1
+    local service_name
+    "$BIN/v-restart-web" now >/dev/null 2>&1 && "$BIN/v-restart-proxy" now >/dev/null 2>&1 || return 1
+    # Some init-script reloads return success while systemd reports a stopped
+    # service. Do not accept activation from the adapter's exit code alone.
+    for service_name in "$WEB_SYSTEM" "$PROXY_SYSTEM"; do
+        [[ -n "$service_name" && "$service_name" != remote ]] || continue
+        if ! /usr/bin/systemctl is-active --quiet "$service_name"; then
+            vx_domain_connection_native_configtest || return 1
+            "$BIN/v-restart-service" "$service_name" >/dev/null 2>&1 || return 1
+            /usr/bin/systemctl is-active --quiet "$service_name" || return 1
+        fi
+    done
 }
 
 vx_domain_connection_native_activate() (

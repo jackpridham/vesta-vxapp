@@ -15,8 +15,14 @@ validator=${validator//\/usr\/sbin\/apache2ctl/$work/apache2ctl}
 validator=${validator//\/usr\/sbin\/nginx/$work/nginx}
 validator=${validator//\/usr\/sbin\/service/$work/service}
 eval "$validator"
+restart_helper=$(declare -f vx_domain_connection_native_restart)
+restart_helper=${restart_helper//\/usr\/bin\/systemctl/$work/systemctl}
+eval "$restart_helper"
 cat >"$work/systemctl" <<'STUB'
 #!/bin/bash
+if [[ "$1 $2" == 'is-active --quiet' ]]; then
+    [[ ! -f "$VX_CONFIGTEST_FIXTURE/$3-inactive" ]]; exit
+fi
 [[ "$*" == 'show nginx --property=LimitNOFILESoft --value' ]] || exit 1
 printf '%s\n' 256
 STUB
@@ -50,4 +56,27 @@ chmod +x "$work/"{systemctl,apache2ctl,nginx,service}
     touch "$work/apache-invalid"
     if vx_domain_connection_native_configtest; then echo 'FAIL: invalid Apache configuration accepted'; exit 1; fi
 )
-printf 'PASS: native service validators and isolated descriptor limit\n'
+rm "$work/apache-invalid"
+BIN=$work WEB_SYSTEM=apache2 PROXY_SYSTEM=nginx
+for command in v-restart-web v-restart-proxy; do
+    printf '#!/bin/bash\nexit 0\n' >"$work/$command"
+done
+cat >"$work/v-restart-service" <<'STUB'
+#!/bin/bash
+printf 'fallback %s\n' "$1" >>"$VX_CONFIGTEST_FIXTURE/effects"
+[[ ! -f "$VX_CONFIGTEST_FIXTURE/fallback-no-effect" ]] || exit 0
+rm -f "$VX_CONFIGTEST_FIXTURE/$1-inactive"
+STUB
+chmod +x "$work/"v-restart-*
+touch "$work/apache2-inactive"
+vx_domain_connection_native_restart
+[[ ! -f "$work/apache2-inactive" ]] || { echo 'FAIL: stopped Apache was not recovered'; exit 1; }
+grep -Fxq 'fallback apache2' "$work/effects"
+touch "$work/apache2-inactive" "$work/fallback-no-effect"
+if vx_domain_connection_native_restart; then echo 'FAIL: false successful restart accepted'; exit 1; fi
+rm "$work/fallback-no-effect"
+touch "$work/nginx-invalid"
+before=$(wc -l <"$work/effects")
+if vx_domain_connection_native_restart; then echo 'FAIL: restarted invalid configuration'; exit 1; fi
+[[ $(tail -n +"$((before+1))" "$work/effects") != *fallback* ]] || { echo 'FAIL: invalid config reached restart'; exit 1; }
+printf 'PASS: native validators, isolated descriptor limit and actual restart state\n'
