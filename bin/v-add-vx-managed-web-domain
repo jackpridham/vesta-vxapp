@@ -15,6 +15,7 @@ proxy_ext=$5
 
 source "$VESTA/func/main.sh"
 source "$VESTA/func/vx/cloudflare/main.sh"
+source "$VESTA/func/vx/graceful-apply.sh"
 source "$VESTA/conf/vesta.conf"
 
 
@@ -41,7 +42,7 @@ if ! vx_cf_allocate_domain_locked; then
 fi
 managed_domain=$VX_CF_ALLOCATED_DOMAIN
 
-native_args=("$user" "$managed_domain" "$ip" "$restart" "$aliases")
+native_args=("$user" "$managed_domain" "$ip" no "$aliases")
 if (( $# >= 5 )); then
     native_args+=("$proxy_ext")
 fi
@@ -54,7 +55,7 @@ if ! VESTA="$VESTA" "$BIN/v-add-web-domain" "${native_args[@]}" >/dev/null 2>&1;
     # Native create is not transactional and can fail after creating partial
     # local state. Its ordinary delete path is the bounded compensation.
     VESTA="$VESTA" "$BIN/v-delete-web-domain" "$user" "$managed_domain" \
-        >/dev/null 2>&1 || :
+        no >/dev/null 2>&1 || :
     check_result "$E_UPDATE" 'native_create_failed'
 fi
 
@@ -63,17 +64,28 @@ if ! vx_cf_reconcile_locked "$user" "$managed_domain"; then
     vx_cf_cleanup_locked "$user" "$managed_domain" >/dev/null 2>&1 || :
     vx_cf_lock_release || :
     VESTA="$VESTA" "$BIN/v-delete-web-domain" "$user" "$managed_domain" \
-        >/dev/null 2>&1 || :
+        no >/dev/null 2>&1 || :
     check_result "$E_CONNECT" "$original_result"
 fi
-if ! vx_cf_origin_reconcile_locked "$user" "$managed_domain" "$restart"; then
+if ! vx_cf_origin_reconcile_locked "$user" "$managed_domain" no; then
     original_result=${VX_CF_STATUS:-certificate_error}
     vx_cf_origin_cleanup_locked "$user" "$managed_domain" >/dev/null 2>&1 || :
     vx_cf_cleanup_locked "$user" "$managed_domain" >/dev/null 2>&1 || :
     vx_cf_lock_release || :
     VESTA="$VESTA" "$BIN/v-delete-web-domain" "$user" "$managed_domain" \
-        >/dev/null 2>&1 || :
+        no >/dev/null 2>&1 || :
     check_result "$E_CONNECT" "$original_result"
+fi
+if ! vx_graceful_apply "$restart" no "$WEB_SYSTEM" "$PROXY_SYSTEM"; then
+    # A partial reload may already expose the new vhost. Remove only the
+    # allocation this command owns, then reload the restored configuration.
+    vx_cf_origin_cleanup_locked "$user" "$managed_domain" >/dev/null 2>&1 || :
+    vx_cf_cleanup_locked "$user" "$managed_domain" >/dev/null 2>&1 || :
+    vx_cf_lock_release || :
+    VESTA="$VESTA" "$BIN/v-delete-web-domain" "$user" "$managed_domain" \
+        no >/dev/null 2>&1 || :
+    vx_graceful_apply now no "$WEB_SYSTEM" "$PROXY_SYSTEM" || :
+    check_result "$E_RESTART" 'graceful service apply failed'
 fi
 vx_cf_lock_release || check_result "$E_UPDATE" 'state_error'
 

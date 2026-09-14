@@ -1,0 +1,44 @@
+#!/bin/bash
+# info: apply queued Vortex web service configuration gracefully
+# options: SERVICE [...]
+
+source "$VESTA/func/main.sh"
+source "$VESTA/func/vx/graceful-apply.sh"
+source "$VESTA/conf/vesta.conf"
+queue_line="$BIN/${0##*/} $*"
+if (( $# )) && [[ "${!#}" == now ]]; then
+    set -- "${@:1:$(($# - 1))}"
+fi
+
+check_args 1 "$#" 'SERVICE [...]'
+[[ $EUID == 0 ]] || check_result "$E_FORBIDEN" 'root required'
+services=()
+for service in "$@"; do
+    case "$service" in
+        web) service="$WEB_SYSTEM" ;;
+        proxy) service="$PROXY_SYSTEM" ;;
+        *) check_result "$E_ARGS" 'invalid graceful service' ;;
+    esac
+    [[ " ${services[*]} " == *" $service "* ]] || services+=("$service")
+done
+
+vx_graceful_apply now no "${services[@]}" \
+    || check_result "$E_RESTART" 'graceful service apply failed'
+QUEUE_LINE="$queue_line" /usr/bin/python3 - "$VESTA/data/queue/restart.pipe" <<'PY'
+import os, sys
+
+line = (os.environ['QUEUE_LINE'] + '\n').encode()
+with open(sys.argv[1], 'r+b', buffering=0) as queue:
+    while True:
+        offset = queue.tell()
+        current = queue.readline()
+        if not current:
+            break
+        if current == line:
+            # Keep the inode and byte offsets stable for legacy O_APPEND
+            # producers. Blank acknowledged lines are harmless to bash.
+            queue.seek(offset)
+            queue.write(b' ' * (len(current) - 1) + b'\n')
+            break
+PY
+exit

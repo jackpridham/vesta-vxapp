@@ -191,43 +191,11 @@ vx_domain_connection_native_render() (
 )
 
 vx_domain_connection_native_configtest() (
-    local service_name service_limit
-    for service_name in "$WEB_SYSTEM" "$PROXY_SYSTEM"; do
-        [[ -n "$service_name" && "$service_name" != remote ]] || continue
-        case "$service_name" in
-            apache2)
-                # Some packaged init scripts do not expose configtest.
-                /usr/sbin/apache2ctl configtest >/dev/null 2>&1 || return 1
-                ;;
-            nginx)
-                # nginx -t opens each vhost log. Match the running service's
-                # configured descriptor limit in this validator process only;
-                # a CLI's lower default can otherwise reject valid live config.
-                service_limit=$(/usr/bin/systemctl show nginx --property=LimitNOFILESoft --value 2>/dev/null) || service_limit=''
-                if [[ -n "$service_limit" ]]; then
-                    [[ "$service_limit" =~ ^[0-9]+$ ]] || return 1
-                    ulimit -Sn "$service_limit" || return 1
-                fi
-                /usr/sbin/nginx -t >/dev/null 2>&1 || return 1
-                ;;
-            *) /usr/sbin/service "$service_name" configtest >/dev/null 2>&1 || return 1 ;;
-        esac
-    done
+    vx_graceful_apply_configtest "$WEB_SYSTEM" "$PROXY_SYSTEM"
 )
 
 vx_domain_connection_native_restart() {
-    local service_name
-    "$BIN/v-restart-web" now >/dev/null 2>&1 && "$BIN/v-restart-proxy" now >/dev/null 2>&1 || return 1
-    # Some init-script reloads return success while systemd reports a stopped
-    # service. Do not accept activation from the adapter's exit code alone.
-    for service_name in "$WEB_SYSTEM" "$PROXY_SYSTEM"; do
-        [[ -n "$service_name" && "$service_name" != remote ]] || continue
-        if ! /usr/bin/systemctl is-active --quiet "$service_name"; then
-            vx_domain_connection_native_configtest || return 1
-            "$BIN/v-restart-service" "$service_name" >/dev/null 2>&1 || return 1
-            /usr/bin/systemctl is-active --quiet "$service_name" || return 1
-        fi
-    done
+    vx_graceful_apply now yes "$WEB_SYSTEM" "$PROXY_SYSTEM"
 }
 
 vx_domain_connection_native_activate() (

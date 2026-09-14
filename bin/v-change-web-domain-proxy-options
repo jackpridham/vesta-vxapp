@@ -28,6 +28,7 @@ source $VESTA/func/domain.sh
 source $VESTA/func/ip.sh
 source $VESTA/func/docker.sh
 source $VESTA/func/vx/proxy.sh
+source "$VESTA/func/vx/graceful-apply.sh"
 source "$VESTA/func/vx/domain-connections/main.sh" 2>/dev/null || :
 source "$VESTA/func/vx/compose/routes.sh"
 source $VESTA/conf/vesta.conf
@@ -123,8 +124,8 @@ PROXY_HEADERS="$saved_proxy_headers"
 PROXY_PATH="$saved_proxy_path"
 vx_proxy_update_web_conf
 
-# Restarting proxy
-$BIN/v-restart-proxy $restart
+# Applying proxy configuration without interrupting active requests
+vx_graceful_apply "$restart" no "$PROXY_SYSTEM"
 check_result $? "Proxy restart failed" >/dev/null
 
 # Logging

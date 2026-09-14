@@ -30,10 +30,22 @@ run_vesta() {
         VX_CLOUDFLARE_TEST_CURL="$strict_stub" "$@"
 }
 
-/usr/bin/mkdir -p "$vesta_root/bin" "$vesta_root/conf" \
+/usr/bin/mkdir -p "$vesta_root/bin" "$vesta_root/conf" "$vesta_root/func/vx" \
     "$vesta_root/data/users/alice" "$vesta_root/data/ips" "$vesta_root/log" \
     "$vesta_root/home/alice/conf/web"
-/usr/bin/ln -s "$repo_root/func" "$vesta_root/func"
+/usr/bin/ln -s "$repo_root/func/main.sh" "$vesta_root/func/main.sh"
+/usr/bin/ln -s "$repo_root/func/domain.sh" "$vesta_root/func/domain.sh"
+/usr/bin/ln -s "$repo_root/func/vx/cloudflare" "$vesta_root/func/vx/cloudflare"
+python3 - "$repo_root" "$vesta_root" <<'PY'
+import pathlib,sys
+repo,vesta=map(pathlib.Path,sys.argv[1:])
+source=(repo/'func/vx/graceful-apply.sh').read_text()
+for old,new in [('/usr/bin/systemctl',str(vesta/'bin/systemctl')),
+                ('/usr/sbin/nginx',str(vesta/'bin/nginx')),
+                ('/usr/sbin/service',str(vesta/'bin/service'))]:
+    source=source.replace(old,new)
+(vesta/'func/vx/graceful-apply.sh').write_text(source)
+PY
 for command in v-configure-vx-cloudflare v-list-vx-cloudflare-status \
     v-change-vx-dns-provider v-add-vx-managed-web-domain \
     v-reconcile-vx-cloudflare-web-domain v-delete-vx-cloudflare-web-domain \
@@ -53,6 +65,23 @@ printf "DNS_SYSTEM='bind9'\nVX_MANAGED_DNS_PROVIDER='local'\nWEB_SYSTEM='nginx'\
 printf "SUSPENDED='no' WEB_DOMAINS='unlimited' WEB_ALIASES='unlimited'\n" \
     >"$vesta_root/data/users/alice/user.conf"
 : >"$vesta_root/data/users/alice/web.conf"
+cat >"$vesta_root/bin/systemctl" <<'STUB'
+#!/bin/bash
+if [[ "$1 $2" == 'is-active --quiet' ]]; then exit; fi
+[[ "$*" == 'show nginx --property=LimitNOFILESoft --value' ]] || exit 1
+printf '256\n'
+STUB
+cat >"$vesta_root/bin/nginx" <<'STUB'
+#!/bin/bash
+printf 'configtest\n' >>"$VESTA/graceful-effects"
+[[ ! -f "$VESTA/graceful-config-fail" ]]
+STUB
+cat >"$vesta_root/bin/service" <<'STUB'
+#!/bin/bash
+printf '%s %s\n' "$1" "$2" >>"$VESTA/graceful-effects"
+[[ ! -f "$VESTA/graceful-reload-fail" ]]
+STUB
+/usr/bin/chmod 755 "$vesta_root/bin/"{systemctl,nginx,service}
 printf "NAT='192.0.2.20' OWNER='admin' STATUS='shared'\n" \
     >"$vesta_root/data/ips/192.0.2.10"
 
@@ -881,5 +910,29 @@ fi
 /usr/bin/grep -n 'vx_cf_reconcile_alias_change' \
     "$repo_root/bin/v-add-web-domain-alias" "$repo_root/bin/v-delete-web-domain-alias" \
     >/dev/null || fail 'generic alias paths can bypass Origin certificate rotation'
+
+# Managed allocation stages native/provider mutations with restart=no, then
+# performs one validated reload at its owned boundary and compensates a failed
+# final configtest.
+: >"$vesta_root/graceful-effects"
+reload_domain=$(run_vesta "$vesta_root/bin/v-add-vx-managed-web-domain" alice \
+    192.0.2.10 yes none) || fail 'managed graceful create failed'
+[[ $(<"$vesta_root/graceful-effects") == $'configtest\nnginx reload' ]] \
+    || fail 'managed create did not use one reload-only apply'
+run_vesta "$vesta_root/bin/v-delete-vx-cloudflare-web-domain" alice "$reload_domain" \
+    >/dev/null || fail 'managed graceful fixture cleanup failed'
+before_domains=$(/usr/bin/wc -l <"$vesta_root/data/users/alice/web.conf")
+touch "$vesta_root/graceful-config-fail"
+if failed_apply=$(run_vesta "$vesta_root/bin/v-add-vx-managed-web-domain" alice \
+    192.0.2.10 yes none); then
+    fail 'managed create accepted a failed final configtest'
+fi
+/usr/bin/rm -f -- "$vesta_root/graceful-config-fail"
+[[ "$failed_apply" == 'Error: graceful service apply failed' ]] \
+    || fail 'failed final apply did not return a stable error'
+[[ $(/usr/bin/wc -l <"$vesta_root/data/users/alice/web.conf") == "$before_domains" ]] \
+    || fail 'failed final apply did not compensate native state'
+[[ ! -s "$vesta_root/data/vx/cloudflare/stub-record.conf" ]] \
+    || fail 'failed final apply did not compensate provider state'
 
 printf 'PASS: Cloudflare managed-domain provider and lifecycle\n'

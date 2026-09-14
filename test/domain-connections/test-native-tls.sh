@@ -45,14 +45,20 @@ ln -s "$root/func/vx/cloudflare" "$VESTA/func/vx/cloudflare"
 ln -s "$root/func/vx/proxy.sh" "$VESTA/func/vx/proxy.sh"
 cat >"$VESTA/func/vx/domain-connections/main.sh" <<'STUB'
 source "$VX_NATIVE_TEST_REPO/func/vx/domain-connections/main.sh"
-# Keep the production restart helper; replace only its external service-state
-# observer because this fixture does not start host daemons.
-restart_helper=$(declare -f vx_domain_connection_native_restart)
-restart_helper=${restart_helper//\/usr\/bin\/systemctl/$VESTA/bin/systemctl}
-eval "$restart_helper"
 vx_domain_connection_native_configtest() {
     printf 'configtest\n' >>"$VESTA/effects"
     [[ ! -f "$VESTA/config-fail" ]]
+}
+vx_graceful_apply() {
+    local restart=$1 recover_inactive=$2 service_name
+    shift 2
+    [[ "$restart" != no ]] || return 0
+    vx_domain_connection_native_configtest || return 1
+    for service_name in "$@"; do
+        [[ -n "$service_name" && "$service_name" != remote ]] || continue
+        "$VESTA/bin/service" "$service_name" reload || return 1
+        "$VESTA/bin/systemctl" is-active --quiet "$service_name" || return 1
+    done
 }
 vx_domain_connection_native_https_identity() {
     printf 'https %s %s\n' "$1" "$2" >>"$VESTA/effects"
@@ -80,6 +86,11 @@ if [[ -f "$VESTA/restart-fail-once" ]]; then rm "$VESTA/restart-fail-once"; exit
 STUB
 chmod +x "$VESTA/bin/$command"
 done
+cat >"$VESTA/bin/service" <<'STUB'
+#!/bin/bash
+printf 'reload %s\n' "$1" >>"$VESTA/effects"
+if [[ -f "$VESTA/restart-fail-once" ]]; then rm "$VESTA/restart-fail-once"; exit 23; fi
+STUB
 cat >"$VESTA/bin/v-update-user-counters" <<'STUB'
 #!/bin/bash
 exit 0
@@ -87,6 +98,14 @@ STUB
 cat >"$VESTA/bin/systemctl" <<'STUB'
 #!/bin/bash
 [[ "$1 $2" == 'is-active --quiet' ]]
+STUB
+cat >"$VESTA/bin/apache2ctl" <<'STUB'
+#!/bin/bash
+[[ ! -f "$VESTA/config-fail" ]]
+STUB
+cat >"$VESTA/bin/nginx" <<'STUB'
+#!/bin/bash
+[[ ! -f "$VESTA/config-fail" ]]
 STUB
 # ACME fixture returns genuine X.509/key material through the real native SSL
 # adapters; install, copy, state mutation and rollback remain production logic.
@@ -113,6 +132,20 @@ vx_domain_connection_native_install_certificate "$VESTA/certificates" || exit $?
 update_object_value web DOMAIN "$domain" '$LETSENCRYPT' yes
 STUB
 chmod +x "$VESTA/bin/"*
+python3 - "$root" "$VESTA" <<'PY'
+import pathlib,sys
+root,vesta=map(pathlib.Path,sys.argv[1:])
+source=(root/'func/vx/graceful-apply.sh').read_text()
+for old,new in [('/usr/bin/systemctl',str(vesta/'bin/systemctl')),
+                ('/usr/sbin/apache2ctl',str(vesta/'bin/apache2ctl')),
+                ('/usr/sbin/nginx',str(vesta/'bin/nginx')),
+                ('/usr/sbin/service',str(vesta/'bin/service'))]:
+    source=source.replace(old,new)
+(vesta/'func/vx/graceful-apply.sh').write_text(source)
+(vesta/'bin/v-apply-vx-graceful-services').write_text(
+    (root/'bin/v-apply-vx-graceful-services').read_text())
+(vesta/'bin/v-apply-vx-graceful-services').chmod(0o755)
+PY
 cat >"$VESTA/conf/vesta.conf" <<'CONF'
 WEB_SYSTEM='apache2'
 WEB_SSL='yes'
@@ -150,6 +183,21 @@ source "$VESTA/func/domain.sh"
 source "$VESTA/func/ip.sh"
 source "$VESTA/conf/vesta.conf"
 source "$VESTA/func/vx/domain-connections/main.sh"
+queue_line="$BIN/v-apply-vx-graceful-services web proxy now"
+printf 'unrelated-before\n%s\nunrelated-after\n' "$queue_line" \
+    >"$VESTA/data/queue/restart.pipe"
+"$BIN/v-apply-vx-graceful-services" web proxy now \
+    || fail 'queued graceful apply failed'
+grep -Fxq unrelated-before "$VESTA/data/queue/restart.pipe" \
+    && grep -Fxq unrelated-after "$VESTA/data/queue/restart.pipe" \
+    && ! grep -Fxq "$queue_line" "$VESTA/data/queue/restart.pipe" \
+    || fail 'queued graceful apply changed unrelated work'
+printf '%s\n' "$queue_line" >"$VESTA/data/queue/restart.pipe"
+touch "$VESTA/restart-fail-once"
+expect_failure "$BIN/v-apply-vx-graceful-services" web proxy now
+grep -Fxq "$queue_line" "$VESTA/data/queue/restart.pipe" \
+    || fail 'failed queued graceful apply lost retry work'
+: >"$VESTA/data/queue/restart.pipe"
 parent=s-aaaaaaaaaa.managed.example.test
 host=www.customer.fixture.net
 id=0123456789abcdef0123456789abcdef
