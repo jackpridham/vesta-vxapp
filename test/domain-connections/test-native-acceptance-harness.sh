@@ -31,6 +31,10 @@ EOF
 cat >"$test_root/bin/ssh" <<'EOF'
 #!/bin/bash
 [[ $* == *'env VESTA=/usr/local/vesta'* ]] || exit 1
+for arg in "$@"; do
+    [[ $arg == -n ]] && break
+done
+[[ ${arg:-} == -n ]] || cat >/dev/null
 case "$*" in
   *capability*) printf '%s\n' '{"version":1,"capabilities":{"connectionTarget":"connect.acceptance.example.test","ingress":{"ipv4":["203.0.113.10"],"ipv6":[],"supportsApex":true}}}' ;;
   *) printf '%s\n' '{"version":1,"connections":[{"connectionID":"one","hostname":"one.example.test","state":"connected","observations":{"native":{"CONFIG_VALID":true}}},{"connectionID":"two","hostname":"two.example.test","state":"connected"}]}' ;;
@@ -43,8 +47,15 @@ cat >"$config" <<EOF
 {"schema":1,"target":{"ssh_host":"192.168.200.100","public_ingress_ipv4":"203.0.113.10"},"connection_target":"connect.acceptance.example.test","resolvers":["1.1.1.1","8.8.8.8"],"sites":[{"owner":"Jack9f6fa","technical_fqdn":"s-one.example.test","customer_fqdn":"one.example.test","www_fqdn":"www.one.example.test","connection_id":"one","challenge_path":"/.well-known/acme-challenge/one","challenge_sha256":"$fixture_sha","site_sha256":"$fixture_sha","technical_sha256":"$fixture_sha","proxy":{"enabled":true,"hostname":"proxy.one.example.test","site_sha256":"$fixture_sha"}},{"owner":"bob","technical_fqdn":"s-two.example.test","customer_fqdn":"two.example.test","www_fqdn":"www.two.example.test","connection_id":"two","challenge_path":"/.well-known/acme-challenge/two","challenge_sha256":"$fixture_sha","site_sha256":"$fixture_sha","technical_sha256":"$fixture_sha","proxy":{"enabled":false}}]}
 EOF
 chmod 600 "$config"
-PATH="$test_root/bin:$PATH" "$repo_root/test/domain-connections/run-native-acceptance.sh" --config-file "$config" \
+output=$(PATH="$test_root/bin:$PATH" "$repo_root/test/domain-connections/run-native-acceptance.sh" --config-file "$config") \
     || fail 'protected read-only fixture did not pass'
+printf '%s\n' "$output"
+grep -Fq 'registry connected one.example.test                     PASS' <<<"$output" \
+    || fail 'first site was not evaluated'
+grep -Fq 'registry connected two.example.test                     PASS' <<<"$output" \
+    || fail 'second site was not evaluated'
+grep -Fq 'trusted customer HTTPS/SNI www.two.example.test         PASS' <<<"$output" \
+    || fail 'second site DNS and HTTPS proof was not evaluated'
 if PATH="$test_root/bin:$PATH" "$repo_root/test/domain-connections/run-native-acceptance.sh" --config-file "$config" --apply >/dev/null 2>&1; then
     fail 'apply ran without explicit disposable-domain authorization'
 fi
@@ -63,6 +74,10 @@ fi
 
 ! grep -Eq 'curl.*(-k|--insecure)' "$repo_root/test/domain-connections/run-native-acceptance.sh" \
     || fail 'harness permits insecure TLS'
+grep -Fq 'ssh -n -o BatchMode=yes' "$repo_root/test/domain-connections/run-native-acceptance.sh" \
+    || fail 'read-only remote checks can consume the site loop input'
+! sed -n '/remote_native_renew()/,/^}/p' "$repo_root/test/domain-connections/run-native-acceptance.sh" | grep -Fq 'ssh -n' \
+    || fail 'renewal adapter must retain its stdin heredoc'
 grep -Fq 'debian@192.168.200.100 sudo -n --' "$repo_root/test/domain-connections/run-native-acceptance.sh" \
     || fail 'harness does not use the authorized sudo SSH boundary'
 grep -Fq 'vx_domain_connection_native_renew' "$repo_root/test/domain-connections/run-native-acceptance.sh" \

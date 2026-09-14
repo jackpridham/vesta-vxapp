@@ -99,7 +99,7 @@ done < <(jq -r '.resolvers[]' "$config_file")
 remote() {
     # The target and account are fixed. Commands use sudo's argument boundary;
     # only schema-validated identifiers are ever passed after it.
-    ssh -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes \
+    ssh -n -o BatchMode=yes -o ConnectTimeout=15 -o StrictHostKeyChecking=yes \
         debian@192.168.200.100 sudo -n -- env VESTA=/usr/local/vesta "$@"
 }
 
