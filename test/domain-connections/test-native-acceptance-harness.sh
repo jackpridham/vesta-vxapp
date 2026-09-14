@@ -16,7 +16,14 @@ EOF
 cat >"$test_root/bin/curl" <<'EOF'
 #!/bin/bash
 while [[ $# -gt 0 ]]; do
-    case "$1" in --output) output=$2; shift 2 ;; *) shift ;; esac
+    case "$1" in
+        --resolve)
+            [[ $2 != s-*.example.test:443:203.0.113.10 ]] || exit 1
+            shift 2
+            ;;
+        --output) output=$2; shift 2 ;;
+        *) shift ;;
+    esac
 done
 printf fixture >"$output"
 printf 200
@@ -61,4 +68,6 @@ grep -Fq 'vx_domain_connection_native_renew' "$repo_root/test/domain-connections
     || fail 'controlled rotation bypasses protected native renewal'
 ! grep -Fq 'v-add-letsencrypt-domain' "$repo_root/test/domain-connections/run-native-acceptance.sh" \
     || fail 'controlled rotation calls the raw LetsEncrypt command'
+! grep -Fq 'curl_proof "$technical" 443' "$repo_root/test/domain-connections/run-native-acceptance.sh" \
+    || fail 'technical HTTPS is pinned to origin ingress'
 printf 'PASS: native acceptance harness\n'

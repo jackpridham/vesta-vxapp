@@ -121,12 +121,14 @@ sha256_body() {
 
 curl_to_ip() {
     local host=$1 port=$2 path=$3 expected_sha=$4 address=$5 output status actual_sha scheme
+    local -a resolve=()
     [[ $port == 443 ]] && scheme=https || scheme=http
     output=$(/usr/bin/mktemp)
-    # --resolve pins the socket to the admitted public ingress while retaining
-    # the requested hostname for Host and SNI.  Never use -k here.
+    # Customer proof requests pin the socket to admitted ingress while retaining
+    # Host and SNI. Technical HTTPS deliberately follows its public DNS/CF path.
+    [[ -z $address ]] || resolve=(--resolve "$host:$port:$address")
     status=$(curl --fail --silent --show-error --connect-timeout 15 --max-time 30 \
-        --proto '=http,https' --tlsv1.2 --resolve "$host:$port:$address" \
+        --proto '=http,https' --tlsv1.2 "${resolve[@]}" \
         --output "$output" --write-out '%{http_code}' \
         "$scheme://$host$path") || {
             /usr/bin/rm -f -- "$output"; return 1;
@@ -137,6 +139,7 @@ curl_to_ip() {
 }
 
 curl_proof() { curl_to_ip "$1" "$2" "$3" "$4" "$ingress"; }
+curl_public() { curl_to_ip "$1" "$2" "$3" "$4" ''; }
 
 dns_exact() {
     local resolver=$1 host=$2 type=$3 expected=$4 actual
@@ -197,13 +200,13 @@ check 'published native connection capability' check_capability
 while IFS=$'\t' read -r owner technical customer www connection challenge_path challenge_sha site_sha technical_sha proxy_enabled; do
     for resolver in $(jq -r '.resolvers[]' "$config_file"); do
         check "DNS CNAME $www via $resolver" dns_exact "$resolver" "$www" CNAME "$connection_target"
-        check "DNS apex A $customer via $resolver" dns_exact "$resolver" "$customer" A "$ingress"
+        check "DNS direct A $customer via $resolver" dns_exact "$resolver" "$customer" A "$ingress"
     done
     check "registry connected $customer" check_registry "$owner" "$technical" "$connection"
     check "public port 80 challenge $customer" curl_proof "$customer" 80 "$challenge_path" "$challenge_sha"
     check "trusted customer HTTPS/SNI $customer" curl_proof "$customer" 443 / "$site_sha"
     check "trusted customer HTTPS/SNI $www" curl_proof "$www" 443 / "$site_sha"
-    check "retained technical HTTPS/SNI $technical" curl_proof "$technical" 443 / "$technical_sha"
+    check "retained technical public HTTPS/SNI $technical" curl_public "$technical" 443 / "$technical_sha"
     if [[ "$proxy_enabled" == true ]]; then
         proxy_host=$(jq -r --arg d "$customer" '.sites[]|select(.customer_fqdn == $d)|.proxy.hostname' "$config_file")
         proxy_sha=$(jq -r --arg d "$customer" '.sites[]|select(.customer_fqdn == $d)|.proxy.site_sha256' "$config_file")
