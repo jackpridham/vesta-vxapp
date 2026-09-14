@@ -1,5 +1,9 @@
 # Vesta-Owned Cloudflare Managed Domains Implementation Plan
 
+The [domain connection lifecycle plan](2026-09-15-domain-connection-lifecycle.md)
+proposes a successor for customer domains that retain external DNS. It has not
+replaced the implemented behavior or the current migration preconditions below.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `$milestone-driven-implementation`. This is one integrated product milestone so implementation can run continuously and the user-requested single combined audit happens only after the complete feature is deployed without credentials.
 
 **Goal:** Make every website created through the Vesta product panel or authenticated API receive an immutable Vesta-generated `s-<10 lowercase hex>.<configured-zone>` primary hostname, reconcile its exact Cloudflare A record, retain custom domains as aliases, automatically install a certificate valid for the primary and aliases under Cloudflare Full (strict), and delete the owned record and certificate with the website.
