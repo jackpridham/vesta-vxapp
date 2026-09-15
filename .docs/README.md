@@ -29,6 +29,7 @@ Current documents:
 - [Domain connection plan — Cloudflare technical DNS and native Vesta customer HTTPS](plans/2026-09-15-domain-connection-lifecycle.md)
 - [Domain connection lifecycle v1 contract](contracts/domain-connections.md)
 - [Vesta domain connection development acceptance](validation/2026-09-15-domain-connections-vesta-acceptance.md)
+- [Domain connection JSON error transport acceptance](validation/2026-09-15-domain-connection-json-errors.md)
 - [Connect and migrate customer domains](user-guides/domain-connections.md)
 - [Native web-domain proxy validation](validation/2026-08-06-native-web-proxy-release.md)
 - [Self-service staging evidence](status/2026-07-29-compose-self-service-task7-staging-evidence.md)
