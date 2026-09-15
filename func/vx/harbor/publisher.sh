@@ -21,6 +21,10 @@ vx_harbor_publisher_recover_locked() {
     path="$(vx_harbor_rotation_path "$owner" publisher)"; [[ -f "$path" ]] || return 4
     vx_harbor_rotation_validate "$path" || return 2
     owner_path="$(vx_harbor_owner_state_path "$owner")"; vx_harbor_owner_state_validate "$owner_path" || return 1
+    if /usr/bin/jq -e '.PUBLISHER_ENABLED==false and .PUBLISHER_ROBOT_ID==null and .PUBLISHER_USERNAME==null' "$owner_path" >/dev/null; then
+        vx_harbor_publisher_revoke_locked "$owner" "$owner_path" || return
+        return 4
+    fi
     phase="$(/usr/bin/jq -r .PHASE "$path")"; operation="$(/usr/bin/jq -r .OPERATION_ID "$path")"
     project_id="$(/usr/bin/jq -r .PROJECT_ID "$path")"; marker="$(/usr/bin/jq -r .DESCRIPTION "$path")"
     new_id="$(/usr/bin/jq -r .NEW_ROBOT_ID "$path")"; new_user="$(/usr/bin/jq -r '.NEW_USERNAME // empty' "$path")"
@@ -75,7 +79,7 @@ vx_harbor_publisher_rotate_locked() {
     else
         recovery_status=$?
         (( recovery_status == 4 )) \
-            || { vx_harbor_failure_audit "$owner" publisher-rotation recovery "$recovery_status"; return "$recovery_status"; }
+            || { vx_harbor_failure_audit "$owner" publisher-rotation recovery "$recovery_status" || :; printf 'Error: publisher_recovery_failed\n' >&2; return "$recovery_status"; }
     fi
     namespace="$(/usr/bin/jq -r .NAMESPACE "$path")"; project_id="$(/usr/bin/jq -r .PROJECT_ID "$path")"
     old_id="$(/usr/bin/jq -r .PUBLISHER_ROBOT_ID "$path")"
@@ -114,15 +118,35 @@ vx_harbor_publisher_rotate_locked() {
 }
 
 vx_harbor_publisher_revoke_locked() {
-    local owner="$1" path="$2" id namespace project_id now json
+    local owner="$1" path="$2" id namespace project_id now json journal marker new_id old_id found result
     vx_harbor_owner_state_validate "$path" || { vx_harbor_failure_audit "$owner" publisher-revocation schema 1; return; }
     id="$(/usr/bin/jq -r '.PUBLISHER_ROBOT_ID' "$path")"
     namespace="$(/usr/bin/jq -r .NAMESPACE "$path")"; project_id="$(/usr/bin/jq -r .PROJECT_ID "$path")"
+    journal="$(vx_harbor_rotation_path "$owner" publisher)"
+    if [[ -e "$journal" || -L "$journal" ]]; then
+        vx_harbor_rotation_validate "$journal" || return 1
+        /usr/bin/jq -e --argjson project "$project_id" --argjson current "$id" \
+          '.PROJECT_ID==$project and ($current==null or $current==.NEW_ROBOT_ID or $current==.OLD_ROBOT_ID)' "$journal" >/dev/null || return 1
+        marker="$(/usr/bin/jq -r .DESCRIPTION "$journal")"
+        new_id="$(/usr/bin/jq -r .NEW_ROBOT_ID "$journal")"; old_id="$(/usr/bin/jq -r .OLD_ROBOT_ID "$journal")"
+        # A lost create response may have left a candidate known only by marker.
+        if [[ "$new_id" == null ]]; then
+            if found="$(vx_harbor_api_project_robot_find "$project_id" "$marker")"; then
+                new_id="$(/usr/bin/jq -er .id <<<"$found")" || return 1
+            else
+                result=$?; (( result == 4 )) || return "$result"
+            fi
+        fi
+        [[ "$new_id" == null ]] || vx_harbor_api_project_robot_delete "$project_id" "$new_id" "$marker" || return
+        _vx_harbor_owned_robot_delete "$owner" publisher "$namespace" "$project_id" "$old_id" || return
+    fi
     _vx_harbor_owned_robot_delete "$owner" publisher "$namespace" "$project_id" "$id" \
         || { vx_harbor_failure_audit "$owner" publisher-revocation outage 75; return; }
     now="$(/usr/bin/date -u +%Y-%m-%dT%H:%M:%SZ)"
     json="$(/usr/bin/jq --arg now "$now" '.PUBLISHER_ROBOT_ID=null|.PUBLISHER_USERNAME=null|.PUBLISHER_ENABLED=false|.STATE=(if .RUNTIME_ROBOT_ID==null then "retained" else "publisher-disabled" end)|.UPDATED_AT=$now' "$path")" || return 1
     _vx_harbor_owner_write "$path" "$json" || return 1
+    # Retain the journal until all generations are gone and disabled authority is durable.
+    [[ ! -f "$journal" ]] || _vx_harbor_rotation_remove "$journal" || return 1
     vx_harbor_audit "$owner" publisher-revocation succeeded retained
 }
 

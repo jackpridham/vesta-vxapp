@@ -230,6 +230,14 @@ recovered. Retry creates a fresh marked generation. Revocation is complete
 only after child deletion succeeds and a read validates `404`; projects and
 artifacts are retained.
 
+Publisher disablement also revokes candidates and prior generations recorded
+in an interrupted rotation. Its journal is retired only after all revocations
+and the disabled owner-state write succeed. A later rotation reconciles any
+journal left by earlier disablement before creating a fresh generation.
+Recovery failures preserve that journal, emit `Error: publisher_recovery_failed`
+on stderr, and record the bounded `recovery` audit reason. Failed publisher
+rotation keeps stdout empty; the public adapter sends failure prose to stderr.
+
 ## JSON schemas and enums
 
 `registry-info PROJECT json` has these fixed keys:
