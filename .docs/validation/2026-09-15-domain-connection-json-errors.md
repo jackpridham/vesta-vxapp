@@ -82,6 +82,11 @@ installed isolated authenticated HTTP suite passed, and locked installation
 acceptance preserved native authority, services, workloads and enrollment.
 Protected exact-file rollback and private host evidence are retained.
 
-Staging preparation verified its earlier source baseline without drift. Its
-pre-existing unrelated workload recovery state requires an explicit exception
-before the file-only release proceeds; no staging deployment is claimed here.
+Staging also installed `e02ebeab` after the operator explicitly authorized the
+file-only update while preserving its existing unrelated workload recovery.
+All 140 source paths and three identity markers verify, and the installed
+isolated authenticated HTTP suite passes. Final before/after observations are
+identical across 39 authority files, 11 containers, service identities, native
+routes, the enabled/active mount guard, and the retained recovery file. No
+workload recovery, restart, enrollment enablement, or migration was performed.
+Temporary release inputs were removed and all rollback sets retained and verified.
