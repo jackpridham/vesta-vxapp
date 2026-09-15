@@ -8,9 +8,11 @@ export VESTA="$tmp/vesta" HOMEDIR="$tmp/home" BIN="$tmp/vesta/bin" FIXTURE="$tmp
 export WEB_SYSTEM=nginx PROXY_SYSTEM=nginx SSL_CERT_FILE="$tmp/ca.crt"
 mkdir -p "$BIN" "$VESTA/func/vx" "$VESTA/data/users/Alice/ssl" "$VESTA/conf" "$HOMEDIR/Alice/conf/web" "$HOMEDIR/Alice/web"
 cp -a "$repo/func/vx/cloudflare" "$repo/func/vx/domain-connections" "$VESTA/func/vx/"
+cp "$repo/func/vx/graceful-apply.sh" "$VESTA/func/vx/"
 # Substitute only external HTTPS/configtest endpoints; native observation,
 # matching, TLS recovery, and binding logic remain the actual implementation.
 sed -i "s@/usr/bin/curl@${tmp}/curl@g;s@/usr/sbin/service@${tmp}/service@g" "$VESTA/func/vx/domain-connections/native.sh"
+sed -i "s@/usr/bin/systemctl@${tmp}/systemctl@g;s@/usr/sbin/nginx@${tmp}/nginx@g;s@/usr/sbin/service@${tmp}/service@g" "$VESTA/func/vx/graceful-apply.sh"
 cat >"$tmp/load" <<'LOAD'
 source "$VESTA/func/vx/cloudflare/main.sh"
 source "$VESTA/func/vx/proxy.sh"
@@ -45,6 +47,7 @@ add_web_config() {
 DOMAIN
 cat >"$tmp/service" <<'SERVICE'
 #!/bin/bash
+if [[ "${2:-}" == reload ]]; then exec "$BIN/v-restart-web"; fi
 [[ ! -f "$FIXTURE/fail-config" ]] || { rm "$FIXTURE/fail-config"; exit 1; }
 # Exact server-name uniqueness across the independently rendered SNI vhosts.
 python3 - "$HOMEDIR/Alice/conf/web" <<'PY'
@@ -55,6 +58,9 @@ for p in pathlib.Path(sys.argv[1]).glob('*.ssl.conf'):
 assert len(names)==len(set(names)),names
 PY
 SERVICE
+printf '#!/bin/bash\n[[ "$1" != show ]] || echo 1024\nexit 0\n' >"$tmp/systemctl"
+printf '#!/bin/bash\nexec "$FIXTURE/service" nginx configtest\n' >"$tmp/nginx"
+chmod +x "$tmp/systemctl" "$tmp/nginx"
 cat >"$tmp/curl" <<'CURL'
 #!/bin/bash
 hostname=${!#}; hostname=${hostname#https://}; hostname=${hostname%%/*}
