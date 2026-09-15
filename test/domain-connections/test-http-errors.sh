@@ -10,10 +10,9 @@ root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 tmp=$(mktemp -d)
 trap 'rm -rf -- "$tmp"' EXIT
 mkdir -p "$tmp/local/vesta"
-mount --bind "$tmp/local" /usr/local
-export VESTA=/usr/local/vesta
+export VESTA="$tmp/local/vesta"
 mkdir -p "$VESTA"/{bin,conf,conf_web,data/keys,data/users/alice,data/users/bob,log,web/api}
-ln -s "$root/func" "$VESTA/func"
+cp -R "$root/func" "$VESTA/func"
 cp "$root/web/api/index.php" "$VESTA/web/api/"
 cp "$root/bin/"{v-add-vx-web-domain-connection,v-check-api-key} "$VESTA/bin/"
 printf '127.0.0.1\n' >"$VESTA/conf_web/allow_ip_for_api.conf"
@@ -39,8 +38,10 @@ printf '%s %s\n' "$(basename "$1")" "$result" >>"$VESTA/log/dispatch"
 exit "$result"
 DISPATCH
 chmod 0755 "$tmp/sudo"
+mount --bind "$tmp/local" /usr/local
 mount --bind "$tmp/sudo" /usr/bin/sudo
-source "$root/func/vx/domain-connections/main.sh"
+export VESTA=/usr/local/vesta
+source "$VESTA/func/vx/domain-connections/main.sh"
 vx_domain_connection_prepare
 python3 - <<'PY'
 import json
