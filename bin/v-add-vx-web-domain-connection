@@ -17,7 +17,18 @@ technical=$(vx_domain_connection_canonical_hostname "$technical") || check_resul
 # Action
 record="$(vx_domain_connection_create "$user" "$technical" "$hostname" "$request_id")" || {
     result=$?
-    case "$result" in 10) result=$E_EXISTS;; 11) result=$E_LIMIT;; 12) result=$E_DISABLED;; *) result=$E_INVALID;; esac
+    case "$result" in
+        10) result=$E_EXISTS; error_code=hostname_conflict;;
+        11) result=$E_LIMIT; error_code=quota_exceeded;;
+        12) result=$E_DISABLED; error_code=enrollment_disabled;;
+        13) result=$E_LIMIT; error_code=native_failure;;
+        14) result=$E_DISABLED; error_code=native_failure;;
+        *) result=$E_INVALID; error_code=native_failure;;
+    esac
+    if [[ "$format" == json ]]; then
+        printf '{"version":1,"error":{"code":"%s","exitCode":%s}}\n' "$error_code" "$result"
+        SILENT_MODE=yes
+    fi
     check_result "$result" 'unable to create domain connection'
 }
 case "$format" in json) vx_domain_connection_public_json "$record";; shell) vx_domain_connection_public_json "$record" | /usr/bin/jq -r '.connection | "CONNECTION_ID=\(.connectionID) STATE=\(.state) HOSTNAME=\(.hostname)"';; *) check_result "$E_INVALID" 'invalid format';; esac

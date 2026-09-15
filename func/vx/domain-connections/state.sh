@@ -198,8 +198,11 @@ vx_domain_connection_native_renewal_record() {
 }
 
 vx_domain_connection_enrollment_enabled() {
-    vx_domain_connection_safe_path "$(vx_domain_connection_root)/config.json" file || return 1
-    [[ "$(/usr/bin/jq -r '.ENROLLMENT // "disabled"' "$(vx_domain_connection_root)/config.json")" == enabled ]]
+    local enrollment
+    vx_domain_connection_safe_path "$(vx_domain_connection_root)/config.json" file || return 2
+    enrollment=$(/usr/bin/jq -er '.ENROLLMENT // "disabled"' "$(vx_domain_connection_root)/config.json") || return 2
+    [[ "$enrollment" == enabled || "$enrollment" == disabled ]] || return 2
+    [[ "$enrollment" == enabled ]]
 }
 
 # All scans use the same protected read path, including read-only public lists.
@@ -241,7 +244,7 @@ PYQUOTA
 }
 vx_domain_connection_quota_ok() {
     local quota
-    quota=$(vx_domain_connection_quota_json "$1") || return 1
+    quota=$(vx_domain_connection_quota_json "$1") || return 2
     jq -e '.available==null or .available>0' >/dev/null <<<"$quota"
 }
 
@@ -263,7 +266,12 @@ vx_domain_connection_create() {
         fi
         generation=$(jq -r '.GENERATION+1' <<<"$record")
     fi
-    vx_domain_connection_enrollment_enabled || { vx_domain_connection_unlock; vx_domain_connection_owner_unlock; vx_domain_connection_error 'enrollment is disabled'; return 12; }
+    native_rc=0; vx_domain_connection_enrollment_enabled || native_rc=$?
+    if (( native_rc != 0 )); then
+        vx_domain_connection_unlock; vx_domain_connection_owner_unlock; vx_domain_connection_error 'enrollment is disabled'
+        (( native_rc == 1 )) && return 12
+        return 14 # Unknown enrollment state; retain legacy CLI status without classifying it.
+    fi
     VX_DC_OWNER="$owner" VX_DC_TECHNICAL_FQDN="$technical" vx_domain_connection_native_parent_binding || { vx_domain_connection_unlock; vx_domain_connection_owner_unlock; vx_domain_connection_error 'technical parent is not an authoritative managed binding'; return 1; }
     target=$(vx_domain_connection_target_read_json 2>/dev/null) || target='{}'
     if [[ "$hostname" == "$(jq -r '.TARGET_FQDN // empty' <<<"$target")" || ( -n "${VX_CF_ZONE_NAME:-}" && "$hostname" =~ ^s-[a-f0-9]{10}\. && "${hostname#*.}" == "$VX_CF_ZONE_NAME" ) ]]; then
@@ -271,7 +279,12 @@ vx_domain_connection_create() {
     fi
     native_rc=0; vx_domain_connection_native_hostname_in_use "$hostname" || native_rc=$?
     if (( native_rc != 0 )); then vx_domain_connection_unlock; vx_domain_connection_owner_unlock; return "$native_rc"; fi
-    vx_domain_connection_quota_ok "$owner" || { vx_domain_connection_unlock; vx_domain_connection_owner_unlock; vx_domain_connection_error 'connection quota exceeded'; return 11; }
+    native_rc=0; vx_domain_connection_quota_ok "$owner" || native_rc=$?
+    if (( native_rc != 0 )); then
+        vx_domain_connection_unlock; vx_domain_connection_owner_unlock; vx_domain_connection_error 'connection quota exceeded'
+        (( native_rc == 1 )) && return 11
+        return 13 # Unknown quota state; retain legacy CLI status without classifying it.
+    fi
     id="$(/usr/bin/head -c 32 /dev/urandom | /usr/bin/sha256sum | /usr/bin/cut -c1-32)"; token="$(/usr/bin/head -c 32 /dev/urandom | /usr/bin/sha256sum | /usr/bin/cut -c1-48)"
     now="$(vx_domain_connection_now)"; expires="$(date -u -d '+24 hours' +%Y-%m-%dT%H:%M:%SZ)"
     record="$(/usr/bin/jq -cn --arg owner "$owner" --arg technical "$technical" --arg hostname "$hostname" --arg request "$request_id" --arg id "$id" --arg token "$token" --arg now "$now" --arg expires "$expires" --argjson generation "$generation" '{VERSION:1,OWNER:$owner,TECHNICAL_FQDN:$technical,HOSTNAME:$hostname,REQUEST_ID:$request,CONNECTION_ID:$id,GENERATION:$generation,PROOF_TOKEN:$token,PROOF_EXPIRES_AT:$expires,STATE:"pending_verification",REASON:"awaiting_txt_proof",CREATED_AT:$now,LAST_CHECKED_AT:null,LAST_SUCCESSFUL_AT:null,NEXT_CHECK_AT:$now,OBSERVATIONS:{},CLEANUP:{NATIVE_CHILD:false}}')"

@@ -33,6 +33,49 @@ with the same recoverable TXT proof and instructions.  `observations.native`
 contains only native-child presence, TLS state, HTTPS identity, and config
 validity; it never contains copied proxy headers or values.
 
+### Create errors over the authenticated HTTP API
+
+When `v-add-vx-web-domain-connection` receives `json` in its fifth argument,
+a failed create operation returns this envelope on stdout:
+
+```json
+{"version":1,"error":{"code":"hostname_conflict","exitCode":4}}
+```
+
+| `error.code` | `error.exitCode` | Meaning |
+| --- | --- | --- |
+| `hostname_conflict` | 4 | Global reservation or native hostname conflict |
+| `quota_exceeded` | 8 | Successfully read quota has no remaining capacity |
+| `enrollment_disabled` | 11 | New enrollment is disabled |
+| `native_failure` | 2, 8, or 11 | Invalid input or an unclassified native failure |
+
+`version` is the existing integer protocol version, now covering the error
+envelope too. Clients classify only the documented version/code/status pairs;
+unknown versions, codes, malformed responses, and `native_failure` remain native
+unavailability. In particular, `exitCode` alone is insufficient: unreadable
+quota/enrollment authority retains the legacy process status 8/11 but returns
+`native_failure`. Incompatible envelope semantics require a new version.
+
+The envelope contains no owner, hostname, reservation identity, proof, private
+native detail, or error prose. Earlier authentication, argument, and owner
+validation may still return legacy text; consumers must treat it as unclassified.
+This correction applies to create-operation failures, not every Vesta command.
+
+POST the command and its five positional arguments to the existing authenticated
+`/api/` endpoint in output mode (omit `returncode`, or use `no`). Its single
+response carries either this error JSON or the unchanged
+`{version:1,connection,quota}` success payload. The endpoint retains its existing
+HTTP status and content type; no HTTP status mapping is introduced. Do not retry
+a mutation merely to discover its process status. `returncode=yes` still returns
+only that status. Shell output, argument order, and process exit codes remain
+unchanged. Idempotent replay still returns the original connection identity,
+generation, and current quota, including after enrollment is disabled.
+
+`test/domain-connections/test-http-errors.sh` exercises the unchanged PHP HTTP
+handler with real API-key authentication and command dispatch in an isolated
+mount namespace. It covers all three conditions, unclassified failures, one
+mutation per request, shell/status compatibility, and successful replay.
+
 States are `pending_verification → pending_dns → pending_tls → connected`;
 connected health failures become `degraded`. Cleanup is `disconnecting →
 disconnected`; terminal invalid input is `failed` and uncertain native work is
