@@ -65,3 +65,23 @@ must consume the documented envelope and finish B2 transport acceptance on
 `release-301-pre-mfa-system-email`. No API branch history, source, migrations,
 runtime, customer DNS, or enrollment settings were changed for this correction.
 Publishing this native evidence does not claim completion of API #320.
+
+## Release validation and deployment
+
+The required limited launcher passed on documentation successor `8d161859`
+from 2026-09-15 05:34:18 to 05:42:59 UTC. Runtime and fixture bytes match `e02ebeab`.
+CPU was capped at 100%; memory, swap, task and nice limits remained enforced;
+no unlimited override was used. The canonical gate ran unchanged. Its root-only
+disposable-container fixture reported its normal explicit skip. The earlier
+run stopped at documentation consistency; the portable handoff references were
+corrected before the successful repeat.
+
+Development installed `e02ebeab`: three source files and three release markers,
+with all 140 source paths plus three markers verified independently. The
+installed isolated authenticated HTTP suite passed, and locked installation
+acceptance preserved native authority, services, workloads and enrollment.
+Protected exact-file rollback and private host evidence are retained.
+
+Staging preparation verified its earlier source baseline without drift. Its
+pre-existing unrelated workload recovery state requires an explicit exception
+before the file-only release proceeds; no staging deployment is claimed here.
